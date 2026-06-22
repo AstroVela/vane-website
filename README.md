@@ -24,7 +24,7 @@ npm run lint       # run ESLint
 
 ## Project structure
 
-```
+```text
 src/
   App.jsx              route switch (path -> page)
   router.jsx           minimal history-API router (RouterProvider, Link, useRouter)
