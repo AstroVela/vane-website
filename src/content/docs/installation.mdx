@@ -1,0 +1,15 @@
+export const title = 'Installation'
+
+Supported platforms and optional extras.
+
+| Component | Version |
+|---|---|
+| Python | 3.10 – 3.12 |
+| Ray | 2.40+ |
+| pyarrow | 14+ |
+| CUDA (GPU UDFs) | 12.x |
+
+<CodeWindow filename="shell" code={`<span class="c"># pre-release on TestPyPI</span>
+pip install -i https://test.pypi.org/simple/ <span class="p">\\</span>
+    --extra-index-url https://pypi.org/simple/ vane-ai
+<span class="c"># GPU / all extras: append "vane-ai[gpu]" (torch / vllm) or "vane-ai[all]"</span>`} />

@@ -1,0 +1,13 @@
+export const title = 'map_batches / flat_map'
+
+Apply Python or model inference to batches of rows. Functions run as tasks; classes become actors so expensive setup (model load) happens once per worker.
+
+<CodeWindow filename="map_batches.py" code={`<span class="k">class</span> <span class="t">Embed</span><span class="p">:</span>
+    <span class="k">def</span> <span class="f">__init__</span><span class="p">(</span>self<span class="p">):</span>
+        self<span class="p">.</span>model <span class="p">=</span> <span class="f">load</span><span class="p">(</span><span class="s">"bge-base"</span><span class="p">)</span>   <span class="c"># once per actor</span>
+
+    <span class="k">def</span> <span class="f">__call__</span><span class="p">(</span>self<span class="p">,</span> batch<span class="p">):</span>
+        batch<span class="p">[</span><span class="s">"vec"</span><span class="p">]</span> <span class="p">=</span> self<span class="p">.</span>model<span class="p">.</span><span class="f">encode</span><span class="p">(</span>batch<span class="p">[</span><span class="s">"text"</span><span class="p">])</span>
+        <span class="k">return</span> batch
+
+rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Embed</span><span class="p">,</span> num_gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">256</span><span class="p">)</span>`} />
