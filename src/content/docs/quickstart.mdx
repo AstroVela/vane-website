@@ -1,0 +1,42 @@
+export const title = 'Quickstart'
+
+<Lead>Install Vane, point it at Ray, and run your first DuckDB-compatible pipeline that maps batches of data through a multimodal model — text, images, or audio.</Lead>
+
+## Install
+
+Vane is currently a pre-release on TestPyPI, or build from source for the latest runner changes.
+
+<CodeWindow filename="shell" code={`<span class="c"># pre-release on TestPyPI</span>
+pip install -i https://test.pypi.org/simple/ <span class="p">\\</span>
+    --extra-index-url https://pypi.org/simple/ vane-ai
+<span class="c"># or, from source:</span>
+<span class="c">#   git clone https://github.com/AstroVela/vane &amp;&amp; pip install -e .</span>`} />
+
+## Configure the runner
+
+Vane executes on Ray. Call `configure()` once at startup to select a local or cluster runner.
+
+<CodeWindow filename="quickstart.py" code={`<span class="k">import</span> vane
+
+vane<span class="p">.</span><span class="f">configure</span><span class="p">(</span>runner<span class="p">=</span><span class="s">"ray"</span><span class="p">)</span>   <span class="c"># local Ray by default</span>
+conn <span class="p">=</span> vane<span class="p">.</span><span class="f">connect</span><span class="p">()</span>`} />
+
+<Callout label="Tip">
+
+On a cluster, keep `runner="ray"` and let Ray pick up `RAY_ADDRESS` from the environment — no code change.
+
+</Callout>
+
+## Run a multimodal pipeline
+
+Query data with SQL, map batches through an AI model, and write the results back — all in one relation. The model can be an embedder, a VLM, or a transcription model.
+
+<CodeWindow filename="first_pipeline.py" code={`<span class="k">from</span> vane<span class="p">.</span>ai <span class="k">import</span> embed<span class="p">,</span> caption
+
+rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, image FROM 's3://media/*'"</span><span class="p">)</span>
+rel <span class="p">=</span> <span class="f">embed</span><span class="p">(</span>rel<span class="p">,</span> <span class="s">"image"</span><span class="p">,</span> model<span class="p">=</span><span class="s">"clip"</span><span class="p">)</span>
+rel <span class="p">=</span> <span class="f">caption</span><span class="p">(</span>rel<span class="p">,</span> <span class="s">"image"</span><span class="p">,</span> model<span class="p">=</span><span class="s">"vlm"</span><span class="p">)</span>
+
+rel<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://out/"</span><span class="p">)</span>`} />
+
+That is the whole loop: SQL in, batched multimodal model inference in the middle, Parquet out.
