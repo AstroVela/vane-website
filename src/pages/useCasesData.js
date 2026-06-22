@@ -6,6 +6,7 @@ export const USE_CASES = [
     icon: 'embeddings',
     title: 'Web Text to Embeddings',
     tag: 'embeddings',
+    summary: 'Clean Common Crawl pages, chunk text, and generate embeddings.',
     pipeline: ['read_parquet', 'filter SQL', 'chunk_text', 'embed_text', 'write_parquet'],
     problem:
       'Turning web-scale crawl dumps into clean, chunked embeddings usually means stitching SQL filtering, Python chunking, a GPU embedding model and Parquet output across separate systems.',
@@ -24,6 +25,7 @@ emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(
     icon: 'retrieval',
     title: 'Semantic Search',
     tag: 'retrieval',
+    summary: 'Embed large text datasets and match related records.',
     pipeline: ['sql', 'embed_text', 'write index', 'cosine query'],
     problem:
       'You need an offline index of a large Q&A corpus and a way to match related records without standing up a vector DB just to experiment.',
@@ -42,6 +44,7 @@ hits <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</s
     icon: 'preprocessing',
     title: 'Text Deduplication',
     tag: 'preprocessing',
+    summary: 'Normalize text, compute MinHash signatures, and remove near-duplicates.',
     pipeline: ['normalize', 'minhash', 'lsh_bands (flat_map)', 'keep one'],
     problem:
       'Near-duplicate dedup at scale needs MinHash signatures and LSH bucketing wired into your data pipeline — not a one-off notebook.',
@@ -60,6 +63,7 @@ buckets<span class="p">.</span><span class="f">map_batches</span><span class="p"
     icon: 'vision',
     title: 'Image Pipelines',
     tag: 'vision',
+    summary: 'Read, decode, analyze, and transform image data with batch UDFs.',
     pipeline: ['manifest sql', 'decode_image', 'DetectFeatures (actor)', 'write'],
     problem:
       'Decoding millions of images and running a vision model means juggling IO, CPU decode and GPU inference with the right batch sizes by hand.',
@@ -78,6 +82,7 @@ feats<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     icon: 'generation',
     title: 'Image Generation',
     tag: 'generation',
+    summary: 'Run prompt-to-image generation across batches and GPUs.',
     pipeline: ['prompts sql', 'Diffusion (model actor)', 'write'],
     problem:
       'Generating images for a whole prompt table means managing a GPU model actor, batching, and writing results back — repeatedly.',
@@ -96,6 +101,7 @@ images<span class="p">.</span><span class="f">write_parquet</span><span class="p
     icon: 'multimodal',
     title: 'Multimodal Structured Output',
     tag: 'multimodal',
+    summary: 'Run VLM evaluation with images, JSON responses, and judge passes.',
     pipeline: ['image+text sql', 'VLM (schema)', 'Judge', 'write'],
     problem:
       'Getting reliable structured fields out of a vision-language model — and grading them — needs schema enforcement plus a second judge pass.',
@@ -114,6 +120,7 @@ graded<span class="p">.</span><span class="f">write_parquet</span><span class="p
     icon: 'audio',
     title: 'Voice AI Analytics',
     tag: 'audio',
+    summary: 'Transcribe, summarize, subtitle, and embed audio segments.',
     pipeline: ['audio sql', 'Transcribe', 'Summarize', 'embed_text'],
     problem:
       'A voice-analytics pipeline chains transcription, summarization, captioning and embedding — each a different model, each needing batching on GPUs.',

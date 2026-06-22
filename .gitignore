@@ -8,8 +8,11 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.docusaurus
+build
 dist
 dist-ssr
+.tmp-visual-check
 *.local
 
 # Local agent configuration

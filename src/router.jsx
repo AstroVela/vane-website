@@ -1,16 +1,12 @@
-/* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
+import DocusaurusLink from '@docusaurus/Link'
+import { useHistory, useLocation } from '@docusaurus/router'
 
 /* ------------------------------------------------------------------
-   Minimal History-API router (provider + useRouter hook + Link).
-   Page routing uses pathname (so in-page `#hash` anchors stay free for
-   the Use Cases chip jumps and the Docs scrollspy). External / `#`-only
-   links fall through to plain <a>. Fast-refresh's "only export
-   components" rule is disabled here because this is a cohesive routing
-   module that also exports the hook and Link helper.
+   Compatibility layer for the site's existing Link/useRouter API.
+   Docusaurus owns route registration now; this module keeps the current
+   components small while preserving the custom hash-scroll behavior.
    ------------------------------------------------------------------ */
-
-const RouterContext = createContext(null)
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -34,23 +30,23 @@ function scrollToHash(id, smooth) {
 }
 
 export function RouterProvider({ children }) {
-  const [path, setPath] = useState(() => window.location.pathname)
+  return children
+}
+
+export function useRouter() {
+  const history = useHistory()
+  const location = useLocation()
 
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname)
-    window.addEventListener('popstate', onPop)
-    // honor a hash on first load (e.g. /use-cases#search)
-    if (window.location.hash) {
-      scrollToHash(window.location.hash.slice(1), false)
+    if (location.hash) {
+      scrollToHash(location.hash.slice(1), false)
     }
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
+  }, [location.pathname, location.hash])
 
   const navigate = useCallback((to) => {
     const url = new URL(to, window.location.origin)
     const samePage = url.pathname === window.location.pathname
-    window.history.pushState({}, '', url.pathname + url.hash)
-    if (!samePage) setPath(url.pathname)
+    history.push(url.pathname + url.hash)
 
     const smooth = !prefersReducedMotion()
     if (url.hash) {
@@ -59,31 +55,25 @@ export function RouterProvider({ children }) {
     } else if (!samePage) {
       window.scrollTo(0, 0)
     }
-  }, [])
+  }, [history])
 
-  return (
-    <RouterContext.Provider value={{ path, navigate }}>
-      {children}
-    </RouterContext.Provider>
-  )
-}
-
-export function useRouter() {
-  return useContext(RouterContext)
+  return { path: location.pathname, navigate }
 }
 
 /* Internal link — intercepts left-clicks, lets modified clicks behave normally. */
 export function Link({ to, className, children, ...rest }) {
   const { navigate } = useRouter()
+
   const onClick = (e) => {
     if (e.defaultPrevented) return
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
     e.preventDefault()
     navigate(to)
   }
+
   return (
-    <a href={to} className={className} onClick={onClick} {...rest}>
+    <DocusaurusLink to={to} className={className} onClick={onClick} {...rest}>
       {children}
-    </a>
+    </DocusaurusLink>
   )
 }

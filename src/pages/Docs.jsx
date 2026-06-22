@@ -1,54 +1,36 @@
-import { useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { MDXProvider } from '@mdx-js/react'
 import Nav from '../components/Nav'
 import { Link, useRouter } from '../router'
 import { cx } from '../components/cx'
 import { mdxComponents } from '../components/mdxComponents'
-import { DOCS_NAV } from '../content/docsNav'
+import { DEFAULT_DOC_SLUG, DOCS_ORDER, DOCS_PAGES, DOCS_SIDEBAR, getDocGroup } from '../docs/registry'
 
-// Each doc topic is its own page: src/content/docs/<slug>.mdx, exporting a
-// `title` (used for the page <h1>, the sidebar label, and the prev/next pager).
-const modules = import.meta.glob('../content/docs/*.mdx', { eager: true })
-const PAGES = Object.fromEntries(
-  Object.entries(modules).map(([path, mod]) => {
-    const slug = path.match(/\/([^/]+)\.mdx$/)[1]
-    return [slug, { Component: mod.default, title: mod.title ?? slug }]
-  }),
-)
-
-// Slugs declared in the sidebar, in order.
-const NAV_SLUGS = DOCS_NAV.flatMap((g) => g.items.map((it) => it.slug).filter(Boolean))
-
-if (import.meta.env.DEV) {
-  NAV_SLUGS.filter((slug) => !PAGES[slug]).forEach((slug) =>
-    console.warn(`docsNav: no page file for slug "${slug}" (src/content/docs/${slug}.mdx)`),
-  )
-}
-
-// Default page and prev/next only walk slugs that have a real page file, so a
-// nav entry without a matching .mdx warns (above) instead of crashing the pager.
-const ORDER = NAV_SLUGS.filter((slug) => PAGES[slug])
-const DEFAULT_SLUG = ORDER[0]
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 export default function Docs() {
   const { path } = useRouter()
-  const requested = path.replace(/^\/docs\/?/, '') || DEFAULT_SLUG
-  const current = PAGES[requested] ? requested : DEFAULT_SLUG
-  const page = PAGES[current]
-  const PageBody = page.Component
-  const group = DOCS_NAV.find((g) => g.items.some((it) => it.slug === current))?.group
+  const requested = path.replace(/^\/docs\/?/, '')
+  const current = requested || DEFAULT_DOC_SLUG
+  const page = DOCS_PAGES[current]
 
-  const i = ORDER.indexOf(current)
-  const prev = i > 0 ? ORDER[i - 1] : null
-  const next = i >= 0 && i < ORDER.length - 1 ? ORDER[i + 1] : null
+  if (!page) {
+    throw new Error(`Unknown docs slug "${current}"`)
+  }
+
+  const PageBody = page.Component
+  const group = getDocGroup(current)
+
+  const i = DOCS_ORDER.indexOf(current)
+  const prev = i > 0 ? DOCS_ORDER[i - 1] : null
+  const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
 
   const [activeSection, setActiveSection] = useState(null)
   const [toc, setToc] = useState([])
 
   // Re-derive the per-page "On this page" and scrollspy whenever the page
   // changes. The headings come from MDX and only exist in the DOM after mount.
-  useLayoutEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  useIsomorphicLayoutEffect(() => {
     setToc(
       Array.from(document.querySelectorAll('.doc h2.ds')).map((h) => ({
         id: h.id,
@@ -70,7 +52,7 @@ export default function Docs() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [current])
 
-  const navLabel = (it) => it.label ?? PAGES[it.slug]?.title ?? it.slug
+  const navLabel = (it) => it.label ?? DOCS_PAGES[it.slug]?.title ?? it.slug
 
   return (
     <>
@@ -79,7 +61,7 @@ export default function Docs() {
       <div className="docs">
         {/* SIDEBAR — links switch doc pages; labels come from each page's title. */}
         <nav className="side">
-          {DOCS_NAV.map((grp) => (
+          {DOCS_SIDEBAR.map((grp) => (
             <div className="grp" key={grp.group}>
               <div className="gt">{grp.group}</div>
               {grp.items.map((it) =>
@@ -99,7 +81,7 @@ export default function Docs() {
           ))}
         </nav>
 
-        {/* CONTENT — page body authored in src/content/docs/<slug>.mdx. */}
+        {/* CONTENT — page body authored under docs/<section>/<slug>.mdx. */}
         <article className="doc">
           <div className="search">⌕ Search the docs <span className="kbd">⌘K</span></div>
 
@@ -111,8 +93,8 @@ export default function Docs() {
           </MDXProvider>
 
           <div className="pager">
-            {prev && <Link to={`/docs/${prev}`}>← {PAGES[prev].title}</Link>}
-            {next && <Link className="nx" to={`/docs/${next}`}>{PAGES[next].title} →</Link>}
+            {prev && <Link to={`/docs/${prev}`}>← {DOCS_PAGES[prev].title}</Link>}
+            {next && <Link className="nx" to={`/docs/${next}`}>{DOCS_PAGES[next].title} →</Link>}
           </div>
         </article>
 

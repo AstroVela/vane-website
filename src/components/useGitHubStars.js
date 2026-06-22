@@ -12,11 +12,13 @@ function format(n) {
 export function useGitHubStars(repo) {
   const cacheKey = `gh-stars:${repo}`
   const [stars, setStars] = useState(() => {
+    if (typeof sessionStorage === 'undefined') return null
     const cached = sessionStorage.getItem(cacheKey)
     return cached !== null ? format(Number(cached)) : null
   })
 
   useEffect(() => {
+    if (typeof sessionStorage === 'undefined') return undefined
     if (sessionStorage.getItem(cacheKey) !== null) return undefined
     let cancelled = false
     fetch(`https://api.github.com/repos/${repo}`)

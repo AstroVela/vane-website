@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import useBrokenLinks from '@docusaurus/useBrokenLinks'
 import Nav from '../components/Nav'
 import Footer from '../components/Footer'
 import Box from '../components/Box'
@@ -19,6 +20,17 @@ function Pipeline({ steps }) {
         </Fragment>
       ))}
     </div>
+  )
+}
+
+function UseCaseBlock({ id, children }) {
+  const brokenLinks = useBrokenLinks()
+  brokenLinks.collectAnchor(id)
+
+  return (
+    <Box className="uc-block" id={id}>
+      {children}
+    </Box>
   )
 }
 
@@ -50,7 +62,7 @@ export default function UseCases() {
       <section className="section" style={{ padding: '44px 0 20px' }}>
         <div className="wrap">
           {USE_CASES.map((u) => (
-            <Box className="uc-block" id={u.id} key={u.id}>
+            <UseCaseBlock id={u.id} key={u.id}>
               <div className="uc-head">
                 <span className="ic"><PixelIcon name={u.icon} size={18} /></span>
                 <h2>{u.title}</h2>
@@ -81,7 +93,7 @@ export default function UseCases() {
                 <span className="ex">Example: <u>{u.example}</u></span>
                 <Button sm to="/docs" arrow>Open example</Button>
               </div>
-            </Box>
+            </UseCaseBlock>
           ))}
         </div>
       </section>

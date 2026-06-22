@@ -8,6 +8,7 @@ import Cta from '../components/Cta'
 import Mark from '../components/Mark'
 import PixelIcon from '../components/PixelIcon'
 import { Link } from '../router'
+import { USE_CASES } from './useCasesData'
 
 const HERO_CODE = `<span class="k">import</span> vane
 <span class="k">from</span> vane<span class="p">.</span>ai <span class="k">import</span> describe<span class="p">,</span> embed
@@ -40,16 +41,6 @@ const NEW_WAY = [
   'Ray task & actor execution',
   'AI functions for embedding & prompting',
   'Parquet / S3 output in one pipeline',
-]
-
-const USE_CASES = [
-  { id: 'embeddings', icon: 'embeddings', tag: 'embeddings', title: 'Web Text to Embeddings', desc: 'Clean Common Crawl pages, chunk text, and generate embeddings.', ex: 'common_crawl.py' },
-  { id: 'search', icon: 'retrieval', tag: 'retrieval', title: 'Semantic Search', desc: 'Embed large text datasets and match related records.', ex: 'semantic_search.py' },
-  { id: 'dedupe', icon: 'preprocessing', tag: 'preprocessing', title: 'Text Deduplication', desc: 'Normalize text, compute MinHash signatures, and remove near-duplicates.', ex: 'minhash_dedupe.py' },
-  { id: 'images', icon: 'vision', tag: 'vision', title: 'Image Pipelines', desc: 'Read, decode, analyze, and transform image data with batch UDFs.', ex: 'querying_images.py' },
-  { id: 'imagegen', icon: 'generation', tag: 'generation', title: 'Image Generation', desc: 'Run prompt-to-image generation across batches and GPUs.', ex: 'image_generation.py' },
-  { id: 'multimodal', icon: 'multimodal', tag: 'multimodal', title: 'Multimodal Structured Output', desc: 'Run VLM evaluation with images, JSON responses, and judge passes.', ex: 'multimodal_structured_outputs.py' },
-  { id: 'voice', icon: 'audio', tag: 'audio', title: 'Voice AI Analytics', desc: 'Transcribe, summarize, subtitle, and embed audio segments.', ex: 'voice_ai_analytics.py' },
 ]
 
 export default function Home() {
@@ -176,8 +167,8 @@ export default function Home() {
                   <span className="tg">{u.tag}</span>
                 </div>
                 <h3>{u.title}</h3>
-                <p>{u.desc}</p>
-                <div className="ex">Example: <u>{u.ex}</u></div>
+                <p>{u.summary}</p>
+                <div className="ex">Example: <u>{u.filename}</u></div>
               </Box>
             ))}
           </div>

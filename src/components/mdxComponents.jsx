@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 /* Maps MDX (Markdown) output onto the doc's existing styled markup so authored
    content renders with the existing CSS classes.
 
