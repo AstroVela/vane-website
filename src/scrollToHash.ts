@@ -24,7 +24,7 @@ export function scrollToHash(id: string, smooth: boolean) {
     }
 
     const y = el.getBoundingClientRect().top + window.pageYOffset - NAV_OFFSET
-    window.scrollTo({ top: Math.max(0, y), behavior: smooth ? 'smooth' : 'auto' })
+    window.scrollTo({ top: Math.max(0, y), behavior: smooth ? 'smooth' : 'instant' })
   }
   attempt()
 }
