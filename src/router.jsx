@@ -1,72 +1,56 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import DocusaurusLink from '@docusaurus/Link'
 import { useHistory, useLocation } from '@docusaurus/router'
+import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
 
 /* ------------------------------------------------------------------
    Compatibility layer for the site's existing Link/useRouter API.
    Docusaurus owns route registration now; this module keeps the current
-   components small while preserving the custom hash-scroll behavior.
+   components small.
    ------------------------------------------------------------------ */
-
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' &&
-  window.matchMedia &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-const NAV_OFFSET = 72 // clears the 58px sticky nav (≈ the headings' scroll-margin-top)
-
-function scrollToHash(id, smooth) {
-  let tries = 0
-  const attempt = () => {
-    const el = document.getElementById(id)
-    if (!el) {
-      if (tries++ < 20) requestAnimationFrame(attempt)
-      return
-    }
-    const y = el.getBoundingClientRect().top + window.pageYOffset - NAV_OFFSET
-    window.scrollTo({ top: Math.max(0, y), behavior: smooth ? 'smooth' : 'instant' })
-  }
-  attempt()
-}
 
 export function RouterProvider({ children }) {
   return children
 }
 
-export function useRouter() {
+export function useNavigate() {
   const history = useHistory()
-  const location = useLocation()
 
-  useEffect(() => {
-    if (location.hash) {
-      scrollToHash(location.hash.slice(1), false)
-    }
-  }, [location.pathname, location.hash])
-
-  const navigate = useCallback((to) => {
-    const url = new URL(to, window.location.origin)
-    const samePage = url.pathname === window.location.pathname
-    history.push(url.pathname + url.hash)
-
-    const smooth = !prefersReducedMotion()
-    if (url.hash) {
-      // wait for the new page to mount before locating the anchor
-      scrollToHash(url.hash.slice(1), smooth && samePage)
-    } else if (!samePage) {
-      window.scrollTo(0, 0)
-    }
+  return useCallback((to) => {
+    history.push(to)
   }, [history])
+}
+
+export function useRouter() {
+  const location = useLocation()
+  const navigate = useNavigate()
 
   return { path: location.pathname, navigate }
 }
 
 /* Internal link — intercepts left-clicks, lets modified clicks behave normally. */
 export function Link({ to, className, children, ...rest }) {
-  const { navigate } = useRouter()
+  const navigate = useNavigate()
 
   const onClick = (e) => {
     if (e.defaultPrevented) return
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+
+    const url = new URL(to, window.location.origin)
+    const samePageHash =
+      url.hash &&
+      url.pathname === window.location.pathname &&
+      url.search === window.location.search
+
+    if (samePageHash) {
+      e.preventDefault()
+      // Same-page hash updates bypass the router so Docusaurus' instant
+      // scrollIntoView does not interrupt the site's smooth anchor scroll.
+      window.history.pushState(null, '', url.pathname + url.search + url.hash)
+      scrollToHash(decodeHash(url.hash), !prefersReducedMotion())
+      return
+    }
+
     e.preventDefault()
     navigate(to)
   }
