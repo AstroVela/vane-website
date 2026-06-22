@@ -1,5 +1,23 @@
 /* Seven detailed use cases — Problem / Pipeline / Code / Input·Output / When /
    Example. Code is pre-highlighted markup, copied verbatim from the prototype. */
+import type {PixelIconName} from '../components/PixelIcon'
+
+export type UseCase = {
+  id: string
+  icon: PixelIconName
+  title: string
+  tag: string
+  summary: string
+  pipeline: string[]
+  problem: string
+  input: string
+  output: string
+  when: string
+  filename: string
+  example: string
+  code: string
+}
+
 export const USE_CASES = [
   {
     id: 'embeddings',
@@ -135,4 +153,4 @@ out <span class="p">=</span> <span class="p">(</span>rel
    <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Summarize</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">))</span>
 <span class="f">embed_text</span><span class="p">(</span>out<span class="p">,</span> <span class="s">"summary"</span><span class="p">).</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/"</span><span class="p">)</span>`,
   },
-]
+] satisfies UseCase[]

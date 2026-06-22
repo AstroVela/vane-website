@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, type PropsWithChildren } from 'react'
 import useBrokenLinks from '@docusaurus/useBrokenLinks'
 import Nav from '../components/Nav'
 import Footer from '../components/Footer'
@@ -10,7 +10,7 @@ import Cta from '../components/Cta'
 import PixelIcon from '../components/PixelIcon'
 import { USE_CASES } from './useCasesData'
 
-function Pipeline({ steps }) {
+function Pipeline({ steps }: { steps: string[] }) {
   return (
     <div className="pipeline">
       {steps.map((s, i) => (
@@ -23,7 +23,7 @@ function Pipeline({ steps }) {
   )
 }
 
-function UseCaseBlock({ id, children }) {
+function UseCaseBlock({ id, children }: PropsWithChildren<{ id: string }>) {
   const brokenLinks = useBrokenLinks()
   brokenLinks.collectAnchor(id)
 

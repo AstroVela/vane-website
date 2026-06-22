@@ -1,17 +1,36 @@
+import type {ReactNode} from 'react'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { MDXProvider } from '@mdx-js/react'
 import Nav from '../components/Nav'
 import { Link, useRouter } from '../router'
 import { cx } from '../components/cx'
 import { mdxComponents } from '../components/mdxComponents'
-import { DEFAULT_DOC_SLUG, DOCS_ORDER, DOCS_PAGES, DOCS_SIDEBAR, getDocGroup } from '../docs/registry'
+import {
+  DEFAULT_DOC_SLUG,
+  DOCS_ORDER,
+  DOCS_PAGES,
+  DOCS_SIDEBAR,
+  type DocsSidebarItem,
+  getDocGroup,
+  isDocSlug,
+} from '../docs/registry'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
+type TocItem = {
+  id: string
+  label: string
+}
 
 export default function Docs() {
   const { path } = useRouter()
   const requested = path.replace(/^\/docs\/?/, '')
-  const current = requested || DEFAULT_DOC_SLUG
+  const current = requested ? (isDocSlug(requested) ? requested : undefined) : DEFAULT_DOC_SLUG
+
+  if (!current) {
+    throw new Error(`Unknown docs slug "${requested}"`)
+  }
+
   const page = DOCS_PAGES[current]
 
   if (!page) {
@@ -25,8 +44,8 @@ export default function Docs() {
   const prev = i > 0 ? DOCS_ORDER[i - 1] : null
   const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
 
-  const [activeSection, setActiveSection] = useState(null)
-  const [toc, setToc] = useState([])
+  const [activeSection, setActiveSection] = useState<string | null>(null)
+  const [toc, setToc] = useState<TocItem[]>([])
 
   // Re-derive the per-page "On this page" and scrollspy whenever the page
   // changes. The headings come from MDX and only exist in the DOM after mount.
@@ -34,7 +53,7 @@ export default function Docs() {
     setToc(
       Array.from(document.querySelectorAll('.doc h2.ds')).map((h) => ({
         id: h.id,
-        label: h.textContent,
+        label: h.textContent ?? '',
       })),
     )
 
@@ -52,7 +71,8 @@ export default function Docs() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [current])
 
-  const navLabel = (it) => it.label ?? DOCS_PAGES[it.slug]?.title ?? it.slug
+  const navLabel = (it: DocsSidebarItem): ReactNode =>
+    it.label ?? (it.slug ? DOCS_PAGES[it.slug].title : null)
 
   return (
     <>

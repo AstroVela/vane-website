@@ -1,5 +1,7 @@
 /* Bitmap-style pixel icons: <rect>s with shape-rendering:crispEdges (set in CSS
    via .ic svg) so they read as crisp glyphs. Keyed by use-case name. */
+type Rect = readonly [number, number, number, number]
+
 const RECTS = {
   embeddings: [
     [2, 2, 8, 2], [2, 5, 8, 2], [2, 8, 8, 2],
@@ -22,10 +24,17 @@ const RECTS = {
   audio: [
     [2, 6, 1.6, 4], [4.6, 3, 1.6, 7], [7.2, 5, 1.6, 5], [9.8, 2, 1.6, 8],
   ],
+} satisfies Record<string, readonly Rect[]>
+
+export type PixelIconName = keyof typeof RECTS
+
+type PixelIconProps = {
+  name: PixelIconName
+  size?: number
 }
 
-export default function PixelIcon({ name, size = 16 }) {
-  const rects = RECTS[name] || []
+export default function PixelIcon({ name, size = 16 }: PixelIconProps) {
+  const rects = RECTS[name]
   return (
     <svg width={size} height={size} viewBox="0 0 12 12" fill="currentColor">
       {rects.map(([x, y, w, h], i) => (

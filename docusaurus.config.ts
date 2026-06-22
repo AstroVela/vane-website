@@ -1,3 +1,5 @@
+import type {Config} from '@docusaurus/types'
+
 const config = {
   title: 'Vane',
   tagline: 'DuckDB-compatible pipelines for AI workloads',
@@ -15,7 +17,7 @@ const config = {
       onBrokenMarkdownLinks: 'warn',
     },
   },
-  clientModules: [require.resolve('./src/clientStyles.js')],
+  clientModules: [require.resolve('./src/clientStyles.ts')],
   headTags: [
     {
       tagName: 'link',
@@ -40,7 +42,7 @@ const config = {
       },
     },
   ],
-  plugins: [require.resolve('./src/plugins/vaneRoutes.cjs')],
-}
+  plugins: [require.resolve('./src/plugins/vaneRoutes.ts')],
+} satisfies Config
 
-module.exports = config
+export default config

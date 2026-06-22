@@ -1,0 +1,15 @@
+{
+  "extends": "@docusaurus/tsconfig",
+  "compilerOptions": {
+    "allowJs": false,
+    "ignoreDeprecations": "6.0",
+    "resolveJsonModule": true,
+    "strict": true,
+    "types": ["node", "@docusaurus/module-type-aliases"]
+  },
+  "include": [
+    "docusaurus.config.ts",
+    "docs/**/*.mdx",
+    "src/**/*"
+  ]
+}

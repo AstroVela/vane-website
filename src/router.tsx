@@ -1,5 +1,6 @@
-import { useCallback } from 'react'
+import {useCallback, type MouseEvent, type PropsWithChildren} from 'react'
 import DocusaurusLink from '@docusaurus/Link'
+import type {Props as DocusaurusLinkProps} from '@docusaurus/Link'
 import { useHistory, useLocation } from '@docusaurus/router'
 import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
 
@@ -9,19 +10,30 @@ import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
    components small.
    ------------------------------------------------------------------ */
 
-export function RouterProvider({ children }) {
+type Navigate = (to: string) => void
+
+type RouterState = {
+  path: string
+  navigate: Navigate
+}
+
+type LinkProps = Omit<DocusaurusLinkProps, 'href' | 'to'> & {
+  to: string
+}
+
+export function RouterProvider({ children }: PropsWithChildren) {
   return children
 }
 
-export function useNavigate() {
+export function useNavigate(): Navigate {
   const history = useHistory()
 
-  return useCallback((to) => {
+  return useCallback((to: string) => {
     history.push(to)
   }, [history])
 }
 
-export function useRouter() {
+export function useRouter(): RouterState {
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -29,10 +41,10 @@ export function useRouter() {
 }
 
 /* Internal link — intercepts left-clicks, lets modified clicks behave normally. */
-export function Link({ to, className, children, ...rest }) {
+export function Link({ to, className, children, ...rest }: LinkProps) {
   const navigate = useNavigate()
 
-  const onClick = (e) => {
+  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented) return
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
 

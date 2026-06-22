@@ -1,6 +1,5 @@
+import type {ComponentType} from 'react'
 import docsSidebar from './sidebar.json'
-
-export const DOCS_SIDEBAR = docsSidebar
 
 import AiFunctionsDoc, { title as aiFunctionsTitle } from '../../docs/api/ai-functions.mdx'
 import MapBatchesDoc, { title as mapBatchesTitle } from '../../docs/api/map-batches.mdx'
@@ -11,6 +10,12 @@ import ConfigurationDoc, { title as configurationTitle } from '../../docs/gettin
 import InstallationDoc, { title as installationTitle } from '../../docs/getting-started/installation.mdx'
 import QuickstartDoc, { title as quickstartTitle } from '../../docs/getting-started/quickstart.mdx'
 import TroubleshootingDoc, { title as troubleshootingTitle } from '../../docs/resources/troubleshooting.mdx'
+
+export type DocPage = {
+  Component: ComponentType
+  source: string
+  title: string
+}
 
 export const DOCS_PAGES = {
   'ai-functions': {
@@ -58,10 +63,33 @@ export const DOCS_PAGES = {
     source: 'docs/api/udf-actors.mdx',
     title: udfActorsTitle,
   },
+} satisfies Record<string, DocPage>
+
+export type DocSlug = keyof typeof DOCS_PAGES
+
+export type DocsSidebarItem =
+  | {
+      slug: DocSlug
+      label?: string
+      to?: never
+    }
+  | {
+      to: string
+      label: string
+      slug?: never
+    }
+
+export type DocsSidebarGroup = {
+  group: string
+  items: DocsSidebarItem[]
 }
 
+export const DOCS_SIDEBAR = docsSidebar as DocsSidebarGroup[]
+
 const sidebarSlugs = DOCS_SIDEBAR.flatMap((group) =>
-  group.items.map((item) => item.slug).filter(Boolean),
+  group.items
+    .map((item) => item.slug)
+    .filter((slug): slug is DocSlug => Boolean(slug)),
 )
 
 if (process.env.NODE_ENV === 'development') {
@@ -73,6 +101,10 @@ if (process.env.NODE_ENV === 'development') {
 export const DOCS_ORDER = sidebarSlugs.filter((slug) => DOCS_PAGES[slug])
 export const DEFAULT_DOC_SLUG = DOCS_ORDER[0]
 
-export function getDocGroup(slug) {
+export function isDocSlug(slug: string | undefined): slug is DocSlug {
+  return Boolean(slug && slug in DOCS_PAGES)
+}
+
+export function getDocGroup(slug: DocSlug) {
   return DOCS_SIDEBAR.find((group) => group.items.some((item) => item.slug === slug))?.group
 }

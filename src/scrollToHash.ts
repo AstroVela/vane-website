@@ -6,7 +6,7 @@ export const prefersReducedMotion = () =>
   window.matchMedia &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-export function decodeHash(hash) {
+export function decodeHash(hash: string) {
   try {
     return decodeURIComponent(hash.slice(1))
   } catch {
@@ -14,7 +14,7 @@ export function decodeHash(hash) {
   }
 }
 
-export function scrollToHash(id, smooth) {
+export function scrollToHash(id: string, smooth: boolean) {
   let tries = 0
   const attempt = () => {
     const el = document.getElementById(id)
