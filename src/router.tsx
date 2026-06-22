@@ -1,4 +1,4 @@
-import {useCallback, type MouseEvent, type PropsWithChildren} from 'react'
+import {useCallback, type MouseEvent} from 'react'
 import DocusaurusLink from '@docusaurus/Link'
 import type {Props as DocusaurusLinkProps} from '@docusaurus/Link'
 import { useHistory, useLocation } from '@docusaurus/router'
@@ -21,11 +21,7 @@ type LinkProps = Omit<DocusaurusLinkProps, 'href' | 'to'> & {
   to: string
 }
 
-export function RouterProvider({ children }: PropsWithChildren) {
-  return children
-}
-
-export function useNavigate(): Navigate {
+function useNavigate(): Navigate {
   const history = useHistory()
 
   return useCallback((to: string) => {

@@ -6,9 +6,9 @@ documentation authored in MDX and rendered through the site's existing UI.
 
 ## Tech stack
 
-- **React 19** + **Docusaurus 3** (custom routes registered by `src/plugins/vaneRoutes.cjs`)
+- **React 19** + **Docusaurus 3** (custom routes registered by `src/plugins/vaneRoutes.ts`)
 - **MDX** for documentation content, rendered with the site's custom MDX components
-- **ESLint** (flat config in `eslint.config.mjs`)
+- **ESLint** (flat config in `eslint.config.ts`)
 
 ## Getting started
 
@@ -26,14 +26,14 @@ npm run lint       # run ESLint
 
 ```text
 src/
-  clientStyles.js      imports the site's global CSS for Docusaurus
+  clientStyles.ts      imports the site's global CSS for Docusaurus
   plugins/
-    vaneRoutes.cjs     Docusaurus route registration for public pages
-  router.jsx           compatibility Link/useRouter helpers over Docusaurus routing
+    vaneRoutes.ts      Docusaurus route registration for public pages
+  router.tsx           compatibility Link/useRouter helpers over Docusaurus routing
   pages/               Home, UseCases, Benchmarks, Docs
   components/          shared UI (Nav, Footer, CodeWindow, …)
   docs/
-    registry.js        MDX page registry and public doc slug ordering
+    registry.ts        MDX page registry and public doc slug ordering
     sidebar.json       docs sidebar grouping / ordering
   index.css, pages.css global styles and design tokens
 
@@ -80,7 +80,7 @@ existing custom UI so the public routes and visual styling remain unchanged.
    Choose an existing section folder when possible: `getting-started`,
    `execution`, `api`, or `resources`.
 
-2. Register the MDX file in `src/docs/registry.js` by importing it and adding
+2. Register the MDX file in `src/docs/registry.ts` by importing it and adding
    it to `DOCS_PAGES` with the desired public slug.
 
 3. Add the page to the sidebar in `src/docs/sidebar.json` by referencing its slug
@@ -95,11 +95,11 @@ from the exported `title`; the in-page TOC is built from the page's `##` heading
 
 ### How rendering works
 
-- `src/components/mdxComponents.jsx` maps Markdown elements onto the site's
+- `src/components/mdxComponents.tsx` maps Markdown elements onto the site's
   styled markup (headings, tables, lists, inline code, links).
 - Block components available inside any `.mdx` without importing: `Lead`,
   `Callout`, `CodeWindow`.
-- `rehype-slug` gives every `##` heading an id, so in-page anchors and the
+- Docusaurus' MDX pipeline gives every `##` heading an id, so in-page anchors and the
   scrollspy work without hand-written ids.
 
 ## License
