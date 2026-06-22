@@ -9,6 +9,7 @@
   },
   "include": [
     "docusaurus.config.ts",
+    "eslint.config.ts",
     "docs/**/*.mdx",
     "src/**/*"
   ]

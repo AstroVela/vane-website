@@ -27,6 +27,7 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
+    "jiti": "^2.7.0",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "typescript": "^6.0.3",
