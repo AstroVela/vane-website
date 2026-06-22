@@ -5,7 +5,7 @@ import { GITHUB_URL } from '../siteLinks'
 /* Paper footer with ink text. The `home` variant carries the longer blurb +
    the `pip install` line and uses in-page anchors for Product; the default
    variant (Use Cases / Benchmarks pages) routes Product across pages. */
-export default function Footer({ home = false }) {
+export default function Footer({ home = false }: { home?: boolean }) {
   return (
     <footer className="ft">
       <div className="wrap">

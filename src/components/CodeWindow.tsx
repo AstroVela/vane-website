@@ -1,9 +1,18 @@
+import type {CSSProperties} from 'react'
+
 /* Dark code window (.term): monochrome traffic-light squares + filename,
    optional blinking `running` LED, and a syntax-highlighted body.
 
    `code` is pre-highlighted markup (spans with .k/.s/.n/.f/.c/.p/.t/.cur),
    mirroring the prototypes exactly — passed through as innerHTML. */
-export default function CodeWindow({ filename, running, code, style }) {
+type CodeWindowProps = {
+  filename: string
+  running?: boolean
+  code: string
+  style?: CSSProperties
+}
+
+export default function CodeWindow({ filename, running, code, style }: CodeWindowProps) {
   return (
     <div className="term" style={style}>
       <div className="term-bar">

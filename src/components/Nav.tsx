@@ -16,7 +16,13 @@ function GitHubIcon() {
 /* Sticky nav. On the Home page the Get-Started CTA is hidden on the first
    screen and fades in past 460px of scroll (`ctaReveal`). Elsewhere it's a
    normal, always-visible button. */
-export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }) {
+type NavProps = {
+  ctaReveal?: boolean
+  ctaTo?: string
+  ctaHref?: string
+}
+
+export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: NavProps) {
   const [show, setShow] = useState(false)
   const stars = useGitHubStars(GITHUB_REPO)
 
