@@ -40,6 +40,12 @@ const vaneRoutesPlugin: PluginModule = () => {
         exact: true,
       })
 
+      addRoute({
+        path: '/blog',
+        component: '@site/src/pages/Blog.tsx',
+        exact: true,
+      })
+
       docsSlugs.forEach((slug) => {
         addRoute({
           path: `/docs/${slug}`,

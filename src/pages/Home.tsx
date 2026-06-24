@@ -5,7 +5,6 @@ import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
-import Mark from '../components/Mark'
 import PixelIcon from '../components/PixelIcon'
 import { Link } from '../router'
 import { USE_CASES } from './useCasesData'
@@ -115,16 +114,21 @@ export default function Home() {
             <div className="arch-flow">
               <div>
                 <div className="azt">Sources</div>
-                <div className="anode">▦ Parquet</div>
-                <div className="anode">▦ S3 / object store</div>
-                <div className="anode">▦ Data lake</div>
+                <div className="anode"><span className="mut">▦</span> Parquet</div>
+                <div className="anode"><span className="mut">▦</span> S3 / object store</div>
+                <div className="anode"><span className="mut">▦</span> Data lake</div>
               </div>
               <div className="conn"><span className="pk" /></div>
               <div>
                 <div className="engine">
                   <div className="eh">
-                    <Mark size={18} />
-                    <span className="wm">vane</span><span className="on">on Ray</span>
+                    <span className="eng-ico">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M2 3 L11 8 L2 13 Z" fill="currentColor" />
+                        <rect x="12" y="3" width="2" height="10" fill="currentColor" />
+                      </svg>
+                    </span>
+                    <span className="wm">vane-data</span><span className="on">on Ray</span>
                   </div>
                   <div className="el"><span className="lt">query</span> DuckDB-compatible SQL / Relation</div>
                   <div className="el"><span className="lt">transform</span> map_batches · flat_map · UDFs</div>
@@ -134,9 +138,9 @@ export default function Home() {
               <div className="conn d2"><span className="pk" /></div>
               <div>
                 <div className="azt">Results</div>
-                <div className="anode">▦ Arrow</div>
-                <div className="anode">▦ Parquet</div>
-                <div className="anode">▦ S3</div>
+                <div className="anode"><span className="mut">▦</span> Arrow</div>
+                <div className="anode"><span className="mut">▦</span> Parquet</div>
+                <div className="anode"><span className="mut">▦</span> S3</div>
               </div>
             </div>
           </Box>
