@@ -6,6 +6,7 @@ import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
 import PixelIcon from '../components/PixelIcon'
+import PlatformArchitecture from '../components/PlatformArchitecture'
 import { Link } from '../router'
 import { USE_CASES } from './useCasesData'
 
@@ -72,11 +73,25 @@ export default function Home() {
         </div>
       </section>
 
-      {/* WHY VANE */}
+      {/* PLATFORM ARCHITECTURE */}
+      <section className="section architecture-section" style={{ paddingTop: 40 }}>
+        <div className="wrap">
+          <div className="shead">
+            <Eyebrow>Platform</Eyebrow>
+            <h2 className="h2">Data, agents, and RL on one always-on core.</h2>
+            <p className="lead">
+              Vane unifies multimodal data processing, long-running agents, and reinforcement learning on a single execution core that runs on a laptop or a Ray cluster.
+            </p>
+          </div>
+          <PlatformArchitecture />
+        </div>
+      </section>
+
+      {/* WHY VANE DATA */}
       <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <div className="shead">
-            <Eyebrow>Why Vane</Eyebrow>
+            <Eyebrow>Why Vane Data</Eyebrow>
             <h2 className="h2">Why multimodal AI workloads need a data engine.</h2>
             <p className="lead">
               Text, images, audio and video pipelines usually scatter SQL, preprocessing, inference and output across separate systems. Vane unifies them on Ray behind DuckDB-compatible APIs.
@@ -92,7 +107,7 @@ export default function Home() {
               </ul>
             </Box>
             <Box className="new" style={{ padding: '24px 26px' }}>
-              <h3>With Vane</h3>
+              <h3>With Vane Data</h3>
               <ul className="rowl">
                 {NEW_WAY.map((t, i) => (
                   <li key={i}><span className="mk c">✓</span>{t}</li>
