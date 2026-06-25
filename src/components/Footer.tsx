@@ -2,9 +2,10 @@ import { Link } from '../router'
 import Mark from './Mark'
 import { GITHUB_URL } from '../siteLinks'
 
-/* Paper footer with ink text. The `home` variant carries the longer blurb +
-   the `pip install` line and uses in-page anchors for Product; the default
-   variant (Use Cases / Benchmarks pages) routes Product across pages. */
+/* Paper footer with ink text, organized as a 5-column sitemap. The `home`
+   variant carries the longer blurb + the `pip install` line in the brand
+   column; the default variant (Use Cases / Benchmarks pages) shows the short
+   tagline. The link columns are identical across variants. */
 export default function Footer({ home = false }: { home?: boolean }) {
   return (
     <footer className="ft">
@@ -33,37 +34,32 @@ export default function Footer({ home = false }: { home?: boolean }) {
             )}
           </div>
 
-          {home ? (
-            <div>
-              <h4>Product</h4>
-              <a href="#use-cases">Use Cases</a>
-              <a href="#benchmarks">Benchmarks</a>
-              <a href="#blog">Blog</a>
-            </div>
-          ) : (
-            <div>
-              <h4>Product</h4>
-              <Link to="/use-cases">Use Cases</Link>
-              <Link to="/benchmarks">Benchmarks</Link>
-              <Link to="/docs">Docs</Link>
-              <a href="#">Blog</a>
-            </div>
-          )}
+          <div>
+            <h4>Product</h4>
+            <Link to="/use-cases">Multimodal Data Pipeline</Link>
+            <Link to="/use-cases">Enterprise Multimodal Agent</Link>
+            <Link to="/benchmarks">Benchmarks</Link>
+          </div>
 
           <div>
             <h4>Docs</h4>
-            <Link to="/docs">Getting Started</Link>
-            <Link to="/docs/sql-api">SQL / Relation API</Link>
-            <Link to="/docs/ai-functions">AI Functions</Link>
-            <Link to="/docs/ray-runner">Ray Runner</Link>
+            <Link to="/docs/quickstart">Quickstart</Link>
+            <Link to="/docs">Guides</Link>
+            <Link to="/use-cases">Examples</Link>
+            <Link to="/docs/sql-api">References</Link>
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer">Contributing</a>
+          </div>
+
+          <div>
+            <h4>Resources</h4>
+            <Link to="/blog">Blog</Link>
+            <a href={`${GITHUB_URL}/releases`} target="_blank" rel="noreferrer">Release Notes</a>
           </div>
 
           <div>
             <h4>Community</h4>
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
             <a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noreferrer">Discussions</a>
-            <a href={`${GITHUB_URL}/releases`} target="_blank" rel="noreferrer">Changelog</a>
-            <a href="#">Status</a>
           </div>
         </div>
         <div className="ft-bot">
