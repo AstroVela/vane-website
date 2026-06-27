@@ -1,0 +1,96 @@
+---
+title: Doris Integration
+---
+
+This guide describes the current integration boundary between Vane Data and Doris.
+
+Vane Data prepares clean tabular data with DuckDB-compatible SQL, Python UDFs, AI helpers, and Parquet writes. Doris owns Doris-specific ingestion, table definitions, serving, and query execution after handoff.
+
+Vane Data does not provide a Doris-specific connector, Doris writer, Doris catalog integration, or Doris SQL dialect adapter.
+
+## Supported boundary
+
+Use Vane Data for:
+
+- Reading and writing Parquet through DuckDB-compatible relation APIs.
+- Reading remote files through DuckDB/httpfs when configured.
+- Applying SQL filters, joins, projections, and aggregations before handoff.
+- Adding Python UDF or AI-derived columns before data is loaded into Doris.
+- Producing tabular files with stable column names and types.
+
+Use Doris tooling and Doris-supported load paths for:
+
+- Creating Doris databases and tables.
+- Choosing keys, partitions, buckets, and distribution strategy.
+- Loading files into Doris.
+- Managing Doris credentials, load jobs, retries, and serving behavior.
+
+Do not assume `vane.connect()` can connect to Doris or create Doris tables.
+
+## Recommended handoff pattern
+
+Prepare curated Parquet with Vane Data, then load it into Doris outside Vane Data.
+
+```python
+import vane
+
+con = vane.connect()
+
+clean = con.sql("""
+    select
+        id,
+        label,
+        score,
+        updated_at
+    from read_parquet('s3://bucket/raw/*.parquet')
+    where label is not null
+      and score is not null
+""")
+
+clean.write_parquet(
+    "s3://bucket/curated/doris_load/run_id/",
+    partition_by=["label"],
+)
+```
+
+After the files are written, use the ingestion method supported by your Doris deployment to load `s3://bucket/curated/doris_load/run_id/`.
+
+## Recommended workflow
+
+For SQL-light teams, keep the boundary simple:
+
+1. Use Vane Data SQL for filtering, projection, joins, and validation.
+2. Use Python UDFs or AI helpers only for enrichment steps that SQL should not own.
+3. Write Parquet to a run-specific location.
+4. Validate row counts, schema, and nullability before loading.
+5. Load into Doris with Doris tooling.
+6. Query and serve from Doris.
+
+This keeps Vane Data focused on dataset preparation and keeps Doris-specific operational behavior in Doris.
+
+## Schema handoff checklist
+
+Before loading Vane Data output into Doris:
+
+- Confirm every output column has a stable name and expected type.
+- Avoid nested fields unless the Doris table definition and load path support them.
+- Decide whether arrays, embeddings, JSON, or structs should be flattened or serialized before handoff.
+- Keep stable primary identifiers for reconciliation.
+- Write to a run-specific prefix, then promote or register that prefix only after validation.
+- Record row counts and basic checksums for load verification.
+
+## Ray and remote storage
+
+Ray-backed execution can help prepare larger outputs before the Doris load step:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+When writing to S3-compatible storage, make sure the driver and every Ray worker can access the same bucket, credentials, network path, and Python dependencies.
+
+## Scope notes
+
+This page documents a file-based handoff pattern. If a native Doris integration is added later, this guide should be updated with the exact public API, supported Doris versions, and an end-to-end tested load path.

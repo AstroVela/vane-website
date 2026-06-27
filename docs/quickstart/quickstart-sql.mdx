@@ -1,0 +1,122 @@
+---
+title: "Quickstart: SQL"
+---
+
+This quickstart uses DuckDB-compatible SQL with local execution. It does not require a GPU or a Ray cluster.
+
+## 1. Create a connection
+
+```python
+import vane
+
+con = vane.connect()
+```
+
+## 2. Run a query
+
+Use `con.sql(...)` for SQL that returns a relation:
+
+```python
+docs = con.sql("""
+    select *
+    from (
+        values
+            (1, 'claim', 120.50),
+            (2, 'invoice', 88.00),
+            (3, 'claim', 19.25)
+    ) as t(id, document_type, amount)
+""")
+
+docs.show()
+```
+
+Relation work is materialized when you call a consumer such as `show()`, `fetchall()`, `to_arrow_table()`, or a write method.
+
+## 3. Filter and aggregate
+
+Keep relational work in SQL before adding Python or AI stages:
+
+```python
+summary = con.sql("""
+    with docs(id, document_type, amount) as (
+        values
+            (1, 'claim', 120.50),
+            (2, 'invoice', 88.00),
+            (3, 'claim', 19.25)
+    )
+    select
+        document_type,
+        count(*) as rows,
+        sum(amount) as total_amount
+    from docs
+    where amount > 20
+    group by document_type
+    order by document_type
+""")
+
+summary.show()
+```
+
+Use `con.execute(...)` for statements that should run immediately, such as settings, extension loading, or DDL.
+
+## 4. Read local files
+
+Vane Data uses DuckDB-compatible SQL file functions. For local Parquet:
+
+```python
+rel = con.sql("""
+    select *
+    from read_parquet('data/*.parquet')
+    limit 10
+""")
+
+rel.show()
+```
+
+The same pattern applies to other file formats supported by the configured DuckDB build and extensions.
+
+## 5. Optional: read from S3-compatible storage
+
+For S3-compatible storage, configure DuckDB/httpfs settings before reading remote files:
+
+```python
+con.execute("LOAD httpfs")
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+rel = con.sql("""
+    select *
+    from read_parquet('s3://bucket/path/*.parquet')
+    limit 10
+""")
+
+rel.show()
+```
+
+Credentials and endpoint settings must be available in the Python process. In distributed execution, workers need the same access.
+
+## 6. Optional: switch to Ray
+
+SQL text does not need to change when you move a suitable workload to the Ray runner:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+con = vane.connect()
+rel = con.sql("""
+    select count(*) as rows
+    from read_parquet('s3://bucket/table/*.parquet')
+""")
+
+rel.show()
+```
+
+Keep local execution for development, small data, and single-node jobs. Use Ray when scans, writes, UDFs, or model stages need distributed execution.
+
+## Next steps
+
+- [SQL vs Python](/docs/data/concepts/sql-vs-python)
+- [Python quickstart](/docs/data/quickstart/quickstart-python)
+- [Documentation map](/docs/data)

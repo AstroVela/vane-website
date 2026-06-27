@@ -1,5 +1,5 @@
 import type {PluginModule} from '@docusaurus/types'
-import docsSidebar from '../docs/sidebar.json'
+import dataSidebar from '../docs/sidebar.data.json'
 
 type SidebarItem = {
   slug?: string
@@ -12,9 +12,15 @@ type SidebarGroup = {
   items: SidebarItem[]
 }
 
-const docsSlugs = (docsSidebar as SidebarGroup[]).flatMap((group) =>
-  group.items.map((item) => item.slug).filter(Boolean),
+const dataSlugs = (dataSidebar as SidebarGroup[]).flatMap((group) =>
+  group.items.map((item) => item.slug).filter((slug): slug is string => Boolean(slug)),
 )
+
+// Mirror src/docs/products.ts. Kept inline so this Node-side plugin does not
+// import the React/MDX registry. `data` is the only live product today; agent
+// and rl render a coming-soon teaser at `/docs/<product>`.
+const LIVE_PRODUCTS = ['data']
+const SOON_PRODUCTS = ['agent', 'rl']
 
 const vaneRoutesPlugin: PluginModule = () => {
   return {
@@ -46,19 +52,22 @@ const vaneRoutesPlugin: PluginModule = () => {
         exact: true,
       })
 
-      docsSlugs.forEach((slug) => {
-        addRoute({
-          path: `/docs/${slug}`,
-          component: '@site/src/pages/Docs.tsx',
-          exact: true,
-        })
+      const docsRoute = (path: string) =>
+        addRoute({ path, component: '@site/src/pages/Docs.tsx', exact: true })
+
+      // Live products: `/docs/<product>/<slug...>` plus a `/docs/<product>` index.
+      LIVE_PRODUCTS.forEach((product) => {
+        docsRoute(`/docs/${product}`)
+        dataSlugs.forEach((slug) => docsRoute(`/docs/${product}/${slug}`))
       })
 
-      addRoute({
-        path: '/docs',
-        component: '@site/src/pages/Docs.tsx',
-        exact: true,
-      })
+      // Coming-soon products: a single teaser route.
+      SOON_PRODUCTS.forEach((product) => docsRoute(`/docs/${product}`))
+
+      // Legacy `/docs/<slug...>` links keep working (resolve to the default product).
+      dataSlugs.forEach((slug) => docsRoute(`/docs/${slug}`))
+
+      docsRoute('/docs')
     },
   }
 }

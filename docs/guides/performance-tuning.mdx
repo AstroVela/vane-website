@@ -1,0 +1,123 @@
+---
+title: Performance Tuning
+---
+
+Start with a correct local pipeline, then tune the smallest number of variables.
+
+## Runner
+
+Local:
+
+```python
+vane.configure(runner="native")
+```
+
+Ray:
+
+```python
+vane.configure(runner="ray")
+```
+
+The native runner streams Arrow record batches. The Ray runner initializes Ray when needed and sends a logical plan to a Ray query driver.
+
+## Batch size
+
+For `map_batches`, `batch_size` controls how many rows are passed to one UDF call.
+
+Small batches:
+
+- lower memory
+- worse model throughput
+- more scheduling overhead
+
+Large batches:
+
+- better throughput
+- higher memory
+- slower retries
+
+Tune with representative data.
+
+## Actor reuse
+
+Use actor backends for model inference:
+
+- `subprocess_actor` for local stateful reuse.
+- `ray_actor` for distributed stateful reuse.
+
+Use task backends for light stateless work:
+
+- `subprocess_task`
+- `ray_task`
+
+## CPU and GPU resources
+
+`map_batches` accepts:
+
+- `cpus`
+- `gpus`
+- `concurrency`
+
+Ray uses resource requests for placement. Make sure the Ray cluster advertises matching resources before increasing `concurrency`.
+
+## Ray scan task grouping
+
+Public config:
+
+```python
+vane.configure(ray_scan_task_size_grouping=True)
+```
+
+Environment variable:
+
+```bash
+export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
+```
+
+The registry describes this as size-based scan task grouping, useful for merging small files into larger scan tasks.
+
+Related public config:
+
+- `ray_max_task_backlog`
+- `ray_scan_task_open_cost_bytes`
+- `ray_scan_task_min_partition_num`
+- `ray_init_sql`
+
+## Backpressure
+
+`VANE_RAY_MAX_TASK_BACKLOG` limits pending Ray tasks when set to a positive value. `0` means unlimited in the public registry.
+
+Use it when the driver can submit faster than workers can consume.
+
+## Native runner batch size
+
+`VANE_NATIVE_RUNNER_BATCH_SIZE` overrides the native runner batch size when you need an explicit value for measurement or memory control.
+
+```bash
+export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
+```
+
+## Avoid common bottlenecks
+
+- Project only columns needed by the UDF.
+- Filter before model calls.
+- Keep image/audio/video decoding separate from model inference when tuning.
+- Write to a filesystem all workers can access.
+- Avoid one row per UDF call for model workloads.
+- Use structured output schemas instead of Python object columns.
+
+## Measure
+
+Keep a simple run record:
+
+- input rows
+- input bytes
+- batch size
+- backend
+- concurrency
+- GPUs per actor
+- elapsed time
+- output rows
+- failure count
+
+Benchmark workloads can be useful references for environment-driven performance experiments, but benchmark-specific file locations, storage endpoints, and model defaults are not general deployment defaults.

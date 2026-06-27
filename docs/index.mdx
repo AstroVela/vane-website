@@ -1,0 +1,55 @@
+---
+title: Vane Data Docs
+---
+
+Vane Data helps teams build AI-ready datasets with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
+
+Use it when structured or semi-structured data needs SQL transformations plus Python libraries, model inference, embeddings, prompting, or distributed execution before it moves to training, search, analytics, or serving systems.
+
+SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`; Python is available through UDFs and AI helpers when the pipeline needs custom logic.
+
+Install `vane-ai` and import `vane`.
+
+Vane Data is a data processing layer, not a model server, vector database, workflow scheduler, or transactional database.
+
+## Choose a starting point
+
+### A. Python and performance workflows
+
+For pipelines where Python code, model inference, GPU work, or provider-backed AI calls dominate cost and runtime.
+
+1. [Python quickstart](/docs/data/quickstart/quickstart-python)
+2. [UDFs](/docs/data/concepts/udfs)
+3. [AI functions](/docs/data/concepts/ai-functions)
+4. [Embeddings at scale](/docs/data/guides/embeddings-at-scale)
+5. [GPU inference UDF](/docs/data/guides/gpu-inference-udf)
+6. [Performance tuning](/docs/data/guides/performance-tuning)
+
+### B. SQL and lightweight workflows
+
+For relational pipelines that should stay close to DuckDB-compatible SQL and add Python only where it is useful.
+
+1. [SQL quickstart](/docs/data/quickstart/quickstart-sql)
+2. [SQL vs Python](/docs/data/concepts/sql-vs-python)
+3. [SQL multimodal pipeline](/docs/data/guides/sql-multimodal-pipeline)
+4. [Doris integration](/docs/data/guides/doris-integration)
+5. [Single-node deployment](/docs/data/deploy/single-node)
+
+### Advanced: distributed execution
+
+For workloads where data size, scan parallelism, GPU placement, or multi-node execution becomes the main design question.
+
+1. [Architecture](/docs/data/concepts/architecture)
+2. [Execution model](/docs/data/concepts/execution-model)
+3. [Ray cluster](/docs/data/deploy/ray-cluster)
+4. [Sizing](/docs/data/deploy/sizing)
+
+## Documentation map
+
+- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane), [Installation](/docs/data/quickstart/installation), [SQL quickstart](/docs/data/quickstart/quickstart-sql), [Python quickstart](/docs/data/quickstart/quickstart-python)
+- Concepts: [Architecture](/docs/data/concepts/architecture), [Execution model](/docs/data/concepts/execution-model), [SQL vs Python](/docs/data/concepts/sql-vs-python), [UDFs](/docs/data/concepts/udfs), [AI functions](/docs/data/concepts/ai-functions)
+- Task guides: [Multimodal ingest](/docs/data/guides/multimodal-ingest), [Embeddings at scale](/docs/data/guides/embeddings-at-scale), [Dedup and clean](/docs/data/guides/dedup-and-clean), [SQL multimodal pipeline](/docs/data/guides/sql-multimodal-pipeline), [Doris integration](/docs/data/guides/doris-integration), [Iceberg and lakehouse](/docs/data/guides/iceberg-lakehouse), [GPU inference UDF](/docs/data/guides/gpu-inference-udf), [Performance tuning](/docs/data/guides/performance-tuning)
+- Examples: [Examples index](/docs/data/examples), [Training data pipeline](/docs/data/examples/training-data-pipeline), [Insurance document audit](/docs/data/examples/insurance-document-audit), [Tender compliance check](/docs/data/examples/tender-compliance-check), [Multimodal data lake](/docs/data/examples/multimodal-data-lake)
+- Deploy: [Single node](/docs/data/deploy/single-node), [Ray cluster](/docs/data/deploy/ray-cluster), [Sizing](/docs/data/deploy/sizing)
+- Contributing: [Development](/docs/data/contributing/development)
+- Machine-readable entries: `docs/llms.txt`, `docs/llms-full.txt`

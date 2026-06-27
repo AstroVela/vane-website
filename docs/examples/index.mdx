@@ -1,0 +1,54 @@
+---
+title: Examples
+---
+
+The examples show how to compose Vane Data SQL, Python UDFs, AI helpers, and Ray-backed execution into practical data preparation workflows.
+
+Start with the documentation pages below when you want the workflow shape. Read the source scripts when you need runnable arguments, sample data behavior, or implementation details.
+
+## Example pages
+
+| Example | Use it for | Typical resources |
+| --- | --- | --- |
+| [Training data pipeline](/docs/data/examples/training-data-pipeline) | Filtering text, chunking, embeddings, and duplicate-removal patterns | CPU by default; optional embedding model dependencies |
+| [Insurance document audit](/docs/data/examples/insurance-document-audit) | SQL-first document checks with optional structured LLM review | CPU; optional AI provider |
+| [Tender compliance check](/docs/data/examples/tender-compliance-check) | Rule-table joins and structured compliance prompts | CPU; optional AI provider |
+| [Multimodal data lake](/docs/data/examples/multimodal-data-lake) | Media enrichment before lakehouse or warehouse handoff | CPU or GPU depending on UDFs |
+
+## Source scripts
+
+The repository includes script-first examples that can be adapted into your own projects:
+
+- `examples/common_crawl.py`
+- `examples/minhash_dedupe.py`
+- `examples/llms_red_pajamas.py`
+- `examples/querying_images.py`
+- `examples/image_generation.py`
+- `examples/voice_ai_analytics.py`
+- `examples/multimodal_structured_outputs.py`
+
+Several scripts provide built-in sample data modes so you can test the pipeline shape before connecting external data.
+
+## How to adapt an example
+
+When adapting an example:
+
+1. Start with the sample or synthetic source mode when the script provides one.
+2. Keep source loading separate from transformation.
+3. Keep every UDF output schema explicit.
+4. Preserve stable identifiers so model outputs can be joined back to source rows.
+5. Move to real data only after the local sample works.
+6. Treat benchmark scripts as performance references, not as product APIs.
+7. Do not infer unsupported connectors from example names.
+
+## Scaling path
+
+Most examples should be developed locally first. Move selected stages to Ray only after the local data contract is correct:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+Then use `ray_task` or `ray_actor` on the UDF or AI helper stage that needs distributed execution.

@@ -1,0 +1,64 @@
+[
+  {
+    "group": "Overview",
+    "items": [
+      { "slug": "index", "label": "Docs Home" }
+    ]
+  },
+  {
+    "group": "Quickstart",
+    "items": [
+      { "slug": "quickstart/what-is-vane" },
+      { "slug": "quickstart/installation" },
+      { "slug": "quickstart/quickstart-sql" },
+      { "slug": "quickstart/quickstart-python" }
+    ]
+  },
+  {
+    "group": "Concepts",
+    "items": [
+      { "slug": "concepts/architecture" },
+      { "slug": "concepts/execution-model" },
+      { "slug": "concepts/sql-vs-python" },
+      { "slug": "concepts/udfs" },
+      { "slug": "concepts/ai-functions" }
+    ]
+  },
+  {
+    "group": "Guides",
+    "items": [
+      { "slug": "guides/multimodal-ingest" },
+      { "slug": "guides/embeddings-at-scale" },
+      { "slug": "guides/dedup-and-clean" },
+      { "slug": "guides/sql-multimodal-pipeline" },
+      { "slug": "guides/doris-integration" },
+      { "slug": "guides/iceberg-lakehouse" },
+      { "slug": "guides/gpu-inference-udf" },
+      { "slug": "guides/performance-tuning" }
+    ]
+  },
+  {
+    "group": "Examples",
+    "items": [
+      { "slug": "examples" },
+      { "slug": "examples/training-data-pipeline" },
+      { "slug": "examples/insurance-document-audit" },
+      { "slug": "examples/tender-compliance-check" },
+      { "slug": "examples/multimodal-data-lake" }
+    ]
+  },
+  {
+    "group": "Deploy",
+    "items": [
+      { "slug": "deploy/single-node" },
+      { "slug": "deploy/ray-cluster" },
+      { "slug": "deploy/sizing" }
+    ]
+  },
+  {
+    "group": "Contributing",
+    "items": [
+      { "slug": "contributing/development" }
+    ]
+  }
+]

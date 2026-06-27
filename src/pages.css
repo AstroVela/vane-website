@@ -57,32 +57,63 @@
 @media (max-width: 900px){ .grid2 { grid-template-columns: 1fr; } }
 
 /* ---- Docs page ---- */
-.docs { display: grid; grid-template-columns: 244px minmax(0,1fr) 200px; gap: 0; max-width: clamp(1320px, calc(1320px + (100vw - 1536px) * 0.5), 1560px); margin: 0 auto; align-items: start; }
+/* Track the nav's `.wrap` width system so the docs left/right edges line up
+   with the brand lockup and the Get-Started CTA. */
+/* Sidebar widened by +50 and the container max-width grown by the same +50, so
+   the middle (content) column is mathematically unchanged — the extra width all
+   goes to the sidebar, which shifts left into the gutter as the grid centres. */
+.docs { display: grid; grid-template-columns: 280px minmax(0,1fr) 200px; gap: 0; max-width: calc(var(--wrap-max) + 50px); padding: 0 24px; margin: 0 auto; align-items: start; }
 .side { position: sticky; top: 58px; align-self: start; height: calc(100vh - 58px); overflow-y: auto; border-right: 1.5px solid var(--line); padding: 26px 20px 50px; }
-.side .grp { margin-bottom: 22px; }
-.side .gt { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 9px 8px; }
+.side .grp { margin-bottom: 4px; }
+/* Group title = collapsible parent. Strongest element in the sidebar: darkest
+   ink + bold uppercase, so parents clearly outrank the (lighter) child items. */
+.side .gt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); background: none; border: 0; border-radius: var(--r); padding: 8px; margin: 0; cursor: pointer; }
+.side .gt:hover { background: var(--paper-2); }
+.side .gt .gcaret { flex: none; font-size: 9px; color: var(--ink-3); transition: transform 0.15s ease; }
+.side .grp.open .gt .gcaret { transform: rotate(90deg); color: var(--ink); }
+/* Single-item group rendered as a direct section link: parent styling, no caret,
+   active box reuses `.side a.on`. */
+.side a.gt-link { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); padding: 8px; margin-bottom: 4px; }
+.side a.gt-link:hover { background: var(--paper-2); color: var(--ink); }
+/* Child items: indented under a left guide line so the hierarchy reads. */
+.side .grp-items { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 10px 15px; padding-left: 9px; border-left: 1.5px solid var(--line-2); }
 .side a { display: block; font-size: 13px; color: var(--ink-2); text-decoration: none; padding: 6px 9px; border-radius: var(--r); border: 1.5px solid transparent; }
 .side a:hover { background: var(--paper-2); color: var(--ink); }
 .side a.on { border-color: var(--line); background: var(--paper-2); color: var(--ink); font-weight: 700; }
 .doc { padding: 40px 44px 100px; min-width: 0; }
 .crumb { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
 .doc h1.dh { font-size: clamp(30px,3.6vw,42px); line-height: 1.06; margin: 12px 0 0; letter-spacing: -0.02em; }
-.doc .dintro { font-size: 17px; line-height: 1.6; color: var(--ink-2); margin: 14px 0 0; max-width: 640px; }
+.doc .dintro { font-size: 17px; line-height: 1.6; color: var(--ink-2); margin: 14px 0 0; max-width: 800px; }
 .doc h2.ds { font-size: 22px; margin: 40px 0 0; padding-top: 14px; scroll-margin-top: 74px; letter-spacing: -0.015em; }
 .doc h3.dss { font-size: 16px; margin: 26px 0 0; scroll-margin-top: 74px; }
-.doc p { font-size: 14.5px; line-height: 1.66; color: var(--ink-2); max-width: 640px; margin: 12px 0 0; }
-.doc .term { margin: 18px 0 0; max-width: 660px; }
-.doc ul.dl { list-style: none; margin: 14px 0 0; padding: 0; max-width: 640px; }
-.doc ul.dl li { display: flex; gap: 11px; align-items: flex-start; padding: 6px 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
-.doc ul.dl li::before { content: "▸"; color: var(--ink-3); flex: none; }
-.callout { display: flex; gap: 12px; max-width: 660px; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); padding: 13px 15px; }
+.doc p { font-size: 14.5px; line-height: 1.66; color: var(--ink-2); max-width: 800px; margin: 12px 0 0; }
+/* The code window itself is styled site-wide in index.css (.term); here we only
+   set its docs-specific measure. */
+.doc .term { margin: 18px 0 0; max-width: 850px; }
+/* Real content links: the single warm accent (harmonises with the paper tone,
+   unlike a cool blue), underline reserved for hover. */
+.doc a.dlink { color: var(--accent); text-decoration: none; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+.doc a.dlink:hover { color: var(--accent-strong); text-decoration: underline; }
+.doc ul.dl { list-style: none; margin: 14px 0 0; padding: 0; max-width: 800px; }
+.doc ul.dl li { position: relative; padding: 6px 0 6px 22px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+.doc ul.dl li::before { content: "▸"; position: absolute; left: 0; top: 6px; color: var(--ink-3); }
+.doc ol.dol { list-style: decimal; margin: 14px 0 0; padding-left: 24px; max-width: 800px; }
+.doc ol.dol li { padding: 6px 0 6px 4px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+.doc .dq { max-width: 800px; margin: 18px 0 0; padding: 2px 0 2px 16px; border-left: 1.5px solid var(--line); color: var(--ink-2); }
+.doc .dq p:first-child { margin-top: 0; }
+.doc .dr { max-width: 850px; margin: 34px 0; border: 0; border-top: 1.5px solid var(--line-2); }
+.doc .dimg { display: block; max-width: 100%; height: auto; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); }
+.doc .ddetails { max-width: 850px; margin: 18px 0 0; border: 1.5px solid var(--line-2); border-radius: var(--r); background: var(--paper-2); padding: 12px 14px; }
+.doc .ddetails summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.doc .ddetails > *:last-child { margin-bottom: 0; }
+.callout { display: flex; gap: 12px; max-width: 850px; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); padding: 13px 15px; }
 .callout .cb { font-weight: 700; flex: none; }
 .callout p { margin: 0; font-size: 13.5px; color: var(--ink); }
-table.dt { border-collapse: collapse; width: 100%; max-width: 660px; margin: 18px 0 0; }
+table.dt { border-collapse: collapse; width: 100%; max-width: 850px; margin: 18px 0 0; }
 table.dt th, table.dt td { text-align: left; padding: 10px 14px; font-size: 13px; border-top: 1px solid var(--line-2); }
 table.dt thead th { border-top: none; border-bottom: 1.5px solid var(--line); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
 table.dt td:first-child { color: var(--ink); }
-.pager { display: flex; justify-content: space-between; gap: 14px; margin: 48px 0 0; padding-top: 22px; border-top: 1.5px solid var(--line-2); max-width: 660px; }
+.pager { display: flex; justify-content: space-between; gap: 14px; margin: 48px 0 0; padding-top: 22px; border-top: 1.5px solid var(--line-2); max-width: 850px; }
 .pager a { font-size: 13.5px; text-decoration: none; color: var(--ink); border: 1.5px solid var(--line); border-radius: var(--r); padding: 11px 15px; background: var(--paper-2); }
 .pager a:hover { transform: translate(-1px,-1px); }
 .pager .nx { margin-left: auto; }
@@ -91,10 +122,39 @@ table.dt td:first-child { color: var(--ink); }
 .toc a { display: block; font-size: 12.5px; color: var(--ink-3); text-decoration: none; padding: 5px 0 5px 11px; border-left: 1.5px solid var(--line-2); }
 .toc a:hover { color: var(--ink); }
 .toc a.on { color: var(--ink); border-left-color: var(--ink); font-weight: 700; }
-.doc .search { display: flex; align-items: center; gap: 9px; white-space: nowrap; border: 1.5px solid var(--line); border-radius: var(--r); padding: 9px 12px; color: var(--ink-3); font-size: 13px; max-width: 660px; margin-bottom: 30px; background: var(--paper-2); }
-.doc .search .kbd { margin-left: auto; font-size: 10.5px; border: 1.5px solid var(--line-2); border-radius: 3px; padding: 1px 6px; }
 @media (max-width: 1080px){ .docs { grid-template-columns: 220px minmax(0,1fr); } .toc { display:none; } }
-@media (max-width: 760px){ .docs { grid-template-columns: 1fr; } .side { display:none; } .doc { padding: 30px 22px 80px; } }
+@media (max-width: 800px){ .docs { grid-template-columns: 1fr; padding: 0; } .side { display:none; } .doc { padding: 30px 22px 80px; } }
+
+/* ---- Docs product layer (Data / Agent / RL) ---- */
+/* Coming-soon products reuse the live docs frame; their sidebar holds only the
+   product card, so drop the divider that would otherwise hang under it. */
+.side.side-soon .prod { border-bottom: none; margin-bottom: 0; }
+
+/* Product context card at the top of the sidebar. */
+.side .prod { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; margin-bottom: 8px; border-bottom: 1px solid var(--line-2); }
+.side .prod-ic { flex: none; width: 26px; height: 26px; border: 1.5px solid var(--line); border-radius: var(--r); display: flex; align-items: center; justify-content: center; background: var(--paper-2); }
+.side .prod-name { font-weight: 700; font-size: 13.5px; letter-spacing: -0.02em; }
+.side .prod-status { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--line-2); margin-top: 2px; }
+
+/* External (↗) sidebar items. */
+.side a.ext { display: flex; align-items: center; gap: 7px; }
+.side a.ext .ar-up { color: var(--line-2); font-size: 11px; }
+
+/* Coming-soon teaser. */
+.soon { max-width: 800px; animation: fadeUp 0.3s ease both; }
+.soon-eyebrow, .soon-caps-eyebrow { font-family: var(--font-pixel); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.soon-eyebrow { font-size: 11px; margin-bottom: 18px; }
+.soon-head { display: flex; align-items: center; gap: 14px; }
+.soon-tile { flex: none; width: 46px; height: 46px; border: 1.5px solid var(--line); border-radius: var(--r); display: flex; align-items: center; justify-content: center; background: var(--paper-2); }
+.soon-head h1.dh { margin: 0; }
+.soon-desc { font-size: 16.5px; line-height: 1.6; color: var(--ink-2); margin: 20px 0 0; }
+.soon-caps-eyebrow { font-size: 10px; margin: 36px 0 14px; }
+.soon-caps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.soon-cap { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid var(--line-2); border-radius: var(--r); padding: 13px 14px; background: rgba(251,250,246,0.6); font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.soon-cap .bullet { flex: none; width: 7px; height: 7px; margin-top: 5px; background: var(--line-2); }
+.soon-foot { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line-2); }
+.soon-foot a { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; text-decoration: none; color: var(--ink); font-weight: 700; }
+@media (max-width: 560px){ .soon-caps { grid-template-columns: 1fr; } }
 
 /* testimonials (defined in tp.css; kept here for parity with prototypes) */
 .tg3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }

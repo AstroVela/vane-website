@@ -1,0 +1,31 @@
+# Vane Data Documentation Index
+
+Generated from docs/manifest.json. Routes are listed in sidebar order.
+
+- /docs/data: Vane Data Docs.
+- /docs/data/quickstart/what-is-vane: What Is Vane?
+- /docs/data/quickstart/installation: Installation.
+- /docs/data/quickstart/quickstart-sql: Quickstart: SQL.
+- /docs/data/quickstart/quickstart-python: Quickstart: Python.
+- /docs/data/concepts/architecture: Architecture.
+- /docs/data/concepts/execution-model: Execution Model.
+- /docs/data/concepts/sql-vs-python: SQL vs Python.
+- /docs/data/concepts/udfs: UDFs.
+- /docs/data/concepts/ai-functions: AI Functions.
+- /docs/data/guides/multimodal-ingest: Multimodal Ingest.
+- /docs/data/guides/embeddings-at-scale: Embeddings at Scale.
+- /docs/data/guides/dedup-and-clean: Dedup and Clean.
+- /docs/data/guides/sql-multimodal-pipeline: SQL Multimodal Pipeline.
+- /docs/data/guides/doris-integration: Doris Integration.
+- /docs/data/guides/iceberg-lakehouse: Iceberg Lakehouse.
+- /docs/data/guides/gpu-inference-udf: GPU Inference UDF.
+- /docs/data/guides/performance-tuning: Performance Tuning.
+- /docs/data/examples: Examples.
+- /docs/data/examples/training-data-pipeline: Training Data Pipeline.
+- /docs/data/examples/insurance-document-audit: Insurance Document Audit.
+- /docs/data/examples/tender-compliance-check: Tender Compliance Check.
+- /docs/data/examples/multimodal-data-lake: Multimodal Data Lake.
+- /docs/data/deploy/single-node: Single Node.
+- /docs/data/deploy/ray-cluster: Ray Cluster.
+- /docs/data/deploy/sizing: Sizing.
+- /docs/data/contributing/development: Development.

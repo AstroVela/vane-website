@@ -1,0 +1,139 @@
+---
+title: Execution Model
+---
+
+Vane Data pipelines are relation pipelines. Each step describes a table transformation, and work starts when the relation is materialized by showing, fetching, converting, or writing results.
+
+This model lets Vane Data combine three kinds of work:
+
+- Relational work expressed in DuckDB-compatible SQL.
+- Python work expressed as UDFs.
+- AI work expressed as relation helper functions.
+
+## Relations are the pipeline unit
+
+A relation represents a table-shaped computation. You can build one with SQL:
+
+```python
+rel = con.sql("""
+    select id, text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+""")
+```
+
+Then add Python or AI stages:
+
+```python
+features = rel.map_batches(
+    model_batch,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+```
+
+Each stage returns another relation, so pipelines remain composable. UDF stages return the columns produced by the UDF; return identifiers and metadata when later stages need them.
+
+## Execution starts at materialization
+
+Building a relation is cheap compared with executing it. Work starts when you call a consumer such as:
+
+- `show()`
+- `fetchall()`
+- `to_arrow_table()`
+- `to_record_batch()`
+- `write_parquet(...)`
+- `to_table(...)`
+
+This lets Vane Data keep SQL, Python, and AI stages together before choosing how to execute the pipeline.
+
+## Arrow batches connect SQL and Python
+
+`map_batches` is the main boundary between relation execution and Python code.
+
+- Input arrives as Arrow data.
+- The Python callable returns Arrow data.
+- The output schema is declared at the relation boundary.
+- `batch_size` controls rows per UDF call.
+
+This keeps schema changes explicit instead of hiding them inside Python objects.
+
+## Local execution
+
+Local execution is the right starting point for:
+
+- Development and debugging.
+- Single-node preprocessing.
+- Small and medium data pipelines.
+- Validating UDF correctness before scaling.
+
+Use local UDF backends first:
+
+- `subprocess_task` for stateless functions.
+- `subprocess_actor` for callable classes with reusable state.
+
+## Ray execution
+
+Select the Ray runner with:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+or:
+
+```bash
+export VANE_RUNNER=ray
+```
+
+Ray execution is useful for:
+
+- Large file scans.
+- Distributed writes.
+- Distributed stateless UDFs with `ray_task`.
+- Stateful model workers with `ray_actor`.
+- CPU and GPU resource placement across a Ray cluster.
+
+For predictable results, make sure every Ray worker can import the same Python modules, access the same storage systems, and see the credentials or model files required by the UDF.
+
+## UDF scheduling
+
+Choose the backend based on callable shape and resource pattern:
+
+| Workload | Callable shape | Backend |
+| --- | --- | --- |
+| Simple local batch transform | Python function | `subprocess_task` |
+| Local model or client reuse | Callable class | `subprocess_actor` |
+| Distributed stateless transform | Python function | `ray_task` |
+| Distributed model reuse or GPU inference | Callable class | `ray_actor` |
+
+Use task backends for functions that do not need long-lived state. Use actor backends when initialization is expensive and should happen once per worker or actor.
+
+## Streaming and blocking stages
+
+Many relation stages can stream batches through the pipeline. Some stages need to collect or coordinate data before producing output.
+
+Common blocking or partially blocking stages include:
+
+- Global aggregations.
+- Joins that require data exchange.
+- Sorts and shuffles.
+- Writes.
+- UDF stages that introduce an execution boundary.
+
+When tuning performance, place filters and column projections before expensive UDFs and model calls. This reduces data crossing into Python and, in Ray mode, reduces cluster data movement.
+
+## Operational checklist
+
+Before moving a pipeline from local execution to Ray:
+
+1. Run the pipeline locally on a representative sample.
+2. Make UDF output schemas explicit.
+3. Tune `batch_size` locally.
+4. Move stateless functions to `ray_task` only when distribution helps.
+5. Move stateful model classes to `ray_actor` only when actor reuse, GPUs, or cluster placement are needed.
+6. Confirm storage, credentials, Python dependencies, and model files are visible to every Ray worker.
+7. Measure throughput, memory use, retries, and output row counts.

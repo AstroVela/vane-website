@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from '../router'
 import { cx } from './cx'
 import Mark from './Mark'
+import ProductGlyph from '../docs/ProductGlyph'
+import CommandPalette from './CommandPalette'
+import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
 import { useGitHubStars } from './useGitHubStars'
 import { GITHUB_REPO, GITHUB_URL } from '../siteLinks'
 
@@ -48,12 +51,21 @@ type NavProps = {
   ctaReveal?: boolean
   ctaTo?: string
   ctaHref?: string
+  /** Show the docs search trigger in the nav (docs pages only). */
+  withSearch?: boolean
 }
 
-export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: NavProps) {
+export default function Nav({
+  ctaReveal = false,
+  ctaTo = '/docs',
+  ctaHref,
+  withSearch = false,
+}: NavProps) {
   const [show, setShow] = useState(false)
   const [mmOpen, setMmOpen] = useState(false) // Use Cases mega-menu
+  const [dOpen, setDOpen] = useState(false) // Docs product mega-menu
   const [rOpen, setROpen] = useState(false) // Resources dropdown
+  const [cmdkOpen, setCmdkOpen] = useState(false) // docs ⌘K command palette
   const navRef = useRef<HTMLElement>(null)
   const stars = useGitHubStars(GITHUB_REPO)
 
@@ -70,9 +82,10 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
 
   // Close both menus on Escape or a click/tap outside the nav.
   useEffect(() => {
-    if (!mmOpen && !rOpen) return undefined
+    if (!mmOpen && !dOpen && !rOpen) return undefined
     const closeAll = () => {
       setMmOpen(false)
+      setDOpen(false)
       setROpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
@@ -87,7 +100,20 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [mmOpen, rOpen])
+  }, [mmOpen, dOpen, rOpen])
+
+  // ⌘K / Ctrl+K toggles the docs command palette (docs pages only).
+  useEffect(() => {
+    if (!withSearch) return undefined
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setCmdkOpen((v) => !v)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [withSearch])
 
   const ctaClass = cx('btn btn-solid btn-sm', ctaReveal && 'nav-cta', ctaReveal && show && 'show')
   const ctaInner = (
@@ -97,6 +123,7 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
   )
 
   return (
+    <>
     <header className="nav" ref={navRef}>
       <div className="wrap nav-in">
         <Link className="brand" to="/">
@@ -154,7 +181,52 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
           </div>
 
           <Link to="/benchmarks">Benchmarks</Link>
-          <Link to="/docs">Docs</Link>
+
+          <div
+            className={cx('nav-dd', dOpen && 'open')}
+            onMouseEnter={() => setDOpen(true)}
+            onMouseLeave={() => setDOpen(false)}
+          >
+            <button
+              type="button"
+              className="ddt"
+              aria-expanded={dOpen}
+              onClick={() => setDOpen((v) => !v)}
+            >
+              Docs
+              <span className="caret">▾</span>
+            </button>
+            {dOpen && (
+              <div className="dd-pan mega-pan">
+                <div className="dd-card prod-menu">
+                  <div className="prod-menu-eyebrow">Vane platform</div>
+                  {PRODUCT_ORDER.map((id) => {
+                    const p = PRODUCTS[id]
+                    const soon = p.status === 'soon'
+                    return (
+                      <Link
+                        className={cx('mega-it', soon && 'muted')}
+                        to={`/docs/${id}`}
+                        key={id}
+                        onClick={() => setDOpen(false)}
+                      >
+                        <span className="ic">
+                          <ProductGlyph id={id} size={15} />
+                        </span>
+                        <span>
+                          <span className="mt">
+                            {p.name}
+                            {soon && <span className="soon-pill">SOON</span>}
+                          </span>
+                          <span className="md">{p.tagline}</span>
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div
             className={cx('nav-dd', rOpen && 'open')}
@@ -190,6 +262,19 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
           </div>
         </nav>
         <div className="nav-right">
+          {withSearch && (
+            <button
+              type="button"
+              className="nav-search"
+              aria-label="Search the docs"
+              aria-keyshortcuts="Meta+K Control+K"
+              onClick={() => setCmdkOpen(true)}
+            >
+              <span className="si">⌕</span>
+              <span className="sl">Search the docs</span>
+              <span className="kbd">⌘K</span>
+            </button>
+          )}
           <a className="ghp" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GitHubIcon />
             <span>Star</span>
@@ -207,5 +292,7 @@ export default function Nav({ ctaReveal = false, ctaTo = '/docs', ctaHref }: Nav
         </div>
       </div>
     </header>
+    {withSearch && cmdkOpen && <CommandPalette onClose={() => setCmdkOpen(false)} />}
+    </>
   )
 }

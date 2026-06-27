@@ -2,6 +2,8 @@ import type {ReactNode} from 'react'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { MDXProvider } from '@mdx-js/react'
 import Nav from '../components/Nav'
+import ComingSoon from './ComingSoon'
+import ProductGlyph from '../docs/ProductGlyph'
 import { Link, useRouter } from '../router'
 import { cx } from '../components/cx'
 import { mdxComponents } from '../components/mdxComponents'
@@ -9,11 +11,17 @@ import {
   DEFAULT_DOC_SLUG,
   DOCS_ORDER,
   DOCS_PAGES,
-  DOCS_SIDEBAR,
+  type DocSlug,
   type DocsSidebarItem,
   getDocGroup,
   isDocSlug,
 } from '../docs/registry'
+import {
+  DEFAULT_PRODUCT,
+  PRODUCTS,
+  isProductId,
+  type ProductId,
+} from '../docs/products'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
@@ -22,33 +30,54 @@ type TocItem = {
   label: string
 }
 
+/* Parse `/docs`, `/docs/<product>`, `/docs/<product>/<slug...>`, and the legacy
+   `/docs/<slug...>` form into a product + optional slug. */
+function parseDocsPath(path: string): { product: ProductId; slug?: string } {
+  const segs = path.replace(/^\/docs\/?/, '').split('/').filter(Boolean)
+  if (segs.length === 0) return { product: DEFAULT_PRODUCT }
+  if (isProductId(segs[0])) return { product: segs[0], slug: segs.slice(1).join('/') }
+  // Legacy `/docs/<slug>` — resolve against the default (live) product.
+  return { product: DEFAULT_PRODUCT, slug: segs.join('/') }
+}
+
 export default function Docs() {
   const { path } = useRouter()
-  const requested = path.replace(/^\/docs\/?/, '')
-  const current = requested ? (isDocSlug(requested) ? requested : undefined) : DEFAULT_DOC_SLUG
+  const { product, slug } = parseDocsPath(path)
+  const prod = PRODUCTS[product]
+  const isLive = prod.status === 'live'
 
-  if (!current) {
-    throw new Error(`Unknown docs slug "${requested}"`)
+  let current: DocSlug | undefined
+  if (isLive) {
+    if (!slug) current = DEFAULT_DOC_SLUG
+    else if (isDocSlug(slug)) current = slug
+    else throw new Error(`Unknown docs slug "${slug}"`)
   }
 
-  const page = DOCS_PAGES[current]
-
-  if (!page) {
-    throw new Error(`Unknown docs slug "${current}"`)
-  }
-
-  const PageBody = page.Component
-  const group = getDocGroup(current)
-
-  const i = DOCS_ORDER.indexOf(current)
-  const prev = i > 0 ? DOCS_ORDER[i - 1] : null
-  const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
+  const group = current ? getDocGroup(current) : undefined
 
   const [activeSection, setActiveSection] = useState<string | null>(null)
   const [toc, setToc] = useState<TocItem[]>([])
+  // Collapsible sidebar groups. State holds only explicit user overrides; by
+  // default a group is open iff it contains the active page (`group`), so a long
+  // doc tree stays scannable and navigating auto-reveals the current section.
+  // Explicit, only-grows open state: the active group starts open and every
+  // group the reader expands or visits stays open. Navigation never collapses a
+  // group — clicking a link only *adds* the target's group.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    group ? { [group]: true } : {},
+  )
+  useEffect(() => {
+    if (!group) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- additive sync: open the active group on navigation; a pure derivation can't express "never close the others".
+    setOpenGroups((prev) => (prev[group] ? prev : { ...prev, [group]: true }))
+  }, [group])
+  const isGroupOpen = (name: string) => openGroups[name] === true
+  const toggleGroup = (name: string) =>
+    setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }))
 
   // Re-derive the per-page "On this page" and scrollspy whenever the page
   // changes. The headings come from MDX and only exist in the DOM after mount.
+  // For coming-soon products there is no `.doc` article, so this no-ops.
   useIsomorphicLayoutEffect(() => {
     setToc(
       Array.from(document.querySelectorAll('.doc h2.ds')).map((h) => ({
@@ -69,43 +98,133 @@ export default function Docs() {
     window.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
     return () => window.removeEventListener('scroll', onScroll)
-  }, [current])
+  }, [product, current])
 
   const navLabel = (it: DocsSidebarItem): ReactNode =>
     it.label ?? (it.slug ? DOCS_PAGES[it.slug].title : null)
 
+  const docPath = (slug: DocSlug) =>
+    slug === DEFAULT_DOC_SLUG ? `/docs/${product}` : `/docs/${product}/${slug}`
+
+  const page = current ? DOCS_PAGES[current] : null
+  const PageBody = page?.Component
+
+  const i = current ? DOCS_ORDER.indexOf(current) : -1
+  const prev = i > 0 ? DOCS_ORDER[i - 1] : null
+  const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
+
+  // Coming-soon products (Agent / RL) reuse the same three-column docs frame as
+  // a live product for layout consistency, but the sidebar carries only the
+  // product identity card (no doc tree) and the teaser fills the content column.
+  if (!isLive || !page || !PageBody) {
+    return (
+      <>
+        <Nav />
+        <div className="docs">
+          <nav className="side side-soon">
+            <div className="prod">
+              <span className="prod-ic">
+                <ProductGlyph id={product} size={15} />
+              </span>
+              <div>
+                <div className="prod-name">{prod.name}</div>
+                <div className="prod-status">In development</div>
+              </div>
+            </div>
+          </nav>
+          <main className="doc">
+            <ComingSoon product={prod} />
+          </main>
+          <aside className="toc" aria-hidden="true" />
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
-      <Nav />
+      <Nav withSearch />
 
       <div className="docs">
-        {/* SIDEBAR — links switch doc pages; labels come from each page's title. */}
+        {/* SIDEBAR — a product context card, then the product's groups. */}
         <nav className="side">
-          {DOCS_SIDEBAR.map((grp) => (
-            <div className="grp" key={grp.group}>
-              <div className="gt">{grp.group}</div>
-              {grp.items.map((it) =>
-                it.to ? (
-                  <Link to={it.to} key={it.to}>{navLabel(it)}</Link>
-                ) : (
-                  <Link
-                    to={`/docs/${it.slug}`}
-                    key={it.slug}
-                    className={cx('snav', it.slug === current && 'on')}
-                  >
-                    {navLabel(it)}
+          <div className="prod">
+            <span className="prod-ic">
+              <ProductGlyph id={product} size={15} />
+            </span>
+            <div className="prod-name">{prod.name}</div>
+          </div>
+
+          {(prod.sidebar ?? []).map((grp) => {
+            // A single-item group (e.g. Overview → Docs Home) is a direct section
+            // link, not a collapsible parent wrapping one child.
+            if (grp.items.length === 1) {
+              const only = grp.items[0]
+              if (only.to) {
+                return (
+                  <Link className="gt-link ext" to={only.to} key={grp.group}>
+                    <span className="ar-up">↗</span>
+                    {grp.group}
                   </Link>
-                ),
-              )}
-            </div>
-          ))}
+                )
+              }
+              if (only.slug) {
+                return (
+                  <Link
+                    key={grp.group}
+                    to={docPath(only.slug)}
+                    className={cx('gt-link', only.slug === current && 'on')}
+                  >
+                    {grp.group}
+                  </Link>
+                )
+              }
+              return null
+            }
+
+            const open = isGroupOpen(grp.group)
+            return (
+              <div className={cx('grp', open && 'open')} key={grp.group}>
+                <button
+                  type="button"
+                  className="gt"
+                  aria-expanded={open}
+                  onClick={() => toggleGroup(grp.group)}
+                >
+                  <span className="gcaret" aria-hidden="true">▸</span>
+                  <span>{grp.group}</span>
+                </button>
+                {open && (
+                  <div className="grp-items">
+                    {grp.items.map((it) =>
+                      it.to ? (
+                        <Link className="ext" to={it.to} key={it.to}>
+                          <span className="ar-up">↗</span>
+                          {navLabel(it)}
+                        </Link>
+                      ) : it.slug ? (
+                        <Link
+                          to={docPath(it.slug)}
+                          key={it.slug}
+                          className={cx('snav', it.slug === current && 'on')}
+                        >
+                          {navLabel(it)}
+                        </Link>
+                      ) : null,
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
 
-        {/* CONTENT — page body authored under docs/<section>/<slug>.mdx. */}
+        {/* CONTENT */}
         <article className="doc">
-          <div className="search">⌕ Search the docs <span className="kbd">⌘K</span></div>
-
-          {group && <div className="crumb">{group}</div>}
+          <div className="crumb">
+            {prod.name}
+            {group && <> / {group}</>}
+          </div>
           <h1 className="dh" id={current}>{page.title}</h1>
 
           <MDXProvider components={mdxComponents}>
@@ -113,8 +232,12 @@ export default function Docs() {
           </MDXProvider>
 
           <div className="pager">
-            {prev && <Link to={`/docs/${prev}`}>← {DOCS_PAGES[prev].title}</Link>}
-            {next && <Link className="nx" to={`/docs/${next}`}>{DOCS_PAGES[next].title} →</Link>}
+            {prev && <Link to={docPath(prev)}>← {DOCS_PAGES[prev].title}</Link>}
+            {next && (
+              <Link className="nx" to={docPath(next)}>
+                {DOCS_PAGES[next].title} →
+              </Link>
+            )}
           </div>
         </article>
 

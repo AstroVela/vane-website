@@ -7,12 +7,18 @@
   "scripts": {
     "dev": "docusaurus start",
     "build": "docusaurus build",
+    "docs:lint": "node scripts/docs-lint.mjs",
+    "docs:llms": "node scripts/docs-llms.mjs",
+    "docs:llms:check": "node scripts/docs-llms.mjs --check",
+    "docs:manifest": "node scripts/docs-manifest.mjs",
+    "docs:manifest:check": "node scripts/docs-manifest.mjs --check",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "docusaurus serve"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",
+    "prism-react-renderer": "^2.4.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
