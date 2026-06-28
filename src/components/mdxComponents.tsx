@@ -5,10 +5,12 @@
      <h2 id> tags (the `{#id}` shorthand can't be used — it's MDX expression
      syntax); these maps also style any plain markdown `##`.
    - Inline `code` -> the `.link` underline style used throughout the prose.
-   - Markdown tables -> `.dt`, lists -> `.dl`. Internal links -> SPA router <Link>.
+   - Fenced code blocks -> the site's CodeWindow shell.
+   - Markdown tables -> `.dt`, lists -> `.dl`; blockquotes, media, and details
+     get docs-safe wrappers. Internal links -> SPA router <Link>.
    - Block components (CodeWindow, Callout, Lead) are provided here too, so
    `.mdx` files can use them without importing. */
-import type {ComponentPropsWithoutRef, PropsWithChildren} from 'react'
+import { isValidElement, type ComponentPropsWithoutRef, type PropsWithChildren, type ReactNode } from 'react'
 import type {MDXComponents} from 'mdx/types'
 import CodeWindow from './CodeWindow'
 import { Link } from '../router'
@@ -34,9 +36,73 @@ function Lead({ children }: PropsWithChildren) {
 
 function Anchor({ href = '', children, ...rest }: ComponentPropsWithoutRef<'a'>) {
   if (href.startsWith('/')) {
-    return <Link to={href} {...rest}>{children}</Link>
+    return <Link className="dlink" to={href} {...rest}>{children}</Link>
   }
-  return <a href={href} {...rest}>{children}</a>
+  return <a className="dlink" href={href} {...rest}>{children}</a>
+}
+
+function textFromNode(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textFromNode).join('')
+  if (isValidElement(node)) {
+    return textFromNode((node.props as { children?: ReactNode }).children)
+  }
+  return ''
+}
+
+function languageFromClassName(className?: string): string | undefined {
+  return className
+    ?.split(/\s+/)
+    .find((name) => name.startsWith('language-'))
+    ?.slice('language-'.length)
+}
+
+function filenameForLanguage(language?: string): string {
+  switch (language) {
+    case 'python':
+      return 'example.py'
+    case 'sql':
+      return 'query.sql'
+    case 'bash':
+    case 'sh':
+    case 'shell':
+      return 'shell'
+    case 'json':
+      return 'data.json'
+    case 'ts':
+    case 'tsx':
+      return 'example.tsx'
+    case 'js':
+    case 'jsx':
+      return 'example.jsx'
+    default:
+      return language ?? 'code'
+  }
+}
+
+function Code({ className, children, ...rest }: ComponentPropsWithoutRef<'code'>) {
+  if (languageFromClassName(className)) {
+    return <code className={className} {...rest}>{children}</code>
+  }
+  return <span className="link" {...rest}>{children}</span>
+}
+
+function Pre({ children, style }: ComponentPropsWithoutRef<'pre'>) {
+  const codeProps = isValidElement(children)
+    ? (children.props as { className?: string; children?: ReactNode })
+    : undefined
+  const language = languageFromClassName(codeProps?.className)
+  const code = textFromNode(children).replace(/\n$/, '')
+  // `language ?? 'text'` keeps the safe (React-escaped) Prism path even for
+  // unlabeled fences; Prism renders unknown languages as plain text.
+  return (
+    <CodeWindow
+      filename={filenameForLanguage(language)}
+      code={code}
+      language={language ?? 'text'}
+      style={style}
+    />
+  )
 }
 
 export const mdxComponents: MDXComponents = {
@@ -45,7 +111,13 @@ export const mdxComponents: MDXComponents = {
   h3: (props: ComponentPropsWithoutRef<'h3'>) => <h3 className="dss" {...props} />,
   table: (props: ComponentPropsWithoutRef<'table'>) => <table className="dt" {...props} />,
   ul: (props: ComponentPropsWithoutRef<'ul'>) => <ul className="dl" {...props} />,
-  code: (props: ComponentPropsWithoutRef<'code'>) => <span className="link" {...props} />,
+  ol: (props: ComponentPropsWithoutRef<'ol'>) => <ol className="dl dol" {...props} />,
+  blockquote: (props: ComponentPropsWithoutRef<'blockquote'>) => <blockquote className="dq" {...props} />,
+  hr: (props: ComponentPropsWithoutRef<'hr'>) => <hr className="dr" {...props} />,
+  img: (props: ComponentPropsWithoutRef<'img'>) => <img className="dimg" {...props} />,
+  details: (props: ComponentPropsWithoutRef<'details'>) => <details className="ddetails" {...props} />,
+  pre: Pre,
+  code: Code,
   a: Anchor,
   // block components usable directly inside .mdx
   CodeWindow,

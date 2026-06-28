@@ -1,0 +1,127 @@
+---
+title: Multimodal Data Lake
+---
+
+This example shows how Vane Data can prepare multimodal records before lakehouse or warehouse handoff.
+
+Use this pattern when source rows contain media paths, media bytes, or extracted text, and the pipeline needs Python UDFs or AI helpers to add labels, text, embeddings, scores, or structured model output.
+
+Relevant source scripts:
+
+- `examples/querying_images.py`
+- `examples/voice_ai_analytics.py`
+- `examples/multimodal_structured_outputs.py`
+
+## Goal
+
+Read multimodal records, enrich them with explicit Python or AI stages, and write curated table outputs for downstream systems.
+
+## Data zones
+
+Raw zone:
+
+- Original bytes or paths.
+- Source metadata.
+- Ingestion timestamp.
+
+Processed zone:
+
+- Decoded text or extracted features.
+- Labels.
+- Embeddings.
+- Model outputs.
+
+Curated zone:
+
+- Stable IDs.
+- Normalized metadata.
+- Quality flags.
+- Downstream-ready columns.
+
+## Vane Data pipeline
+
+The UDF returns source identifiers and derived columns. Keep media bytes out of the final output unless a downstream system explicitly needs them.
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+raw = con.sql("""
+    select id, media_type, uri, payload
+    from read_parquet('s3://bucket/raw_media/*.parquet')
+    where uri is not null
+""")
+
+def enrich_batch(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    uris = batch.column("uri").to_pylist()
+
+    return pa.table({
+        "id": ids,
+        "media_type": media_types,
+        "uri": uris,
+        "label": ["unclassified"] * batch.num_rows,
+        "text": [""] * batch.num_rows,
+    })
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_actor",
+)
+
+features.write_parquet("s3://bucket/processed/media_features/")
+```
+
+In a production pipeline, put decoder, model, OCR, transcription, or provider logic inside the UDF while keeping the returned schema explicit.
+
+## Doris and Iceberg handoff
+
+Vane Data does not include a native Doris connector. Use Vane Data to write clean Parquet, then load it into Doris with Doris tooling.
+
+Vane Data does not define a Vane-specific Iceberg catalog API. Use Vane Data for preparation and Parquet output, then let the lakehouse catalog or table-management tool own Iceberg commits and snapshot semantics.
+
+## Scale-out
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+Every Ray worker must be able to access the same storage, credentials, model files, and Python dependencies as the driver.
+
+## Validation
+
+Before promoting a multimodal dataset:
+
+- Check row counts between raw, processed, and curated zones.
+- Validate that every output row has a stable ID.
+- Keep media bytes only when they are required downstream.
+- Confirm schema compatibility with the warehouse, lakehouse, or catalog that will consume the output.
+- Test model and provider failure handling before scaling.

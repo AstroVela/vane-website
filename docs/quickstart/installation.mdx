@@ -1,0 +1,141 @@
+---
+title: Installation
+---
+
+Vane Data uses `vane-ai` as the distribution package and `vane` as the Python import package.
+
+## Requirements
+
+- Python 3.10 or later.
+- A platform with a published Vane Data wheel, or a local C++ build environment for source builds.
+- Network and credentials for any remote storage, model provider, or Ray cluster used by your pipeline.
+
+The package metadata installs the required runtime dependencies, including `cloudpickle` and `ray`.
+
+## Install a released package
+
+Use the released package when a wheel is available for your Python version and platform:
+
+```bash
+python -m pip install vane-ai
+```
+
+Install the general data-science extras when you need optional dataframe, Arrow, filesystem, or ADBC integration dependencies:
+
+```bash
+python -m pip install "vane-ai[all]"
+```
+
+The `all` extra is a convenience group. AI provider libraries are loaded lazily and should be installed for the providers you use:
+
+```bash
+# Local embedding and classification models
+python -m pip install sentence-transformers transformers torch
+
+# Hosted model providers
+python -m pip install openai numpy
+python -m pip install anthropic
+python -m pip install google-genai numpy
+
+# vLLM-backed prompting
+python -m pip install vllm
+```
+
+## Verify the install
+
+```bash
+python - <<'PY'
+import vane
+
+print("Vane:", vane.__version__)
+print("DuckDB:", vane.__duckdb_version__)
+
+con = vane.connect()
+con.sql("select 42 as answer").show()
+PY
+```
+
+## Enable Ray-backed execution
+
+Use Ray only when the workload needs distributed scans, distributed writes, distributed UDFs, or cluster resource placement. For predictable behavior, configure the intended runner before creating connections:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+con = vane.connect()
+con.sql("select 42 as answer").show()
+```
+
+The same setting can be applied with an environment variable:
+
+```bash
+export VANE_RUNNER=ray
+```
+
+Every Ray worker must be able to import the same Python packages, access the same storage systems, and see any model files or provider credentials required by the pipeline.
+
+## Build from source
+
+Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel.
+
+Clone the repository with submodules:
+
+```bash
+git clone --recursive https://github.com/AstroVela/vane.git
+cd vane
+```
+
+If the checkout already exists and submodules are missing:
+
+```bash
+git submodule update --init --recursive
+```
+
+Install common Debian or Ubuntu build tools:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+```
+
+Prepare vcpkg for C++ dependencies:
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ../vcpkg
+../vcpkg/bootstrap-vcpkg.sh
+```
+
+Install Python build tooling and build in editable mode:
+
+```bash
+python -m pip install -U pip
+python -m pip install cmake ninja scikit-build-core "pybind11[global]"
+
+python -m pip install -e . --no-build-isolation -v \
+  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+```
+
+If an existing checkout was previously configured without the vcpkg toolchain, remove the old CMake build directory before rebuilding so CMake does not reuse an incompatible cache.
+
+## Build configuration notes
+
+The source build configuration currently includes these DuckDB extensions:
+
+```text
+core_functions;json;parquet;icu;jemalloc;httpfs
+```
+
+This means JSON, Parquet, ICU, jemalloc, and HTTP/S3 filesystem support are part of the configured build. Other DuckDB extensions depend on the build and runtime environment. Verify extension availability in the environment where the job runs.
+
+The project includes wheel-build configuration for Linux manylinux 2.28 on x86_64 and aarch64, macOS, and Windows. Actual package availability depends on the release artifacts published for a given version.
+
+## Troubleshooting
+
+- `ModuleNotFoundError: No module named 'vane'`: confirm that `vane-ai` was installed into the Python environment running your script.
+- Missing provider libraries: install the provider package directly, such as `openai`, `anthropic`, `google-genai`, `vllm`, or `sentence-transformers`.
+- Ray workers cannot import a module: install the same dependencies on every worker or provide a Ray runtime environment that includes them.
+- Remote file reads fail: verify the DuckDB extension, storage credentials, endpoint settings, and worker-side environment variables.
+
+Next: [SQL quickstart](/docs/data/quickstart/quickstart-sql) or [Python quickstart](/docs/data/quickstart/quickstart-python).

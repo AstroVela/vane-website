@@ -1,0 +1,112 @@
+---
+title: Sizing
+---
+
+Sizing Vane Data jobs is mostly about data volume, UDF cost, and model resources.
+
+## Start with a small run
+
+Record:
+
+- input rows
+- input bytes
+- projected columns
+- UDF backend
+- batch size
+- concurrency
+- CPU/GPU resources
+- output rows
+- elapsed time
+
+Then scale one variable at a time.
+
+## Local CPU UDF
+
+Use:
+
+```python
+execution_backend="subprocess_task"
+```
+
+Start with:
+
+- `batch_size=512` for text cleaning
+- `batch_size=32` for image/audio decoding
+
+Adjust based on memory and latency.
+
+## Local model actor
+
+Use:
+
+```python
+execution_backend="subprocess_actor"
+```
+
+Start with:
+
+- `concurrency=1`
+- a batch size that keeps the model busy without memory pressure
+
+Increase concurrency only if CPU/GPU resources remain idle.
+
+## Ray task
+
+Use:
+
+```python
+execution_backend="ray_task"
+```
+
+Good for CPU-heavy stateless work. Watch scheduling overhead if batches are too small.
+
+## Ray actor
+
+Use:
+
+```python
+execution_backend="ray_actor"
+```
+
+Good for stateful model inference.
+
+Sizing rule:
+
+```text
+required GPUs = concurrency * gpus
+```
+
+If `concurrency=4` and `gpus=1`, the Ray cluster needs at least 4 available GPUs for full parallelism.
+
+## Scan sizing
+
+Relevant public settings:
+
+- `ray_scan_task_size_grouping`
+- `ray_max_task_backlog`
+- `ray_scan_task_open_cost_bytes`
+- `ray_scan_task_min_partition_num`
+
+Use scan task grouping when many small files would otherwise create too many scan tasks.
+
+## Output sizing
+
+Embeddings can dominate output size.
+
+Estimate:
+
+```text
+rows * dimensions * 4 bytes
+```
+
+For 10 million rows and 768 float32 dimensions, raw vector values alone are about 30 GB before file format overhead.
+
+## Red flags
+
+- One UDF batch contains unused large columns.
+- Workers download model weights for every batch.
+- Output is written to node-local disk from a distributed job.
+- API-backed providers run with concurrency higher than rate limits.
+- A single huge file prevents parallelism.
+
+Fix projection, actor reuse, shared storage, provider limits, and partitioning before adding more machines.

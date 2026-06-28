@@ -1,0 +1,83 @@
+---
+title: Single Node
+---
+
+Use single-node mode for development, lightweight SQL work, and small-to-medium UDF jobs.
+
+## Default mode
+
+For predictable single-node scripts, select local execution before creating the connection:
+
+```python
+import vane
+
+vane.configure(runner="native")
+
+con = vane.connect()
+con.sql("select 42").show()
+```
+
+## Local UDF backends
+
+Use:
+
+- `subprocess_task` for stateless batch functions.
+- `subprocess_actor` for stateful callable classes.
+
+```python
+out = rel.map_batches(
+    MyBatchFn,
+    schema={"id": "BIGINT", "out": "VARCHAR"},
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+## Local actor model
+
+```python
+out = rel.map_batches(
+    MyModelClass,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=32,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+Return identifiers or metadata from the UDF when downstream stages need to join outputs back to source rows.
+
+## Native runner batch size
+
+Use `VANE_NATIVE_RUNNER_BATCH_SIZE` when you need to measure or constrain the batch size used by native execution:
+
+```bash
+export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
+```
+
+## Filesystem
+
+For local files, use normal DuckDB SQL functions:
+
+```python
+con.sql("select * from read_parquet('data/*.parquet')").show()
+```
+
+For S3-compatible storage, load and configure `httpfs`:
+
+```python
+con.execute("LOAD httpfs")
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+```
+
+## When to stay single-node
+
+Stay single-node when:
+
+- The dataset fits in local memory and disk.
+- You need quick iteration.
+- One GPU is enough.
+- The bottleneck is API rate limits rather than local compute.
+
+Move to Ray when a single process cannot scan, decode, or run models fast enough.

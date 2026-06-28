@@ -43,11 +43,10 @@ export default function Footer({ home = false }: { home?: boolean }) {
 
           <div>
             <h4>Docs</h4>
-            <Link to="/docs/quickstart">Quickstart</Link>
-            <Link to="/docs">Guides</Link>
-            <Link to="/use-cases">Examples</Link>
-            <Link to="/docs/sql-api">References</Link>
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer">Contributing</a>
+            <Link to="/docs/data/quickstart/what-is-vane">Quickstart</Link>
+            <Link to="/docs/data/guides/multimodal-ingest">Guides</Link>
+            <Link to="/docs/data/examples">Examples</Link>
+            <Link to="/docs/data/contributing/development">Contributing</Link>
           </div>
 
           <div>

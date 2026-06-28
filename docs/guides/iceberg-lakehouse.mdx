@@ -1,0 +1,104 @@
+---
+title: Iceberg Lakehouse
+---
+
+This guide explains how Vane Data fits into lakehouse-style workflows.
+
+Vane Data is useful for SQL pruning, Python UDF enrichment, AI-derived columns, and Parquet output. Lakehouse catalogs and table formats remain responsible for table registration, snapshot management, permissions, and cross-engine consistency.
+
+## Baseline: Parquet and object storage
+
+The configured Vane Data build includes Parquet and `httpfs` support. That makes Parquet on local or S3-compatible storage the safest baseline for lakehouse handoff.
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+rel = con.sql("""
+    select *
+    from read_parquet('s3://bucket/raw/table/*.parquet')
+    where event_date is not null
+""")
+```
+
+Use SQL to reduce the data before Python UDFs or AI calls run.
+
+## Curate Parquet outputs
+
+After filtering and enrichment, write the resulting relation to a staging prefix.
+
+```python
+# `enriched` is the relation produced by your SQL, UDF, or AI pipeline.
+enriched.write_parquet(
+    "s3://bucket/curated/events/run_id/",
+    partition_by=["event_date"],
+)
+```
+
+Write to a run-specific location first. Promote, register, or commit the output only after validation succeeds.
+
+## Iceberg extension boundary
+
+Vane Data does not define a Vane-specific Iceberg catalog API.
+
+If your runtime has DuckDB's Iceberg extension available, use the documented DuckDB SQL interface for that extension:
+
+```sql
+INSTALL iceberg;
+LOAD iceberg;
+
+-- Use the table functions and options documented by your DuckDB/Iceberg runtime.
+```
+
+Verify Iceberg extension availability, catalog configuration, authentication, and supported read/write behavior in your target runtime before making it a production dependency.
+
+## Recommended lakehouse pattern
+
+Use Vane Data for:
+
+- Reading Parquet or extension-backed table data through DuckDB-compatible SQL.
+- Filtering and projecting source rows before expensive Python stages.
+- Running Python UDFs for parsing, feature extraction, media processing, or model inference.
+- Adding embeddings, labels, prompts, or model scores as table columns.
+- Writing validated Parquet outputs for downstream registration or ingestion.
+
+Use your lakehouse stack for:
+
+- Catalog registration.
+- Iceberg snapshot commits.
+- Transactional table updates.
+- Permissions and governance.
+- Cross-engine consistency semantics.
+
+This separation keeps Vane Data focused on dataset preparation and avoids implying that Vane Data owns catalog-level table semantics.
+
+## Validation checklist
+
+Before registering or promoting Vane Data output:
+
+- Verify row counts against the source selection.
+- Check partition columns and partition cardinality.
+- Confirm column names, types, nullability, and timestamp semantics.
+- Validate nested columns, arrays, embeddings, or JSON columns with the downstream table format.
+- Keep the run prefix immutable after validation.
+- Let the lakehouse catalog tool perform the final table commit when governed table semantics matter.
+
+## Ray-backed preparation
+
+Use Ray when the preparation step needs distributed scans, writes, UDFs, or model workers:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+Every Ray worker must be able to access the same object storage, credentials, Python packages, model files, and runtime extension configuration as the driver.
+
+## Scope notes
+
+This guide documents Vane Data's lakehouse boundary: DuckDB-compatible reads, Python and AI enrichment, Parquet writes, and handoff to the catalog or table-management system that owns Iceberg semantics.

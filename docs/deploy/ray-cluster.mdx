@@ -1,0 +1,93 @@
+---
+title: Ray Cluster
+---
+
+Use the Ray runner when you need distributed scans, distributed UDFs, or multiple GPU actors.
+
+## Select Ray runner
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+or:
+
+```bash
+export VANE_RUNNER=ray
+```
+
+## Ray initialization
+
+The Ray runner initializes Ray when Ray is not already initialized.
+
+In user workflows, configure Ray with standard Ray environment variables or initialize Ray before executing Vane Data if you need a specific cluster address.
+
+## Worker environment
+
+Vane Data propagates relevant environment variables to workers, including:
+
+- `VANE_*`
+- `PYTHONPATH`
+- `PYTHONWARNINGS`
+- `AWS_*`
+- `S3FS_*`
+- `DUCKDB_*`
+- `RAY_ADDRESS`
+
+Set these before creating the connection or running the pipeline.
+
+## Distributed UDFs
+
+Stateless:
+
+```python
+out = rel.map_batches(
+    batch_fn,
+    schema={"id": "BIGINT", "out": "VARCHAR"},
+    batch_size=1024,
+    execution_backend="ray_task",
+)
+```
+
+Stateful/GPU:
+
+```python
+out = rel.map_batches(
+    ModelActor,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+Return identifiers or metadata from distributed UDFs when downstream stages need to join outputs back to source rows.
+
+## S3-compatible storage
+
+Set credentials and DuckDB S3 settings so both driver and workers can access the same data.
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION=us-east-1
+```
+
+For MinIO or other S3-compatible services, configure endpoint and path style through DuckDB settings or environment used by your job.
+
+## Practical checks
+
+Before scaling:
+
+- Run the same UDF locally with `subprocess_task` or `subprocess_actor`.
+- Confirm the module containing the UDF is importable on workers.
+- Confirm model files are available on every worker or downloadable.
+- Confirm output paths are shared or remote.
+- Check that Ray reports enough CPU/GPU resources for your `concurrency` and `gpus` choices.
+
+## Shutdown
+
+The Ray runner owns actor pools and exposes internal shutdown methods. In normal scripts, close connections and let the process exit cleanly. For long-running processes, explicitly close resources you create.

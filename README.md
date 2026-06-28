@@ -20,6 +20,11 @@ npm run dev        # start the dev server (http://localhost:3000)
 npm run build      # production build to build/
 npm run preview    # serve the production build locally
 npm run lint       # run ESLint
+npm run docs:lint  # check docs registry, sidebar, links, headings, and code fences
+npm run docs:manifest        # regenerate docs/manifest.json
+npm run docs:manifest:check  # verify docs/manifest.json is current
+npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
+npm run docs:llms:check      # verify generated LLM docs files are current
 ```
 
 ## Project structure
@@ -34,14 +39,20 @@ src/
   components/          shared UI (Nav, Footer, CodeWindow, …)
   docs/
     registry.ts        MDX page registry and public doc slug ordering
-    sidebar.json       docs sidebar grouping / ordering
+    sidebar.data.json  Vane Data docs grouping / ordering
   index.css, pages.css global styles and design tokens
 
 docs/
-  getting-started/     onboarding docs
-  execution/           runtime and deployment docs
-  api/                 API reference docs
-  resources/           troubleshooting and supporting material
+  index.mdx            docs home and audience-based entry points
+  quickstart/          product intro, installation, SQL and Python quickstarts
+  concepts/            architecture and mental models
+  guides/              task-oriented how-to guides
+  examples/            example catalog and reusable example template
+  deploy/              single-node, Ray cluster, and sizing material
+  contributing/        development and contribution workflow
+  manifest.json        generated docs metadata manifest
+  llms.txt             machine-readable docs index
+  llms-full.txt        concatenated docs corpus for agent ingestion
 ```
 
 ## Authoring documentation
@@ -54,44 +65,59 @@ existing custom UI so the public routes and visual styling remain unchanged.
 
 ### Add a new page
 
-1. Create `docs/<section>/<slug>.mdx`. Export a `title` and write the body in
-   Markdown. The public route remains `/docs/<slug>` regardless of the section
-   folder:
+1. Create `docs/<section>/<slug>.mdx`. Add a `title` frontmatter field, then
+   write the body in Markdown or MDX. Do not add a top-level `#` heading; the
+   rendered page `<h1>` still comes from `DOCS_PAGES` during the current
+   registry transition. The public Vane Data route mirrors the docs folder, for example
+   `docs/guides/my-guide.mdx` becomes `/docs/data/guides/my-guide`.
 
    ```mdx
-   export const title = 'My New Page'
+   ---
+   title: My Guide
+   ---
 
-   Intro paragraph in plain Markdown.
+   TODO.
 
    ## A section
 
-   Prose, tables, and lists are plain Markdown. Use the provided block
-   components for richer content:
-
-   <Callout label="Tip">
-
-   Body text here (keep the blank lines inside the tag).
-
-   </Callout>
-
-   <CodeWindow filename="example.py" code={`print("hello")`} />
+   Prose, tables, lists, and links are plain Markdown. Fenced code blocks must
+   include a language such as `python`, `sql`, or `bash`. Use MDX components
+   such as `Callout`, `Lead`, and `CodeWindow` when a page needs richer
+   presentation.
    ```
 
-   Choose an existing section folder when possible: `getting-started`,
-   `execution`, `api`, or `resources`.
+   Choose an existing section folder when possible: `quickstart`, `concepts`,
+   `guides`, `examples`, `deploy`, or `contributing`.
 
-2. Register the MDX file in `src/docs/registry.ts` by importing it and adding
-   it to `DOCS_PAGES` with the desired public slug.
+2. Register the MDX file in `src/docs/registry.ts` by importing it and
+   adding it to `DOCS_PAGES` with the desired public slug and the same title.
 
-3. Add the page to the sidebar in `src/docs/sidebar.json` by referencing its slug
-   under the desired group:
+3. Add the page to the sidebar in `src/docs/sidebar.data.json` by referencing
+   its slug under the desired group:
 
    ```json
-   { "group": "Getting Started", "items": [{ "slug": "my-new-page" }] }
+   { "group": "Guides", "items": [{ "slug": "guides/my-guide" }] }
    ```
 
 That's it — the page `<h1>`, the sidebar label, and the prev/next pager all come
-from the exported `title`; the in-page TOC is built from the page's `##` headings.
+from `DOCS_PAGES`; the in-page TOC is built from the page's `##` headings.
+
+Before opening a docs PR, run:
+
+```bash
+npm run docs:lint
+npm run docs:manifest:check
+npm run docs:llms:check
+npm run typecheck
+npm run lint
+```
+
+`docs:lint` checks that registered pages, sidebar entries, public doc links,
+relative Markdown links, frontmatter titles, top-level headings, and fenced code
+languages stay in sync. `docs:manifest:check` ensures `docs/manifest.json`
+matches the current registry, sidebar, and page frontmatter. `docs:llms:check`
+ensures the machine-readable docs files match the manifest and current MDX
+source.
 
 ### How rendering works
 
@@ -101,6 +127,12 @@ from the exported `title`; the in-page TOC is built from the page's `##` heading
   `Callout`, `CodeWindow`.
 - Docusaurus' MDX pipeline gives every `##` heading an id, so in-page anchors and the
   scrollspy work without hand-written ids.
+- `docs/manifest.json` is generated from `src/docs/registry.ts`,
+  `src/docs/sidebar.data.json`, and page frontmatter. It is the stable
+  machine-readable source to build future search, LLM, or registry generation
+  workflows.
+- `docs/llms.txt` and `docs/llms-full.txt` are generated from the manifest and
+  MDX source. Regenerate them after changing docs content or ordering.
 
 ## License
 

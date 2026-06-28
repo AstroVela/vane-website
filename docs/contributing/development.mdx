@@ -1,0 +1,94 @@
+---
+title: Development
+---
+
+This page summarizes the project development flow.
+
+## Repository setup
+
+```bash
+git clone --recursive https://github.com/AstroVela/vane.git
+cd vane
+```
+
+If needed:
+
+```bash
+git submodule update --init --recursive
+```
+
+## Build dependencies
+
+The project uses scikit-build-core and CMake.
+
+Python build dependencies include:
+
+- `scikit-build-core>=0.11.4`
+- `pybind11[global]>=2.6.0`
+- `cmake>=3.29.0`
+- `ninja>=1.10`
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+```
+
+## Editable build
+
+```bash
+python -m pip install -e . --no-build-isolation -v
+```
+
+With vcpkg:
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ../vcpkg
+../vcpkg/bootstrap-vcpkg.sh
+
+python -m pip install -e . --no-build-isolation -v \
+  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$(pwd)/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+```
+
+## Formatting
+
+The source `CONTRIBUTING.md` describes formatting through `scripts/format`.
+
+Examples:
+
+```bash
+scripts/format root --changed
+scripts/format submodule --changed
+scripts/format workspace --changed
+```
+
+The root formatter avoids scanning `external/duckdb` by default. Use the submodule command when changing DuckDB internals.
+
+## Tests
+
+CI builds and installs Vane Data on Ubuntu 24.04 with Python 3.12, then runs:
+
+```bash
+python -m pytest tests/fast
+```
+
+For a focused local test:
+
+```bash
+python -m pytest tests/fast/test_udf_process.py
+```
+
+## Source areas
+
+- `vane/`: Vane Data public Python API and AI helpers.
+- `duckdb/execution/`: Python UDF executor routing and runtimes.
+- `duckdb/runners/`: native and Ray runner code.
+- `src/duckdb_py/`: C++ Python bindings.
+- `external/duckdb/`: DuckDB submodule.
+- `examples/`: runnable script examples.
+- Benchmark workloads: performance and fault-tolerance experiments.
+
+## Contribution rule of thumb
+
+Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.configure`, or AI helpers, update docs and tests in the same change.

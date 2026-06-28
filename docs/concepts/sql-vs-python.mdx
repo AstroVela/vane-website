@@ -1,0 +1,159 @@
+---
+title: SQL vs Python
+---
+
+Vane Data is designed for pipelines where SQL and Python both belong in the same relation workflow.
+
+Use SQL for relational work. Use Python UDFs when an operation needs Python libraries, custom state, model calls, or row expansion. Use AI helpers when the operation matches a built-in embedding, classification, or prompting pattern.
+
+## Decision guide
+
+| Need | Use | Why |
+| --- | --- | --- |
+| Filter rows, project columns, join tables, aggregate metrics | SQL | Declarative, inspectable, and optimized |
+| Decode media, call Python libraries, run custom models | Python UDF | Keeps non-SQL logic explicit and testable |
+| Generate embeddings, classify text, prompt a model | AI helper | Provides provider-specific wrappers with Vane Data execution controls |
+| Reuse an expensive model or client | Actor UDF backend | Initializes once and processes many batches |
+| Scale stateless transforms | `ray_task` | Distributes function calls across Ray workers |
+| Scale model inference or GPU work | `ray_actor` | Combines actor reuse with Ray resource placement |
+
+## Use SQL for relational work
+
+SQL should own operations that are naturally table transformations:
+
+- Reading Parquet, CSV, JSON, and other DuckDB-supported sources.
+- Filtering rows before expensive work.
+- Selecting only the columns needed by the next stage.
+- Joining metadata tables.
+- Aggregating quality metrics.
+- Writing clean tabular outputs.
+
+```python
+raw = con.sql("""
+    select id, uri, text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+      and length(text) > 80
+""")
+```
+
+## Use Python UDFs for custom work
+
+Python should own operations that need runtime libraries or custom logic:
+
+- Batch model inference.
+- Image, audio, video, or PDF decoding.
+- Text normalization with Python packages.
+- Calling private services or clients.
+- Generating multiple rows per input row.
+- Returning custom columns with explicit schemas.
+
+```python
+import pyarrow as pa
+
+def split_sentences(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    texts = batch.column("text").to_pylist()
+    out_id: list[int] = []
+    out_sentence: list[str] = []
+
+    for doc_id, text in zip(ids, texts):
+        for sentence in str(text).split("."):
+            sentence = sentence.strip()
+            if sentence:
+                out_id.append(doc_id)
+                out_sentence.append(sentence)
+
+    return pa.table({"id": out_id, "sentence": out_sentence})
+
+sentences = raw.map_batches(
+    split_sentences,
+    schema={"id": "BIGINT", "sentence": "VARCHAR"},
+    batch_size=512,
+    execution_backend="subprocess_task",
+)
+```
+
+## Use AI helpers for common AI tasks
+
+AI helpers are best when the operation matches a built-in provider pattern:
+
+```python
+embedded = raw.embed_text(
+    "text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+)
+```
+
+The helper returns a relation containing the configured output column. If downstream stages also need source IDs, text, or metadata, use a custom UDF that returns the full schema you need, or explicitly combine helper output with source rows in a validated step.
+
+## Recommended pipeline shape
+
+Start with SQL, move to Python only for the expensive or custom step, then return to SQL for validation and output.
+
+```python
+raw = con.sql("""
+    select id, uri, text
+    from read_parquet('s3://bucket/raw/*.parquet')
+    where text is not null
+""")
+
+features = raw.map_batches(
+    ModelBatch,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+
+features.to_table("features")
+
+con.sql("""
+    select label, count(*) as n
+    from features
+    group by label
+    order by n desc
+""").show()
+```
+
+Replace `ModelBatch` with a callable class that loads and reuses your model.
+
+## Python-first workloads
+
+Choose a Python-first path when:
+
+- Model throughput is the main bottleneck.
+- You need actor reuse for models or service clients.
+- The transformation is clearer as a batch function than as SQL.
+- You are tuning `batch_size`, `gpus`, `cpus`, `concurrency`, and Ray resources.
+
+Recommended path:
+
+1. Use SQL for scans and pruning.
+2. Use `map_batches` for model or decoding work.
+3. Use `subprocess_actor` locally when initialization is expensive.
+4. Use `ray_actor` only after the local actor path is correct.
+5. Tune with representative data.
+
+## SQL-first workloads
+
+Choose a SQL-first path when:
+
+- The data fits on one machine or one analytical engine.
+- Transformations need to be easy to inspect and audit.
+- Python UDFs are only a small enrichment step.
+- The output is consumed by another SQL system, warehouse, lakehouse, or BI pipeline.
+
+Recommended path:
+
+1. Keep data in relations, tables, and views.
+2. Use Python only for the non-SQL step.
+3. Write Parquet or another DuckDB-supported output format.
+4. Hand off to downstream systems through their own ingestion paths.
+
+## Rule of thumb
+
+If the operation can be expressed clearly in SQL, keep it in SQL. If it needs Python state, external libraries, model execution, or provider calls, put it in a UDF or AI helper and keep the input and output schema explicit.

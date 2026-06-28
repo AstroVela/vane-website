@@ -1,0 +1,104 @@
+---
+title: Insurance Document Audit
+---
+
+This example shows a SQL-first pattern for insurance document review.
+
+Vane Data does not ship a dedicated insurance workflow. Use SQL for deterministic checks, `map_batches(...)` for extraction or normalization, and `prompt(...)` when a document needs model-assisted structured review.
+
+## Goal
+
+Audit insurance documents by extracting relevant text, applying deterministic SQL rules, and optionally using an LLM for structured review.
+
+## Input shape
+
+Recommended input columns:
+
+- `document_id`
+- `policy_id`
+- `claim_id`
+- `document_type`
+- `text`
+- `source_uri`
+
+OCR, document parsing, and policy-system extraction should happen upstream or in explicit UDF stages.
+
+## SQL rule pass
+
+```python
+import vane
+
+con = vane.connect()
+
+docs = con.sql("""
+    select *
+    from read_parquet('data/insurance_documents/*.parquet')
+    where text is not null
+""")
+
+docs.to_table("docs")
+
+rule_hits = con.sql("""
+    select
+        document_id,
+        claim_id,
+        case
+            when lower(text) like '%missing signature%' then 'missing_signature'
+            when lower(text) like '%expired%' then 'expired_reference'
+            else null
+        end as rule_hit
+    from docs
+    where lower(text) like '%missing signature%'
+       or lower(text) like '%expired%'
+""")
+```
+
+## Structured model pass
+
+`prompt(...)` returns the configured output column. Explicitly combine that column with source metadata when the final output needs identifiers and document attributes, and validate row counts before writing the result.
+
+```python
+from pydantic import BaseModel
+
+class AuditResult(BaseModel):
+    status: str
+    reason: str
+
+audit_only = docs.prompt(
+    "text",
+    provider="openai",
+    system_message="Audit the insurance document for missing evidence. Return JSON.",
+    return_format=AuditResult,
+    output_column="audit_json",
+    execution_backend="subprocess_actor",
+)
+
+docs_table = docs.to_arrow_table()
+audit_table = audit_only.to_arrow_table()
+audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
+```
+
+## Output shape
+
+Recommended output columns:
+
+- `document_id`
+- `claim_id`
+- `document_type`
+- `rule_hit`
+- `audit_json`
+- `source_uri`
+
+## Validation
+
+Before using this workflow in production:
+
+- Keep deterministic rule hits auditable.
+- Version prompts and model choices.
+- Store source document references.
+- Sample false positives and false negatives.
+- Review model output before it drives operational decisions.
+
+## Scope notes
+
+This page does not define legal advice, claims policy, OCR, insurance ontology, or policy-system integration. Add those capabilities upstream or as explicit UDF stages.
