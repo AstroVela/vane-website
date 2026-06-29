@@ -21,7 +21,6 @@ const dataSlugs = (dataSidebar as SidebarGroup[]).flatMap((group) =>
 // and rl render a coming-soon teaser at `/docs/<product>`.
 const LIVE_PRODUCTS = ['data']
 const SOON_PRODUCTS = ['agent', 'rl']
-const USE_CASE_DETAIL_ROUTES = ['/use-cases/training', '/use-cases/enterprise-agent']
 
 const vaneRoutesPlugin: PluginModule = () => {
   return {
@@ -41,13 +40,17 @@ const vaneRoutesPlugin: PluginModule = () => {
         exact: true,
       })
 
-      USE_CASE_DETAIL_ROUTES.forEach((path) =>
-        addRoute({
-          path,
-          component: '@site/src/pages/UseCases.tsx',
-          exact: true,
-        }),
-      )
+      addRoute({
+        path: '/use-cases/training',
+        component: '@site/src/pages/TrainingUseCase.tsx',
+        exact: true,
+      })
+
+      addRoute({
+        path: '/use-cases/enterprise-agent',
+        component: '@site/src/pages/EnterpriseAgentUseCase.tsx',
+        exact: true,
+      })
 
       addRoute({
         path: '/benchmarks',
