@@ -12,6 +12,7 @@
     "docs:llms:check": "node scripts/docs-llms.mjs --check",
     "docs:manifest": "node scripts/docs-manifest.mjs",
     "docs:manifest:check": "node scripts/docs-manifest.mjs --check",
+    "home:content:check": "node scripts/home-content-check.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "docusaurus serve"
