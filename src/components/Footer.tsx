@@ -21,7 +21,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
             {home ? (
               <>
                 <p className="mut" style={{ fontSize: 13, maxWidth: 270, marginTop: 13, lineHeight: 1.55 }}>
-                  DuckDB-compatible pipelines for AI workloads. Run SQL, Python UDFs, embeddings, and model inference on Ray.
+                  The multimodal engine for AI pipelines and agents. Run SQL, Python UDFs, embeddings, and model inference on Ray.
                 </p>
                 <div style={{ marginTop: 13, fontSize: 12.5 }}>
                   <span className="p" style={{ color: 'var(--green-ink)' }}>$</span> pip install vane-ai
@@ -29,7 +29,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
               </>
             ) : (
               <p className="mut" style={{ fontSize: 13, maxWidth: 270, marginTop: 13, lineHeight: 1.55 }}>
-                The multimodal-native data engine for AI workloads.
+                The multimodal engine for AI pipelines and agents.
               </p>
             )}
           </div>
@@ -37,7 +37,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
           <div>
             <h4>Product</h4>
             <Link to="/use-cases">Multimodal Data Pipeline</Link>
-            <Link to="/use-cases">Enterprise Multimodal Agent</Link>
+            <Link to="/use-cases">Enterprise Multimodal Data</Link>
             <Link to="/benchmarks">Benchmarks</Link>
           </div>
 

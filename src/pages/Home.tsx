@@ -38,9 +38,9 @@ const SCENARIOS: Array<{
   icon: PixelIconName
 }> = [
   {
-    title: 'Autonomous Driving — Physical AI training data',
+    title: 'Multimodal Model Training — data pipelines',
     status: 'Available now',
-    summary: 'Turn PB-scale multi-sensor drive logs into training-ready, traceable datasets — without a days-long, multi-system rerun.',
+    summary: 'Turn images, video, audio, documents, tables, and sensor logs into filtered, labeled, deduplicated training dataset releases — with lineage and reproducible runs.',
     cta: 'Explore',
     href: '/use-cases/training',
     icon: 'multimodal',
@@ -48,7 +48,7 @@ const SCENARIOS: Array<{
   {
     title: 'Enterprise Multimodal Agent',
     status: 'Available now',
-    summary: 'Turn always-on streams of docs, images, audio and calls into grounded, auditable facts your agents can act on — in SQL.',
+    summary: 'Turn PDFs, images, video, logs, forms, spreadsheets, and documents into auditable facts and agent-ready context — in SQL.',
     cta: 'Explore',
     href: '/use-cases/enterprise-agent',
     icon: 'retrieval',
@@ -117,14 +117,14 @@ export default function Home() {
           <div>
             <Eyebrow style={{ marginBottom: 20 }}>Vane</Eyebrow>
             <h1 className="h1 hero-h1">
-              The Multimodal-Native AI Engine
+              The multimodal engine for AI pipelines and agents
             </h1>
             <p className="lead" style={{ marginTop: 24, maxWidth: 480 }}>
-              Powering the AI learning and action loop with real-world data.
+              Run SQL, Python UDFs, embeddings, and batch model inference across documents, media, sensor data, and tables — locally or on Ray.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 34, flexWrap: 'wrap' }}>
-              <Button solid to="/docs" arrow>Get Started</Button>
-              <Button to="#scenarios">View use cases</Button>
+              <Button solid to="/docs" arrow>Read the docs</Button>
+              <Button to="#scenarios">Choose your workload</Button>
               <Button to="#benchmarks">See benchmarks</Button>
             </div>
             <div className="install" style={{ marginTop: 30 }}>
@@ -142,9 +142,9 @@ export default function Home() {
           <div className="shead" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 36 }}>
             <div>
               <Eyebrow>Use Cases</Eyebrow>
-              <h2 className="h2" style={{ marginTop: 12 }}>Four real-world AI workloads. One engine.</h2>
+              <h2 className="h2" style={{ marginTop: 12 }}>Four real-world AI workloads.</h2>
               <p className="lead">
-                From autonomous driving to enterprise agents, real-world AI runs on multimodal data. Pick the workload that's yours.
+                From multimodal model training to enterprise data pipelines, real-world AI runs on messy multimodal data. Pick the pipeline that matches your workload.
               </p>
             </div>
             <Button sm to="/use-cases" arrow>See all examples</Button>
@@ -163,9 +163,9 @@ export default function Home() {
         <div className="wrap">
           <div className="shead">
             <Eyebrow>Benchmarks</Eyebrow>
-            <h2 className="h2">Built for real batch inference workloads.</h2>
+            <h2 className="h2">Proof for real batch inference pipelines.</h2>
             <p className="lead">
-              One credible number, fully reproducible — vLLM batch inference over 66K rows on 2 GPUs, measured against Ray Data and Daft.
+              One credible number, fully reproducible — vLLM batch inference over 66K rows on 2 GPUs, measuring the same GPU-feeding bottleneck behind multimodal AI pipelines.
             </p>
           </div>
           <div className="calc-grid">
@@ -206,9 +206,9 @@ export default function Home() {
         <div className="wrap">
           <div className="shead">
             <Eyebrow>Platform</Eyebrow>
-            <h2 className="h2">Data, agents, and RL on one always-on core.</h2>
+            <h2 className="h2">Multimodal data, agents, and RL on one core.</h2>
             <p className="lead">
-              The four workloads above run on one core. Vane senses the world, learns from it, and acts on it — unifying multimodal data processing, long-running agents and RL, from a laptop to a Ray cluster.
+              Vane is the multimodal engine behind the four workloads above. It unifies data processing, long-running agents, and RL workflows — from a laptop to a Ray cluster.
             </p>
           </div>
           <PlatformArchitecture />

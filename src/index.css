@@ -873,14 +873,18 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
   color: inherit;
   display: flex;
   flex-direction: column;
-  transition: transform 0.1s ease, border-color 0.12s ease;
+  transition: transform 0.1s ease, border-color 0.12s ease, background 0.12s ease;
 }
-.scenario-card:hover { transform: translate(-1px,-1px); }
+.scenario-card::before { display: none; }
+.scenario-card:hover {
+  transform: translate(-1px,-1px);
+  border-color: var(--ink);
+  background: var(--paper-3);
+}
 .scenario-card.is-soon {
   border-color: var(--line-2);
   color: var(--ink-2);
 }
-.scenario-card.is-soon::before { opacity: 0.28; }
 .scenario-top {
   display: flex;
   align-items: center;

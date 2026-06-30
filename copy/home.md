@@ -19,16 +19,16 @@
 Vane
 
 ### `hero.h1` — 主标题
-The Multimodal-Native AI Engine
+The multimodal engine for AI pipelines and agents
 
 ### `hero.lead` — 副标题
-Powering the AI learning and action loop with real-world data.
+Run SQL, Python UDFs, embeddings, and batch model inference across documents, media, sensor data, and tables — locally or on Ray.
 
 ### `hero.btn.getStarted` — 按钮①（实心）
-Get Started
+Read the docs
 
 ### `hero.btn.useCases` — 按钮②
-View use cases
+Choose your workload
 
 ### `hero.btn.benchmarks` — 按钮③
 See benchmarks
@@ -44,10 +44,10 @@ $ pip install vane-ai · pre-release · Apache-2.0
 Use Cases
 
 ### `usecases.h2` — 标题
-Four real-world AI workloads. One engine.
+Four real-world AI workloads.
 
 ### `usecases.lead` — 副标题
-From autonomous driving to enterprise agents, real-world AI runs on multimodal data. Pick the workload that's yours.
+From multimodal model training to enterprise data pipelines, real-world AI runs on messy multimodal data. Pick the pipeline that matches your workload.
 
 ### `usecases.btn.all` — 右上角按钮
 See all examples
@@ -55,13 +55,13 @@ See all examples
 #### 卡片① 自动驾驶（Available now）
 
 ### `usecases.card.training.title` — 标题
-Autonomous Driving — Physical AI training data
+Multimodal Model Training — data pipelines
 
 ### `usecases.card.training.status` — 状态徽章
 Available now
 
 ### `usecases.card.training.summary` — 描述
-Turn PB-scale multi-sensor drive logs into training-ready, traceable datasets — without a days-long, multi-system rerun.
+Turn images, video, audio, documents, tables, and sensor logs into filtered, labeled, deduplicated training dataset releases — with lineage and reproducible runs.
 
 ### `usecases.card.training.cta` — 链接文字
 Explore
@@ -75,7 +75,7 @@ Enterprise Multimodal Agent
 Available now
 
 ### `usecases.card.enterprise.summary` — 描述
-Turn always-on streams of docs, images, audio and calls into grounded, auditable facts your agents can act on — in SQL.
+Turn PDFs, images, video, logs, forms, spreadsheets, and documents into auditable facts and agent-ready context — in SQL.
 
 ### `usecases.card.enterprise.cta` — 链接文字
 Explore
@@ -116,10 +116,10 @@ Join the waitlist
 Benchmarks
 
 ### `bench.h2` — 标题
-Built for real batch inference workloads.
+Proof for real batch inference pipelines.
 
 ### `bench.lead` — 副标题
-One credible number, fully reproducible — vLLM batch inference over 66K rows on 2 GPUs, measured against Ray Data and Daft.
+One credible number, fully reproducible — vLLM batch inference over 66K rows on 2 GPUs, measuring the same GPU-feeding bottleneck behind multimodal AI pipelines.
 
 #### 左卡片：核心数字
 
@@ -172,10 +172,10 @@ Throughput — vLLM batch inference (higher is better)
 Platform
 
 ### `platform.h2` — 标题
-Data, agents, and RL on one always-on core.
+Multimodal data, agents, and RL on one core.
 
 ### `platform.lead` — 副标题
-The four workloads above run on one core. Vane senses the world, learns from it, and acts on it — unifying multimodal data processing, long-running agents and RL, from a laptop to a Ray cluster.
+Vane is the multimodal engine behind the four workloads above. It unifies data processing, long-running agents, and RL workflows — from a laptop to a Ray cluster.
 
 > 下面是架构示意图内部的文字标签（来自 src/components/PlatformArchitecture.tsx）
 
@@ -322,7 +322,7 @@ Use the references and llms.txt files to wire Vane into your stack.
 ## 6. CTA 收尾区
 
 ### `cta.title` — 标题
-Build your first multimodal AI pipeline with Vane.
+Build your first AI pipeline on multimodal data.
 
 ### `cta.btn.docs` — 按钮①（实心）
 Read the Docs
@@ -335,7 +335,7 @@ Become a design partner
 ## 7. Footer 页脚（首页版本，部分为全局共享）
 
 ### `footer.blurb` — 品牌简介（仅首页）
-DuckDB-compatible pipelines for AI workloads. Run SQL, Python UDFs, embeddings, and model inference on Ray.
+The multimodal engine for AI pipelines and agents. Run SQL, Python UDFs, embeddings, and model inference on Ray.
 
 ### `footer.install` — 安装行
 $ pip install vane-ai
@@ -343,7 +343,7 @@ $ pip install vane-ai
 ### `footer.col.product` — Product 列（标题 + 链接文字，逐行）
 - Product
 - Multimodal Data Pipeline
-- Enterprise Multimodal Agent
+- Enterprise Multimodal Data
 - Benchmarks
 
 ### `footer.col.docs` — Docs 列（逐行）

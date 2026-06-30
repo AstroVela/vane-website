@@ -19,16 +19,16 @@
 ## 0. SEO / 分享元信息
 
 ### `meta.title` — 浏览器标题
-Enterprise Multimodal Agent Infrastructure — Vane
+Enterprise Multimodal Data Infrastructure — Vane
 
 ### `meta.description` — 搜索描述
-Turn messy multimodal business materials — PDFs, scans, photos, forms, spreadsheets, logs — into auditable facts. One pipeline for files, models and rules.
+Turn messy multimodal business materials — PDFs, images, video, scans, forms, spreadsheets, logs, and documents — into auditable facts. One pipeline for files, models, and rules.
 
 ### `meta.og.title` — 分享标题
 Turn messy multimodal business materials into auditable facts.
 
 ### `meta.og.description` — 分享描述
-messy materials → auditable facts for claims, compliance and document review teams.
+messy materials → auditable facts for enterprise PDFs, images, video, forms, spreadsheets, logs, and documents.
 
 ---
 
@@ -42,19 +42,19 @@ messy materials → auditable facts
 ## 1. Hero 英雄区
 
 ### `hero.eyebrow` — 顶部小标签
-Enterprise Multimodal Agent Infrastructure
+Enterprise Multimodal Data Infrastructure
 
 ### `hero.h1` — 主标题
 Turn messy multimodal business materials into auditable facts.
 
 ### `hero.lead` — 副标题
-Claims, compliance and document review — Vane extracts the evidence, runs the rules, and returns auditable findings.
+PDFs, images, video, scans, forms, spreadsheets, logs, and documents — Vane extracts evidence, runs rules, and returns auditable insights, evidence, and recommendations.
 
 ### `hero.audience` — 受众行
-claims teams · compliance teams · document review teams · enterprise AI teams
+PDFs · images · video · scans · forms · spreadsheets · logs · documents
 
 ### `hero.btn.run` — 按钮①（实心）
-Run the claims pipeline
+Run the example pipeline
 
 ### `hero.btn.docs` — 按钮②
 Read the docs
@@ -70,7 +70,7 @@ messy materials
 ### `hero.diagram.inputs` — 输入标签（6 个，逐行）
 - PDF
 - scan
-- photo
+- image
 - form
 - sheet
 - log
@@ -79,9 +79,9 @@ messy materials
 auditable facts
 
 ### `hero.diagram.outputs` — 输出标签（3 个，逐行）
-- finding + evidence
-- review task
-- claim summary
+- insights
+- evidence
+- recommendations
 
 ---
 
@@ -94,7 +94,7 @@ The Problem
 The hard part isn't calling a model — it's rebuilding the evidence chain.
 
 ### `problem.lead` — 副标题
-Today that chain is stitched across scattered systems and glue code.
+Today that chain is stitched across OCR scripts, temp files, model calls, SQL jobs, and review tools.
 
 #### 左框 BEFORE（碎片化链路）
 
@@ -124,7 +124,7 @@ AFTER — one pipeline
 - Auditable Facts
 
 ### `problem.after.outputs` — 节点下方输出说明
-evidence · review · summary
+insights · evidence · recommendations
 
 > 框底部还会显示 `motif`（见“全局主线 Motif”）
 
@@ -141,10 +141,10 @@ messy materials → auditable facts, as one pipeline.
 #### 卡片①
 
 ### `how.card.1.title` — 标题
-One pipeline for files, models and rules
+One pipeline for files, models, and rules
 
 ### `how.card.1.copy` — 描述
-File extraction, model inference and SQL rules run as one pipeline.
+File extraction, model inference, SQL rules, and review outputs run as one pipeline.
 
 ### `how.card.1.viz` — 图示芯片（逐行；最后一项为高亮结果）
 - files
@@ -155,13 +155,13 @@ File extraction, model inference and SQL rules run as one pipeline.
 #### 卡片②
 
 ### `how.card.2.title` — 标题
-Every finding comes with evidence
+Every insight comes with evidence
 
 ### `how.card.2.copy` — 描述
-Each finding carries its proof — explainable and reviewable.
+Each insight carries its proof — source file, chunk, quote, confidence, triggering rule, and review status.
 
 ### `how.card.2.viz` — 图示芯片（逐行；第一项为高亮，第二项为证据明细）
-- finding
+- insight
 - file · chunk · quote · confidence · rule
 
 #### 卡片③
@@ -188,7 +188,7 @@ Real Example
 Claims evidence pipeline
 
 ### `example.lead` — 副标题
-Turn a claim packet — photos, scanned forms, estimates — into evidence, review tasks and a claim-level summary.
+Turn a claim packet — photos, scanned forms, estimates — into insights, evidence, and recommendations.
 
 #### 示意图
 
@@ -208,9 +208,9 @@ photos · scanned forms · estimates
 Outputs
 
 ### `example.diagram.outputs` — 输出节点（逐行）
+- insights
 - evidence
-- review tasks
-- claim summary
+- recommendations
 
 #### 代码下方的 Note
 
@@ -221,7 +221,7 @@ Note
 Runs on public / synthetic proxy data — it shows the pipeline shape, not a production decision system. Plug in your own OCR / VLM / LLM along the same interface.
 
 ### `example.btn.run` — 按钮
-Run the claims pipeline
+Run the example pipeline
 
 > SQL 代码窗口见末尾“代码示例 · claims_evidence.sql”
 
@@ -242,7 +242,7 @@ $ pip install vane-ai
 $ python -m vane_examples.claims_evidence
 
 ### `run.terminal.line3` — 终端第③行（输出 + 括注）
-→ evidence · review_tasks · claim_summary (runs CPU-only)
+→ insights · evidence · recommendations (runs CPU-only)
 
 ---
 
@@ -251,10 +251,10 @@ $ python -m vane_examples.claims_evidence
 > 顶部 kicker 显示 `motif`（见“全局主线 Motif”）
 
 ### `cta.title` — 标题
-Have a stack of claims to turn into auditable facts?
+Have PDFs, images, video, logs, and documents to turn into auditable facts?
 
 ### `cta.btn.run` — 按钮①（实心）
-Run the claims pipeline
+Run the example pipeline
 
 ### `cta.btn.partner` — 按钮②
 Become a design partner
@@ -264,7 +264,7 @@ Become a design partner
 ## 7. 页脚（与首页共享，非首页版本只显示这句简介）
 
 ### `footer.tagline` — 简介
-The multimodal-native data engine for AI workloads.
+The multimodal engine for AI pipelines and agents.
 
 ---
 
@@ -273,16 +273,16 @@ The multimodal-native data engine for AI workloads.
 > 可改注释/字符串文案，请保持 SQL 结构可运行。
 
 ```sql
--- files → extraction → model → SQL → finding, in one execution plan
+-- files → extraction → model → SQL → insight, in one execution plan
 WITH evidence AS (
   SELECT claim_id, file_id,
          extract_document(media_type, uri)                  AS doc,  -- OCR / parse
-         prompt('Extract claim fields as JSON; keep the quote', doc) AS fact  -- model, in SQL
+         prompt('Extract fields as JSON; keep quote and confidence', doc) AS fact  -- model, in SQL
   FROM read_files('claims/CLM-POC-001/*')                           -- files
 )
 SELECT claim_id, fact,
        provenance()   AS evidence,      -- file · chunk · quote · confidence
-       'needs_review' AS status         -- SQL rule → finding
+       'recommended_review' AS recommendation  -- SQL rule → recommendation
 FROM evidence
-WHERE confidence < 0.8;
+WHERE fact.confidence < 0.8;
 ```

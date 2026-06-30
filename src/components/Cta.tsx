@@ -11,7 +11,7 @@ type CtaProps = PropsWithChildren<{
 export default function Cta({
   children,
   kicker,
-  title = 'Build your first multimodal AI pipeline with Vane.',
+  title = 'Build your first AI pipeline on multimodal data.',
 }: CtaProps) {
   return (
     <Box className="cta">

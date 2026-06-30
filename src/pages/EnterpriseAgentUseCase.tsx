@@ -7,20 +7,20 @@ import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
 
-const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20enterprise%20agent%20design%20partner'
+const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20enterprise%20multimodal%20data%20design%20partner'
 
-const CLAIMS_SQL = `-- files → extraction → model → SQL → finding, in one execution plan
+const CLAIMS_SQL = `-- files → extraction → model → SQL → insight, in one execution plan
 WITH evidence AS (
   SELECT claim_id, file_id,
          extract_document(media_type, uri)                  AS doc,  -- OCR / parse
-         prompt('Extract claim fields as JSON; keep the quote', doc) AS fact  -- model, in SQL
+         prompt('Extract fields as JSON; keep quote and confidence', doc) AS fact  -- model, in SQL
   FROM read_files('claims/CLM-POC-001/*')                           -- files
 )
 SELECT claim_id, fact,
        provenance()   AS evidence,      -- file · chunk · quote · confidence
-       'needs_review' AS status         -- SQL rule → finding
+       'recommended_review' AS recommendation  -- SQL rule → recommendation
 FROM evidence
-WHERE confidence < 0.8;`
+WHERE fact.confidence < 0.8;`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -46,7 +46,7 @@ function HeroDiagram() {
       <div className="ehd-stage">
         <div className="enterprise-diagram-label">messy materials</div>
         <div className="enterprise-material-grid">
-          {['PDF', 'scan', 'photo', 'form', 'sheet', 'log'].map((item) => (
+          {['PDF', 'scan', 'image', 'form', 'sheet', 'log'].map((item) => (
             <MiniNode key={item}>{item}</MiniNode>
           ))}
         </div>
@@ -57,9 +57,9 @@ function HeroDiagram() {
       <div className="ehd-stage">
         <div className="enterprise-diagram-label">auditable facts</div>
         <div className="enterprise-fact-stack">
-          <MiniNode>finding + evidence</MiniNode>
-          <MiniNode>review task</MiniNode>
-          <MiniNode>claim summary</MiniNode>
+          <MiniNode>insights</MiniNode>
+          <MiniNode>evidence</MiniNode>
+          <MiniNode>recommendations</MiniNode>
         </div>
       </div>
     </Box>
@@ -89,7 +89,7 @@ function ProblemDiagram() {
           <span className="enterprise-vane-node">VANE</span>
           <b>↓</b>
           <MiniNode>Auditable Facts</MiniNode>
-          <em>evidence · review · summary</em>
+          <em>insights · evidence · recommendations</em>
         </div>
         <Motif compact />
       </Box>
@@ -100,8 +100,8 @@ function ProblemDiagram() {
 function HowVaneWorks() {
   const cards = [
     {
-      title: 'One pipeline for files, models and rules',
-      copy: 'File extraction, model inference and SQL rules run as one pipeline.',
+      title: 'One pipeline for files, models, and rules',
+      copy: 'File extraction, model inference, SQL rules, and review outputs run as one pipeline.',
       visual: (
         <div className="ehow-viz">
           <span className="ehow-chip">files</span>
@@ -113,11 +113,11 @@ function HowVaneWorks() {
       ),
     },
     {
-      title: 'Every finding comes with evidence',
-      copy: 'Each finding carries its proof — explainable and reviewable.',
+      title: 'Every insight comes with evidence',
+      copy: 'Each insight carries its proof — source file, chunk, quote, confidence, triggering rule, and review status.',
       visual: (
         <div className="ehow-viz">
-          <span className="ehow-chip is-out">finding</span>
+          <span className="ehow-chip is-out">insight</span>
           <b className="ehow-arrow">→</b>
           <span className="ehow-chip ehow-chip-wide">file · chunk · quote · confidence · rule</span>
         </div>
@@ -171,9 +171,9 @@ function ExamplePipelineDiagram() {
       <div>
         <div className="enterprise-diagram-label">Outputs</div>
         <div className="enterprise-fact-stack">
+          <MiniNode>insights</MiniNode>
           <MiniNode>evidence</MiniNode>
-          <MiniNode>review tasks</MiniNode>
-          <MiniNode>claim summary</MiniNode>
+          <MiniNode>recommendations</MiniNode>
         </div>
       </div>
     </Box>
@@ -185,7 +185,7 @@ function RunTerminal() {
     <Box className="enterprise-terminal" flat>
       <div><span>$</span> pip install vane-ai</div>
       <div><span>$</span> python -m vane_examples.claims_evidence</div>
-      <div><b>→</b> evidence · review_tasks · claim_summary <em>(runs CPU-only)</em></div>
+      <div><b>→</b> insights · evidence · recommendations <em>(runs CPU-only)</em></div>
     </Box>
   )
 }
@@ -194,13 +194,13 @@ export default function EnterpriseAgentUseCase() {
   return (
     <>
       <Head>
-        <title>Enterprise Multimodal Agent Infrastructure — Vane</title>
+        <title>Enterprise Multimodal Data Infrastructure — Vane</title>
         <meta
           name="description"
-          content="Turn messy multimodal business materials — PDFs, scans, photos, forms, spreadsheets, logs — into auditable facts. One pipeline for files, models and rules."
+          content="Turn messy multimodal business materials — PDFs, images, video, scans, forms, spreadsheets, logs, and documents — into auditable facts. One pipeline for files, models, and rules."
         />
         <meta property="og:title" content="Turn messy multimodal business materials into auditable facts." />
-        <meta property="og:description" content="messy materials → auditable facts for claims, compliance and document review teams." />
+        <meta property="og:description" content="messy materials → auditable facts for enterprise PDFs, images, video, forms, spreadsheets, logs, and documents." />
       </Head>
 
       <Nav />
@@ -209,15 +209,15 @@ export default function EnterpriseAgentUseCase() {
       <section className="hero">
         <div className="wrap hero-grid enterprise-hero-grid">
           <div>
-            <Eyebrow style={{ marginBottom: 20 }}>Enterprise Multimodal Agent Infrastructure</Eyebrow>
+            <Eyebrow style={{ marginBottom: 20 }}>Enterprise Multimodal Data Infrastructure</Eyebrow>
             <h1 className="h1">Turn messy multimodal business materials into auditable facts.</h1>
             <p className="lead" style={{ marginTop: 24, maxWidth: 620 }}>
-              Claims, compliance and document review — Vane extracts the evidence, runs the rules, and returns auditable findings.
+              PDFs, images, video, scans, forms, spreadsheets, logs, and documents — Vane extracts evidence, runs rules, and returns auditable insights, evidence, and recommendations.
             </p>
-            <div className="enterprise-audience">claims teams · compliance teams · document review teams · enterprise AI teams</div>
+            <div className="enterprise-audience">PDFs · images · video · scans · forms · spreadsheets · logs · documents</div>
             <div style={{ marginTop: 18 }}><Motif compact /></div>
             <div style={{ display: 'flex', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
-              <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the claims pipeline</Button>
+              <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
               <Button to="/docs">Read the docs</Button>
             </div>
             <div className="install" style={{ marginTop: 28 }}>
@@ -237,7 +237,7 @@ export default function EnterpriseAgentUseCase() {
           <div className="shead">
             <Eyebrow>The Problem</Eyebrow>
             <h2 className="h2">The hard part isn't calling a model — it's rebuilding the evidence chain.</h2>
-            <p className="lead">Today that chain is stitched across scattered systems and glue code.</p>
+            <p className="lead">Today that chain is stitched across OCR scripts, temp files, model calls, SQL jobs, and review tools.</p>
           </div>
           <ProblemDiagram />
         </div>
@@ -264,7 +264,7 @@ export default function EnterpriseAgentUseCase() {
           <div className="shead">
             <Eyebrow>Real Example</Eyebrow>
             <h2 className="h2">Claims evidence pipeline</h2>
-            <p className="lead">Turn a claim packet — photos, scanned forms, estimates — into evidence, review tasks and a claim-level summary.</p>
+            <p className="lead">Turn a claim packet — photos, scanned forms, estimates — into insights, evidence, and recommendations.</p>
           </div>
           <ExamplePipelineDiagram />
           <div className="enterprise-code-block">
@@ -276,7 +276,7 @@ export default function EnterpriseAgentUseCase() {
               </span>
             </Box>
           </div>
-          <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the claims pipeline</Button>
+          <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
         </div>
       </section>
 
@@ -300,9 +300,9 @@ export default function EnterpriseAgentUseCase() {
         <div className="wrap">
           <Cta
             kicker={<Motif compact />}
-            title="Have a stack of claims to turn into auditable facts?"
+            title="Have PDFs, images, video, logs, and documents to turn into auditable facts?"
           >
-            <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the claims pipeline</Button>
+            <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
             <Button href={DESIGN_PARTNER_HREF}>Become a design partner</Button>
           </Cta>
         </div>

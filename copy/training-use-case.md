@@ -1,6 +1,6 @@
 <!--
 ================================================================
-  文案稿 · 用例页「自动驾驶 / 物理 AI」 — src/pages/TrainingUseCase.tsx
+  文案稿 · 用例页「多模态模型训练数据管道」 — src/pages/TrainingUseCase.tsx
   路由：/use-cases/training
 ================================================================
   编辑方法：
@@ -12,34 +12,34 @@
 ================================================================
 -->
 
-# 自动驾驶用例页文案
+# 多模态模型训练用例页文案
 
 ## 0. SEO / 分享元信息（不显示在页面正文，但影响搜索与分享卡片）
 
 ### `meta.title` — 浏览器标题
-Training-data pipelines for autonomous driving & physical AI — Vane
+Multimodal training data pipelines for AI models — Vane
 
 ### `meta.description` — 搜索描述
-Turn PB-scale multi-sensor drive logs into training-ready datasets — faster, in far less code. Distributed multimodal processing and batch auto-labeling on Ray, with DuckDB-compatible SQL/Python.
+Prepare images, video, audio, documents, tables, and sensor logs for multimodal model training. Run filtering, captioning, embedding, deduplication, auto-labeling, and dataset release packaging in one Ray-backed pipeline.
 
 ### `meta.og.title` — 分享标题
-Training-data pipelines for autonomous driving & physical AI — Vane
+Multimodal training data pipelines for AI models — Vane
 
 ### `meta.og.description` — 分享描述
-3.1x throughput vs Ray Data. Drive logs to training-ready releases with one distributed multimodal pipeline.
+3.1x batch inference throughput vs Ray Data. Raw multimodal data to training-ready releases with one distributed pipeline.
 
 ---
 
 ## 1. Hero 英雄区
 
 ### `hero.eyebrow` — 顶部小标签
-Use Case · Autonomous Driving / Physical AI
+Use Case · Multimodal Model Training
 
 ### `hero.h1` — 主标题
-From PB-scale drive logs to training-ready datasets.
+From raw multimodal data to training-ready dataset releases.
 
 ### `hero.lead` — 副标题
-Fleets and robots stream multi-sensor logs faster than any single data stack can process. Vane runs the whole pipeline — decode, align, auto-label, dedup, package — distributed on Ray, with the DuckDB-compatible Python API you already use.
+VLMs, video models, VLA models, and physical AI systems all depend on the same hard data work: select, decode, caption, label, embed, deduplicate, filter, and package multimodal data at training scale. Vane runs that pipeline as one Ray-backed graph.
 
 ### `hero.btn.benchmarks` — 按钮①（实心）
 See benchmarks
@@ -66,19 +66,19 @@ Faster pipelines, in far less code.
 Performance — higher throughput, fuller GPUs
 
 ### `why.perf.cost` — 痛点段落
-Continuous PB/EB processing, offline auto-labeling and full historical recompute are all bottlenecked on throughput and GPU utilization. That's where the bill is.
+Training-scale multimodal data preparation, offline captioning, auto-labeling, quality scoring, embedding, deduplication, and historical reprocessing are all bottlenecked on throughput and GPU utilization. That's where the bill is.
 
 ### `why.perf.bullet.1.title` — 要点①标题
 Efficient heterogeneous execution
 
 ### `why.perf.bullet.1.copy` — 要点①说明
-overlap CPU decode, GPU inference and IO asynchronously, so GPUs stay fed.
+overlap media decode, GPU captioning, auto-labeling, embedding, and IO asynchronously, so expensive accelerators stay fed.
 
 ### `why.perf.bullet.2.title` — 要点②标题
 Streaming + backpressure + dynamic batching
 
 ### `why.perf.bullet.2.copy` — 要点②说明
-push large sensor objects through continuously, no OOM.
+push large media and sensor objects through continuously, no OOM.
 
 ### `why.perf.bullet.3.title` — 要点③标题
 Distributed on Ray
@@ -95,7 +95,7 @@ See the benchmarks
 Simplicity — one engine, no glue code
 
 ### `why.simple.cost` — 痛点段落
-Today the pipeline scatters SQL in one system, preprocessing in Python scripts, inference in separate Ray jobs, embeddings through glue code — images, audio and video each handled apart.
+Today the pipeline scatters file selection, media decoding, model inference, quality filters, embeddings, deduplication, and dataset packaging across separate jobs and glue code.
 
 ### `why.simple.bullet.1.title` — 要点①标题
 One engine, one graph
@@ -110,7 +110,7 @@ DuckDB-compatible API
 low migration cost from existing Ray, Spark, or Daft pipelines.
 
 ### `why.simple.bullet.3.title` — 要点③标题
-The whole drive-log to release pipeline
+The whole raw-data to release pipeline
 
 ### `why.simple.bullet.3.copy` — 要点③说明
 fits in one readable code window without separate orchestration glue.
@@ -129,7 +129,7 @@ Proof · Performance
 Measured, and reproducible.
 
 ### `proof.lead` — 副标题
-The headline benchmark is vLLM batch inference over 66K rows on 2x A100 with prefix bucketing. It is not a drive-log workload, but it tests the same bottleneck: keeping expensive GPUs fed.
+The headline benchmark measures the bottleneck many multimodal training pipelines hit first: high-throughput batch model inference for captioning, labeling, scoring, and embedding.
 
 #### 左卡片：核心数字
 
@@ -169,7 +169,7 @@ document embedding
 audio and video workloads
 
 ### `proof.matrix.caption` — 矩阵下方说明
-Workload-dependent · fully reproducible. Use the benchmark scripts as the starting point, then rerun with your own sensor mix and auto-label model.
+Workload-dependent · fully reproducible. Use the benchmark scripts as a starting point, then rerun with your own media mix, filters, and captioning or auto-label model.
 
 ---
 
@@ -179,10 +179,10 @@ Workload-dependent · fully reproducible. Use the benchmark scripts as the start
 Representative code
 
 ### `code.h2` — 标题
-The release pipeline in one graph.
+The training-data release pipeline in one graph.
 
 ### `code.lead` — 副标题
-SQL selection, GPU auto-label, dedup, embedding, and packaged output stay in one readable pipeline.
+File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline. For Physical AI and VLA training, the same pipeline can read camera, lidar, trajectories, actions, calibration, and scene metadata.
 
 > 代码窗口本身见末尾“代码示例 · training_data_release.py”
 
@@ -197,7 +197,7 @@ Run it
 Start with the training-data example.
 
 ### `run.lead` — 副标题
-Install the pre-release, run the sample pipeline, then swap the sample manifest for your drive-log schema. It's the first example this page points teams to.
+Install the pre-release, run the sample multimodal training-data pipeline, then swap the sample manifest for your images, video, audio, documents, tables, or sensor logs.
 
 ### `run.btn.open` — 按钮①（实心）
 Open the example
@@ -215,10 +215,10 @@ Benchmark scripts
 Do a POC
 
 ### `poc.h2` — 标题
-Bring your sensor schema and your bill.
+Estimate your training-data processing cost.
 
 ### `poc.lead` — 副标题
-Point your code agent at our docs (llms.txt) and it'll scaffold a pipeline for your sensor schema. Curious whether Vane would cut your auto-label GPU bill? Bring your numbers — let's run the math together.
+Point your code agent at our docs (llms.txt) and it'll scaffold a pipeline for your data schema. Curious whether Vane would lower your captioning, auto-labeling, or historical reprocessing bill? Bring your numbers — let's run the math together.
 
 ### `poc.btn.partner` — 按钮①（实心）
 Become a design partner
@@ -231,7 +231,7 @@ Open llms.txt
 ## 7. CTA 收尾区
 
 ### `cta.title` — 标题
-Running perception data at fleet scale? Let's make Vane fit your release pipeline.
+Preparing multimodal training data at scale? Let's make Vane fit your release pipeline.
 
 ### `cta.btn.partner` — 按钮①（实心）
 Become a design partner
@@ -244,7 +244,7 @@ Read the docs
 ## 8. 页脚（与首页共享，非首页版本只显示这句简介）
 
 ### `footer.tagline` — 简介
-The multimodal-native data engine for AI workloads.
+The multimodal engine for AI pipelines and agents.
 
 ---
 
@@ -252,41 +252,43 @@ The multimodal-native data engine for AI workloads.
 
 > 可改注释/字符串文案，请保持代码结构可运行。
 
-### Hero 代码窗口 · drive_release.py
+### Hero 代码窗口 · training_release.py
 ```python
 import vane
-from vane.ai import detect, embed
+from vane.ai import describe, embed
 
 vane.configure(runner="ray")
-logs = vane.read("s3://drive-logs/*/frames/*")          # multi-sensor frames
-labeled = detect(logs, columns=["camera", "lidar"],     # offboard auto-label model
-                 model="perception-xl", num_gpus=1)
-clean = labeled.dedup("scene_id").write("s3://release/v42/")
+items = vane.read("s3://training-corpus/*")             # images, video, audio, docs, logs
+labeled = describe(items, columns=["image", "video", "audio", "text"],
+                   model="your-caption-or-label-model", num_gpus=1)
+clean = labeled.dedup("content_hash").write("s3://dataset-releases/mm-v42/")
 ```
 
 ### Code 区代码窗口 · training_data_release.py
 ```python
 import vane
-from vane.ai import detect, embed
+from vane.ai import describe, embed
 
 vane.configure(runner="ray")
 
-frames = vane.sql("""
-    SELECT log_id, ts, camera, lidar, calib
-    FROM read_parquet('s3://drive-logs/*/frames/*.parquet')
+items = vane.sql("""
+    SELECT uri, media_type, text, metadata
+    FROM read_files('s3://training-corpus/*')
     WHERE split = 'train'
 """)
 
-# 1) offboard auto-label as a GPU UDF, batched on Ray
-labeled = detect(frames, columns=["camera", "lidar"],
-                 model="perception-xl", num_gpus=1, batch_size=64)
+# 1) caption or auto-label as a GPU UDF, batched on Ray
+labeled = describe(items, columns=["image", "video", "audio", "text"],
+                   model="your-caption-or-label-model",
+                   num_gpus=1, batch_size=64)
 
-# 2) dedup near-identical scenes, embed for retrieval/QC
-unique = labeled.dedup("scene_id")
-enriched = embed(unique, "camera", provider="transformers")
+# 2) filter low-quality items, dedup, embed for retrieval/QC
+filtered = labeled.filter("quality_score >= 0.8")
+unique = filtered.dedup("content_hash")
+enriched = embed(unique, "caption", provider="transformers")
 
 # 3) write the packaged dataset release
-enriched.write_parquet("s3://release/v42/")
+enriched.write_parquet("s3://dataset-releases/mm-v42/")
 ```
 
 ### Run it 代码窗口 · run.sh
@@ -294,5 +296,5 @@ enriched.write_parquet("s3://release/v42/")
 pip install -i https://test.pypi.org/simple/ vane-ai
 python -m vane_examples.training_data_pipeline
 
-# runs the sample drive-log pipeline end-to-end on a single GPU
+# runs the sample multimodal training-data pipeline end-to-end on a single GPU
 ```
