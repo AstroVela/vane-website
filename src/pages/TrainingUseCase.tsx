@@ -7,6 +7,7 @@ import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
+import TrainingDataFactoryAnimation from '../components/TrainingDataFactoryAnimation'
 
 const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20multimodal%20training%20data%20design%20partner'
 
@@ -123,9 +124,13 @@ export default function TrainingUseCase() {
               <span>·</span><span>Apache-2.0</span>
             </div>
           </div>
-          <CodeWindow filename="drive_release.py" running code={HERO_CODE} language="python" />
+          <CodeWindow filename="training_release.py" running code={HERO_CODE} language="python" />
         </div>
       </section>
+
+      <Divider />
+
+      <TrainingDataFactoryAnimation />
 
       <Divider />
 

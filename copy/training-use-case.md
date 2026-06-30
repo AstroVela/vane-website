@@ -52,7 +52,30 @@ $ pip install vane-ai · Apache-2.0
 
 ---
 
-## 2. Why Vane 价值区
+## 2. Data Factory 动图区
+
+### `factory.eyebrow` — 小标签
+Execution timeline
+
+### `factory.h2` — 标题
+Legacy queues. Vane keeps the graph occupied.
+
+### `factory.lead` — 副标题
+The same multimodal training-data pipeline runs on both sides. Legacy execution builds queues between stages; Vane streams media, batches dynamically, and keeps GPU work fed.
+
+### `factory.ledger` — 顶部对比状态（逐行）
+- Legacy · queue buildup · stage wait · GPU feed gap
+- Vane · steady occupancy · streaming frames · balanced pipeline
+
+### `factory.legacy.title` — 左侧标题
+Legacy Pipeline
+
+### `factory.vane.title` — 右侧标题
+Vane Pipeline
+
+---
+
+## 3. Why Vane 价值区
 
 ### `why.eyebrow` — 小标签
 Why Vane
@@ -120,7 +143,7 @@ Read the code
 
 ---
 
-## 3. Benchmark / Proof 证明区
+## 4. Benchmark / Proof 证明区
 
 ### `proof.eyebrow` — 小标签
 Proof · Performance
@@ -173,7 +196,7 @@ Workload-dependent · fully reproducible. Use the benchmark scripts as a startin
 
 ---
 
-## 4. Code 代码区
+## 5. Code 代码区
 
 ### `code.eyebrow` — 小标签
 Representative code
@@ -188,7 +211,7 @@ File selection, media decoding, GPU captioning or auto-labeling, quality filters
 
 ---
 
-## 5. Run it 运行区
+## 6. Run it 运行区
 
 ### `run.eyebrow` — 小标签
 Run it
@@ -209,7 +232,7 @@ Benchmark scripts
 
 ---
 
-## 6. POC 区
+## 7. POC 区
 
 ### `poc.eyebrow` — 小标签
 Do a POC
@@ -228,7 +251,7 @@ Open llms.txt
 
 ---
 
-## 7. CTA 收尾区
+## 8. CTA 收尾区
 
 ### `cta.title` — 标题
 Preparing multimodal training data at scale? Let's make Vane fit your release pipeline.
@@ -241,14 +264,14 @@ Read the docs
 
 ---
 
-## 8. 页脚（与首页共享，非首页版本只显示这句简介）
+## 9. 页脚（与首页共享，非首页版本只显示这句简介）
 
 ### `footer.tagline` — 简介
 The multimodal engine for AI pipelines and agents.
 
 ---
 
-## 9. 代码示例
+## 10. 代码示例
 
 > 可改注释/字符串文案，请保持代码结构可运行。
 
