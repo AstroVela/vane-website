@@ -75,7 +75,7 @@ function ScenarioCard({ scenario }: { scenario: (typeof SCENARIOS)[number] }) {
   const body = (
     <>
       <div className="scenario-top">
-        <span className="ic"><PixelIcon name={scenario.icon} /></span>
+        <span className="ic"><PixelIcon name={scenario.icon} size={20} /></span>
         <span className={`status-pill ${scenario.status === 'Available now' ? 'available' : 'soon'}`}>
           {scenario.status}
         </span>
@@ -157,70 +157,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* PLATFORM ARCHITECTURE */}
-      <section className="section architecture-section" style={{ paddingTop: 40 }}>
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>Platform</Eyebrow>
-            <h2 className="h2">Data, agents, and RL on one always-on core.</h2>
-            <p className="lead">
-              The four workloads above run on one core. Vane senses the world, learns from it, and acts on it — unifying multimodal data processing, long-running agents and RL, from a laptop to a Ray cluster.
-            </p>
-          </div>
-          <PlatformArchitecture />
-        </div>
-      </section>
-
-      {/* ARCHITECTURE */}
-      <section className="section" style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>How it works</Eyebrow>
-            <h2 className="h2">From data lake to results, in one graph.</h2>
-          </div>
-          <Box className="arch">
-            <div className="arch-flow">
-              <div>
-                <div className="azt">Sources</div>
-                <div className="anode"><span className="mut">▦</span> Parquet</div>
-                <div className="anode"><span className="mut">▦</span> S3 / object store</div>
-                <div className="anode"><span className="mut">▦</span> Data lake</div>
-              </div>
-              <div className="conn"><span className="pk" /></div>
-              <div>
-                <div className="engine">
-                  <div className="eh">
-                    <span className="eng-ico">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path d="M2 3 L11 8 L2 13 Z" fill="currentColor" />
-                        <rect x="12" y="3" width="2" height="10" fill="currentColor" />
-                      </svg>
-                    </span>
-                    <span className="wm">vane-data</span><span className="on">on Ray</span>
-                  </div>
-                  <div className="el"><span className="lt">query</span> DuckDB-compatible SQL / Relation</div>
-                  <div className="el"><span className="lt">transform</span> map_batches · flat_map · UDFs</div>
-                  <div className="el"><span className="lt">execute</span> Ray tasks · actors <span className="bars"><i /><i /><i /><i /></span></div>
-                </div>
-              </div>
-              <div className="conn d2"><span className="pk" /></div>
-              <div>
-                <div className="azt">Results</div>
-                <div className="anode"><span className="mut">▦</span> Arrow</div>
-                <div className="anode"><span className="mut">▦</span> Parquet</div>
-                <div className="anode"><span className="mut">▦</span> S3</div>
-              </div>
-            </div>
-          </Box>
-          <div className="cap-grid">
-            <div className="cap"><span className="cn">01</span>DuckDB-compatible API</div>
-            <div className="cap"><span className="cn">02</span>Ray distributed execution</div>
-            <div className="cap"><span className="cn">03</span>Python-native AI UDFs</div>
-            <div className="cap"><span className="cn">04</span>Multimodal preprocessing</div>
-          </div>
-        </div>
-      </section>
-
       {/* BENCHMARKS PREVIEW */}
       <div className="wrap"><div className="ddiv" /></div>
       <section className="section" id="benchmarks" style={{ paddingTop: 40 }}>
@@ -262,6 +198,20 @@ export default function Home() {
               </div>
             </Box>
           </div>
+        </div>
+      </section>
+
+      {/* PLATFORM ARCHITECTURE */}
+      <section className="section architecture-section" style={{ paddingTop: 40 }}>
+        <div className="wrap">
+          <div className="shead">
+            <Eyebrow>Platform</Eyebrow>
+            <h2 className="h2">Data, agents, and RL on one always-on core.</h2>
+            <p className="lead">
+              The four workloads above run on one core. Vane senses the world, learns from it, and acts on it — unifying multimodal data processing, long-running agents and RL, from a laptop to a Ray cluster.
+            </p>
+          </div>
+          <PlatformArchitecture />
         </div>
       </section>
 

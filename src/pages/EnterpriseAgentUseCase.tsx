@@ -43,16 +43,18 @@ function Motif({ compact = false }: { compact?: boolean }) {
 function HeroDiagram() {
   return (
     <Box className="enterprise-hero-diagram">
-      <div className="enterprise-diagram-label">messy materials</div>
-      <div className="enterprise-material-grid">
-        {['PDF', 'scan', 'photo', 'form', 'sheet', 'log'].map((item) => (
-          <MiniNode key={item}>{item}</MiniNode>
-        ))}
+      <div className="ehd-stage">
+        <div className="enterprise-diagram-label">messy materials</div>
+        <div className="enterprise-material-grid">
+          {['PDF', 'scan', 'photo', 'form', 'sheet', 'log'].map((item) => (
+            <MiniNode key={item}>{item}</MiniNode>
+          ))}
+        </div>
       </div>
       <div className="enterprise-arrow">→</div>
       <div className="enterprise-vane-node">VANE</div>
       <div className="enterprise-arrow">→</div>
-      <div>
+      <div className="ehd-stage">
         <div className="enterprise-diagram-label">auditable facts</div>
         <div className="enterprise-fact-stack">
           <MiniNode>finding + evidence</MiniNode>
@@ -101,8 +103,12 @@ function HowVaneWorks() {
       title: 'One pipeline for files, models and rules',
       copy: 'File extraction, model inference and SQL rules run as one pipeline.',
       visual: (
-        <div className="enterprise-mini-flow">
-          <span>files</span><span>models</span><span>rules</span><b>→</b><strong>one pipeline</strong>
+        <div className="ehow-viz">
+          <span className="ehow-chip">files</span>
+          <span className="ehow-chip">models</span>
+          <span className="ehow-chip">rules</span>
+          <b className="ehow-arrow">→</b>
+          <span className="ehow-chip is-out">one pipeline</span>
         </div>
       ),
     },
@@ -110,8 +116,10 @@ function HowVaneWorks() {
       title: 'Every finding comes with evidence',
       copy: 'Each finding carries its proof — explainable and reviewable.',
       visual: (
-        <div className="enterprise-object-flow">
-          <strong>finding</strong><b>→</b><span>{'{ file · chunk · quote · confidence · triggering rule }'}</span>
+        <div className="ehow-viz">
+          <span className="ehow-chip is-out">finding</span>
+          <b className="ehow-arrow">→</b>
+          <span className="ehow-chip ehow-chip-wide">file · chunk · quote · confidence · rule</span>
         </div>
       ),
     },
@@ -119,8 +127,12 @@ function HowVaneWorks() {
       title: 'Scale without rewriting',
       copy: 'Start local, move to distributed — business logic unchanged.',
       visual: (
-        <div className="enterprise-scale-flow">
-          <span>local</span><b>⇄</b><span>distributed</span><em>same pipeline</em>
+        <div className="ehow-viz">
+          <span className="ehow-chip">local</span>
+          <b className="ehow-arrow">⇄</b>
+          <span className="ehow-chip">distributed</span>
+          <b className="ehow-arrow">→</b>
+          <span className="ehow-chip is-out">same pipeline</span>
         </div>
       ),
     },
@@ -146,7 +158,7 @@ function ExamplePipelineDiagram() {
         <div className="enterprise-diagram-label">Claim packet</div>
         <MiniNode>photos · scanned forms · estimates</MiniNode>
       </div>
-      <b>↓</b>
+      <b>→</b>
       <div className="enterprise-vane-pipeline">
         <span>extract</span>
         <b>→</b>
@@ -173,7 +185,7 @@ function RunTerminal() {
     <Box className="enterprise-terminal" flat>
       <div><span>$</span> pip install vane-ai</div>
       <div><span>$</span> python -m vane_examples.claims_evidence</div>
-      <div><b>→</b> evidence · review_tasks · claim_summary <em>(~N min, CPU-only)</em></div>
+      <div><b>→</b> evidence · review_tasks · claim_summary <em>(runs CPU-only)</em></div>
     </Box>
   )
 }
@@ -258,7 +270,10 @@ export default function EnterpriseAgentUseCase() {
           <div className="enterprise-code-block">
             <CodeWindow filename="claims_evidence.sql" code={CLAIMS_SQL} language="sql" />
             <Box flat className="enterprise-honesty">
-              Runs on public / synthetic proxy data — it shows the pipeline shape, not a production decision system. Plug in your own OCR / VLM / LLM along the same interface.
+              <span className="enterprise-honesty-label">Note</span>
+              <span>
+                Runs on public / synthetic proxy data — it shows the pipeline shape, not a production decision system. Plug in your own OCR / VLM / LLM along the same interface.
+              </span>
             </Box>
           </div>
           <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the claims pipeline</Button>

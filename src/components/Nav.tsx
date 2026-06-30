@@ -65,6 +65,7 @@ export default function Nav({
   const [mmOpen, setMmOpen] = useState(false) // Use Cases mega-menu
   const [dOpen, setDOpen] = useState(false) // Docs product mega-menu
   const [rOpen, setROpen] = useState(false) // Resources dropdown
+  const [mobOpen, setMobOpen] = useState(false) // mobile slide-down menu
   const [cmdkOpen, setCmdkOpen] = useState(false) // docs ⌘K command palette
   const navRef = useRef<HTMLElement>(null)
   const stars = useGitHubStars(GITHUB_REPO)
@@ -80,13 +81,14 @@ export default function Nav({
     return () => window.removeEventListener('scroll', onScroll)
   }, [ctaReveal])
 
-  // Close both menus on Escape or a click/tap outside the nav.
+  // Close all menus on Escape or a click/tap outside the nav.
   useEffect(() => {
-    if (!mmOpen && !dOpen && !rOpen) return undefined
+    if (!mmOpen && !dOpen && !rOpen && !mobOpen) return undefined
     const closeAll = () => {
       setMmOpen(false)
       setDOpen(false)
       setROpen(false)
+      setMobOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeAll()
@@ -100,7 +102,7 @@ export default function Nav({
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [mmOpen, dOpen, rOpen])
+  }, [mmOpen, dOpen, rOpen, mobOpen])
 
   // ⌘K / Ctrl+K toggles the docs command palette (docs pages only).
   useEffect(() => {
@@ -149,7 +151,7 @@ export default function Nav({
               <div className="dd-pan mega-pan">
                 <div className="dd-card mega">
                   <div className="mega-grid">
-                    <Link className="mega-it" to="/use-cases" onClick={() => setMmOpen(false)}>
+                    <Link className="mega-it" to="/use-cases/training" onClick={() => setMmOpen(false)}>
                       <span className="ic">
                         <PipelineIcon />
                       </span>
@@ -162,7 +164,7 @@ export default function Nav({
                         <span className="mg">For Training · Data / ML teams →</span>
                       </span>
                     </Link>
-                    <Link className="mega-it" to="/use-cases" onClick={() => setMmOpen(false)}>
+                    <Link className="mega-it" to="/use-cases/enterprise-agent" onClick={() => setMmOpen(false)}>
                       <span className="ic">
                         <AgentIcon />
                       </span>
@@ -289,8 +291,78 @@ export default function Nav({
               {ctaInner}
             </Link>
           )}
+          <button
+            type="button"
+            className={cx('nav-burger', mobOpen && 'open')}
+            aria-label={mobOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobOpen}
+            onClick={() => setMobOpen((v) => !v)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
         </div>
       </div>
+      {mobOpen && (
+        <div className="mobile-menu">
+          <div className="wrap">
+            <div className="mob-sec">
+              <Link className="mob-head" to="/use-cases" onClick={() => setMobOpen(false)}>
+                Use Cases
+              </Link>
+              <Link className="mob-sub" to="/use-cases/training" onClick={() => setMobOpen(false)}>
+                Autonomous Driving / Physical AI
+              </Link>
+              <Link
+                className="mob-sub"
+                to="/use-cases/enterprise-agent"
+                onClick={() => setMobOpen(false)}
+              >
+                Enterprise Multimodal Agent
+              </Link>
+            </div>
+            <div className="mob-sec">
+              <Link className="mob-head" to="/benchmarks" onClick={() => setMobOpen(false)}>
+                Benchmarks
+              </Link>
+            </div>
+            <div className="mob-sec">
+              <span className="mob-label">Docs</span>
+              {PRODUCT_ORDER.map((id) => {
+                const p = PRODUCTS[id]
+                const soon = p.status === 'soon'
+                return (
+                  <Link
+                    className="mob-sub"
+                    to={`/docs/${id}`}
+                    key={id}
+                    onClick={() => setMobOpen(false)}
+                  >
+                    {p.name}
+                    {soon && <span className="soon-pill">SOON</span>}
+                  </Link>
+                )
+              })}
+            </div>
+            <div className="mob-sec">
+              <span className="mob-label">Resources</span>
+              <Link className="mob-sub" to="/blog" onClick={() => setMobOpen(false)}>
+                Blog
+              </Link>
+              <a
+                className="mob-sub"
+                href={`${GITHUB_URL}/releases`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMobOpen(false)}
+              >
+                Release Notes
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
     {withSearch && cmdkOpen && <CommandPalette onClose={() => setCmdkOpen(false)} />}
     </>

@@ -44,8 +44,7 @@ enriched.write_parquet("s3://release/v42/")`
 const RUN_CODE = `pip install -i https://test.pypi.org/simple/ vane-ai
 python -m vane_examples.training_data_pipeline
 
-# expected sample run: ~N min on 1x A10
-# replace N with the measured C.1 example result`
+# runs the sample drive-log pipeline end-to-end on a single GPU`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -240,7 +239,7 @@ export default function TrainingUseCase() {
               <Eyebrow>Run it</Eyebrow>
               <h2 className="h2" style={{ marginTop: 12 }}>Start with the training-data example.</h2>
               <p className="lead" style={{ marginTop: 14 }}>
-                Install the pre-release, run the sample pipeline, then swap the sample manifest for your drive-log schema. The example is the C.1 path this page points teams to first.
+                Install the pre-release, run the sample pipeline, then swap the sample manifest for your drive-log schema. It's the first example this page points teams to.
               </p>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 24 }}>
                 <Button solid to="/docs/examples/training-data-pipeline" arrow>Open the example</Button>
