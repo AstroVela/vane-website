@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 const home = readFileSync('src/pages/Home.tsx', 'utf8')
 const platform = readFileSync('src/components/PlatformArchitecture.tsx', 'utf8')
+const nav = readFileSync('src/components/Nav.tsx', 'utf8')
 const footer = readFileSync('src/components/Footer.tsx', 'utf8')
 const cta = readFileSync('src/components/Cta.tsx', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
@@ -38,6 +39,10 @@ for (const text of mustIncludeInHome) {
 
 assert.match(platform, /SENSE\s*.*LEARN\s*.*ACT/s, 'PlatformArchitecture should show the SENSE -> LEARN -> ACT loop')
 
+assert.match(nav, />\s*Solutions\s*<span className="caret">▾<\/span>/, 'Desktop nav should label the solutions menu "Solutions"')
+assert.match(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*Solutions\s*<\/Link>/, 'Mobile nav should label the solutions menu "Solutions"')
+assert.doesNotMatch(nav, />\s*Use Cases\s*<span className="caret">▾<\/span>/, 'Desktop nav should not label the solutions menu "Use Cases"')
+assert.doesNotMatch(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*Use Cases\s*<\/Link>/, 'Mobile nav should not label the solutions menu "Use Cases"')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(footer, /Enterprise Multimodal Data/, 'Footer product nav should use the broader enterprise data label')
 assert.match(cta, /Build your first AI pipeline on multimodal data\./, 'Default CTA should use the updated Home closing copy')

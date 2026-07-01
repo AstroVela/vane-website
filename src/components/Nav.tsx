@@ -144,7 +144,7 @@ export default function Nav({
               aria-expanded={mmOpen}
               onClick={() => setMmOpen((v) => !v)}
             >
-              Use Cases
+              Solutions
               <span className="caret">▾</span>
             </button>
             {mmOpen && (
@@ -309,7 +309,7 @@ export default function Nav({
           <div className="wrap">
             <div className="mob-sec">
               <Link className="mob-head" to="/use-cases" onClick={() => setMobOpen(false)}>
-                Use Cases
+                Solutions
               </Link>
               <Link className="mob-sub" to="/use-cases/training" onClick={() => setMobOpen(false)}>
                 Autonomous Driving / Physical AI
