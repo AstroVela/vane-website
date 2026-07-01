@@ -119,7 +119,7 @@ export default function Docs() {
   if (!isLive || !page || !PageBody) {
     return (
       <>
-        <Nav />
+        <Nav withCta={false} />
         <div className="docs">
           <nav className="side side-soon">
             <div className="prod">
@@ -143,7 +143,7 @@ export default function Docs() {
 
   return (
     <>
-      <Nav withSearch />
+      <Nav withSearch withCta={false} />
 
       <div className="docs">
         {/* SIDEBAR — a product context card, then the product's groups. */}

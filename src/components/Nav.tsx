@@ -6,12 +6,20 @@ import ProductGlyph from '../docs/ProductGlyph'
 import CommandPalette from './CommandPalette'
 import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
 import { useGitHubStars } from './useGitHubStars'
-import { GITHUB_REPO, GITHUB_URL } from '../siteLinks'
+import { CONTACT_MAILTO, DISCORD_URL, GITHUB_REPO, GITHUB_URL } from '../siteLinks'
 
 function GitHubIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+    </svg>
+  )
+}
+
+function DiscordIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
     </svg>
   )
 }
@@ -45,14 +53,16 @@ function AgentIcon() {
 }
 
 /* Sticky nav. On the Home page the Get-Started CTA is hidden on the first
-   screen and fades in past 460px of scroll (`ctaReveal`). Elsewhere it's a
-   normal, always-visible button. */
+   screen and fades in past 460px of scroll (`ctaReveal`); on other marketing
+   pages it's always visible. Docs pages opt out entirely via `withCta={false}`. */
 type NavProps = {
   ctaReveal?: boolean
   ctaTo?: string
   ctaHref?: string
   /** Show the docs search trigger in the nav (docs pages only). */
   withSearch?: boolean
+  /** Render the Get-Started CTA. On by default; docs pages opt out. */
+  withCta?: boolean
 }
 
 export default function Nav({
@@ -60,6 +70,7 @@ export default function Nav({
   ctaTo = '/docs',
   ctaHref,
   withSearch = false,
+  withCta = true,
 }: NavProps) {
   const [show, setShow] = useState(false)
   const [mmOpen, setMmOpen] = useState(false) // Use Cases mega-menu
@@ -277,20 +288,25 @@ export default function Nav({
               <span className="kbd">⌘K</span>
             </button>
           )}
+          <a className="nav-discord" href={DISCORD_URL} target="_blank" rel="noreferrer" aria-label="Join our Discord">
+            <DiscordIcon />
+          </a>
           <a className="ghp" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GitHubIcon />
             <span>Star</span>
             {stars && <b>{stars}</b>}
           </a>
-          {ctaHref ? (
-            <a className={ctaClass} href={ctaHref}>
-              {ctaInner}
-            </a>
-          ) : (
-            <Link className={ctaClass} to={ctaTo}>
-              {ctaInner}
-            </Link>
-          )}
+          <a className="nav-contact" href={CONTACT_MAILTO}>Contact us</a>
+          {withCta &&
+            (ctaHref ? (
+              <a className={ctaClass} href={ctaHref}>
+                {ctaInner}
+              </a>
+            ) : (
+              <Link className={ctaClass} to={ctaTo}>
+                {ctaInner}
+              </Link>
+            ))}
           <button
             type="button"
             className={cx('nav-burger', mobOpen && 'open')}
