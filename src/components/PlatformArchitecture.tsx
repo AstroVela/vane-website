@@ -285,6 +285,15 @@ function IconChip({ icon, tone }: { icon: IconName; tone: Tone }) {
 export default function PlatformArchitecture() {
   return (
     <Box className="platform-arch">
+      <div className="pa-loop" aria-label="Sense learn act loop">
+        <span>SENSE</span>
+        <b>→</b>
+        <span>LEARN</span>
+        <b>→</b>
+        <span>ACT</span>
+        <b className="pa-loop-back">↺</b>
+      </div>
+
       <div className="pa-grid">
         <div className="pa-rail pa-input-rail">
           <div className="pa-rail-head">
@@ -315,7 +324,11 @@ export default function PlatformArchitecture() {
                 <div>
                   <div className="pa-pillar-head">
                     <h4>{pillar.name}</h4>
-                    {pillar.status ? <b>{pillar.status}</b> : null}
+                    {pillar.status ? (
+                      <b className={pillar.status === 'Available now' ? 'pa-status-live' : 'pa-status-soon'}>
+                        {pillar.status}
+                      </b>
+                    ) : null}
                     <span>{pillar.tagline}</span>
                   </div>
                   <div className="pa-capabilities">

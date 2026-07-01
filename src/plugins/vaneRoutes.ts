@@ -41,6 +41,18 @@ const vaneRoutesPlugin: PluginModule = () => {
       })
 
       addRoute({
+        path: '/use-cases/training',
+        component: '@site/src/pages/TrainingUseCase.tsx',
+        exact: true,
+      })
+
+      addRoute({
+        path: '/use-cases/enterprise-agent',
+        component: '@site/src/pages/EnterpriseAgentUseCase.tsx',
+        exact: true,
+      })
+
+      addRoute({
         path: '/benchmarks',
         component: '@site/src/pages/Benchmarks.tsx',
         exact: true,
