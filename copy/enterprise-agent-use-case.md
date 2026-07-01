@@ -85,7 +85,71 @@ auditable facts
 
 ---
 
-## 2. The Problem 问题区
+## 2. Multimodal Context Pipeline 动图区
+
+### `context.eyebrow` — 小标签
+Context pipeline
+
+### `context.h2` — 标题
+Multimodal context pipeline
+
+### `context.lead` — 副标题
+PDFs, images, video, audio, forms, spreadsheets, logs, and documents flow through one Vane pipeline into auditable context for AI workflows.
+
+### `context.input.label` — 输入区标签
+messy materials
+
+### `context.inputs` — 输入文件卡片（6 个，逐行）
+- contract.pdf · PDF
+- inspection photo · image
+- video frame · video
+- call audio · audio
+- spreadsheet · table
+- system log · log
+
+### `context.core.title` — 中间 Vane 节点
+Vane multimodal compute
+
+### `context.dag.nodes` — Vane DAG 节点（逐行）
+- Parse documents
+- Decode media
+- Normalize tables
+- Parse logs/events
+- Evidence units
+- Structured signals
+- Apply rules & package
+
+### `context.dag.tokens` — Vane DAG 移动光点（逐行）
+- docs path: parse documents → evidence units
+- media path: decode media → evidence units
+- tables path: normalize tables → structured signals
+- logs path: parse logs/events → structured signals
+- evidence path: evidence units → apply rules & package
+- signals path: structured signals → apply rules & package
+
+### `context.output.label` — 输出区标签
+outputs
+
+### `context.output.title` — 右侧输出面板标题
+Agent-ready outputs
+
+### `context.output.badge` — 右侧输出面板徽标
+context attached
+
+### `context.output.trace` — 右侧输出轨迹（逐行）
+- Context attached
+- Context received
+- Evidence checked
+- Recommendation prepared
+
+### `context.outputs` — 输出卡片（3 个，逐行）
+- insights · structured signals and issues
+- evidence · file · chunk · quote · confidence
+- recommendations · next action with rule context
+
+---
+
+## 3. The Problem 问题区
 
 ### `problem.eyebrow` — 小标签
 The Problem
@@ -130,7 +194,7 @@ insights · evidence · recommendations
 
 ---
 
-## 3. How Vane Works 工作原理区
+## 4. How Vane Works 工作原理区
 
 ### `how.eyebrow` — 小标签
 How Vane Works
@@ -179,7 +243,7 @@ Start local, move to distributed — business logic unchanged.
 
 ---
 
-## 4. Real Example 真实示例区
+## 5. Real Example 真实示例区
 
 ### `example.eyebrow` — 小标签
 Real Example
@@ -227,7 +291,7 @@ Run the example pipeline
 
 ---
 
-## 5. Run It 运行区
+## 6. Run It 运行区
 
 ### `run.eyebrow` — 小标签
 Run It
@@ -246,7 +310,7 @@ $ python -m vane_examples.claims_evidence
 
 ---
 
-## 6. CTA 收尾区
+## 7. CTA 收尾区
 
 > 顶部 kicker 显示 `motif`（见“全局主线 Motif”）
 

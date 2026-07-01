@@ -6,6 +6,7 @@ import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
+import EnterpriseContextAnimation from '../components/EnterpriseContextAnimation'
 
 const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20enterprise%20multimodal%20data%20design%20partner'
 
@@ -228,6 +229,10 @@ export default function EnterpriseAgentUseCase() {
           <HeroDiagram />
         </div>
       </section>
+
+      <Divider />
+
+      <EnterpriseContextAnimation />
 
       <Divider />
 
