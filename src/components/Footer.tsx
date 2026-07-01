@@ -1,6 +1,6 @@
 import { Link } from '../router'
 import Mark from './Mark'
-import { GITHUB_URL } from '../siteLinks'
+import { CONTACT_MAILTO, DISCORD_URL, GITHUB_URL } from '../siteLinks'
 
 /* Paper footer with ink text, organized as a 5-column sitemap. The `home`
    variant carries the longer blurb + the `pip install` line in the brand
@@ -59,6 +59,8 @@ export default function Footer({ home = false }: { home?: boolean }) {
             <h4>Community</h4>
             <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
             <a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noreferrer">Discussions</a>
+            <a href={DISCORD_URL} target="_blank" rel="noreferrer">Discord ↗</a>
+            <a href={CONTACT_MAILTO}>Contact us</a>
           </div>
         </div>
         <div className="ft-bot">
