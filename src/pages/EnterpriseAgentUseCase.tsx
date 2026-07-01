@@ -41,32 +41,6 @@ function Motif({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function HeroDiagram() {
-  return (
-    <Box className="enterprise-hero-diagram">
-      <div className="ehd-stage">
-        <div className="enterprise-diagram-label">messy materials</div>
-        <div className="enterprise-material-grid">
-          {['PDF', 'scan', 'image', 'form', 'sheet', 'log'].map((item) => (
-            <MiniNode key={item}>{item}</MiniNode>
-          ))}
-        </div>
-      </div>
-      <div className="enterprise-arrow">→</div>
-      <div className="enterprise-vane-node">VANE</div>
-      <div className="enterprise-arrow">→</div>
-      <div className="ehd-stage">
-        <div className="enterprise-diagram-label">auditable facts</div>
-        <div className="enterprise-fact-stack">
-          <MiniNode>insights</MiniNode>
-          <MiniNode>evidence</MiniNode>
-          <MiniNode>recommendations</MiniNode>
-        </div>
-      </div>
-    </Box>
-  )
-}
-
 function ProblemDiagram() {
   return (
     <div className="enterprise-problem-grid">
@@ -226,13 +200,11 @@ export default function EnterpriseAgentUseCase() {
               <span>·</span><span>Apache-2.0</span>
             </div>
           </div>
-          <HeroDiagram />
+          <div className="enterprise-hero-visual">
+            <EnterpriseContextAnimation />
+          </div>
         </div>
       </section>
-
-      <Divider />
-
-      <EnterpriseContextAnimation />
 
       <Divider />
 

@@ -2115,20 +2115,17 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
   font-size: 9px;
 }
 .enterprise-motif b { color: var(--ink-3); }
-.enterprise-context-animation {
-  --enterprise-context-duration: 9s;
-  padding: 58px 0 60px;
-}
-.enterprise-context-scroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0 0 10px;
+.enterprise-hero-visual {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
 }
 .enterprise-context-stage {
   position: relative;
-  width: 1180px;
-  height: 560px;
-  margin: 0 auto;
+  width: min(100%, 640px);
+  height: 330px;
+  margin-left: auto;
   overflow: hidden;
   border: 1.5px solid var(--line);
   border-radius: var(--r);
@@ -2151,7 +2148,7 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
 .eca-input-world,
 .eca-vane-world,
 .eca-output-world,
-.eca-motion-lines {
+.eca-static-arrows {
   position: absolute;
   z-index: 2;
 }
@@ -2159,26 +2156,26 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
   margin: 0;
   color: var(--ink-3);
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: 8px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .eca-input-world {
-  left: 34px;
-  top: 44px;
-  width: 278px;
-  height: 430px;
+  left: 18px;
+  top: 24px;
+  width: 185px;
+  height: 275px;
 }
 .eca-source-stack {
   position: relative;
-  height: 410px;
-  margin-top: 18px;
+  height: 258px;
+  margin-top: 10px;
 }
 .eca-source-card {
   position: absolute;
-  width: 174px;
-  min-height: 112px;
-  padding: 13px 13px 12px;
+  width: 112px;
+  min-height: 74px;
+  padding: 8px 8px 7px;
   border: 1.5px solid rgba(21,23,30,0.26);
   border-radius: var(--r);
   background:
@@ -2186,29 +2183,28 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
     var(--paper);
   box-shadow: 0 8px 0 -5px rgba(21,23,30,0.16);
   transform-origin: center;
-  animation: ecaSourceFocus var(--enterprise-context-duration) linear infinite;
 }
 .eca-source-card header {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   color: var(--ink);
-  font-size: 11px;
+  font-size: 8.5px;
   font-weight: 800;
   line-height: 1.2;
 }
 .eca-source-card header b {
   color: var(--ink-3);
-  font-size: 9px;
+  font-size: 7px;
   text-transform: uppercase;
 }
 .eca-doc-lines {
   display: grid;
-  gap: 6px;
-  margin-top: 14px;
+  gap: 4px;
+  margin-top: 8px;
 }
 .eca-doc-lines i {
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
   background: rgba(21,23,30,0.16);
 }
@@ -2218,20 +2214,20 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
 .eca-doc-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-  margin-top: 12px;
+  gap: 4px;
+  margin-top: 8px;
 }
 .eca-doc-grid i {
-  height: 14px;
+  height: 9px;
   border: 1px solid rgba(21,23,30,0.12);
   background: rgba(251,250,246,0.72);
 }
 .eca-media-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
-  grid-template-rows: 40px 34px;
-  gap: 6px;
-  margin-top: 14px;
+  grid-template-rows: 26px 22px;
+  gap: 4px;
+  margin-top: 8px;
 }
 .eca-media-grid i {
   border: 1px solid rgba(79,138,96,0.22);
@@ -2245,11 +2241,11 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
 .eca-video-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-  margin-top: 14px;
+  gap: 3px;
+  margin-top: 8px;
 }
 .eca-video-strip i {
-  height: 34px;
+  height: 21px;
   border: 1px solid rgba(116,96,155,0.24);
   background:
     linear-gradient(180deg, rgba(116,96,155,0.18), transparent 56%),
@@ -2258,55 +2254,56 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
 .eca-waveform {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
-  gap: 4px;
+  gap: 3px;
   align-items: center;
-  height: 64px;
-  margin-top: 15px;
+  height: 42px;
+  margin-top: 8px;
 }
 .eca-waveform i {
   display: block;
   width: 100%;
   border-radius: 999px;
   background: rgba(181,138,69,0.72);
-  animation: ecaWavePulse var(--enterprise-context-duration) linear infinite;
 }
-.eca-waveform i:nth-child(1) { height: 14px; }
-.eca-waveform i:nth-child(2) { height: 28px; }
-.eca-waveform i:nth-child(3) { height: 48px; }
-.eca-waveform i:nth-child(4) { height: 32px; }
-.eca-waveform i:nth-child(5) { height: 54px; }
-.eca-waveform i:nth-child(6) { height: 26px; }
-.eca-waveform i:nth-child(7) { height: 42px; }
-.eca-waveform i:nth-child(8) { height: 20px; }
-.eca-waveform i:nth-child(9) { height: 34px; }
+.eca-waveform i:nth-child(1) { height: 9px; }
+.eca-waveform i:nth-child(2) { height: 18px; }
+.eca-waveform i:nth-child(3) { height: 31px; }
+.eca-waveform i:nth-child(4) { height: 21px; }
+.eca-waveform i:nth-child(5) { height: 35px; }
+.eca-waveform i:nth-child(6) { height: 17px; }
+.eca-waveform i:nth-child(7) { height: 27px; }
+.eca-waveform i:nth-child(8) { height: 13px; }
+.eca-waveform i:nth-child(9) { height: 22px; }
 .eca-log-lines {
   display: grid;
-  gap: 7px;
-  margin-top: 14px;
+  gap: 4px;
+  margin-top: 8px;
 }
 .eca-log-lines span {
   display: block;
   overflow: hidden;
   color: var(--ink-2);
-  font-size: 8.5px;
+  font-size: 6.5px;
   line-height: 1.15;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.eca-pdf { left: 16px; top: 8px; transform: rotate(-6deg); border-color: rgba(55,107,135,0.34); }
-.eca-image { left: 92px; top: 50px; transform: rotate(7deg); border-color: rgba(79,138,96,0.34); }
-.eca-video { left: 28px; top: 136px; transform: rotate(4deg); border-color: rgba(116,96,155,0.32); }
-.eca-audio { left: 106px; top: 180px; transform: rotate(-5deg); border-color: rgba(181,138,69,0.38); }
-.eca-sheet { left: 8px; top: 260px; transform: rotate(-2deg); border-color: rgba(21,23,30,0.2); }
-.eca-log { left: 130px; top: 288px; transform: rotate(5deg); border-color: rgba(184,111,95,0.3); }
+.eca-pdf { left: 5px; top: 4px; transform: rotate(-6deg); border-color: rgba(55,107,135,0.34); }
+.eca-image { left: 63px; top: 30px; transform: rotate(7deg); border-color: rgba(79,138,96,0.34); }
+.eca-video { left: 18px; top: 92px; transform: rotate(4deg); border-color: rgba(116,96,155,0.32); }
+.eca-audio { left: 75px; top: 121px; transform: rotate(-5deg); border-color: rgba(181,138,69,0.38); }
+.eca-sheet { left: 3px; top: 180px; transform: rotate(-2deg); border-color: rgba(21,23,30,0.2); }
+.eca-log { left: 82px; top: 198px; transform: rotate(5deg); border-color: rgba(184,111,95,0.3); }
 .eca-vane-world {
-  left: 388px;
-  top: 108px;
-  width: 375px;
-  height: 345px;
+  left: calc(50% - 55px);
+  top: 116px;
+  width: 110px;
+  height: 76px;
 }
 .eca-vane-core {
   position: relative;
+  display: grid;
+  place-items: center;
   height: 100%;
   overflow: hidden;
   border: 1.5px solid rgba(79,138,96,0.5);
@@ -2318,171 +2315,51 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
   left: 50%;
   top: 50%;
   z-index: 30;
-  width: 226px;
-  min-height: 74px;
+  width: 86px;
+  min-height: 46px;
   transform: translate(-50%, -50%);
   opacity: 1;
   display: grid;
   place-items: center;
-  gap: 3px;
   border: 1.5px solid rgba(79,138,96,0.65);
   border-radius: var(--r);
-  background: rgba(251,250,246,0.92);
+  background: rgba(251,250,246,0.96);
   text-align: center;
   pointer-events: none;
 }
 .eca-vane-mark strong {
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: 22px;
   line-height: 1;
   color: #2F6D45;
 }
-.eca-vane-mark span {
-  color: var(--ink-2);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.eca-dag-lines {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 7;
-  width: 375px;
-  height: 345px;
-  overflow: visible;
-}
-.eca-dag-edge {
-  fill: none;
-  stroke: rgba(79,138,96,0.22);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-dasharray: none;
-}
-.eca-dag-edge.edge-media-evidence,
-.eca-dag-edge.edge-logs-signals,
-.eca-dag-edge.edge-signals-package {
-  stroke: rgba(55,107,135,0.2);
-}
-.eca-dag-edge.edge-evidence-package,
-.eca-dag-edge.edge-signals-package {
-  stroke: rgba(181,138,69,0.22);
-}
-.eca-dag-node {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 104px;
-  height: 52px;
-  padding: 0 7px;
-  border: 1.5px solid rgba(21,23,30,0.12);
-  border-radius: var(--r);
-  background: rgba(251,250,246,0.66);
-  color: rgba(21,23,30,0.68);
-  font-size: 9px;
-  font-weight: 900;
-  line-height: 1.1;
-  text-align: center;
-  overflow: hidden;
-  white-space: normal;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-.eca-dag-nodes {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-.eca-dag-node.parse-docs { left: 10px; top: 38px; }
-.eca-dag-node.media { left: 10px; top: 103px; }
-.eca-dag-node.tables { left: 10px; top: 168px; }
-.eca-dag-node.logs { left: 10px; top: 233px; }
-.eca-dag-node.evidence { left: 141px; top: 70px; border-color: rgba(79,138,96,0.42); }
-.eca-dag-node.signals { left: 141px; top: 200px; border-color: rgba(55,107,135,0.38); }
-.eca-dag-node.package { left: 257px; top: 135px; border-color: rgba(181,138,69,0.44); }
-.eca-dag-tokens {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  pointer-events: none;
-}
-.eca-dag-token {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 11;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  opacity: 0.44;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(79,138,96,0.46) 20% 62%, rgba(79,138,96,0) 66%);
-  offset-rotate: 0deg;
-  animation: ecaDagTokenPath 2.13s linear infinite;
-}
-.eca-dag-token.token-docs {
-  offset-path: path("M 112 68 C 128 68 129 99 145 99");
-}
-.eca-dag-token.token-media {
-  animation-delay: 0.55s;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(55,107,135,0.44) 20% 62%, rgba(55,107,135,0) 66%);
-  offset-path: path("M 112 130 C 128 130 129 99 145 99");
-}
-.eca-dag-token.token-tables {
-  animation-delay: 1.05s;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(181,138,69,0.44) 20% 62%, rgba(181,138,69,0) 66%);
-  offset-path: path("M 112 192 C 128 192 129 223 145 223");
-}
-.eca-dag-token.token-logs {
-  animation-delay: 1.35s;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(55,107,135,0.44) 20% 62%, rgba(55,107,135,0) 66%);
-  offset-path: path("M 112 254 C 128 254 129 223 145 223");
-}
-.eca-dag-token.token-evidence {
-  animation-delay: 1.8s;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(79,138,96,0.46) 20% 62%, rgba(79,138,96,0) 66%);
-  offset-path: path("M 243 99 C 258 99 245 161 260 161");
-}
-.eca-dag-token.token-signals {
-  animation-delay: 2.1s;
-  background:
-    radial-gradient(circle, rgba(251,250,246,0.72) 0 18%, rgba(181,138,69,0.44) 20% 62%, rgba(181,138,69,0) 66%);
-  offset-path: path("M 243 223 C 258 223 245 161 260 161");
-}
 .eca-output-world {
-  right: 34px;
-  top: 44px;
-  width: 300px;
+  right: 18px;
+  top: 24px;
+  width: 190px;
 }
 .eca-agent-panel {
-  margin-top: 14px;
-  padding: 17px;
+  margin-top: 10px;
+  padding: 10px;
   border: 1.5px solid rgba(181,138,69,0.5);
   border-radius: var(--r);
   background: rgba(251,250,246,0.76);
   box-shadow: 0 8px 0 -5px rgba(21,23,30,0.16);
-  animation: ecaAgentPanelReveal var(--enterprise-context-duration) linear infinite;
 }
 .eca-agent-panel header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   align-items: baseline;
 }
 .eca-agent-panel header span {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 900;
 }
 .eca-agent-panel header b {
   color: #7D6130;
-  font-size: 9px;
+  font-size: 7px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -2490,148 +2367,69 @@ pre.code { margin: 0; padding: 15px 16px; font-size: 12.5px; line-height: 1.66; 
 .eca-agent-input {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: 14px;
-  padding: 9px 10px;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 7px 8px;
   border: 1px solid rgba(79,138,96,0.32);
   border-radius: var(--r);
   color: #2F6D45;
   background: rgba(231,240,233,0.5);
-  font-size: 11px;
+  font-size: 8.5px;
   font-weight: 900;
 }
 .eca-agent-input i {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #4F8A60;
 }
-.eca-agent-trace {
-  display: grid;
-  gap: 8px;
-  margin: 14px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.eca-agent-trace li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 800;
-  opacity: 0.45;
-  animation: ecaTraceStep var(--enterprise-context-duration) linear infinite;
-}
-.eca-agent-trace li:nth-child(2) { animation-delay: 0.18s; }
-.eca-agent-trace li:nth-child(3) { animation-delay: 0.36s; }
-.eca-agent-trace i {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid rgba(181,138,69,0.52);
-  border-radius: 50%;
-  background: rgba(251,250,246,0.78);
-}
 .eca-output-stack {
   display: grid;
-  gap: 10px;
-  margin-top: 15px;
+  gap: 7px;
+  margin-top: 10px;
 }
 .eca-output-card {
-  min-height: 64px;
-  padding: 11px 12px;
+  min-height: 42px;
+  padding: 8px 9px;
   border: 1.5px solid rgba(21,23,30,0.24);
   border-radius: var(--r);
   background: rgba(251,250,246,0.76);
-  animation: ecaOutputFocus var(--enterprise-context-duration) linear infinite;
 }
 .eca-output-card strong {
   display: block;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 9.5px;
   line-height: 1.15;
 }
 .eca-output-card span {
   display: block;
-  margin-top: 8px;
+  margin-top: 5px;
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: 7.5px;
   line-height: 1.35;
 }
-.eca-motion-lines {
+.eca-static-arrows {
   inset: 0;
   z-index: 1;
-  width: 1180px;
-  height: 560px;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
-.eca-motion-line {
+.eca-static-arrow {
   fill: none;
-  stroke: rgba(21,23,30,0.28);
-  stroke-width: 1.5;
-  stroke-dasharray: 7 8;
+  stroke: rgba(21,23,30,0.42);
+  stroke-width: 1.6;
   stroke-linecap: round;
+  marker-end: url(#eca-arrow-head);
 }
-.eca-motion-line.line-input {
-  stroke: rgba(55,107,135,0.42);
-  animation: ecaLineInput var(--enterprise-context-duration) linear infinite;
+.eca-static-arrow.arrow-input {
+  stroke: rgba(55,107,135,0.58);
 }
-.eca-motion-line.line-output {
-  stroke: rgba(181,138,69,0.48);
-  animation: ecaLineOutput var(--enterprise-context-duration) linear infinite;
+.eca-static-arrow.arrow-output {
+  stroke: rgba(181,138,69,0.62);
 }
-.eca-motion-dot {
-  fill: #4F8A60;
-  opacity: 0.16;
-  animation: ecaMotionDot var(--enterprise-context-duration) linear infinite;
-}
-.eca-motion-dot.dot-input { fill: #376B87; }
-@keyframes ecaSourceFocus {
-  0%, 12% { opacity: 0.62; }
-  18%, 38% { opacity: 1; box-shadow: 0 10px 0 -5px rgba(21,23,30,0.18); }
-  44%, 100% { opacity: 0.78; }
-}
-@keyframes ecaWavePulse {
-  0%, 24% { opacity: 0.34; transform: scaleY(0.72); }
-  36%, 70% { opacity: 0.92; transform: scaleY(1); }
-  100% { opacity: 0.44; transform: scaleY(0.8); }
-}
-@keyframes ecaDagTokenPath {
-  0% { offset-distance: 0%; }
-  100% { offset-distance: 100%; }
-}
-@supports not (offset-path: path("M 0 0 L 1 1")) {
-  @keyframes ecaDagTokenPath {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(210px); }
-  }
-}
-@keyframes ecaOutputFocus {
-  0%, 62% { opacity: 0.38; transform: translateX(-8px); }
-  74%, 100% { opacity: 1; transform: translateX(0); }
-}
-@keyframes ecaAgentPanelReveal {
-  0%, 56% { opacity: 0.42; transform: translateY(8px); }
-  66%, 100% { opacity: 1; transform: translateY(0); }
-}
-@keyframes ecaTraceStep {
-  0%, 62% { opacity: 0.42; transform: translateX(-4px); }
-  72%, 100% { opacity: 1; transform: translateX(0); }
-}
-@keyframes ecaLineInput {
-  0%, 10% { opacity: 0.12; stroke-dashoffset: 28; }
-  18%, 42% { opacity: 1; stroke-dashoffset: 0; }
-  52%, 100% { opacity: 0.28; }
-}
-@keyframes ecaLineOutput {
-  0%, 58% { opacity: 0.1; stroke-dashoffset: 28; }
-  70%, 100% { opacity: 1; stroke-dashoffset: 0; }
-}
-@keyframes ecaMotionDot {
-  0%, 16% { opacity: 0.16; transform: scale(0.86); }
-  24%, 76% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0.28; transform: scale(0.9); }
+.eca-static-arrows marker path {
+  fill: rgba(21,23,30,0.46);
 }
 .enterprise-hero-diagram {
   padding: 26px 24px;
