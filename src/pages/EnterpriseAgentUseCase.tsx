@@ -7,21 +7,57 @@ import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
 import EnterpriseContextAnimation from '../components/EnterpriseContextAnimation'
+import { ENTERPRISE_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
-const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20enterprise%20multimodal%20data%20design%20partner'
+const AUDIT_CODE = `from pydantic import BaseModel
+import vane
 
-const CLAIMS_SQL = `-- files → extraction → model → SQL → insight, in one execution plan
-WITH evidence AS (
-  SELECT claim_id, file_id,
-         extract_document(media_type, uri)                  AS doc,  -- OCR / parse
-         prompt('Extract fields as JSON; keep quote and confidence', doc) AS fact  -- model, in SQL
-  FROM read_files('claims/CLM-POC-001/*')                           -- files
+class AuditResult(BaseModel):
+    status: str
+    reason: str
+
+con = vane.connect()
+docs = con.sql("""
+    select document_id, claim_id, document_type, text, source_uri
+    from read_parquet('data/insurance_documents/*.parquet')
+    where text is not null
+""")
+docs.to_table("docs")
+
+rule_hits = con.sql("""
+    select document_id, claim_id, document_type, source_uri,
+           case
+             when lower(text) like '%missing signature%' then 'missing_signature'
+             when lower(text) like '%expired%' then 'expired_reference'
+           end as rule_hit
+    from docs
+    where lower(text) like '%missing signature%'
+       or lower(text) like '%expired%'
+""")
+
+audit_only = docs.prompt(
+    "text",
+    provider="openai",
+    system_message="Audit the insurance document for missing evidence. Return JSON.",
+    return_format=AuditResult,
+    output_column="audit_json",
+    execution_backend="subprocess_actor",
 )
-SELECT claim_id, fact,
-       provenance()   AS evidence,      -- file · chunk · quote · confidence
-       'recommended_review' AS recommendation  -- SQL rule → recommendation
-FROM evidence
-WHERE fact.confidence < 0.8;`
+
+docs_table = docs.to_arrow_table()
+audit_table = audit_only.to_arrow_table()
+if docs_table.num_rows != audit_table.num_rows:
+    raise ValueError("model output row count changed")
+
+audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
+audited.to_table("audited")
+
+final = con.sql("""
+    select claim_id, document_id, document_type, rule_hit, audit_json, source_uri
+    from audited join rule_hits using (document_id, claim_id, document_type, source_uri)
+""")`
+
+const INSURANCE_AUDIT_DOC = '/docs/data/examples/insurance-document-audit'
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -54,7 +90,7 @@ function ProblemDiagram() {
             </div>
           ))}
         </div>
-        <p>⚠ scattered systems · glue code everywhere · missing provenance · hard to debug · poor reproducibility</p>
+        <p>⚠ scattered systems · glue code everywhere · lost source references · hard to debug · poor reproducibility</p>
       </Box>
       <Box flat className="enterprise-chain after">
         <h3>AFTER — one pipeline</h3>
@@ -72,53 +108,58 @@ function ProblemDiagram() {
   )
 }
 
-function HowVaneWorks() {
-  const cards = [
-    {
-      title: 'One pipeline for files, models, and rules',
-      copy: 'File extraction, model inference, SQL rules, and review outputs run as one pipeline.',
-      visual: (
-        <div className="ehow-viz">
-          <span className="ehow-chip">files</span>
-          <span className="ehow-chip">models</span>
-          <span className="ehow-chip">rules</span>
-          <b className="ehow-arrow">→</b>
-          <span className="ehow-chip is-out">one pipeline</span>
-        </div>
-      ),
-    },
-    {
-      title: 'Every insight comes with evidence',
-      copy: 'Each insight carries its proof — source file, chunk, quote, confidence, triggering rule, and review status.',
-      visual: (
-        <div className="ehow-viz">
-          <span className="ehow-chip is-out">insight</span>
-          <b className="ehow-arrow">→</b>
-          <span className="ehow-chip ehow-chip-wide">file · chunk · quote · confidence · rule</span>
-        </div>
-      ),
-    },
-    {
-      title: 'Scale without rewriting',
-      copy: 'Start local, move to distributed — business logic unchanged.',
-      visual: (
-        <div className="ehow-viz">
-          <span className="ehow-chip">local</span>
-          <b className="ehow-arrow">⇄</b>
-          <span className="ehow-chip">distributed</span>
-          <b className="ehow-arrow">→</b>
-          <span className="ehow-chip is-out">same pipeline</span>
-        </div>
-      ),
-    },
-  ]
+/* Each card shares one shape: input chips converge (↓) into the dark result
+   chip, so the three read as a matched set at any column width. STEP 02 adds a
+   muted field list under its result (the columns the review row keeps). */
+const HOW_CARDS: Array<{
+  title: string
+  copy: string
+  inputs: string[]
+  result: string
+  fields?: string
+}> = [
+  {
+    title: 'Compose SQL, UDFs, and model review as relations',
+    copy: 'Start with parsed rows and source metadata, then add SQL rules, explicit UDF stages, and model-assisted review without splitting the workflow across separate jobs.',
+    inputs: ['SQL rules', 'UDF stages', 'model review'],
+    result: 'relation pipeline',
+  },
+  {
+    title: 'Make source references part of the output',
+    copy: 'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
+    inputs: ['model output'],
+    result: 'review row',
+    fields: 'document ID · rule hit · audit JSON · source URI',
+  },
+  {
+    title: 'Move to Ray after local validation',
+    copy: 'Validate locally first, then switch runner and UDF backends when distribution helps. The relation shape stays stable; worker storage, dependencies, and credentials still matter.',
+    inputs: ['local sample', 'Ray runner'],
+    result: 'same relation shape',
+  },
+]
 
+function HowVaneWorks() {
   return (
     <div className="enterprise-how-grid">
-      {cards.map((card) => (
+      {HOW_CARDS.map((card, index) => (
         <Box className="enterprise-how-card" key={card.title}>
-          {card.visual}
-          <h3>{card.title}</h3>
+          <div className="enterprise-how-head">
+            <span className="enterprise-how-step">STEP {String(index + 1).padStart(2, '0')}</span>
+            <h3>{card.title}</h3>
+          </div>
+          <div className="enterprise-how-viz-wrap">
+            <div className="ehow-viz">
+              <div className="ehow-inputs">
+                {card.inputs.map((input) => (
+                  <span className="ehow-chip" key={input}>{input}</span>
+                ))}
+              </div>
+              <b className="ehow-arrow" aria-hidden="true">↓</b>
+              <span className="ehow-chip is-out">{card.result}</span>
+              {card.fields && <span className="ehow-note">{card.fields}</span>}
+            </div>
+          </div>
           <p>{card.copy}</p>
         </Box>
       ))}
@@ -126,41 +167,65 @@ function HowVaneWorks() {
   )
 }
 
+const DOC_ROWS = [
+  { id: 'DOC-1029', text: 'no signature', src: 'claim.pdf' },
+  { id: 'DOC-1030', text: 'policy expired', src: 'policy.pdf' },
+  { id: 'DOC-1031', text: 'coverage limit', src: 'memo.pdf' },
+]
+const PIPELINE_STAGES = ['SQL rules', 'model review', 'audit rows']
+// The audit row's produced columns, straight from the final relation in
+// AUDIT_CODE (rule_hit, audit_json, source_uri) — keeps the figure honest to the
+// code below and reinforces the page's source-reference / evidence-chain point.
+const AUDIT_OUTPUTS = ['rule hit', 'audit JSON', 'source URI']
+
+/* Real-example flow: a parsed document table feeds one Vane pipeline (SQL rules
+   -> model review -> audit rows) that produces auditable outputs. Three equal-
+   height panels share one row anatomy; the middle is the green-accented hero. */
 function ExamplePipelineDiagram() {
   return (
-    <Box flat className="enterprise-example-diagram">
-      <div>
-        <div className="enterprise-diagram-label">Claim packet</div>
-        <MiniNode>photos · scanned forms · estimates</MiniNode>
-      </div>
-      <b>→</b>
-      <div className="enterprise-vane-pipeline">
-        <span>extract</span>
-        <b>→</b>
-        <span>model</span>
-        <b>→</b>
-        <span>SQL rules</span>
-        <strong>VANE: one pipeline</strong>
-      </div>
-      <b>→</b>
-      <div>
-        <div className="enterprise-diagram-label">Outputs</div>
-        <div className="enterprise-fact-stack">
-          <MiniNode>insights</MiniNode>
-          <MiniNode>evidence</MiniNode>
-          <MiniNode>recommendations</MiniNode>
+    <Box flat className="epd">
+      <div className="epd-panel">
+        <div className="epd-head">Parsed document table</div>
+        <div className="epd-body epd-table">
+          <div className="epd-row epd-row-head">
+            <span>document_id</span>
+            <span>text</span>
+            <span>source_uri</span>
+          </div>
+          {DOC_ROWS.map((row) => (
+            <div className="epd-row" key={row.id}>
+              <span>{row.id}</span>
+              <span>{row.text}</span>
+              <span>{row.src}</span>
+            </div>
+          ))}
         </div>
       </div>
-    </Box>
-  )
-}
 
-function RunTerminal() {
-  return (
-    <Box className="enterprise-terminal" flat>
-      <div><span>$</span> pip install vane-ai</div>
-      <div><span>$</span> python -m vane_examples.claims_evidence</div>
-      <div><b>→</b> insights · evidence · recommendations <em>(runs CPU-only)</em></div>
+      <b className="epd-arrow" aria-hidden="true">→</b>
+
+      <div className="epd-panel epd-panel-vane">
+        <div className="epd-head epd-head-vane">Vane · one pipeline</div>
+        <div className="epd-body">
+          {PIPELINE_STAGES.map((stage, index) => (
+            <div className="epd-stage" key={stage}>
+              <span className="epd-stage-n">{index + 1}</span>
+              <span>{stage}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <b className="epd-arrow" aria-hidden="true">→</b>
+
+      <div className="epd-panel">
+        <div className="epd-head">Outputs</div>
+        <div className="epd-body">
+          {AUDIT_OUTPUTS.map((out) => (
+            <div className="epd-out" key={out}>{out}</div>
+          ))}
+        </div>
+      </div>
     </Box>
   )
 }
@@ -172,35 +237,34 @@ export default function EnterpriseAgentUseCase() {
         <title>Enterprise Multimodal Data Infrastructure — Vane</title>
         <meta
           name="description"
-          content="Turn messy multimodal business materials — PDFs, images, video, scans, forms, spreadsheets, logs, and documents — into auditable facts. One pipeline for files, models, and rules."
+          content="Use Vane Data to keep parsed document rows, media references, SQL rules, explicit UDF stages, and model-assisted review in one auditable relation workflow."
         />
         <meta property="og:title" content="Turn messy multimodal business materials into auditable facts." />
-        <meta property="og:description" content="messy materials → auditable facts for enterprise PDFs, images, video, forms, spreadsheets, logs, and documents." />
+        <meta property="og:description" content="Keep source rows, rules, model output, and source references together for enterprise review workflows." />
       </Head>
 
       <Nav />
 
-      {/* HERO */}
-      <section className="hero">
-        <div className="wrap hero-grid enterprise-hero-grid">
-          <div>
+      {/* HERO — solutions intro archetype: editorial copy + primary actions,
+          paired with the agent-context visual in the right rail. */}
+      <section className="intro enterprise-hero">
+        <div className="wrap enterprise-hero-grid">
+          <div className="enterprise-hero-copy">
             <Eyebrow style={{ marginBottom: 20 }}>Enterprise Multimodal Data Infrastructure</Eyebrow>
-            <h1 className="h1">Turn messy multimodal business materials into auditable facts.</h1>
-            <p className="lead" style={{ marginTop: 24, maxWidth: 620 }}>
-              PDFs, images, video, scans, forms, spreadsheets, logs, and documents — Vane extracts evidence, runs rules, and returns auditable insights, evidence, and recommendations.
+            <h1 className="h1 enterprise-hero-title">Turn messy multimodal business materials into auditable facts.</h1>
+            <p className="lead enterprise-hero-lead">
+              Bring parsed document rows, media references, tables, logs, and model outputs into one pipeline. Use SQL for deterministic checks, explicit UDF stages for extraction, and model-assisted review where it belongs.
             </p>
-            <div className="enterprise-audience">PDFs · images · video · scans · forms · spreadsheets · logs · documents</div>
-            <div style={{ marginTop: 18 }}><Motif compact /></div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
-              <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
-              <Button to="/docs">Read the docs</Button>
+            <div className="enterprise-hero-actions">
+              <Button solid to={INSURANCE_AUDIT_DOC} arrow>Run the pipeline</Button>
+              <Button href={ENTERPRISE_DESIGN_PARTNER_MAILTO} arrow>Request a demo</Button>
             </div>
-            <div className="install" style={{ marginTop: 28 }}>
-              <span className="c"><span className="p">$</span> pip install vane-ai</span>
-              <span>·</span><span>Apache-2.0</span>
+            <div className="enterprise-hero-meta">
+              <Motif compact />
+              <span>document rows · media refs · tables · logs · model outputs</span>
             </div>
           </div>
-          <div className="enterprise-hero-visual">
+          <div className="enterprise-hero-art">
             <EnterpriseContextAnimation />
           </div>
         </div>
@@ -227,7 +291,7 @@ export default function EnterpriseAgentUseCase() {
         <div className="wrap">
           <div className="shead">
             <Eyebrow>How Vane Works</Eyebrow>
-            <h2 className="h2">messy materials → auditable facts, as one pipeline.</h2>
+            <h2 className="h2">source rows → auditable outputs, as one relation pipeline.</h2>
           </div>
           <HowVaneWorks />
         </div>
@@ -240,33 +304,19 @@ export default function EnterpriseAgentUseCase() {
         <div className="wrap">
           <div className="shead">
             <Eyebrow>Real Example</Eyebrow>
-            <h2 className="h2">Claims evidence pipeline</h2>
-            <p className="lead">Turn a claim packet — photos, scanned forms, estimates — into insights, evidence, and recommendations.</p>
+            <h2 className="h2">Insurance document audit pattern</h2>
+            <p className="lead">Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.</p>
           </div>
           <ExamplePipelineDiagram />
           <div className="enterprise-code-block">
-            <CodeWindow filename="claims_evidence.sql" code={CLAIMS_SQL} language="sql" />
+            <CodeWindow filename="insurance_document_audit.py" code={AUDIT_CODE} language="python" />
             <Box flat className="enterprise-honesty">
               <span className="enterprise-honesty-label">Note</span>
               <span>
-                Runs on public / synthetic proxy data — it shows the pipeline shape, not a production decision system. Plug in your own OCR / VLM / LLM along the same interface.
+                Vane Data does not ship a dedicated insurance workflow. This example shows the SQL and Relation API shape, not a production decision system. OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages.
               </span>
             </Box>
           </div>
-          <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* RUN IT */}
-      <section className="section enterprise-section">
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>Run It</Eyebrow>
-            <h2 className="h2">Three commands to inspect the pipeline shape.</h2>
-          </div>
-          <RunTerminal />
         </div>
       </section>
 
@@ -275,12 +325,9 @@ export default function EnterpriseAgentUseCase() {
       {/* CTA */}
       <section className="section enterprise-section" style={{ paddingTop: 40 }}>
         <div className="wrap">
-          <Cta
-            kicker={<Motif compact />}
-            title="Have PDFs, images, video, logs, and documents to turn into auditable facts?"
-          >
-            <Button solid to="/docs/examples/insurance-document-audit" arrow>Run the example pipeline</Button>
-            <Button href={DESIGN_PARTNER_HREF}>Become a design partner</Button>
+          <Cta title="Have document rows, media references, logs, or model outputs to turn into auditable facts?">
+            <Button solid to={INSURANCE_AUDIT_DOC} arrow>Run the pipeline</Button>
+            <Button href={ENTERPRISE_DESIGN_PARTNER_MAILTO} arrow>Request a demo</Button>
           </Cta>
         </div>
       </section>

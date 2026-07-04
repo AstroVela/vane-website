@@ -1,5 +1,6 @@
 import type {PluginModule} from '@docusaurus/types'
 import dataSidebar from '../docs/sidebar.data.json'
+import { LEGACY_DOC_SLUG_LIST } from '../docs/legacySlugs'
 
 type SidebarItem = {
   slug?: string
@@ -64,6 +65,12 @@ const vaneRoutesPlugin: PluginModule = () => {
         exact: true,
       })
 
+      addRoute({
+        path: '/contact',
+        component: '@site/src/pages/Contact.tsx',
+        exact: true,
+      })
+
       const docsRoute = (path: string) =>
         addRoute({ path, component: '@site/src/pages/Docs.tsx', exact: true })
 
@@ -71,6 +78,7 @@ const vaneRoutesPlugin: PluginModule = () => {
       LIVE_PRODUCTS.forEach((product) => {
         docsRoute(`/docs/${product}`)
         dataSlugs.forEach((slug) => docsRoute(`/docs/${product}/${slug}`))
+        LEGACY_DOC_SLUG_LIST.forEach((slug) => docsRoute(`/docs/${product}/${slug}`))
       })
 
       // Coming-soon products: a single teaser route.
@@ -78,6 +86,7 @@ const vaneRoutesPlugin: PluginModule = () => {
 
       // Legacy `/docs/<slug...>` links keep working (resolve to the default product).
       dataSlugs.forEach((slug) => docsRoute(`/docs/${slug}`))
+      LEGACY_DOC_SLUG_LIST.forEach((slug) => docsRoute(`/docs/${slug}`))
 
       docsRoute('/docs')
     },

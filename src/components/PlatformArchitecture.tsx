@@ -1,22 +1,26 @@
 import Box from './Box'
 
-type Tone = 'data' | 'agent' | 'rl'
+/* Three-pillar engine diagram: Data -> RL -> Agent with a feedback loop
+   returning to Data, over the shared Vane Core runtime panel. */
+
+type Tone = 'data' | 'rl' | 'agent'
 
 type IconName =
-  | 'sensor'
-  | 'table'
-  | 'document'
-  | 'media'
+  | 'picture'
   | 'video'
   | 'audio'
-  | 'event'
-  | 'embedding'
+  | 'document'
+  | 'code'
+  | 'table'
+  | 'gear'
   | 'database'
+  | 'star'
+  | 'molecule'
+  | 'check'
+  | 'chart'
+  | 'globe'
   | 'robot'
-  | 'trend'
-  | 'package'
-  | 'folder'
-  | 'list'
+  | 'person'
   | 'loop'
   | 'layers'
   | 'stream'
@@ -25,56 +29,38 @@ type IconName =
   | 'local'
   | 'ray'
 
-const INPUTS: Array<{ label: string; icon: IconName }> = [
-  { label: 'Sensors', icon: 'sensor' },
-  { label: 'Tables', icon: 'table' },
-  { label: 'Documents', icon: 'document' },
-  { label: 'Images', icon: 'media' },
-  { label: 'Video', icon: 'video' },
-  { label: 'Audio', icon: 'audio' },
-  { label: 'Events', icon: 'event' },
-  { label: 'Embeddings', icon: 'embedding' },
-]
-
 const PILLARS: Array<{
   tone: Tone
+  number: string
   name: string
+  status: 'Available now' | 'Coming soon'
   tagline: string
-  icon: IconName
-  capabilities: string[]
-  status?: string
+  chips: string[]
 }> = [
   {
     tone: 'data',
+    number: '1',
     name: 'Vane Data',
-    tagline: 'Multimodal data processing',
-    icon: 'database',
-    capabilities: ['Ingest', 'Parse', 'Transform', 'Infer', 'Enrich', 'Package'],
     status: 'Available now',
-  },
-  {
-    tone: 'agent',
-    name: 'Vane Agent',
-    tagline: 'Always-on agent framework',
-    icon: 'robot',
-    capabilities: ['Observe', 'Reason', 'Act', 'Memory', 'Long-running Tasks'],
-    status: 'Coming soon',
+    tagline: 'Unified multimodal data from any source.',
+    chips: ['Image', 'Video', 'Audio', 'Text', 'Documents', 'Events', 'Sensors', 'Tables'],
   },
   {
     tone: 'rl',
+    number: '2',
     name: 'Vane RL',
-    tagline: 'RL for embodied AI',
-    icon: 'trend',
-    capabilities: ['Rollout', 'Trajectory', 'Reward', 'Training', 'Evaluation'],
     status: 'Coming soon',
+    tagline: 'Train, evaluate, and align models across modalities.',
+    chips: ['Rollout', 'Trajectory', 'Reward', 'Training', 'Evaluation'],
   },
-]
-
-const OUTPUTS: Array<{ label: string; icon: IconName }> = [
-  { label: 'Model-ready Multimodal Assets', icon: 'package' },
-  { label: 'Grounded Context Packages', icon: 'folder' },
-  { label: 'Agent Actions & Recommendations', icon: 'list' },
-  { label: 'Trajectory & Learning Updates', icon: 'loop' },
+  {
+    tone: 'agent',
+    number: '3',
+    name: 'Vane Agent',
+    status: 'Coming soon',
+    tagline: 'Act in the real world, solve tasks, create value.',
+    chips: ['Planning', 'Reasoning', 'Action', 'Feedback', 'Memory'],
+  },
 ]
 
 const CORE_FEATURES: Array<{ title: string; copy: string; icon: IconName }> = [
@@ -100,21 +86,27 @@ const CORE_FEATURES: Array<{ title: string; copy: string; icon: IconName }> = [
   },
 ]
 
-function ArchitectureIcon({ name }: { name: IconName }) {
+function MiniIcon({ name }: { name: IconName }) {
   switch (name) {
-    case 'sensor':
+    case 'picture':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 6.5a8 8 0 0 1 11 0" />
-          <path d="M5 9a4.5 4.5 0 0 1 6 0" />
-          <circle cx="8" cy="11.6" r="0.8" fill="currentColor" stroke="none" />
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" />
+          <circle cx="6" cy="7" r="1.1" />
+          <path d="M3 12l3-2.5 2.2 1.8L11 8l2.5 2" />
         </svg>
       )
-    case 'table':
+    case 'video':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="2.5" y="3.5" width="11" height="9" rx="1" />
-          <path d="M2.5 7h11M8 3.5v9" />
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" />
+          <path d="M6.8 6.1 10.3 8l-3.5 1.9z" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'audio':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3.5 6.5v3M6 4.5v7M8.5 3v10M11 5.5v5M13.2 7v2" />
         </svg>
       )
     case 'document':
@@ -125,43 +117,24 @@ function ArchitectureIcon({ name }: { name: IconName }) {
           <path d="M5.8 8.6h4.4M5.8 10.8h4.4" />
         </svg>
       )
-    case 'media':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="2.5" y="3.5" width="11" height="9" rx="1" />
-          <circle cx="6" cy="7" r="1.1" />
-          <path d="M3 12l3-2.5 2.2 1.8L11 8l2.5 2" />
-        </svg>
-      )
-    case 'video':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="2.5" y="4" width="8" height="8" rx="1" />
-          <path d="M10.5 6.5 13.5 5v6l-3-1.5z" />
-          <path d="M5.2 6.6 8 8 5.2 9.4z" />
-        </svg>
-      )
-    case 'audio':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3 7v2M6 4.5v7M9 2.5v11M12 6v4" />
-        </svg>
-      )
-    case 'event':
+    case 'code':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M6 4L2.5 8 6 12M10 4l3.5 4-3.5 4" />
         </svg>
       )
-    case 'embedding':
+    case 'table':
       return (
-        <svg viewBox="0 0 16 16" aria-hidden="true" className="pa-fill-icon">
-          <circle cx="4" cy="5" r="1" />
-          <circle cx="8" cy="3.5" r="1" />
-          <circle cx="12" cy="5.5" r="1" />
-          <circle cx="5.5" cy="9" r="1" />
-          <circle cx="10.5" cy="9" r="1" />
-          <circle cx="8" cy="12.5" r="1" />
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1" />
+          <path d="M2.5 7h11M8 3.5v9" />
+        </svg>
+      )
+    case 'gear':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.4" />
+          <path d="M8 2.6v2M8 11.4v2M2.6 8h2M11.4 8h2M4.2 4.2l1.4 1.4M10.4 10.4l1.4 1.4M11.8 4.2l-1.4 1.4M5.6 10.4l-1.4 1.4" />
         </svg>
       )
     case 'database':
@@ -172,52 +145,71 @@ function ArchitectureIcon({ name }: { name: IconName }) {
           <path d="M3.5 8c0 1 2 1.8 4.5 1.8s4.5-.8 4.5-1.8" />
         </svg>
       )
+    case 'star':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+          <path d="M8 5.2l.9 1.8 2 .3-1.45 1.4.35 2L8 9.75l-1.8.95.35-2L5.1 7.3l2-.3z" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'molecule':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 3.5 11.9 5.75v4.5L8 12.5 4.1 10.25v-4.5z" />
+          <circle cx="8" cy="3.5" r="1.1" className="pa-node" />
+          <circle cx="11.9" cy="5.75" r="1.1" className="pa-node" />
+          <circle cx="11.9" cy="10.25" r="1.1" className="pa-node" />
+          <circle cx="8" cy="12.5" r="1.1" className="pa-node" />
+          <circle cx="4.1" cy="10.25" r="1.1" className="pa-node" />
+          <circle cx="4.1" cy="5.75" r="1.1" className="pa-node" />
+        </svg>
+      )
+    case 'check':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+          <path d="M5.2 8.2l1.9 1.9 3.7-4.3" />
+        </svg>
+      )
+    case 'chart':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3.5 13V9.5M6.5 13V7M9.5 13V8.5M12.5 13V4.5" />
+        </svg>
+      )
+    case 'globe':
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.3" />
+          <ellipse cx="8" cy="8" rx="2.4" ry="5.3" />
+          <path d="M2.9 8h10.2" />
+        </svg>
+      )
     case 'robot':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <rect x="3.5" y="5" width="9" height="7.5" rx="1.5" />
-          <path d="M8 2.4v2.6" />
-          <circle cx="8" cy="2.2" r="0.8" fill="currentColor" stroke="none" />
+          <path d="M8 2.6v2.4" />
+          <circle cx="8" cy="2.3" r="0.8" fill="currentColor" stroke="none" />
           <circle cx="6.2" cy="8.3" r="0.85" fill="currentColor" stroke="none" />
           <circle cx="9.8" cy="8.3" r="0.85" fill="currentColor" stroke="none" />
           <path d="M6.3 10.5h3.4" />
         </svg>
       )
-    case 'trend':
+    case 'person':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3 3v10h10" />
-          <path d="M5 10l2.3-2.6 2 1.8L13 5" />
-        </svg>
-      )
-    case 'package':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2.5l5 2.6v5.8L8 13.5 3 10.9V5.1z" />
-          <path d="M3 5.1L8 7.7l5-2.6M8 7.7v5.8" />
-        </svg>
-      )
-    case 'folder':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 4.5h4l1.2 1.5h5.8v6.5h-11z" />
-          <path d="M6 9.5l1.6 1.6L10.5 8" />
-        </svg>
-      )
-    case 'list':
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M5.5 4.5h7M5.5 8h7M5.5 11.5h4.5" />
-          <circle cx="2.8" cy="4.5" r="0.9" fill="currentColor" stroke="none" />
-          <circle cx="2.8" cy="8" r="0.9" fill="currentColor" stroke="none" />
-          <circle cx="2.8" cy="11.5" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="8" cy="5.4" r="2.3" />
+          <path d="M3.8 13c.5-2.7 2.2-4.1 4.2-4.1s3.7 1.4 4.2 4.1" />
         </svg>
       )
     case 'loop':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M12.6 6A5 5 0 1 0 13 9.3" />
-          <path d="M13 3.2V6h-2.7" />
+          <path d="M2 7.3v-.6a2.7 2.7 0 0 1 2.7-2.7H14" />
+          <path d="m11.3 1.3 2.7 2.7-2.7 2.7" />
+          <path d="M14 8.7v.6a2.7 2.7 0 0 1-2.7 2.7H2" />
+          <path d="m4.7 14.7-2.7-2.7 2.7-2.7" />
         </svg>
       )
     case 'layers':
@@ -231,13 +223,17 @@ function ArchitectureIcon({ name }: { name: IconName }) {
     case 'stream':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 5h9M2.5 8h11M2.5 11h7" />
+          <path d="M2.5 5h11M2.5 8h11M2.5 11h11" />
+          <circle cx="10.2" cy="5" r="1.25" fill="currentColor" stroke="none" />
+          <circle cx="5.4" cy="8" r="1.25" fill="currentColor" stroke="none" />
+          <circle cx="8.4" cy="11" r="1.25" fill="currentColor" stroke="none" />
         </svg>
       )
     case 'chip':
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+          <rect x="6.7" y="6.7" width="2.6" height="2.6" />
           <path d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14" />
         </svg>
       )
@@ -266,109 +262,154 @@ function ArchitectureIcon({ name }: { name: IconName }) {
   }
 }
 
-function Connector({ tone }: { tone: 'data' | 'rl' }) {
+function PillarIcon({ tone }: { tone: Tone }) {
+  switch (tone) {
+    case 'data':
+      return (
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 4l11.5 5.7L16 15.4 4.5 9.7z" />
+          <path d="M4.5 15.7L16 21.4l11.5-5.7" />
+          <path d="M4.5 21.4L16 27.1l11.5-5.7" />
+        </svg>
+      )
+    case 'rl':
+      return (
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 6.5l8.2 4.75v9.5L16 25.5l-8.2-4.75v-9.5z" />
+          <circle cx="16" cy="6.5" r="2.1" className="pa-node" />
+          <circle cx="24.2" cy="11.25" r="2.1" className="pa-node" />
+          <circle cx="24.2" cy="20.75" r="2.1" className="pa-node" />
+          <circle cx="16" cy="25.5" r="2.1" className="pa-node" />
+          <circle cx="7.8" cy="20.75" r="2.1" className="pa-node" />
+          <circle cx="7.8" cy="11.25" r="2.1" className="pa-node" />
+        </svg>
+      )
+    case 'agent':
+      return (
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="7" y="9.5" width="18" height="15" rx="3.5" />
+          <path d="M16 9.5V6.4" />
+          <circle cx="16" cy="5.2" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="12.6" cy="15.8" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="19.4" cy="15.8" r="1.5" fill="currentColor" stroke="none" />
+          <path d="M12.8 20.4h6.4" />
+        </svg>
+      )
+  }
+}
+
+function DashLink() {
   return (
-    <div className={`pa-connector pa-tone-${tone}`} aria-hidden="true">
-      <span />
-    </div>
+    <svg className="pa-agent-dash" viewBox="0 0 40 14" aria-hidden="true">
+      <path d="M2 11.5Q20 2 38 11.5" strokeDasharray="3 3.4" />
+    </svg>
   )
 }
 
-function IconChip({ icon, tone }: { icon: IconName; tone: Tone }) {
+/* One shared "stage" per pillar; only the connector idiom differs:
+   Data = icon pool, RL = solid-arrow pipeline, Agent = dashed-link triad. */
+function PillarArt({ tone }: { tone: Tone }) {
+  if (tone === 'data') {
+    return (
+      <div className="pa-art pa-art-data" aria-hidden="true">
+        <div>
+          <MiniIcon name="picture" />
+          <MiniIcon name="video" />
+          <MiniIcon name="audio" />
+          <MiniIcon name="document" />
+        </div>
+        <div>
+          <MiniIcon name="code" />
+          <MiniIcon name="table" />
+          <MiniIcon name="gear" />
+        </div>
+      </div>
+    )
+  }
+  if (tone === 'rl') {
+    return (
+      <div className="pa-art pa-art-rl" aria-hidden="true">
+        <MiniIcon name="database" />
+        <b>→</b>
+        <MiniIcon name="star" />
+        <b>→</b>
+        <MiniIcon name="molecule" />
+        <b>→</b>
+        <MiniIcon name="check" />
+        <b>→</b>
+        <MiniIcon name="chart" />
+      </div>
+    )
+  }
   return (
-    <span className={`pa-icon-chip pa-tone-${tone}`}>
-      <ArchitectureIcon name={icon} />
-    </span>
+    <div className="pa-art pa-art-agent" aria-hidden="true">
+      <MiniIcon name="globe" />
+      <DashLink />
+      <MiniIcon name="robot" />
+      <DashLink />
+      <MiniIcon name="person" />
+    </div>
   )
 }
 
 export default function PlatformArchitecture() {
   return (
     <Box className="platform-arch">
-      <div className="pa-loop" aria-label="Sense learn act loop">
-        <span>SENSE</span>
-        <b>→</b>
-        <span>LEARN</span>
-        <b>→</b>
-        <span>ACT</span>
-        <b className="pa-loop-back">↺</b>
+      <div className="pa-arcs" aria-hidden="true">
+        <div className="pa-arc pa-tone-data pa-arc-data">
+          <span>Curated &amp; versioned data</span>
+        </div>
+        <div className="pa-arc pa-tone-rl pa-arc-rl">
+          <span>Models &amp; policies<br />power agents</span>
+        </div>
       </div>
 
-      <div className="pa-grid">
-        <div className="pa-rail pa-input-rail">
-          <div className="pa-rail-head">
-            <span className="pa-dot pa-tone-data" />
-            Multimodal Inputs
+      <div className="pa-pillars">
+        {PILLARS.map((pillar) => (
+          <div className={`pa-pillar pa-tone-${pillar.tone}`} key={pillar.name}>
+            <span className={`status-pill ${pillar.status === 'Available now' ? 'available' : 'soon'} pa-pillar-status`}>
+              {pillar.status}
+            </span>
+            <span className="pa-pillar-icon"><PillarIcon tone={pillar.tone} /></span>
+            <div className="pa-pillar-name">
+              <b>{pillar.number}</b>
+              <h4>{pillar.name}</h4>
+            </div>
+            <p className="pa-pillar-tagline">{pillar.tagline}</p>
+            <div className="pa-pillar-divider" />
+            <div className="pa-chips">
+              {pillar.chips.map((chip) => (
+                <span key={chip}>{chip}</span>
+              ))}
+            </div>
+            <PillarArt tone={pillar.tone} />
           </div>
-          <div className="pa-rail-items">
-            {INPUTS.map((item) => (
-              <div className="pa-rail-item" key={item.label}>
-                <IconChip icon={item.icon} tone="data" />
-                <span>{item.label}</span>
-              </div>
-            ))}
+        ))}
+      </div>
+
+      <div className="pa-return">
+        <div className="pa-return-path pa-tone-data pa-return-data" aria-hidden="true">
+          <span>New data &amp; feedback<br />enrich the dataset</span>
+        </div>
+        <div className="pa-feedback">
+          <span className="pa-feedback-ico"><MiniIcon name="loop" /></span>
+          <div>
+            <h4>FEEDBACK LOOP</h4>
+            <p>New data, outcomes, and feedback continuously improve the system.</p>
           </div>
         </div>
-
-        <Connector tone="data" />
-
-        <div className="pa-platform">
-          <div className="pa-platform-head">
-            <h3>VANE</h3>
-          </div>
-
-          <div className="pa-pillars">
-            {PILLARS.map((pillar) => (
-              <div className={`pa-pillar pa-tone-${pillar.tone}`} key={pillar.name}>
-                <IconChip icon={pillar.icon} tone={pillar.tone} />
-                <div>
-                  <div className="pa-pillar-head">
-                    <h4>{pillar.name}</h4>
-                    {pillar.status ? (
-                      <b className={pillar.status === 'Available now' ? 'pa-status-live' : 'pa-status-soon'}>
-                        {pillar.status}
-                      </b>
-                    ) : null}
-                    <span>{pillar.tagline}</span>
-                  </div>
-                  <div className="pa-capabilities">
-                    {pillar.capabilities.map((capability) => (
-                      <span key={capability}>{capability}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <Connector tone="rl" />
-
-        <div className="pa-rail pa-output-rail">
-          <div className="pa-rail-head pa-rail-head-end">
-            Outputs / Outcomes
-            <span className="pa-dot pa-tone-rl" />
-          </div>
-          <div className="pa-rail-items">
-            {OUTPUTS.map((item) => (
-              <div className="pa-rail-item pa-output-item" key={item.label}>
-                <IconChip icon={item.icon} tone="rl" />
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
+        <div className="pa-return-path pa-tone-agent pa-return-agent" aria-hidden="true">
+          <span>Actions &amp; outcomes<br />in the world</span>
         </div>
       </div>
 
       <div className="pa-core">
         <div className="pa-core-head">
-          <div>
-            <h3>Vane Core</h3>
-          </div>
+          <h3>Vane Core</h3>
           <div className="pa-runtime-pills">
-            <span><ArchitectureIcon name="local" />Local Runtime</span>
+            <span><MiniIcon name="local" />Local Runtime</span>
             <b>+</b>
-            <span><ArchitectureIcon name="ray" />Ray Runtime</span>
+            <span><MiniIcon name="ray" />Ray Runtime</span>
           </div>
         </div>
 
@@ -376,7 +417,7 @@ export default function PlatformArchitecture() {
           {CORE_FEATURES.map((feature) => (
             <div className="pa-core-feature" key={feature.title}>
               <div className="pa-core-feature-head">
-                <span className="pa-core-icon"><ArchitectureIcon name={feature.icon} /></span>
+                <span className="pa-core-icon"><MiniIcon name={feature.icon} /></span>
                 <h4>{feature.title}</h4>
               </div>
               <p>{feature.copy}</p>

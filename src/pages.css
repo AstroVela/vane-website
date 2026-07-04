@@ -56,13 +56,73 @@
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
 @media (max-width: 900px){ .grid2 { grid-template-columns: 1fr; } }
 
+/* ---- Contact page ---- */
+.contact-hero { padding-bottom: 64px; }
+.contact-grid { display: grid; grid-template-columns: minmax(0, 0.92fr) minmax(420px, 0.78fr); gap: 54px; align-items: start; }
+.contact-copy { max-width: 720px; }
+.contact-title { font-size: clamp(38px, 4.8vw, 58px); }
+.contact-lead { max-width: 620px; margin-top: 20px; }
+.contact-actions { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+.contact-signal { margin-top: 34px; max-width: 560px; border: 1.5px solid var(--line); border-radius: var(--r); background: rgba(251,250,246,0.68); padding: 16px 18px; }
+.contact-signal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--font-pixel); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+.contact-signal-row span { border: 1.5px solid var(--line-2); border-radius: var(--r); background: var(--paper-2); padding: 6px 9px; }
+.contact-signal-row b { color: var(--ink-3); font-weight: 700; }
+.contact-signal-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-2); color: var(--ink-3); font-size: 12px; flex-wrap: wrap; }
+.contact-form-card { padding: 28px 30px 30px; }
+.contact-form-head { margin-bottom: 22px; }
+.contact-form-head .azt { display: block; text-align: left; margin-bottom: 10px; }
+.contact-form-head h2 { font-size: 22px; letter-spacing: -0.02em; }
+.contact-form-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; row-gap: 0; }
+.contact-field { display: flex; flex-direction: column; gap: 4px; margin-top: 20px; min-width: 0; }
+.contact-form-grid .contact-field { margin-top: 0; }
+.contact-form-grid + .contact-field { margin-top: 24px; }
+.contact-field span { font-size: 11px; line-height: 1.1; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.contact-field input,
+.contact-field select,
+.contact-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  padding: 11px 12px;
+}
+.contact-field select { appearance: none; }
+.contact-field textarea { min-height: 150px; resize: vertical; }
+.contact-field input::placeholder,
+.contact-field textarea::placeholder { color: var(--ink-3); }
+.contact-field input:focus,
+.contact-field select:focus,
+.contact-field textarea:focus {
+  outline: 2px solid rgba(154,86,56,0.32);
+  outline-offset: 2px;
+}
+.contact-form-foot { display: flex; align-items: center; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
+.contact-submit { border-radius: var(--r); }
+.contact-form-foot p { margin: 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.45; }
+.contact-routes-section { padding: 44px 0 8px; }
+.contact-route-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.contact-route-card { padding: 20px; text-decoration: none; color: inherit; display: flex; flex-direction: column; min-height: 210px; border-color: var(--line-2); transition: transform 0.1s ease, border-color 0.12s ease, background 0.12s ease; }
+.contact-route-card:hover { transform: translate(-1px,-1px); border-color: var(--ink); background: var(--paper-3); }
+.contact-route-card .ic { width: 36px; height: 36px; border: 1.5px solid var(--line); border-radius: var(--r); display: flex; align-items: center; justify-content: center; background: var(--paper-2); margin-bottom: 16px; }
+.contact-route-card .ic svg { shape-rendering: crispEdges; }
+.contact-route-card h3 { font-size: 16px; line-height: 1.3; margin: 0 0 8px; }
+.contact-route-card p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+.contact-route-cta { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 18px; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 980px){ .contact-grid { grid-template-columns: 1fr; gap: 34px; } }
+@media (max-width: 760px){ .contact-route-grid { grid-template-columns: 1fr; } .contact-route-card { min-height: 0; } }
+@media (max-width: 560px){ .contact-form-card { padding: 24px 20px; } .contact-form-grid { grid-template-columns: 1fr; gap: 0; } .contact-form-grid .contact-field + .contact-field { margin-top: 20px; } .contact-actions .btn, .contact-submit { width: 100%; justify-content: center; } }
+
 /* ---- Docs page ---- */
-/* Track the nav's `.wrap` width system so the docs left/right edges line up
-   with the brand lockup and the Get-Started CTA. */
-/* Sidebar widened by +50 and the container max-width grown by the same +50, so
-   the middle (content) column is mathematically unchanged — the extra width all
-   goes to the sidebar, which shifts left into the gutter as the grid centres. */
-.docs { display: grid; grid-template-columns: 280px minmax(0,1fr) 200px; gap: 0; max-width: calc(var(--wrap-max) + 50px); padding: 0 24px; margin: 0 auto; align-items: start; }
+/* Docs use the familiar fixed-left-sidebar shape: navigation starts at the
+   viewport edge while the article keeps its own readable measure. This mirrors
+   Docusaurus-style docs such as GreptimeDB and avoids a large empty gutter to
+   the left of the navigation on wide screens. */
+.docs { --docs-sidebar-w: 280px; --docs-toc-w: 200px; --docs-right-gutter: 24px; --docs-content-pad: 44px; --docs-prose-w: min(100%, 1420px); --docs-media-w: var(--docs-prose-w); display: grid; grid-template-columns: var(--docs-sidebar-w) minmax(0,1fr) var(--docs-toc-w); gap: 0; width: 100%; max-width: none; padding: 0 var(--docs-right-gutter) 0 0; margin: 0; align-items: start; }
 .side { position: sticky; top: 58px; align-self: start; height: calc(100vh - 58px); overflow-y: auto; border-right: 1.5px solid var(--line); padding: 26px 20px 50px; }
 .side .grp { margin-bottom: 4px; }
 /* Group title = collapsible parent. Strongest element in the sidebar: darkest
@@ -80,40 +140,46 @@
 .side a { display: block; font-size: 13px; color: var(--ink-2); text-decoration: none; padding: 6px 9px; border-radius: var(--r); border: 1.5px solid transparent; }
 .side a:hover { background: var(--paper-2); color: var(--ink); }
 .side a.on { border-color: var(--line); background: var(--paper-2); color: var(--ink); font-weight: 700; }
-.doc { padding: 40px 44px 100px; min-width: 0; }
+.doc { padding: 40px var(--docs-content-pad) 100px; min-width: 0; }
 .crumb { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
 .doc h1.dh { font-size: clamp(30px,3.6vw,42px); line-height: 1.06; margin: 12px 0 0; letter-spacing: -0.02em; }
-.doc .dintro { font-size: 17px; line-height: 1.6; color: var(--ink-2); margin: 14px 0 0; max-width: 800px; }
+.doc .dintro { font-size: 17px; line-height: 1.6; color: var(--ink-2); margin: 14px 0 0; max-width: var(--docs-prose-w); }
 .doc h2.ds { font-size: 22px; margin: 40px 0 0; padding-top: 14px; scroll-margin-top: 74px; letter-spacing: -0.015em; }
 .doc h3.dss { font-size: 16px; margin: 26px 0 0; scroll-margin-top: 74px; }
-.doc p { font-size: 14.5px; line-height: 1.66; color: var(--ink-2); max-width: 800px; margin: 12px 0 0; }
+.doc p { font-size: 14.5px; line-height: 1.66; color: var(--ink-2); max-width: var(--docs-prose-w); margin: 12px 0 0; }
 /* The code window itself is styled site-wide in index.css (.term); here we only
    set its docs-specific measure. */
-.doc .term { margin: 18px 0 0; max-width: 850px; }
+.doc .term { margin: 18px 0 0; max-width: var(--docs-media-w); }
 /* Real content links: the single warm accent (harmonises with the paper tone,
    unlike a cool blue), underline reserved for hover. */
 .doc a.dlink { color: var(--accent); text-decoration: none; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
 .doc a.dlink:hover { color: var(--accent-strong); text-decoration: underline; }
-.doc ul.dl { list-style: none; margin: 14px 0 0; padding: 0; max-width: 800px; }
+.doc ul.dl { list-style: none; margin: 14px 0 0; padding: 0; max-width: var(--docs-prose-w); }
 .doc ul.dl li { position: relative; padding: 6px 0 6px 22px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
 .doc ul.dl li::before { content: "▸"; position: absolute; left: 0; top: 6px; color: var(--ink-3); }
-.doc ol.dol { list-style: decimal; margin: 14px 0 0; padding-left: 24px; max-width: 800px; }
+.doc ol.dol { list-style: decimal; margin: 14px 0 0; padding-left: 24px; max-width: var(--docs-prose-w); }
 .doc ol.dol li { padding: 6px 0 6px 4px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
-.doc .dq { max-width: 800px; margin: 18px 0 0; padding: 2px 0 2px 16px; border-left: 1.5px solid var(--line); color: var(--ink-2); }
+.doc .dq { max-width: var(--docs-prose-w); margin: 18px 0 0; padding: 2px 0 2px 16px; border-left: 1.5px solid var(--line); color: var(--ink-2); }
 .doc .dq p:first-child { margin-top: 0; }
-.doc .dr { max-width: 850px; margin: 34px 0; border: 0; border-top: 1.5px solid var(--line-2); }
-.doc .dimg { display: block; max-width: 100%; height: auto; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); }
-.doc .ddetails { max-width: 850px; margin: 18px 0 0; border: 1.5px solid var(--line-2); border-radius: var(--r); background: var(--paper-2); padding: 12px 14px; }
+.doc .dr { max-width: var(--docs-media-w); margin: 34px 0; border: 0; border-top: 1.5px solid var(--line-2); }
+.doc .dimg { display: block; width: 100%; max-width: var(--docs-media-w); height: auto; object-fit: contain; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); }
+.doc .ddetails { max-width: var(--docs-media-w); margin: 18px 0 0; border: 1.5px solid var(--line-2); border-radius: var(--r); background: var(--paper-2); padding: 12px 14px; }
 .doc .ddetails summary { cursor: pointer; font-weight: 700; color: var(--ink); }
 .doc .ddetails > *:last-child { margin-bottom: 0; }
-.callout { display: flex; gap: 12px; max-width: 850px; margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); padding: 13px 15px; }
+.callout { display: flex; gap: 12px; max-width: var(--docs-media-w, 1420px); margin: 18px 0 0; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); padding: 13px 15px; }
 .callout .cb { font-weight: 700; flex: none; }
 .callout p { margin: 0; font-size: 13.5px; color: var(--ink); }
-table.dt { border-collapse: collapse; width: 100%; max-width: 850px; margin: 18px 0 0; }
+table.dt { border-collapse: collapse; width: 100%; max-width: var(--docs-media-w, 1420px); margin: 18px 0 0; }
 table.dt th, table.dt td { text-align: left; padding: 10px 14px; font-size: 13px; border-top: 1px solid var(--line-2); }
 table.dt thead th { border-top: none; border-bottom: 1.5px solid var(--line); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
 table.dt td:first-child { color: var(--ink); }
-.pager { display: flex; justify-content: space-between; gap: 14px; margin: 48px 0 0; padding-top: 22px; border-top: 1.5px solid var(--line-2); max-width: 850px; }
+.doc-meta { display: flex; align-items: center; justify-content: space-between; gap: 18px; max-width: var(--docs-media-w, 1420px); margin: 48px 0 0; padding-top: 22px; border-top: 1.5px solid var(--line-2); }
+.doc-edit { display: inline-flex; align-items: center; gap: 9px; color: var(--accent); font-size: 15px; font-weight: 700; text-decoration: none; }
+.doc-edit:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.doc-edit svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.doc-updated { color: var(--ink-3); font-size: 13px; font-style: italic; text-align: right; }
+.doc-updated strong { color: var(--ink-2); font-weight: 700; }
+.pager { display: flex; justify-content: space-between; gap: 14px; margin: 48px 0 0; padding-top: 22px; border-top: 1.5px solid var(--line-2); max-width: var(--docs-media-w, 1420px); }
 .pager a { font-size: 13.5px; text-decoration: none; color: var(--ink); border: 1.5px solid var(--line); border-radius: var(--r); padding: 11px 15px; background: var(--paper-2); }
 .pager a:hover { transform: translate(-1px,-1px); }
 .pager .nx { margin-left: auto; }
@@ -122,8 +188,8 @@ table.dt td:first-child { color: var(--ink); }
 .toc a { display: block; font-size: 12.5px; color: var(--ink-3); text-decoration: none; padding: 5px 0 5px 11px; border-left: 1.5px solid var(--line-2); }
 .toc a:hover { color: var(--ink); }
 .toc a.on { color: var(--ink); border-left-color: var(--ink); font-weight: 700; }
-@media (max-width: 1080px){ .docs { grid-template-columns: 220px minmax(0,1fr); } .toc { display:none; } }
-@media (max-width: 800px){ .docs { grid-template-columns: 1fr; padding: 0; } .side { display:none; } .doc { padding: 30px 22px 80px; } }
+@media (max-width: 1080px){ .docs { --docs-sidebar-w: 240px; grid-template-columns: var(--docs-sidebar-w) minmax(0,1fr); padding-right: 0; } .toc { display:none; } }
+@media (max-width: 800px){ .docs { grid-template-columns: 1fr; padding: 0; } .side { display:none; } .doc { padding: 30px 22px 80px; } .doc-meta { align-items: flex-start; flex-direction: column; } .doc-updated { text-align: left; } }
 
 /* ---- Docs product layer (Data / Agent / RL) ---- */
 /* Coming-soon products reuse the live docs frame; their sidebar holds only the

@@ -1,12 +1,14 @@
 import type {ReactNode} from 'react'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { MDXProvider } from '@mdx-js/react'
+import docsManifest from '../../docs/manifest.json'
 import Nav from '../components/Nav'
 import ComingSoon from './ComingSoon'
 import ProductGlyph from '../docs/ProductGlyph'
 import { Link, useRouter } from '../router'
 import { cx } from '../components/cx'
 import { mdxComponents } from '../components/mdxComponents'
+import { DOCS_EDIT_BASE_URL } from '../siteLinks'
 import {
   DEFAULT_DOC_SLUG,
   DOCS_ORDER,
@@ -22,12 +24,47 @@ import {
   isProductId,
   type ProductId,
 } from '../docs/products'
+import { resolveLegacyDocSlug } from '../docs/legacySlugs'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 type TocItem = {
   id: string
   label: string
+}
+
+type DocsManifestPage = {
+  lastUpdated?: string
+  slug: string
+}
+
+const docsManifestBySlug = new Map(
+  (docsManifest.pages as DocsManifestPage[]).map((item) => [item.slug, item]),
+)
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 11.9 2 14l2.1-.5 8.6-8.6-1.6-1.6z" />
+      <path d="m10.2 4.2 1.6 1.6" />
+    </svg>
+  )
+}
+
+function docsEditUrl(source: string) {
+  return `${DOCS_EDIT_BASE_URL}/${source}`
+}
+
+function formatLastUpdated(value: string | undefined) {
+  if (!value) return undefined
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return undefined
+  return new Intl.DateTimeFormat('en', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    year: 'numeric',
+  }).format(date)
 }
 
 /* Parse `/docs`, `/docs/<product>`, `/docs/<product>/<slug...>`, and the legacy
@@ -43,13 +80,14 @@ function parseDocsPath(path: string): { product: ProductId; slug?: string } {
 export default function Docs() {
   const { path } = useRouter()
   const { product, slug } = parseDocsPath(path)
+  const canonicalSlug = resolveLegacyDocSlug(slug) ?? slug
   const prod = PRODUCTS[product]
   const isLive = prod.status === 'live'
 
   let current: DocSlug | undefined
   if (isLive) {
-    if (!slug) current = DEFAULT_DOC_SLUG
-    else if (isDocSlug(slug)) current = slug
+    if (!canonicalSlug) current = DEFAULT_DOC_SLUG
+    else if (isDocSlug(canonicalSlug)) current = canonicalSlug
     else throw new Error(`Unknown docs slug "${slug}"`)
   }
 
@@ -112,6 +150,7 @@ export default function Docs() {
   const i = current ? DOCS_ORDER.indexOf(current) : -1
   const prev = i > 0 ? DOCS_ORDER[i - 1] : null
   const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
+  const lastUpdated = formatLastUpdated(current ? docsManifestBySlug.get(current)?.lastUpdated : undefined)
 
   // Coming-soon products (Agent / RL) reuse the same three-column docs frame as
   // a live product for layout consistency, but the sidebar carries only the
@@ -230,6 +269,18 @@ export default function Docs() {
           <MDXProvider components={mdxComponents}>
             <PageBody />
           </MDXProvider>
+
+          <div className="doc-meta">
+            <a className="doc-edit" href={docsEditUrl(page.source)} target="_blank" rel="noreferrer">
+              <EditIcon />
+              Edit this page
+            </a>
+            {lastUpdated && (
+              <div className="doc-updated">
+                Last updated on <strong>{lastUpdated}</strong>
+              </div>
+            )}
+          </div>
 
           <div className="pager">
             {prev && <Link to={docPath(prev)}>← {DOCS_PAGES[prev].title}</Link>}

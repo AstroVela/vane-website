@@ -1,4 +1,5 @@
 import { Fragment, type PropsWithChildren } from 'react'
+import Head from '@docusaurus/Head'
 import useBrokenLinks from '@docusaurus/useBrokenLinks'
 import Nav from '../components/Nav'
 import Footer from '../components/Footer'
@@ -37,6 +38,16 @@ function UseCaseBlock({ id, children }: PropsWithChildren<{ id: string }>) {
 export default function UseCases() {
   return (
     <>
+      <Head>
+        <title>AI pipeline use cases — Vane</title>
+        <meta
+          name="description"
+          content="Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, structured multimodal output, and voice analytics."
+        />
+        <meta property="og:title" content="AI pipeline use cases — Vane" />
+        <meta property="og:description" content="Real AI pipeline examples for embeddings, search, deduplication, images, generation, multimodal structured output, and voice analytics." />
+      </Head>
+
       <Nav />
 
       {/* INTRO */}

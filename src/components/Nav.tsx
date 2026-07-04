@@ -6,7 +6,7 @@ import ProductGlyph from '../docs/ProductGlyph'
 import CommandPalette from './CommandPalette'
 import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
 import { useGitHubStars } from './useGitHubStars'
-import { CONTACT_MAILTO, DISCORD_URL, GITHUB_REPO, GITHUB_URL } from '../siteLinks'
+import { DISCORD_URL, GITHUB_REPO, GITHUB_URL } from '../siteLinks'
 
 function GitHubIcon() {
   return (
@@ -296,7 +296,7 @@ export default function Nav({
             <span>Star</span>
             {stars && <b>{stars}</b>}
           </a>
-          <a className="nav-contact" href={CONTACT_MAILTO}>Contact us</a>
+          <Link className="nav-contact" to="/contact">Contact us</Link>
           {withCta &&
             (ctaHref ? (
               <a className={ctaClass} href={ctaHref}>
@@ -365,6 +365,9 @@ export default function Nav({
               <span className="mob-label">Resources</span>
               <Link className="mob-sub" to="/blog" onClick={() => setMobOpen(false)}>
                 Blog
+              </Link>
+              <Link className="mob-sub" to="/contact" onClick={() => setMobOpen(false)}>
+                Contact us
               </Link>
               <a
                 className="mob-sub"

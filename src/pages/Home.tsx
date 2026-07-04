@@ -9,6 +9,7 @@ import Cta from '../components/Cta'
 import PixelIcon, { type PixelIconName } from '../components/PixelIcon'
 import PlatformArchitecture from '../components/PlatformArchitecture'
 import { Link } from '../router'
+import { DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
 const HERO_CODE = `<span class="k">import</span> vane
 <span class="k">from</span> vane<span class="p">.</span>ai <span class="k">import</span> describe<span class="p">,</span> embed
@@ -26,8 +27,6 @@ media <span class="p">=</span> <span class="f">describe</span><span class="p">(<
 
 media <span class="p">=</span> <span class="f">embed</span><span class="p">(</span>media<span class="p">,</span> <span class="s">"understanding.summary"</span><span class="p">)</span>
 media<span class="p">.</span><span class="f">write</span><span class="p">(</span><span class="s">"ai_ready_media"</span><span class="p">)</span><span class="cur"></span>`
-
-const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20design%20partner'
 
 const SCENARIOS: Array<{
   title: string
@@ -58,7 +57,7 @@ const SCENARIOS: Array<{
     status: 'Coming soon',
     summary: 'Clean and re-score rollout trajectories and reward shards at training speed — and reproduce any run.',
     cta: 'Join the waitlist',
-    href: DESIGN_PARTNER_HREF,
+    href: DESIGN_PARTNER_MAILTO,
     icon: 'generation',
   },
   {
@@ -66,37 +65,38 @@ const SCENARIOS: Array<{
     status: 'Coming soon',
     summary: 'Filter and preprocess multimodal data on the edge, with one semantics from device to cloud.',
     cta: 'Join the waitlist',
-    href: DESIGN_PARTNER_HREF,
+    href: DESIGN_PARTNER_MAILTO,
     icon: 'preprocessing',
   },
 ]
 
+const FEATURED_SCENARIOS = SCENARIOS.filter((scenario) => scenario.status === 'Available now')
+const UPCOMING_SCENARIOS = SCENARIOS.filter((scenario) => scenario.status === 'Coming soon')
+
 function ScenarioCard({ scenario }: { scenario: (typeof SCENARIOS)[number] }) {
-  const body = (
-    <>
+  return (
+    <Box as={Link} to={scenario.href} className="scenario-card">
       <div className="scenario-top">
         <span className="ic"><PixelIcon name={scenario.icon} size={20} /></span>
-        <span className={`status-pill ${scenario.status === 'Available now' ? 'available' : 'soon'}`}>
-          {scenario.status}
-        </span>
+        <span className="status-pill available">{scenario.status}</span>
       </div>
       <h3>{scenario.title}</h3>
       <p>{scenario.summary}</p>
       <span className="scenario-cta">{scenario.cta} <span className="ar">→</span></span>
-    </>
+    </Box>
   )
+}
 
-  if (scenario.href.startsWith('mailto:')) {
-    return (
-      <Box as="a" href={scenario.href} className="scenario-card is-soon">
-        {body}
-      </Box>
-    )
-  }
-
+function ScenarioSoonCard({ scenario }: { scenario: (typeof SCENARIOS)[number] }) {
   return (
-    <Box as={Link} to={scenario.href} className="scenario-card">
-      {body}
+    <Box as="a" href={scenario.href} flat className="scenario-soon-card">
+      <div className="scenario-soon-head">
+        <span className="ic"><PixelIcon name={scenario.icon} size={12} /></span>
+        <h3>{scenario.title}</h3>
+        <span className="status-pill soon">{scenario.status}</span>
+      </div>
+      <p>{scenario.summary}</p>
+      <span className="scenario-cta">{scenario.cta} <span className="ar">→</span></span>
     </Box>
   )
 }
@@ -113,19 +113,20 @@ export default function Home() {
 
       {/* HERO */}
       <section className="hero">
-        <div className="wrap hero-grid">
+        <div className="wrap hero-grid home-hero-grid">
           <div>
             <Eyebrow style={{ marginBottom: 20 }}>Vane</Eyebrow>
             <h1 className="h1 hero-h1">
               The multimodal engine for AI pipelines and agents
             </h1>
-            <p className="lead" style={{ marginTop: 24, maxWidth: 480 }}>
+            <p className="lead" style={{ marginTop: 24, maxWidth: 540 }}>
               Run SQL, Python UDFs, embeddings, and batch model inference across documents, media, sensor data, and tables — locally or on Ray.
             </p>
-            <div style={{ display: 'flex', gap: 12, marginTop: 34, flexWrap: 'wrap' }}>
-              <Button solid to="/docs" arrow>Read the docs</Button>
-              <Button to="#scenarios">Choose your workload</Button>
-              <Button to="#benchmarks">See benchmarks</Button>
+            <div style={{ display: 'flex', gap: 20, marginTop: 34, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button solid to="/docs" arrow>Get Started</Button>
+              <Link to="#scenarios" className="hero-textlink">
+                Choose your workload <span className="ar">→</span>
+              </Link>
             </div>
             <div className="install" style={{ marginTop: 30 }}>
               <span className="c"><span className="p">$</span> pip install vane-ai</span>
@@ -147,11 +148,15 @@ export default function Home() {
                 From multimodal model training to enterprise data pipelines, real-world AI runs on messy multimodal data. Pick the pipeline that matches your workload.
               </p>
             </div>
-            <Button sm to="/use-cases" arrow>See all examples</Button>
           </div>
           <div className="scenario-grid">
-            {SCENARIOS.map((scenario) => (
+            {FEATURED_SCENARIOS.map((scenario) => (
               <ScenarioCard scenario={scenario} key={scenario.title} />
+            ))}
+          </div>
+          <div className="scenario-soon-grid">
+            {UPCOMING_SCENARIOS.map((scenario) => (
+              <ScenarioSoonCard scenario={scenario} key={scenario.title} />
             ))}
           </div>
         </div>
@@ -238,7 +243,7 @@ export default function Home() {
           </div>
           <Cta>
             <Button solid to="/docs" arrow>Read the Docs</Button>
-            <Button href={DESIGN_PARTNER_HREF}>Become a design partner</Button>
+            <Button href={DESIGN_PARTNER_MAILTO}>Become a design partner</Button>
           </Cta>
         </div>
       </section>

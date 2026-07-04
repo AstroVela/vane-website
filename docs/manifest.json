@@ -17,12 +17,12 @@
       }
     },
     {
-      "slug": "quickstart/what-is-vane",
-      "title": "What Is Vane?",
-      "source": "docs/quickstart/what-is-vane.mdx",
-      "route": "/docs/data/quickstart/what-is-vane",
+      "slug": "quickstart/what-is-vane-data",
+      "title": "What Is Vane Data?",
+      "source": "docs/quickstart/what-is-vane-data.mdx",
+      "route": "/docs/data/quickstart/what-is-vane-data",
       "frontmatter": {
-        "title": "What Is Vane?"
+        "title": "What Is Vane Data?"
       }
     },
     {
@@ -266,9 +266,9 @@
       "group": "Quickstart",
       "items": [
         {
-          "slug": "quickstart/what-is-vane",
-          "label": "What Is Vane?",
-          "route": "/docs/data/quickstart/what-is-vane"
+          "slug": "quickstart/what-is-vane-data",
+          "label": "What Is Vane Data?",
+          "route": "/docs/data/quickstart/what-is-vane-data"
         },
         {
           "slug": "quickstart/installation",
