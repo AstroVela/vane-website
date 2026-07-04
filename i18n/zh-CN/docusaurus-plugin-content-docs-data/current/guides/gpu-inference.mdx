@@ -1,0 +1,313 @@
+---
+title: GPU 推理
+---
+
+当你希望将来自 SQL 或 relation data 的大量 prompt 交给本地或私有 LLM 执行，并将 response 写回为可审查 table 时，使用 GPU Inference。典型输入包括抽取后的文档、caption、transcript、label，或前序 Vane stage 准备好的 prompt row。
+
+本指南聚焦 Vane 中面向 batch prompt inference 的 vLLM 路径。对于非 vLLM-backed 的通用 GPU model code，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。
+
+常见 workflow 形态是：
+
+```text
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
+```
+
+## 何时使用 GPU Inference
+
+在以下场景中使用本指南：
+
+- 你有大量 prompt，而不是少量 interactive chat request。
+- model 需要在本地或你自己的 Ray environment 中运行。
+- model 或 engine initialization 成本较高，需要跨 batch 复用。
+- 你需要验证 GPU actor 复用、multi-GPU scheduling，或 Ray-backed vLLM actor pool。
+- 相似 prompt 共享 system prefix 或 template，cache locality 可能影响 throughput。
+
+对于轻量文本清理、简单 SQL transform、受 rate limit 约束的 hosted API call，或非 vLLM 的 custom GPU model，不要从这里开始。
+
+## Vane 中的 vLLM
+
+Vane 通过 AI prompt workflow 暴露 vLLM：
+
+```python
+response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=8,
+    execution_backend="subprocess_actor",
+)
+```
+
+输入仍然是 Vane relation。使用 SQL 构建 prompt，保留 review 所需的业务列，并在 prompt 列上运行 vLLM provider。
+
+High-level `prompt(...)` helper 会返回已配置的输出列。如果最终 table 还需要 ID、source field、status 或 run metadata，请在检查 row count 和顺序后显式组合这些列。当你需要完整的 row-level exception text 或 provider-specific output contract 时，使用自定义 UDF。
+
+## 构建 prompt relation
+
+从一个小型真实 source row 切片开始。将 prompt text 与后续需要的 identifier 和 metadata 分开保留。
+
+```python
+import vane
+
+con = vane.connect()
+
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        source_uri,
+        document_type,
+        'Extract the claim decision and one short reason from this document: '
+            || text as prompt
+    from read_parquet('data/claims/documents/*.parquet')
+    where text is not null
+    order by case_id, document_id
+    limit 50
+""")
+
+prompt_table = prompts.to_arrow_table()
+```
+
+推荐的输入列：
+
+| Column | 作用 |
+| --- | --- |
+| `case_id`、`document_id`、`asset_id` 或其他稳定 key | 将 response join 回 source system。 |
+| `source_uri` 或 source metadata | 审查异常输出并复现失败。 |
+| `document_type`、`media_type`、category、tenant 或 task type | 对 prompt 分组，并按 source segment 比较输出质量。 |
+| `prompt` | 发送给 vLLM 的最终文本。 |
+| `system_prefix` 或 template ID，如果使用 | 用于解释 prompt group 和 cache locality 实验。 |
+
+第一次运行时保持 prompt construction 确定性。如果修改 template，请在输出中记录 `run_id` 或 prompt version。
+
+## 运行本地 vLLM sample
+
+在引入 Ray actor-pool 复杂度前，先使用本地路径验证 model、prompt shape、output length 和 GPU memory behavior。
+
+```python
+response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    system_message="Return concise JSON-like business notes.",
+    output_column="response_text",
+    batch_size=8,
+    execution_backend="subprocess_actor",
+    engine_args={
+        "trust_remote_code": True,
+        "max_model_len": 2048,
+    },
+    generate_args={
+        "sampling_params": {
+            "temperature": 0.0,
+            "max_tokens": 128,
+        }
+    },
+    on_error="log",
+)
+```
+
+`execution_backend="subprocess_actor"` 会将 vLLM prompter state 保留在 actor process 中，使 engine 可以在本次运行的多个 batch 间复用。第一次正确性检查不需要 Ray。
+
+## 保留 ID 并写出结果
+
+在将 helper output 追加到原始 relation 前，先完成校验。
+
+```python
+import pyarrow as pa
+
+response_table = response_only.to_arrow_table()
+
+if response_table.num_rows != prompt_table.num_rows:
+    raise ValueError("vLLM output row count does not match prompt row count")
+
+responses = response_table["response_text"].to_pylist()
+status = ["ok" if value else "error" for value in responses]
+error_message = [
+    None if value else "vLLM returned null or empty output"
+    for value in responses
+]
+
+result_table = prompt_table.append_column(
+    "response_text",
+    pa.array(responses, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "status",
+    pa.array(status, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "error_message",
+    pa.array(error_message, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "model",
+    pa.array(["Qwen/Qwen3-1.7B"] * prompt_table.num_rows, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "run_id",
+    pa.array(["claims-vllm-validation-001"] * prompt_table.num_rows, type=pa.string()),
+)
+
+results = con.from_arrow(result_table)
+results.write_parquet("output/claims-vllm-validation-001/")
+```
+
+建议的输出列：
+
+| Column | 作用 |
+| --- | --- |
+| Business ID column | 将每个 response 追溯到 source row。 |
+| Source metadata | 复现并审查失败。 |
+| `prompt` 或 prompt version | 解释 model 看到了什么。 |
+| `response_text` | 生成的文本。 |
+| `status` | `ok`、`error`，或你定义的业务 review state。 |
+| `error_message` | 用于 review 的 nullable diagnostic column。 |
+| `model`、`run_id` 和 config summary | 比较不同运行，而无需猜测哪些设置发生了变化。 |
+
+对于更严格的 structured output，将 `return_format` 传给 `prompt(...)`，并在写入最终 table 前校验返回的 JSON string。
+
+## Local vLLM 与 Ray-backed vLLM
+
+使用能够回答当前问题的最小 execution shape。
+
+| 形态 | 适用场景 | 校验内容 |
+| --- | --- | --- |
+| Local vLLM sample | Prompt correctness、model loading、output quality，以及第一次 GPU memory check。 | 10-100 行、非空输出、预期输出格式，并确认没有每行重新加载 model。 |
+| Ray actor execution | Multi-GPU validation、actor 复用、更大的 prompt batch。 | Ray 能看到预期 GPU，worker 能 import vLLM，并且每个 actor 拥有 model file 和 dependency。 |
+| Native vLLM Ray actor pool | 更大规模 batch inference，Vane 需要复用 vLLM actor 并在其间路由工作。 | Actor pool size、GPU assignment、shared pool reuse、inflight load distribution 和 throughput。 |
+
+对于 Ray-backed vLLM validation，请在构建 distributed run 前配置 Ray，并保持 model option 与本地 sample 一致。
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+ray_response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=32,
+    concurrency=2,
+    gpus_per_actor=1,
+    execution_backend="ray_actor",
+    use_ray=True,
+    ray_actor_pool_name="claims-vllm-validation",
+    engine_args={
+        "trust_remote_code": True,
+        "max_model_len": 2048,
+    },
+    generate_args={
+        "sampling_params": {
+            "temperature": 0.0,
+            "max_tokens": 128,
+        }
+    },
+    on_error="log",
+)
+```
+
+需要区分两层配置：
+
+- `execution_backend` 控制 Vane 在哪里运行 prompt UDF stage。
+- `use_ray`、`concurrency`、`gpus_per_actor` 和 `ray_actor_pool_name` 等 vLLM option 控制 vLLM executor 和 actor pool 行为。
+
+开始时一次只改变一层。如果本地 sample 还不正确，Ray 会让失败更难诊断。
+
+## Batch cache 优化
+
+vLLM throughput 不只取决于 GPU 数量。对于 batch inference run，需要围绕 engine reuse、bounded batch 和 prompt locality 调优。
+
+### 复用 actor 和 engine
+
+避免每行或每个很小的 batch 都重新加载 model 的模式。对 vLLM prompt 使用 actor-style execution，并在一次运行中保持 `model`、`engine_args` 和 dependency version 稳定。
+
+对于 Ray-backed vLLM，当多个 distributed task 应共享同一组 vLLM actor 时，使用具名 actor pool：
+
+```python
+ray_actor_pool_name="claims-vllm-validation"
+```
+
+本地代码支持具名 vLLM actor pool，并按 pool name 共享 inflight tracking。这使多个 executor 可以看到每个 actor 的当前负载，并以更好的 load awareness 路由新的 prompt batch。它也能避免在 distributed plan 中反复创建相同 actor pool。
+
+### 对相似 prefix 分组
+
+当大量 prompt 共享同一个 system message、task template 或长 prefix，并且分组不会改变本次运行的业务语义时，可以在 inference 前分组。
+
+```python
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        document_type,
+        source_uri,
+        case
+            when document_type = 'claim'
+                then 'You review insurance claim documents.'
+            when document_type = 'invoice'
+                then 'You review invoice support documents.'
+            else 'You review business documents.'
+        end as system_prefix,
+        'Return a short decision and reason: ' || text as prompt
+    from source_documents
+    where text is not null
+    order by document_type, case_id, document_id
+""")
+```
+
+当一个 prefix 适用于所有行时，使用 `system_message`。如果 prefix 按行变化，请将 prefix 放入 prompt text，或按 task type 拆分 relation。最终输出仍应以 business ID 为 key，避免 grouped execution 让 review 变得含糊。
+
+Native vLLM executor 包含 `do_prefix_routing`、`min_bucket_size`、`prefix_match_threshold` 和 `load_balance_threshold` 等 prefix-routing control。请在已有 baseline 后再把它们作为 tuning control 使用。它们不是通用 UDF routing option。
+
+### 联合调优 batch 和 concurrency
+
+为 vLLM relation prompt 显式设置 `batch_size`。更大的 batch 可以改善 GPU utilization 和 vLLM continuous batching，但也可能增加延迟、内存压力和 failure blast radius。
+
+只有在 GPU 和 actor memory 足够时，才增加 `concurrency`。一个简单的 capacity check 是：
+
+```text
+required GPUs = concurrency * gpus_per_actor
+```
+
+如果 `concurrency=2` 且 `gpus_per_actor=1`，Ray environment 至少需要两个可用 GPU 才能实现完整并行。如果 model 使用 tensor parallelism 或其他 vLLM engine-level GPU 设置，请把它们纳入自己的 capacity estimate。
+
+## 关键配置概念
+
+| Concept | 出现位置 | 建议 |
+| --- | --- | --- |
+| `model` | `prompt(..., model=...)` | 使用你已在本地验证过的准确 model identifier。 |
+| `engine_args` | vLLM engine configuration | 放置 model loading 和 engine-level setting，例如 context length 或 trust setting。 |
+| `generate_args` | vLLM generation request | 放置 sampling parameter，通常位于 `sampling_params` 下。 |
+| `batch_size` | Vane UDF batch 和 vLLM submission | 从小值开始，然后增大到 GPU utilization、latency 或 memory 成为瓶颈。 |
+| `concurrency` | Actor 或 vLLM pool size | 只有 worker 和 GPU 仍有余量时才增加。 |
+| `gpus_per_actor` | vLLM actor 的 Ray GPU resource request | 与 model 和 engine setup 匹配。 |
+| `ray_actor_pool_name` | Native vLLM Ray actor pool | 在 distributed run 中用于共享 actor reuse。 |
+| `on_error` | vLLM executor error behavior | 调试时使用 `raise`；对于需要保留失败行以便 review 的 validation run，使用 `log`。 |
+
+Vane 为 native vLLM engine scheduler 应用面向 throughput 的默认值，你可以通过 `engine_args` 覆盖 engine-level setting。除非明确知道自己在测试哪个设置，否则不要把完整的 vLLM serving configuration 复制到 validation run 中。
+
+## 验证清单
+
+增大 sample 前：
+
+1. 运行 10-100 行有代表性的数据。
+2. 确认 ID、source metadata、prompt text 和 output row count 匹配。
+3. 针对每个重要业务类别人工检查输出质量。
+4. 检查 null、空字符串、非法 JSON，以及异常过长的输出。
+5. 在运行过程中观察 GPU utilization 和 memory。
+6. 记录 processed rows、`batch_size`、`concurrency`、`gpus_per_actor`、elapsed time、throughput 和 error。
+7. 比较 prompt grouping 或 prefix-routing 变更前后的 latency 和 throughput。
+8. 验证 Ray worker 能 import vLLM，并能访问 model file、input data 和 output path。
+
+对于 cache locality 实验，保持 model 和 sampling setting 固定。只比较 prompt ordering、grouping 或 prefix-routing setting；否则结果无法说明到底是什么发生了变化。
+
+## 边界
+
+本指南不是 vLLM 手册。它展示如何将 vLLM batch inference 放入 Vane relation workflow，以及在扩大规模前需要验证什么。
+
+它也不是 production serving 指南，不覆盖 autoscaling、SLA、traffic management、online request routing 或 long-running service operation。
+
+对于非 vLLM GPU model、custom tokenizer、multimodal preprocessing，或完整的 custom output schema，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。对于 hosted provider prompting 和小型 AI enrichment task，请使用 [AI Functions](/zh-CN/docs/data/guides/ai-functions)。

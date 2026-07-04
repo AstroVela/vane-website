@@ -73,7 +73,8 @@ function formatLastUpdated(value: string | undefined) {
 /* Parse `/docs`, `/docs/<product>`, `/docs/<product>/<slug...>`, and the legacy
    `/docs/<slug...>` form into a product + optional slug. */
 function parseDocsPath(path: string): { product: ProductId; slug?: string } {
-  const segs = path.replace(/^\/docs\/?/, '').split('/').filter(Boolean)
+  const normalizedPath = path.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
+  const segs = normalizedPath.replace(/^\/docs\/?/, '').split('/').filter(Boolean)
   if (segs.length === 0) return { product: DEFAULT_PRODUCT }
   if (isProductId(segs[0])) return { product: segs[0], slug: segs.slice(1).join('/') }
   // Legacy `/docs/<slug>` — resolve against the default (live) product.

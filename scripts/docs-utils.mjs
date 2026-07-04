@@ -198,7 +198,7 @@ export function buildManifest({ root, registryPath, sidebarPath }) {
   return {
     product: 'data',
     routePrefix: docsRoutePrefix,
-    generatedFrom: ['src/docs/registry.ts', 'src/docs/sidebar.data.json', 'docs/**/*.mdx'],
+    generatedFrom: ['src/docs/registry.ts', 'src/docs/sidebar.data.json', 'docs/data/**/*.mdx'],
     pages: pagesInOrder,
     sidebar: groups,
   }

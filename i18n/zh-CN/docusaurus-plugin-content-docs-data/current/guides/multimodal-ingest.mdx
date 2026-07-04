@@ -1,0 +1,146 @@
+---
+title: 多模态摄取
+---
+
+Multimodal ingest 将 image、document、audio、video 和 sensor object 转换为稳定 relation，供后续 pipeline stage 进行过滤、解码、enrich 和校验。本指南的目标不是运行完整 multimodal pipeline，而是创建 table-shaped source record，使你从本地 sample 迁移到更大规模运行时仍然保持可追溯。
+
+## 为什么用 row
+
+当每个 source object 都有一行，并使用显式列记录 identity、location、media type 和 workflow context 时，Vane 的效果最好。这样可以在 Python、AI 或 GPU work 运行前，先由 SQL 对单一 relation 做过滤。
+
+Row 也让反馈更容易诊断。当 decode step、model call 或 worker read 失败时，你可以定位到准确的 `asset_id`、`source_uri`、metadata value 和 downstream status column，而不是只依赖松散的文件名或日志行。
+
+## 输入 contract
+
+从 manifest relation 开始。它可以来自 Parquet、CSV、object storage listing、application export，或用于本地验证的小型 Arrow table。
+
+将以下列作为最小 contract：
+
+| Column | 作用 |
+| --- | --- |
+| `asset_id` | media object 的稳定 ID。有 business key 时使用 business key；否则基于 source metadata 创建确定性 ID。 |
+| `source_uri` | 可读取原始 object 的 URI 或路径。即使值混合了本地路径和 object storage URI，也使用一个规范列名。 |
+| `media_type` | MIME-like type，例如 `image/jpeg`、`application/pdf`、`audio/wav` 或 `video/mp4`。 |
+| source metadata | 用于选择和解释 record 的列，例如 `customer_id`、`case_id`、`capture_time`、`region`、`language` 或 `document_type`。 |
+| optional bytes | 只有当在 relation 中嵌入 bytes 是合理权衡时，才使用 `payload_bytes` 这类 `BLOB` 列。 |
+
+有用的可选列包括 `content_sha256`、`source_size_bytes`、`ingested_at` 和 `ingest_status`。当你需要 SQL filter 时，请将 metadata 保持为普通 typed column。只有对于稀疏或很少查询的 metadata，才使用 JSON string。
+
+```python
+import pyarrow as pa
+import vane
+
+manifest = pa.table({
+    "asset_id": ["img-001", "doc-042"],
+    "source_uri": ["s3://sample-media/images/img-001.jpg", "s3://sample-media/docs/doc-042.pdf"],
+    "media_type": ["image/jpeg", "application/pdf"],
+    "case_id": ["case-17", "case-17"],
+    "region": ["us-west", "us-west"],
+})
+
+con = vane.connect()
+media = con.from_arrow(manifest)
+media.show()
+```
+
+## URI 或 bytes
+
+初始 ingest relation 优先使用 `source_uri`。URI-first relation 更小、更容易检查，也更容易在 SQL filtering、Ray worker 和 downstream processing 之间移动。
+
+在以下情况下使用 bytes：
+
+- sample 足够小，可以在本地检查；
+- worker 难以访问 source system，但可以一次性导出 bytes；
+- 下一阶段为了 reproducibility 需要精确的 byte snapshot；
+- 你有意为 bug report 或示例编写紧凑 fixture。
+
+在以下情况下避免使用 bytes：
+
+- object 很大，尤其是 audio 和 video；
+- 同一 media 会被多个 stage 处理，并且可以从 shared storage 重新读取；
+- Ray worker 可以直接访问 object storage；
+- 最终输出不需要保留 raw media。
+
+对于很多初始 workflow，最佳模式是 URI-first ingest、SQL metadata filtering，并且只在第一个真正需要 bytes 的 pipeline stage 内加载 bytes。
+
+## 推荐列
+
+跨 media type 使用一个通用且不带前缀的 contract，然后添加 media-specific metadata。保持第一版足够小，确保每个字段都能可靠填充。
+
+| Media | 最小推荐列 |
+| --- | --- |
+| Images | `asset_id`, `source_uri`, `media_type`, `capture_time`, `width`, `height`, `camera_id` or another business grouping key, optional `payload_bytes` |
+| Documents | `asset_id`, `source_uri`, `media_type`, `document_type`, `case_id` or `account_id`, `language`, optional `page_count`, optional `payload_bytes` |
+| Audio | `asset_id`, `source_uri`, `media_type`, `call_id` or session key, `language`, optional `duration_seconds`, optional `sample_rate`, optional `payload_bytes` |
+| Video | `asset_id`, `source_uri`, `media_type`, `event_id` or session key, `capture_time`, optional `duration_seconds`, optional `frame_rate`, optional `payload_bytes` |
+
+不要在 ingest 阶段创造 decoded output column。`transcript`、`ocr_text`、`frame_label`、`embedding` 和 `model_score` 这类列，应在 source relation 稳定后，交给 Multimodal Pipeline、AI Functions、GPU Inference 或 Embeddings at Scale 产生。
+
+## 昂贵工作前先过滤
+
+在加载 bytes、解码 media、调用 model 或调度 GPU work 之前，用 SQL 缩小 candidate set。这是将 multimodal data 表示为 row 的主要原因之一。
+
+```sql
+select
+  asset_id,
+  source_uri,
+  media_type,
+  case_id,
+  region
+from read_parquet('data/media_manifest/*.parquet')
+where media_type in ('image/jpeg', 'image/png')
+  and region = 'us-west'
+  and case_priority in ('high', 'review')
+  and source_size_bytes < 20000000
+```
+
+典型 prefilter 包括 media type、business priority、date range、language、document type、source size 和 known-bad ingest status。将被拒绝的行保留在单独 summary 中，或记录其数量，让本次运行可以解释排除了什么。
+
+## Worker access
+
+Local execution 可以读取只存在于 driver 上的本地文件。Ray execution 不能假设这一点。在将 multimodal ingest relation 移动到 Ray-backed stage 前，请确认每个外部 dependency 对 worker 可访问。
+
+尽早检查以下事项：
+
+- `source_uri` 值是 worker 可以解析的绝对路径、挂载路径或 object storage URI。
+- Object storage credential、endpoint 和所需环境变量对 worker 可见。
+- Worker 对 storage system 有网络访问能力。
+- 后续用于 decoding 或 extraction 的 Python package 已安装在 worker 上。
+- 后续 stage 所需的 model file 或 provider credential 在对应运行位置可用。
+- output path 可由负责 materialize 结果的 worker 写入。
+
+如果 workflow 必须使用本地路径，请在每个 worker 上保持相同 path layout，或在扩展规模前将 source data 转换到 shared object storage。
+
+## 输出 relation
+
+Ingest output 仍应像 source manifest，而不是已经完成的 model result。一个好的 handoff relation 包含：
+
+- `asset_id`
+- `source_uri`
+- `media_type`
+- source metadata needed for routing, filtering, or joins
+- optional `payload_bytes` when the next stage intentionally consumes embedded bytes
+- `ingest_status`
+- `ingest_error` or `error_message`
+- optional run metadata such as `ingest_run_id` and `ingested_at`
+
+这种形态可以交给：
+
+- Multimodal Pipeline，用于 decode、extract、chunk、label，并记录 per-stage status。
+- AI Functions，当 ingest 或 extraction step 提供可用于 classification、prompting 或 embeddings 的文本列时。
+- GPU Inference，当后续 transformation stage 基于这个稳定 source relation 构造 prompt row 或 model input 时。
+
+## 实用 ingest 检查
+
+扩展 ingest job 前，验证一个小型但真实的切片：
+
+- `asset_id` 唯一，并且在多次运行间保持稳定。
+- `source_uri` 可以从运行下一阶段的 environment 中解析。
+- `media_type` 已填充，并且在 sample 上与实际文件匹配。
+- source metadata 足以用 SQL 过滤目标群体。
+- optional bytes column 只在确实有意需要时出现。
+- 按 media type 和 business segment 统计的 row count 符合预期。
+- failed 或 skipped record 拥有显式 status 和 error column。
+- relation 可以写入并从选定 handoff format 读回。
+
+报告反馈时，请包含 input shape、几个有代表性的 media type、relation 使用 URI 还是 bytes、本地或 Ray execution path，以及第一个失败的 `asset_id` 及其 status 或 error。

@@ -1,0 +1,131 @@
+---
+title: 什么是 Vane Data？
+---
+
+Vane Data 是一个早期阶段的数据处理引擎，面向多模态数据准备、AI-oriented dataset 和 batch inference pipeline。它把 DuckDB-compatible SQL、Python/Arrow UDF、AI helper function，以及可选的 Ray-backed execution 组合到一个 relation workflow 中。
+
+当多模态对象、文本记录、model input、model output 和业务 metadata 可以表示为一行行数据，但在结果进入训练、搜索、分析、审核或下游应用之前，还需要 Python 库、自定义逻辑、embedding、prompting、model inference 或 distributed execution 时，可以使用 Vane。
+
+发行包名是 `vane-ai`；Python import package 是 `vane`。
+
+## Vane 为什么存在
+
+Vane 的出发点很直接：AI data pipeline 同时需要更高吞吐和更少 glue code。
+
+### Performance：更高吞吐和更充分的 GPU 利用率
+
+训练规模的多模态数据准备、offline captioning、auto-labeling、quality scoring、embedding、deduplication 和历史数据 reprocessing，通常会受限于吞吐和 GPU 利用率。昂贵的 accelerator 不应在 pipeline 读取数据、解码媒体、构造 model input、执行 inference、写出结果和处理失败时空转。
+
+Vane 面向这种工作负载形态设计：
+
+- Efficient heterogeneous execution 会重叠执行 media decode、GPU captioning、auto-labeling、embedding 和 I/O，而不是把每个阶段都拆成独立 job。
+- Streaming、backpressure 和 dynamic batching 让大型媒体与传感器对象持续流过 pipeline，而不必把每个中间对象都加载进内存。
+- 基于 Ray 的 distributed execution 可以把更大的历史 reprocessing 任务作为一个可扩展 graph 运行，而不是变成跨多个系统、持续多天的 handoff。
+
+### Simplicity：一个 engine，少写 glue code
+
+今天的 AI data pipeline 往往把文件选择、媒体解码、model inference、quality filter、embedding、deduplication 和 dataset packaging 分散在多个独立 job 与手写集成代码里。
+
+Vane 的目标是让这类工作像一个面向表的 pipeline：
+
+```text
+source data -> relation/SQL -> Python UDF or AI function -> validation -> tabular output
+```
+
+这意味着：
+
+- 一个 engine、一个 graph，把 DuckDB-compatible SQL、Python UDF、AI function 和可选的 Ray execution 组合起来。
+- DuckDB-compatible API 让表格数据处理保持熟悉的使用方式，也降低从现有 Ray、Spark、Daft 或 DuckDB 风格 pipeline 迁移的成本。
+- 从 raw data 到 release 的路径可以放在一个可读程序里，而不需要为每个阶段单独写 orchestration glue。
+- 每一步都会产生另一个带有显式 column 的 relation，因此 pipeline 始终可检查，并且可以在扩展规模之前先做校验。
+
+## Vane 适合什么
+
+当你希望在真实数据上运行早期 validation workflow，且工作负载具备以下形态时，Vane 会比较适合：
+
+- 把文档、图像、音频、视频、文本记录、model input 和 model output 表示为带有稳定 ID 与 metadata 的行。
+- 使用 SQL 对关系型部分做 filter、project、join、aggregate、sample 和 validation。
+- 当逻辑需要外部库、自定义规则、媒体处理或模型 pre/post-processing 时，使用 Python UDF。
+- 对 embedding、classification、prompting 和 structured model output 等常见 enrichment 任务使用 AI function。
+- 当更大的 prompt 或模型工作负载需要 GPU execution 时，使用 GPU inference，包括 vLLM-backed batch inference。
+- 从本地执行开始；当吞吐、actor reuse、reprocessing 规模或 GPU placement 变得重要时，再把选定阶段迁移到 Ray。
+
+典型的早期验证场景包括：
+
+- 将原始文本转换为 training、evaluation 或 retrieval dataset。
+- 以带稳定 ID 和 metadata 的行来处理文档、图像、音频或视频。
+- 在已有表上运行 batch AI enrichment。
+- 以更高吞吐 reprocess 历史媒体、文档或 model output。
+- 验证一个本地 workflow 后续能否迁移到 Ray-backed execution。
+
+## Vane 不是什么
+
+Vane v0.1.0 是一个 early validation release。它的目标是帮助合适的早期用户在真实 workflow 上试用 Vane，并反馈真实问题；它不是一个完成态的 production platform。
+
+不要把 Vane 当作：
+
+- 持久化 transactional database。
+- 低延迟 online model server。
+- vector database 或 retrieval serving layer。
+- workflow scheduler、orchestration platform 或 lineage system。
+- 完整的 MLOps platform。
+- 完整的 lakehouse、warehouse 或 catalog management system。
+- 传统 structured ETL 工具或 data warehouse 的通用替代品。
+- 对所有 edge case 都完全 DuckDB-compatible 的承诺。
+- 带有 SLA、autoscaling 或运维保证的生产部署手册。
+
+Vane 可以把 tabular output 交给下游系统，但 serving、transaction、catalog semantic、governance 和 production operation 仍由这些系统负责。
+
+## Vane 与 DuckDB 和 Ray 的关系
+
+Vane 使用 DuckDB-compatible SQL 和 relation 概念，作为表格形态 AI data work 的基础。如果你熟悉 DuckDB，connection、SQL、relation 和文件读取的基本心智模型会很熟悉。
+
+Vane 在这个模型周围加入面向 AI 和 distributed execution 的能力。SQL layer 的作用是让多模态和 AI pipeline 保持可检查，而不是替代成熟的 warehouse 或传统 ETL stack。兼容 DuckDB 是项目目标，但 v0.1.0 不应被理解为对每个 DuckDB 行为、extension、connector 或 edge case 都完全一致的保证。
+
+一开始不必使用 Ray。推荐路径是：
+
+1. 先运行一个小规模本地 pipeline。
+2. 确认 schema、ID、UDF 行为和 output 正确。
+3. 只有当工作负载需要更高 parallelism、actor reuse 或 GPU placement 时，再把选定阶段迁移到 Ray。
+
+## 核心 workflow
+
+一个 Vane workflow 通常遵循以下顺序：
+
+1. 加载一小片但真实的多模态、文本、模型或 metadata 记录。
+2. 使用 SQL 对其进行 inspect、filter、project、join 或 summarize。
+3. 使用 Python UDF 添加自定义逻辑，或使用 AI function 处理常见模型任务。
+4. 保留稳定 ID 和 source metadata，让 output 可以追溯。
+5. 校验 row count、schema、sample output、failure 和业务含义。
+6. 写出可以审核或传递给下游系统的 tabular result。
+
+这是最小的有用闭环：真实 input、有意义的 transformation、可检查的 output，以及足以清晰反馈问题的上下文。
+
+## 现在是否应该试用 Vane？
+
+如果以下多数条件成立，Vane v0.1.0 值得试用：
+
+- 你有真实 dataset 或接近真实的数据切片可供测试。
+- 你的 workflow 涉及多模态数据、text-heavy AI data、model inference、embedding、prompting 或 dataset preparation。
+- 你的 workflow 同时需要 relational operation 和 Python、AI 或 model inference 工作。
+- 你关心吞吐、GPU 利用率、历史 reprocessing，或希望减少跨独立 job 的 glue code。
+- 你希望 output 保持 tabular 且 auditable。
+- 你可以先从 local execution 开始，再迁移到 Ray。
+- 你愿意反馈缺失功能、粗糙边界、性能问题或不清晰的 API。
+
+如果你需要以下能力，建议暂时等待：
+
+- 成熟的 production system。
+- 稳定的长期 API 保证。
+- 只做传统 structured ETL、BI reporting 或 warehouse loading 的 pipeline。
+- 完整 connector 覆盖。
+- 完整 operational documentation。
+- 开箱即用的行业解决方案。
+
+## 下一步
+
+- [Installation](/zh-CN/docs/data/quickstart/installation)
+- [Quickstart](/zh-CN/docs/data/quickstart/quickstart)
+- [Architecture](/zh-CN/docs/data/concepts/architecture)
+- [SQL vs Python](/zh-CN/docs/data/concepts/sql-vs-python)
+- [Documentation map](/zh-CN/docs/data)

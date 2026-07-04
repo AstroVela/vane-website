@@ -1,0 +1,166 @@
+---
+title: AI 函数
+---
+
+Vane Data AI functions 将常见 model operation 封装为 relation method。它们把 embeddings、label、prompt response 和 structured response 作为 table column 产出，同时保留与 UDF 相同的 execution controls。
+
+当操作匹配内置 provider pattern 时，使用 AI helper。当你需要完全控制 model loading、batching、retry、output shape 或 provider behavior 时，使用自定义 UDF。
+
+## Relation method
+
+relation method 包括：
+
+- `rel.embed_text(...)`
+- `rel.classify_text(...)`
+- `rel.prompt(...)`
+
+也可以通过 `vane.ai` 和 `vane.ai.functions` 使用 functional API。
+
+AI helper 会返回已配置的输出列。如果 downstream stage 还需要 ID、文本等 source column，请使用返回完整 schema 的自定义 UDF，或者在一个经过校验的步骤中显式地将 helper output 与 source row 组合起来，并确保 row count 和顺序保持一致。
+
+## Provider 支持
+
+| Method | 默认 provider | 支持的 provider |
+| --- | --- | --- |
+| `embed_text` | `transformers` | `transformers`, `openai`, `google` |
+| `classify_text` | `transformers` | `transformers` |
+| `prompt` | `openai` | `openai`, `vllm`, `anthropic`, `google` |
+
+Provider library 会按需懒加载。请为你实际使用的 provider 安装对应 library。
+
+## Text embedding
+
+使用 `embed_text` 从文本列生成 vector column。
+
+```python
+embedding_only = rel.embed_text(
+    "text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+)
+```
+
+helper 会将 embeddings 写入一个 `FLOAT[]` 输出列。
+
+对于长文本输入，可以使用可选的 text chunking 参数：
+
+- `max_chunk_chars`
+- `chunk_overlap_chars`
+
+## Text classification
+
+使用 `classify_text` 生成 zero-shot text label。
+
+```python
+label_only = rel.classify_text(
+    "text",
+    labels=["invoice", "claim", "other"],
+    provider="transformers",
+    output_column="label",
+)
+```
+
+输出列类型为 `VARCHAR`。
+
+## Prompting
+
+使用 `prompt` 从文本 prompt 列生成 response 列。
+
+```python
+response_only = rel.prompt(
+    "prompt",
+    provider="openai",
+    output_column="response",
+)
+```
+
+输出列类型为 `VARCHAR`。
+
+## Multimodal prompt
+
+当选择的 provider 和 model 支持 multimodal input 时，`prompt` 可以通过 `image_columns` 接收包含 image data 的行。
+
+```python
+answer_only = rel.prompt(
+    "question",
+    image_columns=["image"],
+    provider="anthropic",
+    output_column="answer",
+)
+```
+
+不同 provider 和 model 的能力边界不同。在运行大规模 job 之前，请先用小 sample 验证所选 provider 和 model。
+
+## Structured output
+
+对于支持 structured output 的 provider，`prompt` 接受 `return_format`。
+
+```python
+from pydantic import BaseModel
+
+class Decision(BaseModel):
+    label: str
+    reason: str
+
+decision_only = rel.prompt(
+    "prompt",
+    provider="openai",
+    return_format=Decision,
+    output_column="decision_json",
+)
+```
+
+relation 输出列是 JSON string。把它当作普通 table column 处理：先进行校验；如有需要，在 downstream 解析；同时保留原始 prompt input 以便审计。
+
+## Provider dependency
+
+直接安装 provider library：
+
+```bash
+# Local embedding and classification models
+python -m pip install sentence-transformers transformers torch
+
+# Hosted model providers
+python -m pip install openai numpy
+python -m pip install anthropic
+python -m pip install google-genai numpy
+
+# vLLM-backed prompting
+python -m pip install vllm
+```
+
+## Execution controls
+
+AI helper 接受 `execution_backend`，provider option 也可能影响传给 `map_batches` 的 UDF setting。
+
+常见控制项包括：
+
+- `batch_size`
+- `concurrency`
+- 在支持的 provider API call 中使用 `max_api_concurrency`
+- provider-specific GPU option，例如 vLLM provider 的 `gpus_per_actor`
+- provider-specific retry 和错误行为
+
+示例：
+
+```python
+embedding_only = rel.embed_text(
+    "text",
+    provider="openai",
+    execution_backend="subprocess_actor",
+    concurrency=8,
+)
+```
+
+谨慎使用 provider API concurrency。提高 concurrency 可以改善 throughput，但也可能触发 rate limit 或放大失败影响。
+
+## 生产建议
+
+- 调用 AI helper 前，先过滤并投影输入列。
+- 保持 prompt input、model/provider 名称和输出列名显式。
+- 从小 sample 开始，并在扩展前检查输出。
+- 当 model initialization 成本较高时，使用 actor backend。
+- 只有在本地执行路径正确后，才使用 Ray。
+- 将 model output 存储在 typed column 中，并保留足够的 metadata 便于调试。

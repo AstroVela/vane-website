@@ -39,22 +39,22 @@ test('buildManifest preserves nested sidebar groups and orders pages recursively
 
   try {
     mkdirSync(path.join(root, 'src/docs'), { recursive: true })
-    mkdirSync(path.join(root, 'docs/guides'), { recursive: true })
+    mkdirSync(path.join(root, 'docs/data/guides'), { recursive: true })
 
     writeFileSync(
       path.join(root, 'src/docs/registry.ts'),
       `
 export const DOCS_PAGES = {
   'guides/multimodal-ingest': {
-    source: 'docs/guides/multimodal-ingest.mdx',
+    source: 'docs/data/guides/multimodal-ingest.mdx',
     title: 'Multimodal Ingest',
   },
   'guides/structured-data-load': {
-    source: 'docs/guides/structured-data-load.mdx',
+    source: 'docs/data/guides/structured-data-load.mdx',
     title: 'Structured Data Load',
   },
   'guides/custom-python-udfs': {
-    source: 'docs/guides/custom-python-udfs.mdx',
+    source: 'docs/data/guides/custom-python-udfs.mdx',
     title: 'Custom Python UDFs',
   },
 } satisfies Record<string, DocPage>
@@ -86,15 +86,15 @@ export const DOCS_PAGES = {
     )
 
     writeFileSync(
-      path.join(root, 'docs/guides/multimodal-ingest.mdx'),
+      path.join(root, 'docs/data/guides/multimodal-ingest.mdx'),
       '---\ntitle: Multimodal Ingest\n---\n',
     )
     writeFileSync(
-      path.join(root, 'docs/guides/structured-data-load.mdx'),
+      path.join(root, 'docs/data/guides/structured-data-load.mdx'),
       '---\ntitle: Structured Data Load\n---\n',
     )
     writeFileSync(
-      path.join(root, 'docs/guides/custom-python-udfs.mdx'),
+      path.join(root, 'docs/data/guides/custom-python-udfs.mdx'),
       '---\ntitle: Custom Python UDFs\n---\n',
     )
 

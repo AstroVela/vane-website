@@ -1,0 +1,142 @@
+---
+title: 训练数据流水线
+---
+
+本示例展示使用 Vane Data 准备文本训练数据或 retrieval data 的常见模式。
+
+仓库中覆盖这一领域的 script 包括：
+
+- `examples/common_crawl.py`
+- `examples/minhash_dedupe.py`
+- `examples/llms_red_pajamas.py`
+
+## 目标
+
+通过过滤 raw record、对文档 chunking、生成 embeddings，并移除 duplicate 或 near duplicate，准备文本数据并写出 curated dataset。
+
+## 运行本地 sample
+
+这些 script 提供 sample mode，因此无需 Common Crawl、Red Pajama 或网络访问，也可以检查 workflow：
+
+```bash
+python examples/common_crawl.py --source sample --limit 5
+python examples/minhash_dedupe.py --source sample --limit 10
+python examples/llms_red_pajamas.py --source sample --limit 6
+```
+
+## Pipeline 形态
+
+1. 加载 raw text record。
+2. 按 language、source type 和 minimum text length 过滤。
+3. 将文本切分为适合 model 的 record。
+4. 使用 `rel.embed_text(...)` 或自定义 UDF 生成 embeddings。
+5. 使用 MinHash 或其他 similarity method 生成 duplicate candidate。
+6. 保留 representative row。
+7. 写出 clean chunk、metadata 和可选 embeddings。
+
+## 最小代码形态
+
+下面的代码展示 relation contract。chunking UDF 会返回后续 stage 需要的所有列。
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+docs = con.sql("""
+    select id, text, source_uri
+    from read_parquet('data/raw_text/*.parquet')
+    where text is not null and length(text) > 80
+""")
+
+def chunk_rows(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    texts = batch.column("text").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+
+    out_id = []
+    out_chunk_id = []
+    out_text = []
+    out_source_uri = []
+    for row_id, text, source_uri in zip(ids, texts, source_uris, strict=False):
+        chunks = [text[i : i + 512] for i in range(0, len(text), 512)]
+        for chunk_id, chunk in enumerate(chunks):
+            out_id.append(row_id)
+            out_chunk_id.append(chunk_id)
+            out_text.append(chunk)
+            out_source_uri.append(source_uri)
+
+    return pa.table({
+        "id": out_id,
+        "chunk_id": out_chunk_id,
+        "chunk_text": out_text,
+        "source_uri": out_source_uri,
+    })
+
+chunks = docs.map_batches(
+    chunk_rows,
+    schema={
+        "id": "BIGINT",
+        "chunk_id": "BIGINT",
+        "chunk_text": "VARCHAR",
+        "source_uri": "VARCHAR",
+    },
+    batch_size=512,
+    execution_backend="subprocess_task",
+)
+```
+
+## Embeddings
+
+`rel.embed_text(...)` 返回包含 embedding 输出列的 relation。如果最终 dataset 还需要原始 chunk column，请在验证 row count 后，显式地将 embedding 列与 chunk relation 组合；或者使用返回完整 output schema 的自定义 UDF。
+
+```python
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+)
+
+chunk_table = chunks.to_arrow_table()
+embedding_table = embedding_only.to_arrow_table()
+embedded = con.from_arrow(chunk_table.append_column("embedding", embedding_table["embedding"]))
+
+embedded.write_parquet("output/training_chunks/")
+```
+
+对于大型 dataset，优先采用 `examples/common_crawl.py` 中的实现模式：combine step 显式且经过校验；或者将 embedding 实现为自定义 batch UDF，返回所有 required column。
+
+## 扩展
+
+在本地路径正确后，再切换 runner 和昂贵的 UDF 或 AI helper stage：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    execution_backend="ray_actor",
+)
+```
+
+每个 Ray worker 都必须能够 import UDF code，并访问相同 storage、model file 和 Python dependency。
+
+## 推荐输出列
+
+- `id`
+- `chunk_id`
+- `chunk_text`
+- `source_uri`
+- `embedding`
+- `duplicate_component_id`
+- `is_representative`
+
+## 范围说明
+
+Vane Data 不提供完整 training-data quality framework。它提供 SQL、UDF、AI helper 和 execution tool，供你在自己的 pipeline 中构建该 framework。

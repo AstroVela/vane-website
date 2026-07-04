@@ -173,7 +173,7 @@ export default function TrainingUseCase() {
               Prepare multimodal training data with one Ray-backed graph: select raw records, run GPU captioning or labeling, filter and dedupe in SQL, embed captions, and write a versioned release.
             </p>
             <div className="training-hero-actions">
-              <Button solid to="/docs/examples/training-data-pipeline" arrow>Run the pipeline</Button>
+              <Button solid to="/docs/data/examples/training-data-pipeline" arrow>Run the pipeline</Button>
               <Button href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>Request a demo</Button>
             </div>
           </div>
@@ -275,7 +275,7 @@ export default function TrainingUseCase() {
         <div className="wrap">
           <Cta title="Build a reproducible multimodal training-data pipeline.">
             <Button solid href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>Become a design partner</Button>
-            <Button to="/docs/examples">Read the docs</Button>
+            <Button to="/docs/data/examples">Read the docs</Button>
           </Cta>
         </div>
       </section>

@@ -1,0 +1,54 @@
+---
+title: 示例
+---
+
+这些示例展示如何将 Vane Data SQL、Python UDF、AI helper 和 Ray-backed execution 组合成实用的数据准备 workflow。
+
+如果你需要理解 workflow shape，请先阅读下面的文档页。如果需要可运行参数、sample data 行为或实现细节，请阅读 source script。
+
+## 示例页面
+
+| 示例 | 适用场景 | 典型资源 |
+| --- | --- | --- |
+| [Training data pipeline](/zh-CN/docs/data/examples/training-data-pipeline) | 文本过滤、chunking、embeddings 和 duplicate-removal pattern | 默认使用 CPU；可选 embedding model dependency |
+| [Insurance document audit](/zh-CN/docs/data/examples/insurance-document-audit) | SQL-first document check，并可选 structured LLM review | CPU；可选 AI provider |
+| [Tender compliance check](/zh-CN/docs/data/examples/tender-compliance-check) | Rule-table join 和 structured compliance prompt | CPU；可选 AI provider |
+| [Multimodal data lake](/zh-CN/docs/data/examples/multimodal-data-lake) | lakehouse 或 warehouse handoff 前的 media enrichment | 取决于 UDF，使用 CPU 或 GPU |
+
+## Source script
+
+仓库包含 script-first 示例，可改造到你的项目中：
+
+- `examples/common_crawl.py`
+- `examples/minhash_dedupe.py`
+- `examples/llms_red_pajamas.py`
+- `examples/querying_images.py`
+- `examples/image_generation.py`
+- `examples/voice_ai_analytics.py`
+- `examples/multimodal_structured_outputs.py`
+
+部分 script 提供内置 sample data mode，便于你在连接外部数据前测试 pipeline shape。
+
+## 如何改造示例
+
+改造示例时：
+
+1. 如果 script 提供 sample 或 synthetic source mode，请从它开始。
+2. 将 source loading 与 transformation 分离。
+3. 保持每个 UDF output schema 显式。
+4. 保留稳定 identifier，以便 model output 可以 join 回 source row。
+5. 只有在本地 sample 正常后，再迁移到真实数据。
+6. 将 benchmark script 视为 performance reference，而不是 product API。
+7. 不要从示例名称推断当前未支持的 connector。
+
+## 扩展路径
+
+大多数示例都应先在本地开发。只有在本地 data contract 正确后，才将选定 stage 迁移到 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+然后在需要 distributed execution 的 UDF 或 AI helper stage 上使用 `ray_task` 或 `ray_actor`。

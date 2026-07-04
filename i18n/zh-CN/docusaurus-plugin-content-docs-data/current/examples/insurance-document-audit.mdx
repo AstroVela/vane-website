@@ -1,0 +1,104 @@
+---
+title: 保险文档审计
+---
+
+本示例展示 insurance document review 的 SQL-first 模式。
+
+Vane Data 不内置专用 insurance workflow。确定性检查使用 SQL，extraction 或 normalization 使用 `map_batches(...)`，当文档需要 model-assisted structured review 时使用 `prompt(...)`。
+
+## 目标
+
+通过抽取相关文本、应用确定性 SQL rule，并可选使用 LLM 进行 structured review，完成 insurance document audit。
+
+## 输入形态
+
+推荐输入列：
+
+- `document_id`
+- `policy_id`
+- `claim_id`
+- `document_type`
+- `text`
+- `source_uri`
+
+OCR、document parsing 和 policy-system extraction 应在 upstream 或显式 UDF stage 中完成。
+
+## SQL rule pass
+
+```python
+import vane
+
+con = vane.connect()
+
+docs = con.sql("""
+    select *
+    from read_parquet('data/insurance_documents/*.parquet')
+    where text is not null
+""")
+
+docs.to_table("docs")
+
+rule_hits = con.sql("""
+    select
+        document_id,
+        claim_id,
+        case
+            when lower(text) like '%missing signature%' then 'missing_signature'
+            when lower(text) like '%expired%' then 'expired_reference'
+            else null
+        end as rule_hit
+    from docs
+    where lower(text) like '%missing signature%'
+       or lower(text) like '%expired%'
+""")
+```
+
+## Structured model pass
+
+`prompt(...)` 返回已配置的输出列。当最终输出需要 identifier 和 document attribute 时，请显式地将该列与 source metadata 组合，并在写出结果前校验 row count。
+
+```python
+from pydantic import BaseModel
+
+class AuditResult(BaseModel):
+    status: str
+    reason: str
+
+audit_only = docs.prompt(
+    "text",
+    provider="openai",
+    system_message="Audit the insurance document for missing evidence. Return JSON.",
+    return_format=AuditResult,
+    output_column="audit_json",
+    execution_backend="subprocess_actor",
+)
+
+docs_table = docs.to_arrow_table()
+audit_table = audit_only.to_arrow_table()
+audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
+```
+
+## 输出形态
+
+推荐输出列：
+
+- `document_id`
+- `claim_id`
+- `document_type`
+- `rule_hit`
+- `audit_json`
+- `source_uri`
+
+## 校验
+
+在 production 中使用该 workflow 前：
+
+- 保持 deterministic rule hit 可审计。
+- 对 prompt 和 model choice 进行版本化。
+- 存储 source document reference。
+- 抽样检查 false positive 和 false negative。
+- 在 model output 驱动 operational decision 前，先进行 review。
+
+## 范围说明
+
+本页不定义 legal advice、claims policy、OCR、insurance ontology 或 policy-system integration。这些能力应在 upstream 或显式 UDF stage 中添加。

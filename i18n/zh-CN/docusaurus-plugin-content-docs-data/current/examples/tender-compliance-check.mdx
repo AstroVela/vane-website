@@ -1,0 +1,134 @@
+---
+title: 招标合规检查
+---
+
+本示例描述 tender 或 procurement compliance check 的 Vane Data 模式。
+
+Vane Data 不内置专用 tender parser 或 compliance engine。它提供 SQL、relation API 和 AI helper，可组合成 review workflow。
+
+## 目标
+
+将 tender document 与 checklist 对比，并产出可 review、sample 和 audit 的 structured compliance result。
+
+## 输入表
+
+Documents：
+
+- `document_id`
+- `section`
+- `text`
+- `source_uri`
+
+Checklist：
+
+- `rule_id`
+- `requirement`
+- `severity`
+
+## SQL 准备
+
+```python
+import vane
+
+con = vane.connect()
+
+docs = con.sql("""
+    select document_id, section, text, source_uri
+    from read_parquet('data/tender_docs/*.parquet')
+    where text is not null
+""")
+
+rules = con.sql("""
+    select rule_id, requirement, severity
+    from read_csv_auto('data/tender_rules.csv')
+""")
+```
+
+## 构建 check
+
+使用 SQL 让 model workload 显式化。在将 prompt 发送给 provider 前，先检查 cross join size。
+
+```python
+docs.to_table("docs")
+rules.to_table("rules")
+
+checks = con.sql("""
+    select
+        d.document_id,
+        d.section,
+        d.source_uri,
+        r.rule_id,
+        r.severity,
+        'Requirement: ' || r.requirement || '\nDocument text: ' || d.text as prompt
+    from docs d
+    cross join rules r
+""")
+```
+
+## Structured model check
+
+`prompt(...)` 返回已配置的输出列。汇总前，请显式地将结果与 check row 组合，并在写出结果前校验 row count。
+
+```python
+from pydantic import BaseModel
+
+class ComplianceResult(BaseModel):
+    compliant: bool
+    evidence: str
+    reason: str
+
+result_only = checks.prompt(
+    "prompt",
+    provider="openai",
+    return_format=ComplianceResult,
+    output_column="result_json",
+    execution_backend="subprocess_actor",
+)
+
+checks_table = checks.to_arrow_table()
+result_table = result_only.to_arrow_table()
+checked = con.from_arrow(checks_table.append_column("result_json", result_table["result_json"]))
+```
+
+## 汇总
+
+```python
+checked.to_table("checked")
+
+summary = con.sql("""
+    select
+        document_id,
+        severity,
+        count(*) as checks
+    from checked
+    group by document_id, severity
+""")
+
+summary.show()
+```
+
+## 扩展
+
+当 SQL 准备、UDF stage 或 model call 需要 distributed worker 时，使用 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+根据 API limit、rate limit 和 model-serving capacity 设置 provider concurrency。
+
+## 校验
+
+在 compliance workflow 中使用结果前：
+
+- 对 checklist 和 prompt 进行版本化。
+- 保留 source document reference。
+- 人工 review high-severity failure。
+- 抽样检查 compliant 和 non-compliant output。
+- 将 model output 视为 review evidence，而不是 legal advice。
+
+## 范围说明
+
+本页不定义 legal advice、procurement policy、document parsing 或 tender-specific connector。它记录如何使用 Vane Data SQL 和 AI helper 表达该 workflow。

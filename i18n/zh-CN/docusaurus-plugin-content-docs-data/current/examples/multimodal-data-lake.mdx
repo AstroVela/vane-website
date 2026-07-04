@@ -1,0 +1,127 @@
+---
+title: 多模态数据湖
+---
+
+本示例展示 Vane Data 如何在 lakehouse 或 warehouse handoff 之前准备 multimodal record。
+
+当 source row 包含 media path、media bytes 或 extracted text，并且 pipeline 需要 Python UDF 或 AI helper 添加 label、text、embedding、score 或 structured model output 时，使用该模式。
+
+相关 source script：
+
+- `examples/querying_images.py`
+- `examples/voice_ai_analytics.py`
+- `examples/multimodal_structured_outputs.py`
+
+## 目标
+
+读取 multimodal record，通过显式 Python 或 AI stage 进行 enrich，并为 downstream system 写出 curated table output。
+
+## Data zone
+
+Raw zone：
+
+- 原始 bytes 或 path。
+- Source metadata。
+- Ingestion timestamp。
+
+Processed zone：
+
+- Decoded text 或 extracted feature。
+- Labels。
+- Embeddings。
+- Model output。
+
+Curated zone：
+
+- Stable ID。
+- Normalized metadata。
+- Quality flag。
+- Downstream-ready column。
+
+## Vane Data pipeline
+
+UDF 返回 source identifier 和 derived column。除非 downstream system 明确需要，否则不要将 media bytes 放入最终输出。
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+raw = con.sql("""
+    select id, media_type, uri, payload
+    from read_parquet('s3://bucket/raw_media/*.parquet')
+    where uri is not null
+""")
+
+def enrich_batch(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    uris = batch.column("uri").to_pylist()
+
+    return pa.table({
+        "id": ids,
+        "media_type": media_types,
+        "uri": uris,
+        "label": ["unclassified"] * batch.num_rows,
+        "text": [""] * batch.num_rows,
+    })
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_actor",
+)
+
+features.write_parquet("s3://bucket/processed/media_features/")
+```
+
+在 production pipeline 中，将 decoder、model、OCR、transcription 或 provider logic 放入 UDF，同时保持返回 schema 显式。
+
+## Doris 与 Iceberg handoff
+
+Vane Data 不包含 native Doris connector。使用 Vane Data 写出干净的 Parquet，然后用 Doris tooling 加载到 Doris。
+
+Vane Data 不定义 Vane-specific Iceberg catalog API。使用 Vane Data 完成准备和 Parquet 输出，再由 lakehouse catalog 或 table-management tool 负责 Iceberg commit 和 snapshot semantics。
+
+## 扩展
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+每个 Ray worker 都必须能够访问与 driver 相同的 storage、credential、model file 和 Python dependency。
+
+## 校验
+
+Promote multimodal dataset 前：
+
+- 检查 raw、processed 和 curated zone 之间的 row count。
+- 验证每个 output row 都有稳定 ID。
+- 只有 downstream 确实需要时，才保留 media bytes。
+- 确认 schema 与将消费输出的 warehouse、lakehouse 或 catalog 兼容。
+- 扩展规模前，测试 model 和 provider failure handling。

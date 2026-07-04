@@ -11,6 +11,7 @@
    - Block components (CodeWindow, Callout, Lead) are provided here too, so
    `.mdx` files can use them without importing. */
 import { isValidElement, type ComponentPropsWithoutRef, type PropsWithChildren, type ReactNode } from 'react'
+import MDXHeading from '@theme/MDXComponents/Heading'
 import type {MDXComponents} from 'mdx/types'
 import CodeWindow from './CodeWindow'
 import DataArchitecture from './DataArchitecture'
@@ -107,9 +108,9 @@ function Pre({ children, style }: ComponentPropsWithoutRef<'pre'>) {
 }
 
 export const mdxComponents: MDXComponents = {
-  h1: (props: ComponentPropsWithoutRef<'h1'>) => <h1 className="dh" {...props} />,
-  h2: (props: ComponentPropsWithoutRef<'h2'>) => <h2 className="ds" {...props} />,
-  h3: (props: ComponentPropsWithoutRef<'h3'>) => <h3 className="dss" {...props} />,
+  h1: (props: ComponentPropsWithoutRef<'h1'>) => <MDXHeading as="h1" className="dh" {...props} />,
+  h2: (props: ComponentPropsWithoutRef<'h2'>) => <MDXHeading as="h2" className="ds" {...props} />,
+  h3: (props: ComponentPropsWithoutRef<'h3'>) => <MDXHeading as="h3" className="dss" {...props} />,
   table: (props: ComponentPropsWithoutRef<'table'>) => <table className="dt" {...props} />,
   ul: (props: ComponentPropsWithoutRef<'ul'>) => <ul className="dl" {...props} />,
   ol: (props: ComponentPropsWithoutRef<'ol'>) => <ol className="dl dol" {...props} />,

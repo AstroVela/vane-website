@@ -5,7 +5,7 @@ Generated from docs/manifest.json and the current MDX source files.
 ## Vane Data Docs
 
 Route: /docs/data
-Source: docs/index.mdx
+Source: docs/data/index.mdx
 
 Vane Data helps teams build pipelines for multimodal data preparation, AI-ready datasets, and batch inference with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
 
@@ -62,7 +62,7 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 ## What Is Vane Data?
 
 Route: /docs/data/quickstart/what-is-vane-data
-Source: docs/quickstart/what-is-vane-data.mdx
+Source: docs/data/quickstart/what-is-vane-data.mdx
 
 Vane Data is an early-stage data processing engine for multimodal data preparation, AI-oriented datasets, and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
 
@@ -197,7 +197,7 @@ It is better to wait if you need:
 ## Installation
 
 Route: /docs/data/quickstart/installation
-Source: docs/quickstart/installation.mdx
+Source: docs/data/quickstart/installation.mdx
 
 Vane Data uses `vane-ai` as the distribution package and `vane` as the Python import package.
 
@@ -340,7 +340,7 @@ Next: [Quickstart](/docs/data/quickstart/quickstart).
 ## Quickstart
 
 Route: /docs/data/quickstart/quickstart
-Source: docs/quickstart/quickstart.mdx
+Source: docs/data/quickstart/quickstart.mdx
 
 This quickstart shows Vane Data as a small multimodal AI data pipeline: represent documents, images, and audio as rows, use SQL to choose a representative slice, add Python logic for review fields, optionally call an AI function, then validate and write a tabular result.
 
@@ -640,7 +640,7 @@ Start locally. Move to Ray, vLLM, GPU inference, or larger media decoding only a
 ## Architecture
 
 Route: /docs/data/concepts/architecture
-Source: docs/concepts/architecture.mdx
+Source: docs/data/concepts/architecture.mdx
 
 Vane Data is a layered data engine. It exposes a DuckDB-compatible SQL and Python surface, adds relation-level Python and AI operations, and can execute selected work locally or through Ray.
 
@@ -770,7 +770,7 @@ Other DuckDB extensions depend on the build and runtime environment. Treat exten
 ## Execution Model
 
 Route: /docs/data/concepts/execution-model
-Source: docs/concepts/execution-model.mdx
+Source: docs/data/concepts/execution-model.mdx
 
 Vane Data pipelines are relation pipelines. Each step describes a table transformation, and work starts when the relation is materialized by showing, fetching, converting, or writing results.
 
@@ -911,7 +911,7 @@ Before moving a pipeline from local execution to Ray:
 ## SQL vs Python
 
 Route: /docs/data/concepts/sql-vs-python
-Source: docs/concepts/sql-vs-python.mdx
+Source: docs/data/concepts/sql-vs-python.mdx
 
 Vane Data is designed for pipelines where SQL and Python both belong in the same relation workflow.
 
@@ -1072,7 +1072,7 @@ If the operation can be expressed clearly in SQL, keep it in SQL. If it needs Py
 ## UDFs
 
 Route: /docs/data/concepts/udfs
-Source: docs/concepts/udfs.mdx
+Source: docs/data/concepts/udfs.mdx
 
 Vane Data UDFs let you run Python inside a relation pipeline without giving up explicit schemas, batch control, or a path to distributed execution.
 
@@ -1259,7 +1259,7 @@ Use this progression:
 ## AI Functions
 
 Route: /docs/data/concepts/ai-functions
-Source: docs/concepts/ai-functions.mdx
+Source: docs/data/concepts/ai-functions.mdx
 
 Vane Data AI functions turn common model operations into relation methods. They produce embeddings, labels, prompts, and structured responses as table columns while keeping the same execution controls used by UDFs.
 
@@ -1427,7 +1427,7 @@ Use provider API concurrency carefully. Increasing concurrency can improve throu
 ## Multimodal Ingest
 
 Route: /docs/data/guides/multimodal-ingest
-Source: docs/guides/multimodal-ingest.mdx
+Source: docs/data/guides/multimodal-ingest.mdx
 
 Multimodal ingest turns images, documents, audio, video, and sensor objects into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger run.
 
@@ -1575,7 +1575,7 @@ When reporting feedback, include the input shape, a few representative media typ
 ## Structured Data Load
 
 Route: /docs/data/guides/structured-data-load
-Source: docs/guides/structured-data-load.mdx
+Source: docs/data/guides/structured-data-load.mdx
 
 Use this guide when your AI or multimodal workflow starts from table-shaped inputs: media manifests, document metadata, text records, labels, prompt tables, model outputs, evaluation samples, or business IDs that need to be joined to source objects.
 
@@ -1830,7 +1830,7 @@ Useful feedback includes:
 ## Custom Python UDFs
 
 Route: /docs/data/guides/custom-python-udfs
-Source: docs/guides/custom-python-udfs.mdx
+Source: docs/data/guides/custom-python-udfs.mdx
 
 Use Custom Python UDFs when an AI or multimodal workflow needs logic that does not belong in SQL: text cleanup, media metadata checks, domain rules, external Python libraries, model preprocessing, custom inference, or client calls.
 
@@ -2207,7 +2207,7 @@ If this fails, keep the failure local. A Ray run will add import, dependency, st
 ## Multimodal Pipeline
 
 Route: /docs/data/guides/multimodal-pipeline
-Source: docs/guides/multimodal-pipeline.mdx
+Source: docs/data/guides/multimodal-pipeline.mdx
 
 A multimodal pipeline starts after ingest. The input is a relation with stable IDs, source locations, metadata, and optional bytes; the output is a curated table that can be inspected, joined, written, and used to report failures.
 
@@ -2658,7 +2658,7 @@ Every Ray worker must be able to import the UDF class or function and access the
 ## Structured Transformation
 
 Route: /docs/data/guides/structured-transformation
-Source: docs/guides/structured-transformation.mdx
+Source: docs/data/guides/structured-transformation.mdx
 
 Use Structured Transformation after Structured Data Load when you already have table-shaped inputs for an AI or multimodal workflow and need to turn them into a stable relation for UDFs, AI functions, GPU inference, embeddings, review, or downstream handoff.
 
@@ -3006,7 +3006,7 @@ Keep raw-to-curated traceability until the business questions are answered. It i
 ## AI Functions
 
 Route: /docs/data/guides/ai-functions
-Source: docs/guides/ai-functions.mdx
+Source: docs/data/guides/ai-functions.mdx
 
 Use AI Functions when you want to add AI enrichment columns to an existing relation and then inspect the result before scaling the run. Typical inputs are extracted document text, captions, transcripts, labels, prompts, or other table-shaped outputs from a multimodal or AI data workflow.
 
@@ -3257,7 +3257,7 @@ For a larger run, keep the same validation checks and record provider, model, `b
 ## GPU Inference
 
 Route: /docs/data/guides/gpu-inference
-Source: docs/guides/gpu-inference.mdx
+Source: docs/data/guides/gpu-inference.mdx
 
 Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table. Typical inputs are extracted documents, captions, transcripts, labels, or prompt rows prepared by earlier Vane stages.
 
@@ -3572,7 +3572,7 @@ For non-vLLM GPU models, custom tokenizers, multimodal preprocessing, or a full 
 ## Embeddings at Scale
 
 Route: /docs/data/guides/embeddings-at-scale
-Source: docs/guides/embeddings-at-scale.mdx
+Source: docs/data/guides/embeddings-at-scale.mdx
 
 Use this guide when your workflow needs to turn many documents, extracted text records, captions, transcripts, or other AI-ready text rows into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
 
@@ -3849,7 +3849,7 @@ This guide produces a reproducible embedding dataset. It does not cover vector d
 ## Performance Tuning
 
 Route: /docs/data/guides/performance-tuning
-Source: docs/guides/performance-tuning.mdx
+Source: docs/data/guides/performance-tuning.mdx
 
 Use this guide after your multimodal, AI, or inference pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
 
@@ -4001,7 +4001,7 @@ If the issue only appears on Ray, include whether workers can access the same da
 ## Examples
 
 Route: /docs/data/examples
-Source: docs/examples/index.mdx
+Source: docs/data/examples/index.mdx
 
 The examples show how to compose Vane Data SQL, Python UDFs, AI helpers, and Ray-backed execution into practical data preparation workflows.
 
@@ -4057,7 +4057,7 @@ Then use `ray_task` or `ray_actor` on the UDF or AI helper stage that needs dist
 ## Training Data Pipeline
 
 Route: /docs/data/examples/training-data-pipeline
-Source: docs/examples/training-data-pipeline.mdx
+Source: docs/data/examples/training-data-pipeline.mdx
 
 This example page shows a common pattern for preparing multimodal training-data releases with Vane Data.
 
@@ -4259,7 +4259,7 @@ Vane Data does not provide a complete training-data quality framework. It provid
 ## Insurance Document Audit
 
 Route: /docs/data/examples/insurance-document-audit
-Source: docs/examples/insurance-document-audit.mdx
+Source: docs/data/examples/insurance-document-audit.mdx
 
 This example shows a SQL-first pattern for insurance document review.
 
@@ -4365,7 +4365,7 @@ This page does not define legal advice, claims policy, OCR, insurance ontology, 
 ## Tender Compliance Check
 
 Route: /docs/data/examples/tender-compliance-check
-Source: docs/examples/tender-compliance-check.mdx
+Source: docs/data/examples/tender-compliance-check.mdx
 
 This example describes a Vane Data pattern for tender or procurement compliance checks.
 
@@ -4501,7 +4501,7 @@ This page does not define legal advice, procurement policy, document parsing, or
 ## Multimodal Data Lake
 
 Route: /docs/data/examples/multimodal-data-lake
-Source: docs/examples/multimodal-data-lake.mdx
+Source: docs/data/examples/multimodal-data-lake.mdx
 
 This example shows how Vane Data can prepare multimodal records before lakehouse or warehouse handoff.
 
@@ -4630,7 +4630,7 @@ Before promoting a multimodal dataset:
 ## Single Node
 
 Route: /docs/data/deploy/single-node
-Source: docs/deploy/single-node.mdx
+Source: docs/data/deploy/single-node.mdx
 
 Use single-node mode for development, lightweight SQL work, and small-to-medium UDF jobs.
 
@@ -4715,7 +4715,7 @@ Move to Ray when a single process cannot scan, decode, or run models fast enough
 ## Ray Cluster
 
 Route: /docs/data/deploy/ray-cluster
-Source: docs/deploy/ray-cluster.mdx
+Source: docs/data/deploy/ray-cluster.mdx
 
 Use the Ray runner when you need distributed scans, distributed UDFs, or multiple GPU actors.
 
@@ -4810,7 +4810,7 @@ The Ray runner owns actor pools and exposes internal shutdown methods. In normal
 ## Sizing
 
 Route: /docs/data/deploy/sizing
-Source: docs/deploy/sizing.mdx
+Source: docs/data/deploy/sizing.mdx
 
 Sizing Vane Data jobs is mostly about data volume, UDF cost, and model resources.
 
@@ -4924,7 +4924,7 @@ Fix projection, actor reuse, shared storage, provider limits, and partitioning b
 ## Development
 
 Route: /docs/data/contributing/development
-Source: docs/contributing/development.mdx
+Source: docs/data/contributing/development.mdx
 
 This page summarizes the project development flow.
 

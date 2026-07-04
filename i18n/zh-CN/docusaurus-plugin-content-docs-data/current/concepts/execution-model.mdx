@@ -1,0 +1,139 @@
+---
+title: 执行模型
+---
+
+Vane Data pipeline 是 relation pipeline。每一步都描述一个 table transformation；当 relation 通过显示、fetch、转换或写出结果被 materialize 时，工作才会开始执行。
+
+这个模型让 Vane Data 可以组合三类工作：
+
+- 用 DuckDB-compatible SQL 表达的 relational work。
+- 用 UDF 表达的 Python work。
+- 用 relation helper function 表达的 AI work。
+
+## Relation 是 pipeline unit
+
+relation 表示一个 table-shaped computation。可以用 SQL 构建 relation：
+
+```python
+rel = con.sql("""
+    select id, text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+""")
+```
+
+然后添加 Python 或 AI stage：
+
+```python
+features = rel.map_batches(
+    model_batch,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+```
+
+每个 stage 都返回另一个 relation，因此 pipeline 保持可组合。UDF stage 返回 UDF 产生的 column；如果后续 stage 需要 identifier 和 metadata，需要把它们一并返回。
+
+## Execution 从 materialization 开始
+
+与执行相比，构建 relation 的成本很低。只有当你调用 consumer 时，工作才会开始，例如：
+
+- `show()`
+- `fetchall()`
+- `to_arrow_table()`
+- `to_record_batch()`
+- `write_parquet(...)`
+- `to_table(...)`
+
+这让 Vane Data 可以先把 SQL、Python 和 AI stage 放在一起，再决定如何执行 pipeline。
+
+## Arrow batch 连接 SQL 与 Python
+
+`map_batches` 是 relation execution 与 Python code 之间的主要边界。
+
+- input 以 Arrow data 的形式进入。
+- Python callable 返回 Arrow data。
+- output schema 在 relation boundary 声明。
+- `batch_size` 控制每次 UDF 调用处理的行数。
+
+这样 schema change 会保持显式，而不是隐藏在 Python object 内部。
+
+## Local execution
+
+local execution 适合作为以下场景的起点：
+
+- 开发和调试。
+- single-node preprocessing。
+- 小中型 data pipeline。
+- 在扩展规模之前验证 UDF correctness。
+
+优先使用 local UDF backend：
+
+- 对 stateless function 使用 `subprocess_task`。
+- 对具有 reusable state 的 callable class 使用 `subprocess_actor`。
+
+## Ray execution
+
+使用以下方式选择 Ray runner：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+```
+
+或：
+
+```bash
+export VANE_RUNNER=ray
+```
+
+Ray execution 适用于：
+
+- 大文件 scan。
+- distributed write。
+- 使用 `ray_task` 的 distributed stateless UDF。
+- 使用 `ray_actor` 的 stateful model worker。
+- 跨 Ray cluster 的 CPU 和 GPU resource placement。
+
+为了获得可预测结果，请确认每个 Ray worker 都能 import 相同 Python module、访问相同 storage system，并看到 UDF 所需的 credential 或 model file。
+
+## UDF scheduling
+
+根据 callable 形态和 resource pattern 选择 backend：
+
+| Workload | Callable shape | Backend |
+| --- | --- | --- |
+| Simple local batch transform | Python function | `subprocess_task` |
+| Local model or client reuse | Callable class | `subprocess_actor` |
+| Distributed stateless transform | Python function | `ray_task` |
+| Distributed model reuse or GPU inference | Callable class | `ray_actor` |
+
+对不需要 long-lived state 的 function 使用 task backend。当初始化成本较高、且应在每个 worker 或 actor 上只发生一次时，使用 actor backend。
+
+## Streaming 与 blocking stage
+
+许多 relation stage 可以让 batch 流式穿过 pipeline。有些 stage 则需要先收集或协调数据，才能产生输出。
+
+常见 blocking 或 partially blocking stage 包括：
+
+- global aggregation。
+- 需要 data exchange 的 join。
+- sort 和 shuffle。
+- write。
+- 引入 execution boundary 的 UDF stage。
+
+做 performance tuning 时，把 filter 和 column projection 放在昂贵 UDF 与 model call 之前。这样可以减少进入 Python 的数据；在 Ray mode 下，也会减少 cluster data movement。
+
+## Operational checklist
+
+将 pipeline 从 local execution 迁移到 Ray 之前：
+
+1. 在有代表性的 sample 上本地运行 pipeline。
+2. 显式声明 UDF output schema。
+3. 先在本地调优 `batch_size`。
+4. 只有当分布式执行确实有帮助时，才把 stateless function 迁移到 `ray_task`。
+5. 只有当需要 actor reuse、GPU 或 cluster placement 时，才把 stateful model class 迁移到 `ray_actor`。
+6. 确认 storage、credential、Python dependency 和 model file 对每个 Ray worker 都可见。
+7. 度量吞吐、内存使用、retry 和 output row count。

@@ -1,0 +1,253 @@
+---
+title: 结构化数据加载
+---
+
+当你的 AI 或 multimodal workflow 从 table-shaped input 开始时，使用本指南：media manifest、document metadata、text record、label、prompt table、model output、evaluation sample，或需要与 source object join 的 business ID。
+
+本指南不是传统 ETL 教程。目标是加载一个小型真实切片，验证 data contract 可信，并产出一个 source relation，供后续 Vane stage 用于 multimodal processing、Python UDF、AI function、GPU inference、embedding 或 validation。
+
+## 从 data contract 开始
+
+加载文件前，先决定 relation 必须为 downstream AI work 保留什么。
+
+典型 source column 包括：
+
+| Column | 作用 |
+| --- | --- |
+| `asset_id`、`document_id`、`case_id` 或 `sample_id` | 用于将输出 join 回 source row 的稳定 identifier。 |
+| `source_uri` | 原始 document、image、audio、video 或 record 的 file、object storage 或 application URI。 |
+| `media_type` 或 `record_type` | 在昂贵 decode、model 或 embedding stage 前用于 routing 和 filtering。 |
+| `text`、`prompt`、`label` 或 `model_output` | 后续 AI stage 使用的文本或 model-facing value。 |
+| business metadata | Priority、tenant、language、timestamp、workflow state、reviewer label，或用于 slicing 和 review 的其他字段。 |
+
+不要一开始就处理所有历史文件。选择一个足够小、便于本地调试，同时又足够真实、能暴露数据形态的切片：
+
+- 一个 time window、source system、document family、tenant、language 或 workflow state。
+- 足够覆盖正常 case 和已知 edge case 的行数。
+- 能贯穿后续 transformation 的稳定 ID 和 source metadata。
+- prompt construction、label、model review、quality check 或 output join 所需的列。
+
+如果完整 dataset 在远端或规模较大，请先导出一个小型 Parquet 或 CSV sample，或在初始 scan 中应用窄 filter。
+
+## 加载本地 Parquet
+
+对 Parquet 文件和 Parquet part 目录使用 `read_parquet(...)`。目录通常通过指向其内部文件的 glob 读取。
+
+```python
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select *
+    from read_parquet('data/document_manifest/*.parquet', union_by_name=true)
+    where text is not null
+    order by document_id
+    limit 10000
+""")
+
+documents.to_table("raw_documents")
+```
+
+对于嵌套目录，使用 recursive glob：
+
+```python
+media_events = con.sql("""
+    select *
+    from read_parquet('data/media_events/**/*.parquet', union_by_name=true)
+    limit 10000
+""")
+```
+
+当多个文件的列顺序可能不同，或预期存在少量 schema drift 时，使用 `union_by_name=true`。如果 schema 的含义不同，请先停止并完成 reconcile，再继续。
+
+## 加载本地 CSV
+
+CSV 适合 label、review sample、prompt table 或 issue list 等小型导出。一旦你能控制导出格式，优先使用 Parquet，因为它能更可靠地携带 column type。
+
+```python
+labels = con.sql("""
+    select *
+    from read_csv_auto('data/labels/*.csv', header=true)
+    limit 10000
+""")
+
+labels.to_table("raw_labels")
+```
+
+如果类型推断错误，保持加载逻辑简单，先检查 inferred schema，再在 source relation 中显式 cast 重要列。
+
+## 从 S3 或 MinIO 加载
+
+第一次 validation run 中，object storage configuration 应保持最小化。scan 应证明 Vane 能读取文件，并且后续每个 executor 都能访问相同 URI；它不应演变成 lakehouse 或 catalog setup。
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+
+# Prefer environment variables for credentials:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN when needed.
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+source = con.sql("""
+    select *
+    from read_parquet('s3://my-bucket/sample/document_manifest/*.parquet')
+    limit 10000
+""")
+```
+
+对于 MinIO 或其他 S3-compatible endpoint，添加 endpoint setting：
+
+```python
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+```
+
+不要将 long-lived secret 放入提交的脚本或文档片段中。如果 Ray 会运行该 query，相同的 credential 和 endpoint setting 必须对 worker 可用。
+
+## 检查 schema 和 sample
+
+当你需要对同一个切片运行多项检查时，将 raw scan materialize 为 temporary table。
+
+```python
+documents.to_table("raw_documents")
+
+con.sql("describe raw_documents").show()
+
+con.sql("""
+    select
+        document_id,
+        source_uri,
+        media_type,
+        document_type,
+        language,
+        left(text, 160) as text_preview
+    from raw_documents
+    limit 10
+""").show()
+```
+
+在添加 UDF、AI 或 GPU work 之前，确认 column name、type、sample value、encoding、URI format 和 timestamp assumption 与预期数据一致。
+
+## 运行基础加载检查
+
+从 row count、key uniqueness、null check、URI coverage，以及几个能发现错误切片的分布检查开始。
+
+```python
+con.sql("""
+    select
+        count(*) as rows,
+        count(distinct document_id) as distinct_document_ids,
+        count(*) - count(distinct document_id) as duplicate_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where text is null or length(text) = 0) as empty_text_rows
+    from raw_documents
+""").show()
+```
+
+检查重要 media 或业务分布：
+
+```python
+con.sql("""
+    select media_type, document_type, count(*) as rows
+    from raw_documents
+    group by media_type, document_type
+    order by rows desc
+    limit 20
+""").show()
+```
+
+```python
+con.sql("""
+    select language, count(*) as rows
+    from raw_documents
+    group by language
+    order by rows desc
+""").show()
+```
+
+请将列名替换为对你的 workflow 重要的字段。重点不是做完整 data quality，而是在后续 stage 将问题隐藏到 Python、AI 或 GPU work 之前，抓住明显的 load、schema 和 slice 错误。
+
+## 产出 source relation
+
+创建一个只包含 downstream stage 所需列的窄 relation。保留 ID 和 source metadata，明确 cast 重要字段，并过滤掉无法追踪的行。
+
+```python
+source_documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        cast(source_uri as varchar) as source_uri,
+        cast(media_type as varchar) as media_type,
+        cast(document_type as varchar) as document_type,
+        cast(language as varchar) as language,
+        cast(case_id as varchar) as case_id,
+        text
+    from raw_documents
+    where document_id is not null
+      and source_uri is not null
+      and text is not null
+""")
+
+source_documents.to_table("source_documents")
+```
+
+将这个 relation 作为后续指南的输入：
+
+- 当 source URI 需要 decode、OCR、transcript 或 media-specific processing 时，使用 Multimodal Pipeline。
+- 当 metadata、label、prompt input 或 model output 需要 filtering、joining、deduplication 或 validation 时，使用 Structured Transformation。
+- 当 workflow 需要 Python library、private client、model preprocessing 或 custom output schema 时，使用 Custom Python UDFs。
+- 当 text 或 prompt column 需要 embedding、classification、prompting 或发送给 vLLM 时，使用 AI Functions、Embeddings at Scale 或 GPU Inference。
+
+当 workflow 逻辑仍在变化时，保持 source relation 小。只有在 row count、schema、source ID、sample output 和 error behavior 都可解释后，再增大切片。
+
+## Local 与 Ray 可访问性
+
+Local execution 可以读取 Python process 可见的文件。这是第一个切片最简单的路径。
+
+Ray execution 可能在 worker 上调度 scan、write 或 UDF。每个 worker 都必须能够：
+
+- 看到相同的本地路径、mounted filesystem 或 object storage URI。
+- 加载 scan 所需的相同 DuckDB extension。
+- 访问相同 credential 和 endpoint setting。
+- import 后续 UDF 或 AI stage 使用的相同 Python package。
+- 如果后续 stage 需要，访问 model file 或 provider credential。
+- 写入 worker 外部可见的 output path。
+
+创建 connection 前配置 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+```
+
+不要同时调试 path visibility、schema issue 和 distributed execution。先在本地加载并验证切片；如果 workflow 需要 distributed scan、UDF、AI、GPU 或 write behavior，再用 Ray 运行同一个 source relation。
+
+## 常见失败与反馈
+
+当 structured load 失败时，先分类失败，再修改 pipeline：
+
+| 类别 | 检查项 |
+| --- | --- |
+| Path not found | Current working directory、absolute path、glob pattern、file permission、Ray worker 上的 mounted path |
+| Empty or wrong slice | Filter、partition path、`limit`、recursive glob depth、export freshness |
+| Schema mismatch | CSV inference、Parquet schema drift、`union_by_name`、explicit cast、unexpected nullable field |
+| Bad identifiers | Null key、duplicate key、只在 partition 内唯一的 key |
+| Bad source references | 缺少 `source_uri`、混合 URI format、本地路径对 worker 不可见 |
+| Object storage auth | Region、endpoint、SSL setting、path-style setting、credential availability |
+| Ray access | Worker environment variable、mounted filesystem、package availability、model file、provider credential、output path visibility |
+
+有用的反馈包括：
+
+- Vane version、Python version、operating system，以及是否使用了 `VANE_RUNNER` 或 `vane.configure(runner="ray")`。
+- File format、path style，以及脱敏后的 scan query。
+- 同一个 scan 在不使用 Ray 的本地环境中是否可行。
+- 小切片的 schema output 和 row-count/null/key-check output。
+- 脱敏后的 S3 或 MinIO endpoint setting，不包含 secret。
+- 最短 error traceback；如果可能，附上能复现问题的极小 sample file。

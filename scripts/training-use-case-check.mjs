@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 const pagePath = 'src/pages/TrainingUseCase.tsx'
 const componentPath = 'src/components/TrainingDataFactoryAnimation.tsx'
-const docsPath = 'docs/examples/training-data-pipeline.mdx'
+const docsPath = 'docs/data/examples/training-data-pipeline.mdx'
 const routesPath = 'src/plugins/vaneRoutes.ts'
 const imagePath = 'public/img/use-cases/hero-driving-intersection.webp'
 
@@ -96,8 +96,8 @@ assert.match(page, /const HERO_MODALITIES[\s\S]*'vision'[\s\S]*'video'[\s\S]*'au
 assert.match(page, /<PixelIcon name=\{m\.icon\} size=\{15\} \/>/, 'training hero modality chips should reuse the site pixel-bitmap glyph language')
 assert.match(page, /className="thg-engine-title">VANE<[\s\S]*thg-engine-ops">decode · caption/, 'training hero engine node should read as the Vane processing stage')
 assert.doesNotMatch(heroShape, /training-art-tiles|tile-photo|tile-wave|tile-frame|tile-doc|tile-sensor|training-art-signal|orbit-a|orbit-b/, 'training hero should not render the old scattered modality tiles or bar-chart signal visual')
-assert.match(page, /<Button solid to="\/docs\/examples\/training-data-pipeline" arrow>Run the pipeline<\/Button>[\s\S]*<Button href=\{TRAINING_DESIGN_PARTNER_MAILTO\} arrow>Request a demo<\/Button>/, 'training hero should prioritize running the pipeline and requesting a demo')
-assert.match(page, /<Button to="\/docs\/examples">Read the docs<\/Button>/, 'training CTA should send docs readers to the examples index')
+assert.match(page, /<Button solid to="\/docs\/data\/examples\/training-data-pipeline" arrow>Run the pipeline<\/Button>[\s\S]*<Button href=\{TRAINING_DESIGN_PARTNER_MAILTO\} arrow>Request a demo<\/Button>/, 'training hero should prioritize running the pipeline and requesting a demo')
+assert.match(page, /<Button to="\/docs\/data\/examples">Read the docs<\/Button>/, 'training CTA should send docs readers to the examples index')
 assert.doesNotMatch(page, /RUN_CODE|collectAnchor\('run-it'\)|id="run-it"|training-run-grid|Start with the training-data example\.|Open the example|Benchmark scripts|filename="run\.sh"|python -m vane_examples\.training_data_pipeline/, 'training page should not render the run-it example module')
 assert.doesNotMatch(css, /\.training-run-grid/, 'training run-it-only styles should be removed with the module')
 assert.match(css, /\.training-hero-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*486px/, 'training hero should use a two-column layout with a fixed 486px art column on desktop')

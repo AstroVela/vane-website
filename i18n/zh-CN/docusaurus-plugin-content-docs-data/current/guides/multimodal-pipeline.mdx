@@ -1,0 +1,449 @@
+---
+title: 多模态流水线
+---
+
+Multimodal pipeline 从 ingest 之后开始。输入是包含稳定 ID、source location、metadata 和可选 bytes 的 relation；输出是一个 curated table，可用于检查、join、写出以及报告失败。
+
+当你希望将 [Multimodal Ingest](/zh-CN/docs/data/guides/multimodal-ingest) 产出的 row 转换为分阶段 multimodal pipeline 时，使用本指南。SQL 适合过滤和 summary，但它只是 workflow 中的一个 stage。Media-specific work 由 Python UDF、AI helper 和 model actor 承担。
+
+## 输入 relation
+
+从 multimodal ingest 创建的 relation 开始。至少保留：
+
+- `asset_id`：稳定的 source identifier。
+- `source_uri`：本地路径、object storage URI，或其他可复现的 source reference。
+- `media_type`：content type，或 `image`、`pdf`、`audio`、`video` 等粗粒度类型。
+- 能在昂贵工作前帮助过滤或路由 row 的 metadata column。
+- 当 ingest 已经加载 media content 时，可保留可选 bytes column。
+
+```python
+import vane
+
+con = vane.connect()
+
+ingested = con.sql("""
+    select
+        asset_id,
+        source_uri,
+        media_type,
+        customer_segment,
+        captured_at
+    from read_parquet('output/media_ingest/')
+    where asset_id is not null
+      and source_uri is not null
+""")
+
+ingested.to_table("media_ingest")
+```
+
+如果 bytes 很大，或需要 credential 才能访问，请在 ingest 阶段只保留 `source_uri`，并在 preparation stage 内加载 bytes。这样可以保持早期过滤低成本，并让 worker storage access 显式化。
+
+## Pipeline 形态
+
+将 workflow 拆成独立 stage：
+
+1. Metadata filtering 和 projection。
+2. URI 或 bytes preparation。
+3. Decode、OCR、transcript、frame 或 text extraction。
+4. Model、AI helper 或 business rule stage。
+5. 校验 summary。
+6. Curated output 和 failure output。
+
+关键不是使用哪个具体 model，而是每个 stage 都返回 typed relation，并带有 ID、status、error，以及足够检查执行结果的 metadata。
+
+## 1. 昂贵工作前先过滤
+
+在解码文件或调用 model 前，先使用 relational filtering 缩小输入。
+
+```python
+candidates = con.sql("""
+    select
+        asset_id,
+        source_uri,
+        media_type,
+        customer_segment,
+        captured_at
+    from media_ingest
+    where media_type in ('image/png', 'image/jpeg', 'application/pdf')
+      and customer_segment is not null
+    limit 1000
+""")
+```
+
+对于你自己的数据，请选择匹配业务问题的 filter：date range、document family、customer segment、label backlog，或包含足够失败样例、便于检查的小型 random sample。
+
+## 2. 准备 URI 或 bytes
+
+将这个 stage 与 decoding 和 inference 分离。这样可以在不修改 model code 的情况下调优 I/O、credential 和 retry behavior。
+
+```python
+from pathlib import Path
+
+import pyarrow as pa
+
+
+def load_local_bytes(batch: pa.Table) -> pa.Table:
+    asset_ids = batch.column("asset_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+
+    media_bytes = []
+    status = []
+    error_message = []
+
+    for uri in source_uris:
+        try:
+            media_bytes.append(Path(uri).read_bytes())
+            status.append("ok")
+            error_message.append("")
+        except Exception as exc:
+            media_bytes.append(None)
+            status.append("failed")
+            error_message.append(f"load_bytes: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "asset_id": asset_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "media_bytes": media_bytes,
+        "prepare_status": status,
+        "prepare_error": error_message,
+    })
+
+
+prepared = candidates.map_batches(
+    load_local_bytes,
+    schema={
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "media_bytes": "BLOB",
+        "prepare_status": "VARCHAR",
+        "prepare_error": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+```
+
+对于 object storage，请将 `Path(uri).read_bytes()` 替换为一个在 UDF 运行位置可用的 storage client。不要在缺少 credential 或路径不可访问时返回没有 failure column 的 partial output，从而掩盖问题。
+
+## 3. Decode 或 extract
+
+当 decode、OCR、transcript generation、PDF text extraction 和 video frame extraction 成本较高或容易失败时，应把它们作为独立 stage。
+
+```python
+import io
+
+import pyarrow as pa
+from PIL import Image
+
+
+def inspect_images(batch: pa.Table) -> pa.Table:
+    asset_ids = batch.column("asset_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    media_bytes = batch.column("media_bytes").to_pylist()
+    prepare_status = batch.column("prepare_status").to_pylist()
+    prepare_error = batch.column("prepare_error").to_pylist()
+
+    width = []
+    height = []
+    status = []
+    error_message = []
+
+    for data, previous_status, previous_error in zip(media_bytes, prepare_status, prepare_error):
+        if previous_status != "ok":
+            width.append(None)
+            height.append(None)
+            status.append("skipped")
+            error_message.append(previous_error)
+            continue
+
+        try:
+            image = Image.open(io.BytesIO(data))
+            width.append(image.width)
+            height.append(image.height)
+            status.append("ok")
+            error_message.append("")
+        except Exception as exc:
+            width.append(None)
+            height.append(None)
+            status.append("failed")
+            error_message.append(f"decode_image: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "asset_id": asset_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "image_width": width,
+        "image_height": height,
+        "decode_status": status,
+        "decode_error": error_message,
+    })
+
+
+decoded = prepared.map_batches(
+    inspect_images,
+    schema={
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "decode_status": "VARCHAR",
+        "decode_error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_task",
+)
+```
+
+这个示例检查 image，使 relation contract 可见。Document text extraction、audio transcription 或 video frame metadata 也可以使用同样模式。
+
+## 4. 添加 model 或 rule stage
+
+下一个 stage 可以是 Python UDF、AI helper 或 GPU-backed actor。它应该返回完整的 row-level contract，而不只是一个 model output column。
+
+```python
+import os
+import time
+
+import pyarrow as pa
+
+
+RUN_ID = os.environ.get("VANE_RUN_ID", "local-run-001")
+
+
+def classify_by_shape(batch: pa.Table) -> pa.Table:
+    asset_ids = batch.column("asset_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    widths = batch.column("image_width").to_pylist()
+    heights = batch.column("image_height").to_pylist()
+    decode_status = batch.column("decode_status").to_pylist()
+    decode_error = batch.column("decode_error").to_pylist()
+
+    labels = []
+    scores = []
+    status = []
+    error_message = []
+
+    for width, height, previous_status, previous_error in zip(
+        widths,
+        heights,
+        decode_status,
+        decode_error,
+    ):
+        if previous_status != "ok":
+            labels.append("")
+            scores.append(0.0)
+            status.append("failed")
+            error_message.append(previous_error)
+        elif width and height and width >= height:
+            labels.append("landscape_or_document")
+            scores.append(0.8)
+            status.append("ok")
+            error_message.append("")
+        else:
+            labels.append("portrait_or_detail")
+            scores.append(0.7)
+            status.append("ok")
+            error_message.append("")
+
+    return pa.table({
+        "asset_id": asset_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "image_width": widths,
+        "image_height": heights,
+        "label": labels,
+        "score": scores,
+        "status": status,
+        "error_message": error_message,
+        "run_id": [RUN_ID] * len(asset_ids),
+        "pipeline_version": ["shape-v1"] * len(asset_ids),
+        "processed_at_unix": [int(time.time())] * len(asset_ids),
+    })
+
+
+scored = decoded.map_batches(
+    classify_by_shape,
+    schema={
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+        "pipeline_version": "VARCHAR",
+        "processed_at_unix": "BIGINT",
+    },
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+```
+
+当该 stage 正确后，可以将 rule 替换为 model。当 model、tokenizer、client 或 GPU context 应初始化一次并跨 batch 复用时，使用 actor backend。
+
+## 输出 contract
+
+保持 curated output 对 downstream system 足够精简，同时又足够完整，可以诊断本次运行。
+
+| Column | 作用 |
+| --- | --- |
+| `asset_id` | 用于 join 和 feedback 的稳定 input identifier。 |
+| `source_uri` | 可复现的 source reference。 |
+| Stage output | Extracted text、frame metadata、label、embedding、OCR JSON，或其他 typed result。 |
+| `score` | Confidence、rule score、similarity，或其他可比较的 stage metric。 |
+| `status` | `ok`、`failed`、`skipped` 或其他显式 state。 |
+| `error_message` | 成功时为空；失败时填入 stage 和 exception class。 |
+| Run metadata | `run_id`、`pipeline_version`、model/provider name 和 timestamp field。 |
+
+在明确 downstream consumer 需要什么之前，优先使用显式列，而不是 opaque nested object。
+
+## 5. 写出前校验
+
+注册 stage output，并使用 SQL 做 summary、check 和 failure review。
+
+```python
+scored.to_table("media_pipeline_scored")
+
+summary = con.sql("""
+    select
+        media_type,
+        status,
+        count(*) as rows,
+        avg(score) as avg_score
+    from media_pipeline_scored
+    group by media_type, status
+    order by media_type, status
+""")
+
+summary.show()
+
+failures = con.sql("""
+    select asset_id, source_uri, media_type, error_message, run_id
+    from media_pipeline_scored
+    where status <> 'ok'
+    order by asset_id
+""")
+```
+
+不要只依赖 exception 或 log。写出 failure row，使团队成员能够检查 source record、复现问题，并判断原因是 data quality、storage access、dependency setup 还是 model behavior。
+
+## 6. 写出 curated output
+
+有意识地分别写出 success 和 failure。大型 media bytes 通常是 intermediate data，不属于 curated output。
+
+```python
+curated = con.sql("""
+    select
+        asset_id,
+        source_uri,
+        media_type,
+        image_width,
+        image_height,
+        label,
+        score,
+        status,
+        error_message,
+        run_id,
+        pipeline_version,
+        processed_at_unix
+    from media_pipeline_scored
+""")
+
+curated.write_parquet("output/media_pipeline/curated/")
+failures.write_parquet("output/media_pipeline/failures/")
+```
+
+将 failure 保持在同一个 contract 中，可以让运行可诊断，而不是让一个坏文件、坏 credential 或坏 decode 变成难以解释的整体失败。
+
+## 拆分昂贵 stage
+
+独立调优每个昂贵 stage：
+
+| Stage | 典型 backend | 优先调优 |
+| --- | --- | --- |
+| URI 或 bytes preparation | `subprocess_task`，再到 `ray_task` | Storage access、`batch_size`、path 或 credential failure。 |
+| Decode 或 extract | `subprocess_task`，再到 `ray_task` | CPU、memory、media library behavior、output row size。 |
+| Model inference | `subprocess_actor`，再到 `ray_actor` | Actor reuse、`batch_size`、`concurrency`、`gpus`。 |
+| Embedding | AI helper 或 actor UDF | Chunking、model/provider choice、output dimension、batch size。 |
+
+对于 document，将 extraction、chunking、embedding 和 classification 保持为独立 relation。对于 video，将 frame sampling 与 frame inference 分离。对于 audio，将 transcript extraction 与 downstream classification 或 summarization 分离。
+
+## 先本地，后 Ray
+
+先用小型代表性 sample 在本地开始。只有在本地 relation contract 正确后，才把昂贵 stage 迁移到 Ray。
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+scored = decoded.map_batches(
+    classify_by_shape,
+    schema={
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+        "pipeline_version": "VARCHAR",
+        "processed_at_unix": "BIGINT",
+    },
+    batch_size=64,
+    execution_backend="ray_task",
+    concurrency=4,
+)
+```
+
+对于 model stage，当 model state 需要复用时，使用 `ray_actor`：
+
+```python
+scored = decoded.map_batches(
+    ModelStage,
+    schema={
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+    },
+    batch_size=16,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=2,
+)
+```
+
+每个 Ray worker 都必须能够 import UDF class 或 function，并访问相同的 storage、credential、model file、provider key 和 Python dependency。在增加 concurrency 前，请先验证这些访问能力。
+
+## 相关指南
+
+- [AI Functions](/zh-CN/docs/data/guides/ai-functions)：对常见 embedding、classification 和 prompting stage 使用 relation helper。
+- [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)：当 batch inference 是瓶颈时，使用 vLLM 或 GPU actor stage。
+- [Embeddings at Scale](/zh-CN/docs/data/guides/embeddings-at-scale)：拆分 document extraction、chunking、embedding 和 output validation。
+- [SQL vs Python](/zh-CN/docs/data/concepts/sql-vs-python)：判断哪些 pipeline stage 应保留为 relational，哪些应使用 Python。
+
+## 实用检查
+
+- 在每个 stage 中保留 `asset_id` 和 `source_uri`。
+- 在 byte loading、decoding、inference 或 embedding 前先过滤和投影。
+- 在容易失败的 stage 中返回 `status` 和 `error_message` 列。
+- 除非 downstream system 需要，否则不要将 media bytes 放入 curated output。
+- 对 I/O、decode、inference 和 embedding stage 使用不同的 batch size。
+- 在将 stage 切换到 Ray 前，先验证本地 output schema 和 failure behavior。
+- 扩展 Ray run 前，确认 worker 可以访问 storage、credential、model 和 dependency。

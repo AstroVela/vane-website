@@ -1,0 +1,185 @@
+---
+title: UDF
+---
+
+Vane Data UDF 允许你在 relation pipeline 内运行 Python，同时保留显式 schema、batch 控制，以及迁移到 distributed execution 的路径。
+
+当某个步骤需要 Python library、model state、自定义解码、外部 client 或 row expansion 时，使用 UDF。关系型工作继续交给 SQL，只把 SQL 不适合承担的部分放到 UDF 中。
+
+## 公共 API
+
+Vane Data 暴露了三个 relation-level UDF API：
+
+| API | 形态 | 典型用途 |
+| --- | --- | --- |
+| `map_batches(function, schema=..., ...)` | Arrow batch 到 Arrow batch | Vectorized transform、model inference、解码 |
+| `flat_map(function, schema=..., ...)` | 一行输入到零行、一行或多行输出 | Chunking、splitting、展开 nested record |
+| `map(map_function, return_type=..., ...)` | Row-wise scalar value | 小型 scalar enrichment |
+
+核心参数：
+
+- `schema`：relation-producing UDF 的输出列和类型。
+- `return_type`：`map` 的 scalar output type。
+- `batch_size`：每次 `map_batches` 调用处理的行数。
+- `execution_backend`：callable 运行的位置。
+- `cpus` 和 `gpus`：在支持的 backend 上声明 resource request。
+- `concurrency`：在支持的 backend 上声明 executor 或 actor 数量。
+- `streaming_breaker`：高级的 `map_batches` execution-boundary 控制。
+
+不支持的 keyword argument 会在 relation render 之前被提前拒绝。
+
+## Execution backend
+
+| Backend | Callable 形态 | 适用场景 |
+| --- | --- | --- |
+| `subprocess_task` | Python function | 本地无状态 batch transform |
+| `subprocess_actor` | Callable class | 本地 model 或 client 复用 |
+| `ray_task` | Python function | Distributed stateless transform |
+| `ray_actor` | Callable class | Distributed stateful inference、GPU-backed model |
+
+向 task backend 传入 function。向 actor backend 传入 class，而不是已经创建好的 instance，这样 Vane Data 才能在 executor 内构造并复用该对象。
+
+## Batch UDF contract
+
+`map_batches` 接收 Arrow data，并返回 Arrow data。返回的 table 必须匹配声明的 output schema。
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+rel = con.sql("""
+    select *
+    from (
+        values
+            (1, 'hello'),
+            (2, 'vane data')
+    ) as t(id, text)
+""")
+
+def add_features(batch: pa.Table) -> pa.Table:
+    values = batch.column("text").to_pylist()
+    return pa.table({
+        "length": [len(str(value)) for value in values],
+        "upper_text": [str(value).upper() for value in values],
+    })
+
+features = rel.map_batches(
+    add_features,
+    schema={
+        "length": "BIGINT",
+        "upper_text": "VARCHAR",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+
+features.show()
+```
+
+Batch UDF 是 model 和 media workload 的默认选择，因为它可以摊薄 Python 开销，并让 model library 一次处理多行数据。
+
+## Stateful class UDF
+
+当 setup 成本较高且需要跨 batch 复用时，使用 actor backend。
+
+```python
+import pyarrow as pa
+
+class EmbedBatch:
+    def __init__(self) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        text = batch.column("text").to_pylist()
+        embeddings = self.model.encode(text).tolist()
+        return pa.table({"embedding": embeddings})
+
+embedded = rel.map_batches(
+    EmbedBatch,
+    schema={"embedding": "FLOAT[]"},
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+这个 relation 包含声明的 `embedding` 列。如果后续阶段需要将 embeddings join 回输入行，也要从 UDF 返回 source identifier。
+
+对于 distributed GPU inference，使用相同的 callable class 形态，并切换到 `ray_actor`：
+
+```python
+embedded = rel.map_batches(
+    EmbedBatch,
+    schema={"embedding": "FLOAT[]"},
+    batch_size=64,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+每个 Ray worker 都必须能够 import 这个 class，并访问所需的 model file 或 credential。
+
+## One-to-many transform
+
+当一行输入可能产生零行、一行或多行输出时，使用 `flat_map`。
+
+```python
+def split_terms(row: dict) -> list[dict]:
+    return [{"term": term} for term in str(row["text"]).split()]
+
+terms = rel.flat_map(
+    split_terms,
+    schema={"term": "VARCHAR"},
+    execution_backend="subprocess_task",
+)
+```
+
+典型用途包括 document chunking、URL expansion、nested record normalization，以及通过返回空 list 完成过滤。
+
+## Scalar transform
+
+对于不需要 batch UDF 的小型 row-wise scalar enrichment，使用 `map`。
+
+```python
+def normalize_text(text: str) -> str:
+    return text.strip().lower()
+
+normalized = rel.project("text").map(
+    normalize_text,
+    return_type="VARCHAR",
+    execution_backend="subprocess_task",
+)
+```
+
+对于 model call、media decoding，或任何可以受益于 vectorization 的操作，优先使用 `map_batches`。
+
+## Resource 与 concurrency
+
+请区分以下控制项：
+
+- `batch_size`：传给 `map_batches` 的每个 batch 的行数。
+- `gpus`：在支持的 backend 上，每次 callable execution 的 GPU resource request。
+- `cpus`：在支持的 backend 上，每次 callable execution 的 CPU resource request。
+- `concurrency`：在支持的 backend 上，executor 或 actor 的数量。
+
+如果瓶颈是 model throughput，先增大 `batch_size`，再提高 concurrency。当 worker 利用率不足且仍有 memory headroom 时，再增加 concurrency。
+
+部分 backend 不接受所有 resource 或 concurrency 选项。扩展规模前，请先在有代表性的 sample 上验证配置。
+
+## Streaming behavior
+
+`map_batches` 暴露 `streaming_breaker`，用于高级 execution-boundary 控制。除非你正在测量某个具体的 pipeline 行为或调试边界，否则保持未设置。
+
+## Backend 选择
+
+按以下顺序推进：
+
+1. 先用 `subprocess_task` 或 `subprocess_actor` 在本地构建 UDF。
+2. 在有代表性的 sample 上验证 schema、row count 和错误行为。
+3. 只有在 distribution 确实有帮助时，才把 stateless function 切换到 `ray_task`。
+4. 只有在需要 actor 复用、GPU 或 cluster placement 时，才把 stateful model class 切换到 `ray_actor`。
+5. 使用接近生产的数据调优 batch size、resource request 和 concurrency。

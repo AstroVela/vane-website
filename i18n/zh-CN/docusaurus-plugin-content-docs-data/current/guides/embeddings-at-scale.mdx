@@ -1,0 +1,275 @@
+---
+title: 大规模嵌入
+---
+
+当你的 workflow 需要将大量文档、抽取后的文本记录、caption、transcript 或其他 AI-ready text row 转换为可检查、可重跑，并可交给 downstream search 或 retrieval system 的 embedding table 时，使用本指南。
+
+Embedding model call 只是其中一个阶段。一条实用的 workflow 路径是：
+
+```text
+read and filter source rows -> chunk documents -> embed chunks -> validate output -> write an embedding table
+```
+
+本指南止步于 embedding table。它不是 vector database、retrieval-ranking 或 production RAG 指南。
+
+## 从小型 source relation 开始
+
+从真实 source row 开始，但保持第一次运行规模较小。在任何 AI call 之前，先选择稳定 identifier 和 source metadata。
+
+```python
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        document_type,
+        text
+    from read_parquet('data/extracted_documents/*.parquet')
+    where text is not null
+      and length(text) > 0
+    order by document_id
+    limit 100
+""")
+```
+
+保持第一个 relation 有序且有 `limit`，这样可以确定性地比较 source row、chunk 和 embedding output。只有在 chunking 和 validation check 都正确之后，才移除 `limit`。
+
+## 使用稳定 ID 进行 chunk
+
+Chunking 是 one-to-many transform：一个文档可能产生零个、一个或多个 chunk。本阶段使用 `flat_map(...)`，并返回后续需要的所有列。
+
+```python
+CHUNK_SIZE = 1200
+OVERLAP = 150
+CHUNKER_VERSION = "fixed-char-v1"
+
+def chunk_document(row: dict) -> list[dict]:
+    document_id = str(row["document_id"])
+    text = str(row["text"] or "")
+    source_uri = row.get("source_uri")
+    document_type = row.get("document_type")
+
+    chunks = []
+    start = 0
+    chunk_index = 0
+
+    while start < len(text):
+        end = min(start + CHUNK_SIZE, len(text))
+        chunk_text = text[start:end].strip()
+
+        if chunk_text:
+            chunks.append({
+                "document_id": document_id,
+                "chunk_id": f"{document_id}:{CHUNKER_VERSION}:{chunk_index:06d}",
+                "chunk_index": chunk_index,
+                "chunk_text": chunk_text,
+                "source_uri": source_uri,
+                "document_type": document_type,
+                "chunker_version": CHUNKER_VERSION,
+            })
+
+        if end == len(text):
+            break
+        start = max(end - OVERLAP, 0)
+        chunk_index += 1
+
+    return chunks
+
+chunks = documents.flat_map(
+    chunk_document,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_index": "BIGINT",
+        "chunk_text": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "document_type": "VARCHAR",
+        "chunker_version": "VARCHAR",
+    },
+    execution_backend="subprocess_task",
+)
+```
+
+对于你自己的数据，请确保 chunking rule 是确定性的，并带有版本。如果你修改 tokenization、overlap、cleaning 或 page extraction 规则，请更新 chunker version，并从 source row 重新运行。做 model-quality check 时，使用与 embedding model context window 匹配的 tokenizer-aware chunker；上面的 fixed-character chunker 只是一个简洁的结构示例。
+
+Chunk output 应保留：
+
+- `document_id`：稳定的 source 或 business document ID。
+- `chunk_id`：由 document ID、chunking version 以及 chunk index 或 offset 确定性生成。
+- `chunk_text`：发送给 embedding model 的精确文本。
+- `source_uri`：用于 traceability 的文件、object 或 source record。
+- source metadata：例如 type、tenant、language、date 或 case ID，只要它有助于审查失败样例。
+
+## Embedding 前校验 chunk
+
+在将数据发送给 model 或 hosted API 之前，先执行低成本检查。
+
+```python
+chunk_table = chunks.to_arrow_table()
+
+if chunk_table.num_rows == 0:
+    raise ValueError("chunking produced no rows")
+
+chunk_ids = chunk_table["chunk_id"].to_pylist()
+if len(chunk_ids) != len(set(chunk_ids)):
+    raise ValueError("chunk_id values must be unique")
+
+empty_chunks = [
+    chunk_id
+    for chunk_id, text in zip(chunk_ids, chunk_table["chunk_text"].to_pylist(), strict=False)
+    if not text
+]
+if empty_chunks:
+    raise ValueError(f"empty chunks: {empty_chunks[:5]}")
+```
+
+同时人工检查少量 chunk。在增大 sample size 前，确认边界、overlap、metadata 和语言处理方式符合业务问题。
+
+## 选择 provider
+
+选择能够完成当前任务的最小 provider setup。
+
+| 选择 | 适用场景 | 需要关注 |
+| --- | --- | --- |
+| Hosted API | 需要 managed model，并且可以使用外部 call。 | Credential、成本、延迟、rate limit、retry，以及 provider-specific dimension。 |
+| Local model | 需要本地执行，或基于已安装 model library 处理私有数据。 | Dependency version、model download、CPU/GPU 内存，以及 model initialization time。 |
+| Custom UDF | 需要在一个步骤中完全控制 ID、retry、status column 或 embedding schema。 | 需要维护更多代码；请仔细校验 schema 和错误。 |
+
+`embed_text(...)` 等 AI helper method 使用方便，但其 output relation 只包含已配置的 embedding 列。如果最终 table 需要 ID 和 metadata，请在验证 row count 和顺序后，显式地将 helper output 与 chunk row 组合；或者使用返回完整 schema 的自定义 UDF。
+
+## 使用 hosted API 生成 embedding
+
+Hosted API 适合快速访问 model，但需要根据账号限制调优 concurrency。
+
+```python
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="openai",
+    model="text-embedding-3-small",
+    output_column="embedding",
+    batch_size=64,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+从保守的 `batch_size` 和 `concurrency` 开始。一次只增大一个设置，并记录 provider error、timeout 和 rate-limit response。
+
+## 使用 local model 生成 embedding
+
+Local model 可以避免 hosted API call，但会引入本地 dependency 和 model-loading 成本。Actor backend 通常是合适的起点，因为 model 可以在每个 actor 中初始化一次，并跨 batch 复用。
+
+```python
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    batch_size=64,
+    execution_backend="subprocess_actor",
+)
+```
+
+如果需要严格的 GPU placement、自定义 retry behavior，或需要单个 UDF 同时返回 identifier、text、status、error 和 embedding，请使用基于 callable class 的 `map_batches(...)`，而不是 high-level helper。
+
+## 组合并校验输出
+
+使用 `embed_text(...)` 时，只有在校验通过后，才将 embedding 列与 source chunk row 组合。
+
+```python
+import pyarrow as pa
+
+PROVIDER = "openai"
+MODEL = "text-embedding-3-small"
+RUN_ID = "embedding-validation-run-001"
+
+chunk_table = chunks.to_arrow_table()
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != chunk_table.num_rows:
+    raise ValueError("embedding row count does not match chunk row count")
+
+embeddings = embedding_table["embedding"]
+if chunk_table.num_rows and not embeddings[0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded_table = (
+    chunk_table
+    .append_column("embedding", embeddings)
+    .append_column("embedding_provider", pa.array([PROVIDER] * chunk_table.num_rows))
+    .append_column("embedding_model", pa.array([MODEL] * chunk_table.num_rows))
+    .append_column("embedding_run_id", pa.array([RUN_ID] * chunk_table.num_rows))
+)
+
+embedded = con.from_arrow(embedded_table)
+```
+
+如果无法保证 row order 稳定，不要依赖按位置 recombination。请编写自定义 embedding UDF，在一个 relation 中返回完整 output schema，包括 ID 和 error/status column。
+
+## 输出 schema
+
+写出一个 embedding table，让 downstream system 和 reviewer 无需重读整条 pipeline 就能理解其含义。
+
+| Column | 作用 |
+| --- | --- |
+| `document_id` | 稳定的 source 或 business document ID。 |
+| `chunk_id` | 稳定且确定性的 chunk ID。 |
+| `chunk_index` | chunk 在文档内的数字顺序。 |
+| `chunk_text` | 发送给 embedding model 的文本。 |
+| `embedding` | provider 或 local model 返回的 vector。 |
+| `source_uri` | 原始文件、object 或 source record。 |
+| `chunker_version` | chunking rule 的 reproducibility metadata。 |
+| `embedding_provider` | Provider 名称，例如 `openai` 或 `transformers`。 |
+| `embedding_model` | 本次运行使用的准确 model identifier。 |
+| `embedding_run_id` | 用于 repeatability 和 review 的 run identifier。 |
+
+添加有助于调试异常 chunk 或向 domain reviewer 解释 sample 的 source metadata column。即使 downstream vector store 不需要，也不要静默丢弃 identifier。
+
+## 写出可审查结果
+
+写入 run-specific path，这样可以比较不同运行结果，而不会覆盖早期输出。
+
+```python
+embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
+```
+
+对于 distributed write，请确保每个 worker 都能访问输出 filesystem 或 object store。
+
+## Sample 正确后再扩展规模
+
+只有在小型代表性切片上通过 chunk 和 embedding validation 后，才从本地 sample 迁移到 Ray 或更大的 batch。
+
+```python
+vane.configure(runner="ray")
+
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    batch_size=128,
+    concurrency=8,
+    execution_backend="ray_actor",
+)
+```
+
+每个 Ray worker 都需要访问 provider library、local model file 或 hosted API credential、source data 和 output path。扩展规模时保持相同的 chunking configuration；否则你测量的是另一条 pipeline。
+
+## 调优清单
+
+- 在 chunking 前先过滤和投影，避免 embed 无关行。
+- 保持 chunk ID 确定性，并保留 `document_id`、`chunk_text`、`source_uri`、provider、model 和 run metadata。
+- 在增大数据量、`batch_size`、`concurrency` 或 Ray resource 前，先校验 10-100 行有代表性的数据。
+- 增大 `batch_size`，直到内存、provider payload size 或延迟成为瓶颈。
+- 只有当本地 worker、GPU capacity 或 hosted provider quota 仍有余量时，才增大 `concurrency`。
+- 对 local model 使用 actor backend，以便跨 batch 复用 model initialization。
+- 当单进程无法满足 scan、embedding 或 write throughput 时，再使用 Ray。
+- 尽早估算输出大小：vector dimension 乘以 chunk count 可能主导存储和写入时间。
+- 保留 run-specific output path，并记录 chunker version、provider、model、batch size、concurrency、backend、input row count、chunk count 和 failure。
+
+## 边界
+
+本指南产出一个可复现的 embedding dataset。它不覆盖 vector database schema design、approximate nearest-neighbor indexing、retrieval evaluation、online serving、access control 或 production RAG operation。请将 embedding table 作为交接给这些 downstream system 的边界。

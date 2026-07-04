@@ -17,6 +17,20 @@ const config = {
       onBrokenMarkdownLinks: 'warn',
     },
   },
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'zh-CN'],
+    localeConfigs: {
+      en: {
+        label: 'English',
+        htmlLang: 'en-US',
+      },
+      'zh-CN': {
+        label: '中文',
+        htmlLang: 'zh-Hans-CN',
+      },
+    },
+  },
   clientModules: [require.resolve('./src/clientStyles.ts')],
   headTags: [
     {
@@ -42,7 +56,34 @@ const config = {
       },
     },
   ],
-  plugins: [require.resolve('./src/plugins/vaneRoutes.ts')],
+  plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'data',
+        path: 'docs/data',
+        routeBasePath: 'docs/data',
+        sidebarPath: require.resolve('./sidebars.data.ts'),
+        showLastUpdateAuthor: false,
+        showLastUpdateTime: false,
+      },
+    ],
+    require.resolve('./src/plugins/vaneRoutes.ts'),
+  ],
+  themes: ['@docusaurus/theme-classic'],
+  themeConfig: {
+    navbar: {
+      items: [],
+    },
+    docs: {
+      sidebar: {
+        autoCollapseCategories: true,
+      },
+    },
+    colorMode: {
+      disableSwitch: true,
+    },
+  },
 } satisfies Config
 
 export default config

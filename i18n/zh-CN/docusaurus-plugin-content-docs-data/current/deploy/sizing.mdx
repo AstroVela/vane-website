@@ -1,0 +1,112 @@
+---
+title: 规格估算
+---
+
+Vane Data job 的 sizing 主要取决于 data volume、UDF cost 和 model resource。
+
+## 从小型运行开始
+
+记录：
+
+- input rows
+- input bytes
+- projected columns
+- UDF backend
+- batch size
+- concurrency
+- CPU/GPU resources
+- output rows
+- elapsed time
+
+然后一次只扩大一个变量。
+
+## Local CPU UDF
+
+使用：
+
+```python
+execution_backend="subprocess_task"
+```
+
+起始配置：
+
+- text cleaning 使用 `batch_size=512`
+- image/audio decoding 使用 `batch_size=32`
+
+根据 memory 和 latency 调整。
+
+## Local model actor
+
+使用：
+
+```python
+execution_backend="subprocess_actor"
+```
+
+起始配置：
+
+- `concurrency=1`
+- 选择一个能让 model 保持忙碌、且不会造成 memory pressure 的 batch size
+
+只有在 CPU/GPU resource 仍然空闲时，才增加 concurrency。
+
+## Ray task
+
+使用：
+
+```python
+execution_backend="ray_task"
+```
+
+适合 CPU-heavy stateless work。如果 batch 太小，请关注 scheduling overhead。
+
+## Ray actor
+
+使用：
+
+```python
+execution_backend="ray_actor"
+```
+
+适合 stateful model inference。
+
+Sizing rule：
+
+```text
+required GPUs = concurrency * gpus
+```
+
+如果 `concurrency=4` 且 `gpus=1`，Ray cluster 至少需要 4 个可用 GPU 才能实现完整并行。
+
+## Scan sizing
+
+相关公开设置：
+
+- `ray_scan_task_size_grouping`
+- `ray_max_task_backlog`
+- `ray_scan_task_open_cost_bytes`
+- `ray_scan_task_min_partition_num`
+
+当大量小文件会创建过多 scan task 时，使用 scan task grouping。
+
+## 输出 sizing
+
+Embeddings 可能主导 output size。
+
+估算：
+
+```text
+rows * dimensions * 4 bytes
+```
+
+对于 1000 万行、768 维 float32，单独 raw vector value 在计入文件格式开销前约为 30 GB。
+
+## 风险信号
+
+- 单个 UDF batch 包含未使用的大列。
+- Worker 每个 batch 都下载 model weight。
+- Distributed job 将 output 写到 node-local disk。
+- API-backed provider 的 concurrency 高于 rate limit。
+- 单个巨大文件阻碍 parallelism。
+
+在增加更多机器前，先修复 projection、actor reuse、shared storage、provider limit 和 partitioning。
