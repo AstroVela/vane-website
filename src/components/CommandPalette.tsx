@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from '../router'
 import { cx } from './cx'
 import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
-import { DEFAULT_DOC_SLUG, DOCS_PAGES } from '../docs/registry'
+import {
+  DEFAULT_DOC_SLUG,
+  DOCS_PAGES,
+  isDocsSidebarGroup,
+  type DocsSidebarEntry,
+} from '../docs/registry'
 
 type SearchItem = {
   title: string
@@ -15,15 +20,23 @@ type SearchItem = {
    from the registered MDX pages; paths mirror Docs.tsx's `docPath`. */
 function buildIndex(): SearchItem[] {
   const items: SearchItem[] = []
+  const addEntries = (productId: string, productName: string, entries: DocsSidebarEntry[], groupPath: string[]) => {
+    for (const entry of entries) {
+      if (isDocsSidebarGroup(entry)) {
+        addEntries(productId, productName, entry.items, [...groupPath, entry.group])
+        continue
+      }
+      if (!entry.slug || !DOCS_PAGES[entry.slug]) continue
+      const path = entry.slug === DEFAULT_DOC_SLUG ? `/docs/${productId}` : `/docs/${productId}/${entry.slug}`
+      items.push({ title: DOCS_PAGES[entry.slug].title, group: groupPath.join(' / '), product: productName, path })
+    }
+  }
+
   for (const pid of PRODUCT_ORDER) {
     const product = PRODUCTS[pid]
     if (product.status !== 'live' || !product.sidebar) continue
     for (const group of product.sidebar) {
-      for (const item of group.items) {
-        if (!item.slug || !DOCS_PAGES[item.slug]) continue
-        const path = item.slug === DEFAULT_DOC_SLUG ? `/docs/${pid}` : `/docs/${pid}/${item.slug}`
-        items.push({ title: DOCS_PAGES[item.slug].title, group: group.group, product: product.name, path })
-      }
+      addEntries(pid, product.name, group.items, [group.group])
     }
   }
   return items

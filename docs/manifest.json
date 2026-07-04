@@ -313,67 +313,72 @@
       ]
     },
     {
-      "group": "Guides / Data Ingestion",
+      "group": "Guides",
       "items": [
         {
-          "slug": "guides/multimodal-ingest",
-          "label": "Multimodal Ingest",
-          "route": "/docs/data/guides/multimodal-ingest"
+          "group": "Data Ingestion",
+          "items": [
+            {
+              "slug": "guides/multimodal-ingest",
+              "label": "Multimodal Ingest",
+              "route": "/docs/data/guides/multimodal-ingest"
+            },
+            {
+              "slug": "guides/structured-data-load",
+              "label": "Structured Data Load",
+              "route": "/docs/data/guides/structured-data-load"
+            }
+          ]
         },
         {
-          "slug": "guides/structured-data-load",
-          "label": "Structured Data Load",
-          "route": "/docs/data/guides/structured-data-load"
-        }
-      ]
-    },
-    {
-      "group": "Guides / Data Transformation",
-      "items": [
-        {
-          "slug": "guides/custom-python-udfs",
-          "label": "Custom Python UDFs",
-          "route": "/docs/data/guides/custom-python-udfs"
+          "group": "Data Transformation",
+          "items": [
+            {
+              "slug": "guides/custom-python-udfs",
+              "label": "Custom Python UDFs",
+              "route": "/docs/data/guides/custom-python-udfs"
+            },
+            {
+              "slug": "guides/multimodal-pipeline",
+              "label": "Multimodal Pipeline",
+              "route": "/docs/data/guides/multimodal-pipeline"
+            },
+            {
+              "slug": "guides/structured-transformation",
+              "label": "Structured Transformation",
+              "route": "/docs/data/guides/structured-transformation"
+            }
+          ]
         },
         {
-          "slug": "guides/multimodal-pipeline",
-          "label": "Multimodal Pipeline",
-          "route": "/docs/data/guides/multimodal-pipeline"
+          "group": "AI & Inference",
+          "items": [
+            {
+              "slug": "guides/ai-functions",
+              "label": "AI Functions",
+              "route": "/docs/data/guides/ai-functions"
+            },
+            {
+              "slug": "guides/gpu-inference",
+              "label": "GPU Inference",
+              "route": "/docs/data/guides/gpu-inference"
+            },
+            {
+              "slug": "guides/embeddings-at-scale",
+              "label": "Embeddings at Scale",
+              "route": "/docs/data/guides/embeddings-at-scale"
+            }
+          ]
         },
         {
-          "slug": "guides/structured-transformation",
-          "label": "Structured Transformation",
-          "route": "/docs/data/guides/structured-transformation"
-        }
-      ]
-    },
-    {
-      "group": "Guides / AI & Inference",
-      "items": [
-        {
-          "slug": "guides/ai-functions",
-          "label": "AI Functions",
-          "route": "/docs/data/guides/ai-functions"
-        },
-        {
-          "slug": "guides/gpu-inference",
-          "label": "GPU Inference",
-          "route": "/docs/data/guides/gpu-inference"
-        },
-        {
-          "slug": "guides/embeddings-at-scale",
-          "label": "Embeddings at Scale",
-          "route": "/docs/data/guides/embeddings-at-scale"
-        }
-      ]
-    },
-    {
-      "group": "Guides / Optimization",
-      "items": [
-        {
-          "slug": "guides/performance-tuning",
-          "label": "Performance Tuning",
-          "route": "/docs/data/guides/performance-tuning"
+          "group": "Optimization",
+          "items": [
+            {
+              "slug": "guides/performance-tuning",
+              "label": "Performance Tuning",
+              "route": "/docs/data/guides/performance-tuning"
+            }
+          ]
         }
       ]
     },

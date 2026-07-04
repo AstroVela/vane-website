@@ -189,16 +189,28 @@ export type DocsSidebarItem =
 
 export type DocsSidebarGroup = {
   group: string
-  items: DocsSidebarItem[]
+  items: DocsSidebarEntry[]
 }
+
+export type DocsSidebarEntry = DocsSidebarItem | DocsSidebarGroup
 
 export const DOCS_SIDEBAR = docsSidebar as DocsSidebarGroup[]
 
-const sidebarSlugs = DOCS_SIDEBAR.flatMap((group) =>
-  group.items
-    .map((item) => item.slug)
-    .filter((slug): slug is DocSlug => Boolean(slug)),
-)
+export function isDocsSidebarGroup(entry: DocsSidebarEntry): entry is DocsSidebarGroup {
+  return 'group' in entry
+}
+
+function collectSidebarSlugs(entries: DocsSidebarEntry[]): DocSlug[] {
+  return entries.flatMap((entry) =>
+    isDocsSidebarGroup(entry)
+      ? collectSidebarSlugs(entry.items)
+      : entry.slug
+        ? [entry.slug]
+        : [],
+  )
+}
+
+const sidebarSlugs = collectSidebarSlugs(DOCS_SIDEBAR)
 
 if (process.env.NODE_ENV === 'development') {
   sidebarSlugs
@@ -213,6 +225,23 @@ export function isDocSlug(slug: string | undefined): slug is DocSlug {
   return Boolean(slug && slug in DOCS_PAGES)
 }
 
+export function getDocGroupPath(slug: DocSlug) {
+  const find = (entries: DocsSidebarEntry[], path: string[]): string[] | undefined => {
+    for (const entry of entries) {
+      if (isDocsSidebarGroup(entry)) {
+        const nextPath = [...path, entry.group]
+        const found = find(entry.items, nextPath)
+        if (found) return found
+      } else if (entry.slug === slug) {
+        return path
+      }
+    }
+    return undefined
+  }
+
+  return find(DOCS_SIDEBAR, [])
+}
+
 export function getDocGroup(slug: DocSlug) {
-  return DOCS_SIDEBAR.find((group) => group.items.some((item) => item.slug === slug))?.group
+  return getDocGroupPath(slug)?.join(' / ')
 }

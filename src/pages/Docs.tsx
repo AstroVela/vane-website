@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { MDXProvider } from '@mdx-js/react'
 import docsManifest from '../../docs/manifest.json'
 import Nav from '../components/Nav'
@@ -14,8 +14,11 @@ import {
   DOCS_ORDER,
   DOCS_PAGES,
   type DocSlug,
+  type DocsSidebarEntry,
   type DocsSidebarItem,
   getDocGroup,
+  getDocGroupPath,
+  isDocsSidebarGroup,
   isDocSlug,
 } from '../docs/registry'
 import {
@@ -91,24 +94,31 @@ export default function Docs() {
     else throw new Error(`Unknown docs slug "${slug}"`)
   }
 
+  const groupPath = useMemo(() => (current ? getDocGroupPath(current) ?? [] : []), [current])
   const group = current ? getDocGroup(current) : undefined
+  const activeGroupKeys = useMemo(
+    () => groupPath.map((_, index) => groupPath.slice(0, index + 1).join(' / ')),
+    [groupPath],
+  )
 
   const [activeSection, setActiveSection] = useState<string | null>(null)
   const [toc, setToc] = useState<TocItem[]>([])
   // Collapsible sidebar groups. State holds only explicit user overrides; by
   // default a group is open iff it contains the active page (`group`), so a long
   // doc tree stays scannable and navigating auto-reveals the current section.
-  // Explicit, only-grows open state: the active group starts open and every
-  // group the reader expands or visits stays open. Navigation never collapses a
-  // group — clicking a link only *adds* the target's group.
+  // Explicit, reader-controlled open state. The active path opens when the page
+  // changes, but a click can still collapse the currently active group.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
-    group ? { [group]: true } : {},
+    Object.fromEntries(activeGroupKeys.map((key) => [key, true])),
   )
   useEffect(() => {
-    if (!group) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- additive sync: open the active group on navigation; a pure derivation can't express "never close the others".
-    setOpenGroups((prev) => (prev[group] ? prev : { ...prev, [group]: true }))
-  }, [group])
+    if (!activeGroupKeys.length) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- route-change sync: reveal the active docs path without overriding later reader clicks.
+    setOpenGroups((prev) => {
+      if (activeGroupKeys.every((key) => prev[key])) return prev
+      return { ...prev, ...Object.fromEntries(activeGroupKeys.map((key) => [key, true])) }
+    })
+  }, [current, activeGroupKeys])
   const isGroupOpen = (name: string) => openGroups[name] === true
   const toggleGroup = (name: string) =>
     setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }))
@@ -152,6 +162,74 @@ export default function Docs() {
   const next = i >= 0 && i < DOCS_ORDER.length - 1 ? DOCS_ORDER[i + 1] : null
   const lastUpdated = formatLastUpdated(current ? docsManifestBySlug.get(current)?.lastUpdated : undefined)
 
+  const renderSidebarEntry = (entry: DocsSidebarEntry, parentPath: string[], depth: number): ReactNode => {
+    if (!isDocsSidebarGroup(entry)) {
+      return entry.to ? (
+        <Link className="ext" to={entry.to} key={entry.to}>
+          <span className="ar-up">↗</span>
+          {navLabel(entry)}
+        </Link>
+      ) : entry.slug ? (
+        <Link
+          to={docPath(entry.slug)}
+          key={entry.slug}
+          className={cx('snav', entry.slug === current && 'on')}
+        >
+          {navLabel(entry)}
+        </Link>
+      ) : null
+    }
+
+    const pathParts = [...parentPath, entry.group]
+    const key = pathParts.join(' / ')
+    const first = entry.items[0]
+    const isTopLevelDirectLink =
+      depth === 0 && entry.items.length === 1 && first && !isDocsSidebarGroup(first)
+
+    if (isTopLevelDirectLink) {
+      if (first.to) {
+        return (
+          <Link className="gt-link ext" to={first.to} key={key}>
+            <span className="ar-up">↗</span>
+            {entry.group}
+          </Link>
+        )
+      }
+      if (first.slug) {
+        return (
+          <Link
+            key={key}
+            to={docPath(first.slug)}
+            className={cx('gt-link', first.slug === current && 'on')}
+          >
+            {entry.group}
+          </Link>
+        )
+      }
+      return null
+    }
+
+    const open = isGroupOpen(key)
+    return (
+      <div className={cx('grp', depth > 0 && 'subgrp', open && 'open')} key={key}>
+        <button
+          type="button"
+          className="gt"
+          aria-expanded={open}
+          onClick={() => toggleGroup(key)}
+        >
+          <span className="gcaret" aria-hidden="true">▸</span>
+          <span>{entry.group}</span>
+        </button>
+        {open && (
+          <div className={cx('grp-items', depth > 0 && 'subitems')}>
+            {entry.items.map((item) => renderSidebarEntry(item, pathParts, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Coming-soon products (Agent / RL) reuse the same three-column docs frame as
   // a live product for layout consistency, but the sidebar carries only the
   // product identity card (no doc tree) and the teaser fills the content column.
@@ -194,68 +272,7 @@ export default function Docs() {
             <div className="prod-name">{prod.name}</div>
           </div>
 
-          {(prod.sidebar ?? []).map((grp) => {
-            // A single-item group (e.g. Overview → Docs Home) is a direct section
-            // link, not a collapsible parent wrapping one child.
-            if (grp.items.length === 1) {
-              const only = grp.items[0]
-              if (only.to) {
-                return (
-                  <Link className="gt-link ext" to={only.to} key={grp.group}>
-                    <span className="ar-up">↗</span>
-                    {grp.group}
-                  </Link>
-                )
-              }
-              if (only.slug) {
-                return (
-                  <Link
-                    key={grp.group}
-                    to={docPath(only.slug)}
-                    className={cx('gt-link', only.slug === current && 'on')}
-                  >
-                    {grp.group}
-                  </Link>
-                )
-              }
-              return null
-            }
-
-            const open = isGroupOpen(grp.group)
-            return (
-              <div className={cx('grp', open && 'open')} key={grp.group}>
-                <button
-                  type="button"
-                  className="gt"
-                  aria-expanded={open}
-                  onClick={() => toggleGroup(grp.group)}
-                >
-                  <span className="gcaret" aria-hidden="true">▸</span>
-                  <span>{grp.group}</span>
-                </button>
-                {open && (
-                  <div className="grp-items">
-                    {grp.items.map((it) =>
-                      it.to ? (
-                        <Link className="ext" to={it.to} key={it.to}>
-                          <span className="ar-up">↗</span>
-                          {navLabel(it)}
-                        </Link>
-                      ) : it.slug ? (
-                        <Link
-                          to={docPath(it.slug)}
-                          key={it.slug}
-                          className={cx('snav', it.slug === current && 'on')}
-                        >
-                          {navLabel(it)}
-                        </Link>
-                      ) : null,
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {(prod.sidebar ?? []).map((grp) => renderSidebarEntry(grp, [], 0))}
         </nav>
 
         {/* CONTENT */}

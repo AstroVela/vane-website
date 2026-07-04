@@ -10,12 +10,21 @@ type SidebarItem = {
 
 type SidebarGroup = {
   group: string
-  items: SidebarItem[]
+  items: SidebarEntry[]
 }
 
-const dataSlugs = (dataSidebar as SidebarGroup[]).flatMap((group) =>
-  group.items.map((item) => item.slug).filter((slug): slug is string => Boolean(slug)),
-)
+type SidebarEntry = SidebarItem | SidebarGroup
+
+const collectSlugs = (entries: SidebarEntry[]): string[] =>
+  entries.flatMap((entry) =>
+    'group' in entry
+      ? collectSlugs(entry.items)
+      : entry.slug
+        ? [entry.slug]
+        : [],
+  )
+
+const dataSlugs = collectSlugs(dataSidebar as SidebarGroup[])
 
 // Mirror src/docs/products.ts. Kept inline so this Node-side plugin does not
 // import the React/MDX registry. `data` is the only live product today; agent

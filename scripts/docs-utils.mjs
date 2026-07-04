@@ -87,14 +87,35 @@ export function lastUpdatedFromFrontmatter(frontmatter) {
 
 export function sidebarSlugs(sidebar, sidebarPath, onError = () => {}) {
   const slugs = []
+  const visit = (entries) => {
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') {
+        onError(sidebarPath, 0, 'Each sidebar entry must be an object.')
+        continue
+      }
+      if (typeof entry.group === 'string') {
+        if (!Array.isArray(entry.items)) {
+          onError(sidebarPath, 0, 'Each sidebar group must have a group string and items array.')
+          continue
+        }
+        visit(entry.items)
+        continue
+      }
+      if (entry.slug) slugs.push(entry.slug)
+    }
+  }
+
+  if (!Array.isArray(sidebar)) {
+    onError(sidebarPath, 0, 'Sidebar must be an array.')
+    return slugs
+  }
+
   for (const group of sidebar) {
     if (!group || typeof group.group !== 'string' || !Array.isArray(group.items)) {
       onError(sidebarPath, 0, 'Each sidebar group must have a group string and items array.')
       continue
     }
-    for (const item of group.items) {
-      if (item.slug) slugs.push(item.slug)
-    }
+    visit(group.items)
   }
   return slugs
 }
@@ -152,19 +173,26 @@ export function buildManifest({ root, registryPath, sidebarPath }) {
     })
   }
 
+  const manifestEntry = (entry) => {
+    if (entry.group) {
+      return {
+        group: entry.group,
+        items: entry.items.map(manifestEntry),
+      }
+    }
+    if (entry.slug) {
+      const page = pageBySlug.get(entry.slug)
+      return page ? { slug: entry.slug, label: entry.label ?? page.title, route: page.route } : { slug: entry.slug }
+    }
+    return { label: entry.label, to: entry.to }
+  }
+
   const groups = sidebar.map((group) => ({
     group: group.group,
-    items: group.items
-      .map((item) => {
-        if (item.slug) {
-          const page = pageBySlug.get(item.slug)
-          return page ? { slug: item.slug, label: item.label ?? page.title, route: page.route } : { slug: item.slug }
-        }
-        return { label: item.label, to: item.to }
-      }),
+    items: group.items.map(manifestEntry),
   }))
 
-  const orderedSlugs = groups.flatMap((group) => group.items.map((item) => item.slug).filter(Boolean))
+  const orderedSlugs = sidebarSlugs(sidebar, sidebarPath)
   const pagesInOrder = orderedSlugs.map((slug) => pageBySlug.get(slug)).filter(Boolean)
 
   return {
