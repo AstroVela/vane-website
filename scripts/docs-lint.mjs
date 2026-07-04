@@ -21,6 +21,9 @@ const root = process.cwd()
 const docsDir = path.join(root, 'docs')
 const registryPath = path.join(root, 'src/docs/registry.ts')
 const sidebarPath = path.join(root, 'src/docs/sidebar.data.json')
+const legacySlugsPath = path.join(root, 'src/docs/legacySlugs.ts')
+const docsPagePath = path.join(root, 'src/pages/Docs.tsx')
+const routesPath = path.join(root, 'src/plugins/vaneRoutes.ts')
 const errors = []
 
 function addError(file, line, message) {
@@ -71,6 +74,54 @@ function checkRegistryAndSidebar(pages, sidebar, docFiles) {
     if (!registeredSources.has(docSource)) {
       addError(file, 0, 'MDX file is not registered in DOCS_PAGES.')
     }
+  }
+}
+
+function parseLegacyDocSlugs() {
+  const source = readText(legacySlugsPath)
+  const block = source.match(/export const LEGACY_DOC_SLUGS = \{([\s\S]*?)\}\s+as const/)
+  if (!block) {
+    addError(legacySlugsPath, 0, 'Unable to locate LEGACY_DOC_SLUGS.')
+    return []
+  }
+
+  return Array.from(block[1].matchAll(/'([^']+)':\s*'([^']+)'/g), (match) => ({
+    legacy: match[1],
+    canonical: match[2],
+  }))
+}
+
+function checkLegacyDocRoutes(pages, sidebar) {
+  const legacySlugs = parseLegacyDocSlugs()
+  if (legacySlugs.length === 0) return
+
+  const sidebarSlugSet = new Set(sidebarSlugs(sidebar, sidebarPath, addError))
+  for (const { legacy, canonical } of legacySlugs) {
+    if (!pages.has(canonical)) {
+      addError(legacySlugsPath, 0, `Legacy docs slug "${legacy}" maps to unregistered slug "${canonical}".`)
+    }
+    if (pages.has(legacy)) {
+      addError(legacySlugsPath, 0, `Legacy docs slug "${legacy}" should not be registered as a canonical page.`)
+    }
+    if (sidebarSlugSet.has(legacy)) {
+      addError(sidebarPath, 0, `Legacy docs slug "${legacy}" should not appear in the sidebar.`)
+    }
+  }
+
+  const docsPage = readText(docsPagePath)
+  if (!docsPage.includes('resolveLegacyDocSlug(slug)')) {
+    addError(docsPagePath, 0, 'Docs page must resolve legacy docs slugs before page lookup.')
+  }
+
+  const routes = readText(routesPath)
+  if (!routes.includes('LEGACY_DOC_SLUG_LIST')) {
+    addError(routesPath, 0, 'Docs routes must register legacy docs slugs.')
+  }
+  if (!/LEGACY_DOC_SLUG_LIST\.forEach\(\(slug\) => docsRoute\(`\/docs\/\$\{product\}\/\$\{slug\}`\)\)/.test(routes)) {
+    addError(routesPath, 0, 'Docs routes must keep product-scoped legacy docs URLs working.')
+  }
+  if (!/LEGACY_DOC_SLUG_LIST\.forEach\(\(slug\) => docsRoute\(`\/docs\/\$\{slug\}`\)\)/.test(routes)) {
+    addError(routesPath, 0, 'Docs routes must keep legacy default-product docs URLs working.')
   }
 }
 
@@ -153,6 +204,7 @@ const pages = parseRegistry(registryPath, addError)
 const sidebar = parseSidebar(sidebarPath, addError)
 const docFiles = checkDocs(pages)
 checkRegistryAndSidebar(pages, sidebar, docFiles)
+checkLegacyDocRoutes(pages, sidebar)
 
 if (errors.length > 0) {
   console.error(`docs lint failed with ${errors.length} issue${errors.length === 1 ? '' : 's'}:`)

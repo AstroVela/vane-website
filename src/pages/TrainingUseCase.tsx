@@ -8,49 +8,108 @@ import Eyebrow from '../components/Eyebrow'
 import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
 import TrainingDataFactoryAnimation from '../components/TrainingDataFactoryAnimation'
-
-const DESIGN_PARTNER_HREF = 'mailto:hello@vane.ai?subject=Vane%20multimodal%20training%20data%20design%20partner'
-
-const HERO_CODE = `import vane
-from vane.ai import describe, embed
-
-vane.configure(runner="ray")
-items = vane.read("s3://training-corpus/*")             # images, video, audio, docs, logs
-labeled = describe(items, columns=["image", "video", "audio", "text"],
-                   model="your-caption-or-label-model", num_gpus=1)
-clean = labeled.dedup("content_hash").write("s3://dataset-releases/mm-v42/")`
+import PixelIcon, { type PixelIconName } from '../components/PixelIcon'
+import { TRAINING_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
 const PIPELINE_CODE = `import vane
-from vane.ai import describe, embed
 
 vane.configure(runner="ray")
+con = vane.connect()
 
-items = vane.sql("""
-    SELECT uri, media_type, text, metadata
-    FROM read_files('s3://training-corpus/*')
-    WHERE split = 'train'
+# Select train records from the raw manifest.
+raw = con.sql("""
+select id, uri, media_type, text, metadata, content_hash
+from read_parquet('s3://training-corpus/manifest/*.parquet')
+where split = 'train'
 """)
 
-# 1) caption or auto-label as a GPU UDF, batched on Ray
-labeled = describe(items, columns=["image", "video", "audio", "text"],
-                   model="your-caption-or-label-model",
-                   num_gpus=1, batch_size=64)
+# Decode media and run captioning / labeling on Ray actors.
+labeled = raw.map_batches(
+    CaptionAndScore, schema=release_schema,
+    execution_backend="ray_actor", gpus=1, batch_size=64,
+)
+labeled.to_table("labeled")
 
-# 2) filter low-quality items, dedup, embed for retrieval/QC
-filtered = labeled.filter("quality_score >= 0.8")
-unique = filtered.dedup("content_hash")
-enriched = embed(unique, "caption", provider="transformers")
+# Filter by quality, dedupe by content hash, then embed captions.
+release = con.sql("""
+select * exclude rn
+from (
+  select *, row_number() over (
+    partition by content_hash order by quality_score desc
+  ) as rn
+  from labeled
+  where quality_score >= 0.8
+)
+where rn = 1
+""").embed_text(
+    "caption",
+    provider="transformers",
+    execution_backend="ray_actor",
+)
 
-# 3) write the packaged dataset release
-enriched.write_parquet("s3://dataset-releases/mm-v42/")`
-
-const RUN_CODE = `pip install -i https://test.pypi.org/simple/ vane-ai
-python -m vane_examples.training_data_pipeline
-
-# runs the sample multimodal training-data pipeline end-to-end on a single GPU`
+# Publish a versioned training-data release.
+release.write_parquet("s3://dataset-releases/mm-v42/")`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
+}
+
+const HERO_MODALITIES: Array<{ icon: PixelIconName; label: string; sub: string }> = [
+  { icon: 'vision', label: 'IMAGE', sub: 'jpg · webp' },
+  { icon: 'video', label: 'VIDEO', sub: 'mp4 · frames' },
+  { icon: 'audio', label: 'AUDIO', sub: 'wav · pcm' },
+  { icon: 'embeddings', label: 'TEXT', sub: 'caption · doc' },
+  { icon: 'sensor', label: 'SENSOR', sub: 'lidar · pose' },
+]
+
+function TrainingHeroShape() {
+  return (
+    <div className="training-hero-art" aria-label="Five raw modalities — image, video, audio, text, and sensor — converging through the Vane engine into a versioned training-dataset release">
+     <div className="thg-stage">
+      <svg className="training-art-flow" viewBox="0 0 486 420" role="presentation" focusable="false">
+        {/* raw modalities fan into the engine */}
+        <path className="fan" d="M154 113 C 172 132 186 182 194 206" />
+        <path className="fan" d="M154 167 C 174 180 188 197 194 208" />
+        <path className="fan" d="M154 221 C 174 218 188 213 194 210" />
+        <path className="fan" d="M154 275 C 174 262 188 224 194 212" />
+        <path className="fan" d="M154 329 C 172 300 186 236 194 214" />
+        {/* the engine emits one unified release */}
+        <path className="emit" d="M302 210 C 320 220 322 246 338 251" />
+        <path className="emit-head" d="M331 245 L340 251 L331 257" />
+      </svg>
+
+      <div className="training-art-orbit orbit-lens" aria-hidden="true" />
+
+      <div className="thg-inputs" aria-hidden="true">
+        {HERO_MODALITIES.map((m) => (
+          <span className="thg-chip" key={m.label}>
+            <span className="ic"><PixelIcon name={m.icon} size={15} /></span>
+            <span className="thg-chip-copy">
+              <b>{m.label}</b>
+              <small>{m.sub}</small>
+            </span>
+          </span>
+        ))}
+      </div>
+
+      <div className="thg-engine" aria-hidden="true">
+        <span className="thg-engine-title">VANE</span>
+        <span className="thg-engine-core" />
+        <span className="thg-engine-ops">decode · caption<br />score · embed</span>
+      </div>
+
+      <div className="thg-release" aria-hidden="true">
+        <span className="thg-score"><i /><i /><i /><i /></span>
+        <span className="thg-card" />
+        <span className="thg-card" />
+        <span className="thg-card" />
+      </div>
+
+      <div className="training-art-label label-source">raw · multimodal</div>
+      <div className="training-art-label label-release">dataset release</div>
+     </div>
+    </div>
+  )
 }
 
 function Advantage({
@@ -85,10 +144,7 @@ function Advantage({
 
 export default function TrainingUseCase() {
   const brokenLinks = useBrokenLinks()
-  brokenLinks.collectAnchor('benchmark')
   brokenLinks.collectAnchor('code')
-  brokenLinks.collectAnchor('run-it')
-  brokenLinks.collectAnchor('poc')
 
   return (
     <>
@@ -104,27 +160,24 @@ export default function TrainingUseCase() {
 
       <Nav />
 
-      {/* HERO */}
-      <section className="hero training-hero">
-        <div className="wrap hero-grid">
-          <div>
+      {/* HERO — solutions intro archetype: editorial copy + primary actions,
+          leading straight into the execution timeline animation */}
+      <section className="intro training-hero">
+        <div className="wrap training-hero-grid">
+          <div className="training-hero-copy">
             <Eyebrow style={{ marginBottom: 20 }}>Use Case · Multimodal Model Training</Eyebrow>
             <h1 className="h1">
               From raw multimodal data to training-ready dataset releases.
             </h1>
-            <p className="lead" style={{ marginTop: 24, maxWidth: 620 }}>
-              VLMs, video models, VLA models, and physical AI systems all depend on the same hard data work: select, decode, caption, label, embed, deduplicate, filter, and package multimodal data at training scale. Vane runs that pipeline as one Ray-backed graph.
+            <p className="lead">
+              Prepare multimodal training data with one Ray-backed graph: select raw records, run GPU captioning or labeling, filter and dedupe in SQL, embed captions, and write a versioned release.
             </p>
-            <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap' }}>
-              <Button solid to="/benchmarks" arrow>See benchmarks</Button>
-              <Button to="/docs/examples/training-data-pipeline" arrow>Run the pipeline</Button>
-            </div>
-            <div className="install" style={{ marginTop: 28 }}>
-              <span className="c"><span className="p">$</span> pip install vane-ai</span>
-              <span>·</span><span>Apache-2.0</span>
+            <div className="training-hero-actions">
+              <Button solid to="/docs/examples/training-data-pipeline" arrow>Run the pipeline</Button>
+              <Button href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>Request a demo</Button>
             </div>
           </div>
-          <CodeWindow filename="training_release.py" running code={HERO_CODE} language="python" />
+          <TrainingHeroShape />
         </div>
       </section>
 
@@ -145,7 +198,7 @@ export default function TrainingUseCase() {
             <Advantage
               title="Performance — higher throughput, fuller GPUs"
               cost="Training-scale multimodal data preparation, offline captioning, auto-labeling, quality scoring, embedding, deduplication, and historical reprocessing are all bottlenecked on throughput and GPU utilization. That's where the bill is."
-              href="#benchmark"
+              href="/benchmarks"
               cta="See the benchmarks"
               bullets={[
                 {
@@ -188,97 +241,30 @@ export default function TrainingUseCase() {
 
       <Divider />
 
-      {/* BENCHMARK */}
-      <section className="section" id="benchmark" style={{ padding: '52px 0 56px' }}>
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>Proof · Performance</Eyebrow>
-            <h2 className="h2">Measured, and reproducible.</h2>
-            <p className="lead">
-              The headline benchmark measures the bottleneck many multimodal training pipelines hit first: high-throughput batch model inference for captioning, labeling, scoring, and embedding.
-            </p>
-          </div>
-          <div className="training-proof-grid">
-            <Box style={{ padding: '28px 30px' }}>
-              <div className="azt" style={{ textAlign: 'left' }}>vLLM batch inference · 66K rows · 2x A100</div>
-              <div className="training-stat">3.1×</div>
-              <p className="mut" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5 }}>
-                throughput vs Ray Data, with prefix bucketing on identical hardware.
-              </p>
-              <Button sm to="/benchmarks" arrow style={{ marginTop: 22 }}>Full benchmarks</Button>
-            </Box>
-            <Box flat className="training-matrix">
-              <div className="azt" style={{ textAlign: 'left' }}>Reproducible public multimodal matrix</div>
-              <div className="training-matrix-grid">
-                <span><b>~20× Spark</b><em>image classification</em></span>
-                <span><b>~2× Daft</b><em>document embedding</em></span>
-                <span><b>~1.2× Ray Data</b><em>audio and video workloads</em></span>
-              </div>
-              <p>Workload-dependent · fully reproducible. Use the benchmark scripts as a starting point, then rerun with your own media mix, filters, and captioning or auto-label model.</p>
-            </Box>
-          </div>
-        </div>
-      </section>
-
-      <Divider />
-
       {/* CODE */}
       <section className="section" id="code" style={{ padding: '52px 0 56px' }}>
         <div className="wrap">
-          <div className="shead">
-            <Eyebrow>Representative code</Eyebrow>
-            <h2 className="h2">The training-data release pipeline in one graph.</h2>
-            <p className="lead">
-              File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline.
-            </p>
-          </div>
-          <CodeWindow filename="training_data_release.py" code={PIPELINE_CODE} language="python" />
-          <p className="mut" style={{ maxWidth: 760, margin: '18px auto 0', fontSize: 13.5, lineHeight: 1.55 }}>
-            For Physical AI and VLA training, the same pipeline can read camera, lidar, trajectories, actions, calibration, and scene metadata.
-          </p>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* RUN IT */}
-      <section className="section" id="run-it" style={{ padding: '52px 0 56px' }}>
-        <div className="wrap">
-          <div className="training-run-grid">
-            <div>
-              <Eyebrow>Run it</Eyebrow>
-              <h2 className="h2" style={{ marginTop: 12 }}>Start with the training-data example.</h2>
-              <p className="lead" style={{ marginTop: 14 }}>
-                Install the pre-release, run the sample multimodal training-data pipeline, then swap the sample manifest for your images, video, audio, documents, tables, or sensor logs.
+          <div className="training-code-layout">
+            <div className="training-code-copy">
+              <Eyebrow>Representative code</Eyebrow>
+              <h2 className="h2">The training-data release pipeline in one graph.</h2>
+              <p className="lead">
+                File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline.
               </p>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 24 }}>
-                <Button solid to="/docs/examples/training-data-pipeline" arrow>Open the example</Button>
-                <Button to="/benchmarks">Benchmark scripts</Button>
+              <div className="training-code-steps" aria-label="Pipeline stages shown in the representative code">
+                <span>SQL selection</span>
+                <span>Ray GPU UDF</span>
+                <span>SQL quality gate</span>
+                <span>Embedding + release</span>
               </div>
-            </div>
-            <CodeWindow filename="run.sh" code={RUN_CODE} language="bash" />
-          </div>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* POC */}
-      <section className="section" id="poc" style={{ padding: '52px 0 56px' }}>
-        <div className="wrap">
-          <Box className="training-poc">
-            <div>
-              <Eyebrow>Do a POC</Eyebrow>
-              <h2 className="h2" style={{ marginTop: 12 }}>Estimate your training-data processing cost.</h2>
-              <p className="lead" style={{ marginTop: 14 }}>
-                Point your code agent at our docs (llms.txt) and it'll scaffold a pipeline for your data schema. Curious whether Vane would lower your captioning, auto-labeling, or historical reprocessing bill? Bring your numbers — let's run the math together.
+              <p className="training-code-note">
+                CaptionAndScore is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns.
               </p>
             </div>
-            <div className="training-poc-actions">
-              <Button solid href={DESIGN_PARTNER_HREF} arrow>Become a design partner</Button>
-              <Button href="https://vane.dev/docs/llms.txt">Open llms.txt</Button>
+            <div className="training-code-showcase">
+              <CodeWindow filename="training_data_release.py" code={PIPELINE_CODE} language="python" />
             </div>
-          </Box>
+          </div>
         </div>
       </section>
 
@@ -287,9 +273,9 @@ export default function TrainingUseCase() {
       {/* CTA */}
       <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">
-          <Cta title="Preparing multimodal training data at scale? Let's make Vane fit your release pipeline.">
-            <Button solid href={DESIGN_PARTNER_HREF} arrow>Become a design partner</Button>
-            <Button to="/docs">Read the docs</Button>
+          <Cta title="Build a reproducible multimodal training-data pipeline.">
+            <Button solid href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>Become a design partner</Button>
+            <Button to="/docs/examples">Read the docs</Button>
           </Cta>
         </div>
       </section>

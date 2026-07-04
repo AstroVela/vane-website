@@ -81,6 +81,10 @@ export function parseFrontmatter(file, onError = () => {}) {
   return data
 }
 
+export function lastUpdatedFromFrontmatter(frontmatter) {
+  return frontmatter.lastUpdated || undefined
+}
+
 export function sidebarSlugs(sidebar, sidebarPath, onError = () => {}) {
   const slugs = []
   for (const group of sidebar) {
@@ -137,12 +141,14 @@ export function buildManifest({ root, registryPath, sidebarPath }) {
   const pageBySlug = new Map()
   for (const [slug, page] of pages.entries()) {
     const sourcePath = path.join(root, page.source)
+    const frontmatter = existsSync(sourcePath) ? parseFrontmatter(sourcePath) : {}
     pageBySlug.set(slug, {
       slug,
       title: page.title,
       source: page.source,
       route: routeForSlug(slug),
-      frontmatter: existsSync(sourcePath) ? parseFrontmatter(sourcePath) : {},
+      lastUpdated: lastUpdatedFromFrontmatter(frontmatter),
+      frontmatter,
     })
   }
 

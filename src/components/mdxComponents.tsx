@@ -13,6 +13,7 @@
 import { isValidElement, type ComponentPropsWithoutRef, type PropsWithChildren, type ReactNode } from 'react'
 import type {MDXComponents} from 'mdx/types'
 import CodeWindow from './CodeWindow'
+import DataArchitecture from './DataArchitecture'
 import { Link } from '../router'
 
 type CalloutProps = PropsWithChildren<{
@@ -123,4 +124,5 @@ export const mdxComponents: MDXComponents = {
   CodeWindow,
   Callout,
   Lead,
+  DataArchitecture,
 }

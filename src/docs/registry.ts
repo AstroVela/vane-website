@@ -27,7 +27,7 @@ import SqlMultimodalPipelineDoc from '../../docs/guides/sql-multimodal-pipeline.
 import InstallationDoc from '../../docs/quickstart/installation.mdx'
 import QuickstartPythonDoc from '../../docs/quickstart/quickstart-python.mdx'
 import QuickstartSqlDoc from '../../docs/quickstart/quickstart-sql.mdx'
-import WhatIsVaneDoc from '../../docs/quickstart/what-is-vane.mdx'
+import WhatIsVaneDoc from '../../docs/quickstart/what-is-vane-data.mdx'
 
 export type DocPage = {
   Component: ComponentType
@@ -41,10 +41,10 @@ export const DOCS_PAGES = {
     source: 'docs/index.mdx',
     title: 'Vane Data Docs',
   },
-  'quickstart/what-is-vane': {
+  'quickstart/what-is-vane-data': {
     Component: WhatIsVaneDoc,
-    source: 'docs/quickstart/what-is-vane.mdx',
-    title: 'What Is Vane?',
+    source: 'docs/quickstart/what-is-vane-data.mdx',
+    title: 'What Is Vane Data?',
   },
   'quickstart/installation': {
     Component: InstallationDoc,

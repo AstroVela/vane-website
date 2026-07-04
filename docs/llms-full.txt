@@ -51,7 +51,7 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 
 ## Documentation map
 
-- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane), [Installation](/docs/data/quickstart/installation), [SQL quickstart](/docs/data/quickstart/quickstart-sql), [Python quickstart](/docs/data/quickstart/quickstart-python)
+- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane-data), [Installation](/docs/data/quickstart/installation), [SQL quickstart](/docs/data/quickstart/quickstart-sql), [Python quickstart](/docs/data/quickstart/quickstart-python)
 - Concepts: [Architecture](/docs/data/concepts/architecture), [Execution model](/docs/data/concepts/execution-model), [SQL vs Python](/docs/data/concepts/sql-vs-python), [UDFs](/docs/data/concepts/udfs), [AI functions](/docs/data/concepts/ai-functions)
 - Task guides: [Multimodal ingest](/docs/data/guides/multimodal-ingest), [Embeddings at scale](/docs/data/guides/embeddings-at-scale), [Dedup and clean](/docs/data/guides/dedup-and-clean), [SQL multimodal pipeline](/docs/data/guides/sql-multimodal-pipeline), [Doris integration](/docs/data/guides/doris-integration), [Iceberg and lakehouse](/docs/data/guides/iceberg-lakehouse), [GPU inference UDF](/docs/data/guides/gpu-inference-udf), [Performance tuning](/docs/data/guides/performance-tuning)
 - Examples: [Examples index](/docs/data/examples), [Training data pipeline](/docs/data/examples/training-data-pipeline), [Insurance document audit](/docs/data/examples/insurance-document-audit), [Tender compliance check](/docs/data/examples/tender-compliance-check), [Multimodal data lake](/docs/data/examples/multimodal-data-lake)
@@ -59,16 +59,18 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 - Contributing: [Development](/docs/data/contributing/development)
 - Machine-readable entries: `docs/llms.txt`, `docs/llms-full.txt`
 
-## What Is Vane?
+## What Is Vane Data?
 
-Route: /docs/data/quickstart/what-is-vane
-Source: docs/quickstart/what-is-vane.mdx
+Route: /docs/data/quickstart/what-is-vane-data
+Source: docs/quickstart/what-is-vane-data.mdx
 
 Vane Data is a Python-first data processing engine for building AI-ready datasets. It combines DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions in one relation workflow.
 
 Use Vane Data when your data is already structured or can be represented as rows, but the pipeline still needs Python libraries, model inference, embeddings, prompting, media processing, or distributed execution before the data is ready for training, search, analytics, or application systems.
 
 The distribution package is `vane-ai`; the Python import package is `vane`.
+
+<DataArchitecture />
 
 ## The role Vane Data plays
 
@@ -2723,21 +2725,15 @@ Then use `ray_task` or `ray_actor` on the UDF or AI helper stage that needs dist
 Route: /docs/data/examples/training-data-pipeline
 Source: docs/examples/training-data-pipeline.mdx
 
-This example page shows a common pattern for preparing text training or retrieval data with Vane Data.
-
-The repository scripts that cover this area are:
-
-- `examples/common_crawl.py`
-- `examples/minhash_dedupe.py`
-- `examples/llms_red_pajamas.py`
+This example page shows a common pattern for preparing multimodal training-data releases with Vane Data.
 
 ## Goal
 
-Prepare text data by filtering raw records, chunking documents, generating embeddings, and removing duplicates or near duplicates before writing a curated dataset.
+Prepare multimodal data by selecting raw records, running a batch captioning or labeling UDF, filtering by quality, deduplicating by content hash, generating embeddings, and writing a versioned Parquet release.
 
 ## Run local samples
 
-The scripts provide sample modes so you can inspect the workflow without Common Crawl, Red Pajama, or network access:
+The repository also includes text-focused sample scripts you can run locally to inspect the same relation patterns without external storage or models:
 
 ```bash
 python examples/common_crawl.py --source sample --limit 5
@@ -2745,32 +2741,88 @@ python examples/minhash_dedupe.py --source sample --limit 10
 python examples/llms_red_pajamas.py --source sample --limit 6
 ```
 
-## Pipeline shape
+## Website code shape
 
-1. Load raw text records.
-2. Filter by language, source type, and minimum text length.
-3. Chunk text into model-sized records.
-4. Generate embeddings with `rel.embed_text(...)` or a custom UDF.
-5. Generate duplicate candidates with MinHash or another similarity method.
-6. Keep representative rows.
-7. Write clean chunks, metadata, and optional embeddings.
+The website shows the shortened pipeline shape. The full example below expands the `CaptionAndScore` UDF and schema.
 
-## Minimal code shape
+```python
+import vane
+vane.configure(runner="ray")
+con = vane.connect()
+raw = con.sql("""
+select id, uri, media_type, text, metadata, content_hash
+from read_parquet('s3://training-corpus/manifest/*.parquet')
+where split = 'train'
+""")
+labeled = raw.map_batches(
+    CaptionAndScore, schema=release_schema,
+    execution_backend="ray_actor", gpus=1, batch_size=64,
+)
+labeled.to_table("labeled")
+release = con.sql("""
+select * exclude rn
+from (
+  select *, row_number() over (
+    partition by content_hash order by quality_score desc
+  ) as rn
+  from labeled
+  where quality_score >= 0.8
+)
+where rn = 1
+""").embed_text(
+    "caption",
+    provider="transformers",
+    execution_backend="ray_actor",
+)
+release.write_parquet("s3://dataset-releases/mm-v42/")
+```
 
-The code below shows the relation contract. The chunking UDF returns all columns needed by later stages.
+## Full UDF contract
+
+`CaptionAndScore` is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns. Keep the schema narrow and explicit so SQL can own the release filtering and deduplication steps.
 
 ```python
 import pyarrow as pa
-import vane
 
-con = vane.connect()
+release_schema = {
+    "id": "VARCHAR",
+    "uri": "VARCHAR",
+    "media_type": "VARCHAR",
+    "content_hash": "VARCHAR",
+    "caption": "VARCHAR",
+    "quality_score": "DOUBLE",
+    "label": "VARCHAR",
+    "metadata": "VARCHAR",
+}
 
-docs = con.sql("""
-    select id, text, source_uri
-    from read_parquet('data/raw_text/*.parquet')
-    where text is not null and length(text) > 80
-""")
 
+class CaptionAndScore:
+    def __init__(self) -> None:
+        self.model = load_caption_or_label_model()
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        media = decode_media(batch.column("uri"), batch.column("media_type"))
+        predictions = self.model.predict(media)
+
+        return pa.table({
+            "id": batch.column("id"),
+            "uri": batch.column("uri"),
+            "media_type": batch.column("media_type"),
+            "content_hash": batch.column("content_hash"),
+            "caption": [item.caption for item in predictions],
+            "quality_score": [item.quality_score for item in predictions],
+            "label": [item.label for item in predictions],
+            "metadata": batch.column("metadata"),
+        })
+```
+
+The helper functions above are deliberately placeholders. In a production pipeline, define them in an importable module available to every Ray worker, load model state in `__init__`, and return Arrow-compatible values from `__call__`.
+
+## Text-only variant
+
+For text training or retrieval data, the same relation shape applies: select raw records, run a batch UDF, embed the output column, and write the release. The chunking UDF below returns all columns needed by later stages.
+
+```python
 def chunk_rows(batch: pa.Table) -> pa.Table:
     ids = batch.column("id").to_pylist()
     texts = batch.column("text").to_pylist()
@@ -2794,6 +2846,12 @@ def chunk_rows(batch: pa.Table) -> pa.Table:
         "chunk_text": out_text,
         "source_uri": out_source_uri,
     })
+
+docs = con.sql("""
+    select id, text, source_uri
+    from read_parquet('data/raw_text/*.parquet')
+    where text is not null and length(text) > 80
+""")
 
 chunks = docs.map_batches(
     chunk_rows,
@@ -2828,7 +2886,7 @@ embedded = con.from_arrow(chunk_table.append_column("embedding", embedding_table
 embedded.write_parquet("output/training_chunks/")
 ```
 
-For large datasets, prefer the implementation pattern used by `examples/common_crawl.py`, where the combine step is explicit and validated, or implement embedding as a custom batch UDF that returns all required columns.
+For large datasets, prefer an implementation pattern where joins or combine steps are explicit and validated, or implement embedding as a custom batch UDF that returns all required columns.
 
 ## Scale-out
 
@@ -2851,12 +2909,14 @@ Every Ray worker must be able to import the UDF code and access the same storage
 ## Recommended output columns
 
 - `id`
-- `chunk_id`
-- `chunk_text`
-- `source_uri`
+- `uri`
+- `media_type`
+- `caption`
+- `quality_score`
+- `label`
+- `content_hash`
 - `embedding`
-- `duplicate_component_id`
-- `is_representative`
+- `metadata`
 
 ## Scope notes
 

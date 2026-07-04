@@ -1,208 +1,131 @@
+import Box from './Box'
 import Eyebrow from './Eyebrow'
 
-const inputCards = [
-  ['video', 'camera frames'],
-  ['lidar', 'LiDAR sweeps'],
-  ['pose', 'radar returns'],
-  ['can', 'ego pose + calib'],
+/* Site-native execution-timeline diagram: the shared multimodal pipeline is
+   drawn once as a columnar flow, then Legacy and Vane execution are compared
+   as wait/idle vs overlapped/full-GPU lanes. */
+
+/* The pipeline as a convergent left-to-right flow; each inner array is one
+   column, arrows are drawn between columns. */
+const PIPELINE: string[][] = [
+  ['camera frames', 'LiDAR sweeps', 'radar returns', 'ego pose + calib'],
+  ['decode frames', 'load sweeps'],
+  ['time sync', 'ego-pose align'],
+  ['sensor projection'],
+  ['label + track', 'sample embed'],
 ]
 
-const legacyLinkPaths = [
-  'M 129 24 C 137 24 137 29 146 29',
-  'M 129 66 C 137 66 137 83 146 83',
-  'M 129 108 C 137 108 137 83 146 83',
-  'M 129 150 C 178 150 224 117 279 117',
-  'M 260 29 C 268 29 270 63 279 63',
-  'M 260 83 C 268 83 270 63 279 63',
-  'M 327 81 C 327 89 336 91 336 99',
-  'M 394 117 C 418 117 418 35 400 35',
-  'M 459 53 C 459 62 454 64 454 73',
-  'M 454 109 C 454 117 454 121 454 129',
-]
+const PIPELINE_LABELS = ['inputs', 'decode', 'align', 'fuse', 'package']
 
-const vaneLinkPaths = [
-  'M 129 24 C 137 24 137 29 146 29',
-  'M 129 66 C 137 66 137 83 146 83',
-  'M 129 108 C 137 108 137 83 146 83',
-  'M 129 150 C 178 150 224 117 279 117',
-  'M 260 29 C 268 29 270 63 279 63',
-  'M 260 83 C 268 83 270 63 279 63',
-  'M 327 81 C 327 89 336 91 336 99',
-  'M 394 117 C 384 91 392 61 400 35',
-  'M 459 53 C 459 62 454 64 454 73',
-  'M 454 109 C 454 117 454 121 454 129',
-]
-
-const legacyNodes = [
-  ['node-decode', 'decode frames'],
-  ['node-load', 'load sweeps'],
-  ['node-sync', 'time sync'],
-  ['node-label', 'ego-pose align'],
-  ['node-project', 'sensor projection'],
-  ['node-embed', 'label + track'],
-  ['node-manifest', 'sample embed'],
-]
-
-const vaneNodes = [
-  ['decode', 'decode frames'],
-  ['load', 'load sweeps'],
-  ['sync', 'time sync'],
-  ['project', 'ego-pose align'],
-  ['infer', 'sensor projection'],
-  ['label', 'label + track'],
-  ['embed', 'sample embed'],
-]
-
-function InputStack({ label }: { label: string }) {
-  return (
-    <div className="input-stack" aria-label={label}>
-      {inputCards.map(([kind, text]) => (
-        <div className={`input-card ${kind}`} key={text}>{text}</div>
-      ))}
-    </div>
-  )
+type Lane = {
+  key: 'legacy' | 'vane'
+  name: string
+  mode: string
+  note: string
+  gpuState: 'IDLE' | 'FULL'
+  gpuNote: string
 }
 
-function Links({ kind }: { kind: 'legacy' | 'vane' }) {
-  const paths = kind === 'vane' ? vaneLinkPaths : legacyLinkPaths
+const LANES: Lane[] = [
+  {
+    key: 'legacy',
+    name: 'Legacy Pipeline',
+    mode: 'serialized waits',
+    note: 'GPU work starts only after CPU decode and full-clip assembly finish.',
+    gpuState: 'IDLE',
+    gpuNote: 'waiting on CPU stages',
+  },
+  {
+    key: 'vane',
+    name: 'Vane Pipeline',
+    mode: 'overlapped streaming',
+    note: 'CPU decode, dynamic batching, and GPU inference stay overlapped.',
+    gpuState: 'FULL',
+    gpuNote: 'CPU and GPU overlap',
+  },
+]
 
+function GpuBars() {
   return (
-    <svg className={`${kind}-links`} viewBox="0 0 500 260" aria-hidden="true">
-      {paths.map((path) => (
-        <path className={`${kind}-link`} d={path} key={path} />
-      ))}
-    </svg>
-  )
-}
-
-function HeroSample() {
-  return (
-    <section className="hero-sample" aria-label="Autonomous driving hero sample">
-      <img src="/img/use-cases/hero-driving-intersection.webp" alt="Autonomous driving camera frame at an urban intersection" />
-      <div className="sample-shade" />
-      <div className="sample-tag raw">camera frame</div>
-      <div className="sample-tag time">ts 00:14.280</div>
-      <div className="sample-tag lidar">LiDAR projection</div>
-      <div className="sample-tag label">vehicle / track 024</div>
-      <div className="sample-tag lineage">lineage attached</div>
-      <div className="sample-lidar" aria-hidden="true">
-        {Array.from({ length: 20 }, (_, index) => <span key={index} />)}
-      </div>
-      <svg className="sample-overlay" viewBox="0 0 360 170" aria-hidden="true">
-        <rect className="box vehicle-box" x="157" y="78" width="62" height="42" rx="4" />
-        <rect className="box cyclist-box" x="275" y="68" width="23" height="47" rx="4" />
-        <path className="track-line" d="M188 124 C190 138 194 147 202 157" />
-        <g className="embedding-dots">
-          <circle cx="285" cy="142" r="3" />
-          <circle cx="297" cy="136" r="2.6" />
-          <circle cx="308" cy="146" r="2.4" />
-          <circle cx="320" cy="139" r="2.8" />
-          <circle cx="332" cy="149" r="2.2" />
-        </g>
-      </svg>
-    </section>
-  )
-}
-
-function QueueStack({ className }: { className: string }) {
-  return (
-    <span className={className}>
-      <i /><i /><i /><i />
+    <span className="tl-gpu-bars" aria-hidden="true">
+      <i /><i /><i /><i /><i />
     </span>
   )
 }
 
-function GpuBars() {
+function GpuCard({ lane }: { lane: Lane }) {
   return (
-    <div className="gpu-bars" aria-hidden="true">
-      <i /><i /><i /><i /><i />
+    <div className={`tl-gpu-card ${lane.key}`}>
+      <span>GPU</span>
+      <b>{lane.gpuState}</b>
+      <GpuBars />
+      <small>{lane.gpuNote}</small>
     </div>
   )
 }
 
-function LegacyPanel() {
+function LegacyExecution() {
   return (
-    <article className="panel legacy">
-      <div className="panel-title">
-        <span className="status-dot red" />
-        <span>Legacy Pipeline</span>
+    <div className="tl-exec-main legacy">
+      <div className="tl-hold-status" aria-label="Legacy waits for the full clip before GPU inference">
+        <span>waiting for full clip</span>
+        <i aria-hidden="true"><span /></i>
       </div>
-
-      <InputStack label="Legacy raw inputs" />
-
-      <div className="legacy-workflow">
-        <Links kind="legacy" />
-        {legacyNodes.map(([className, text]) => (
-          <div className={`node ${className}`} key={className}>{text}</div>
-        ))}
+      <div className="tl-work-row legacy">
+        <span className="tl-work-card cpu">CPU decode</span>
+        <span className="tl-gap-dots" aria-hidden="true">
+          <i /><i /><i />
+        </span>
+        <span className="tl-work-card gpu">GPU infer</span>
       </div>
-
-      <div className="queue-buildup" aria-hidden="true">
-        <QueueStack className="queue-stack queue-a" />
-        <QueueStack className="queue-stack queue-b" />
-        <QueueStack className="queue-stack queue-c" />
-      </div>
-
-      <div className="legacy-wait">
-        <div className="progress-label">waiting for full clip</div>
-        <div className="progress-track"><span /></div>
-      </div>
-
-      <div className="legacy-wait-row" aria-label="Legacy stage wait">
-        <div className="compute cpu">CPU decode</div>
-        <div className="wait-dots" aria-hidden="true"><i /><i /><i /></div>
-        <div className="compute gpu">GPU infer</div>
-      </div>
-
-      <div className="gpu-card legacy-gpu">
-        <header>GPU</header>
-        <strong>IDLE</strong>
-        <GpuBars />
-        <small>waiting on CPU stages</small>
-      </div>
-    </article>
+    </div>
   )
 }
 
-function VanePanel() {
+function VaneExecution() {
   return (
-    <article className="panel vane">
-      <div className="panel-title">
-        <span className="status-dot green" />
-        <span>Vane Pipeline</span>
-      </div>
-
-      <InputStack label="Vane raw inputs" />
-
-      <div className="vane-dag">
-        <Links kind="vane" />
-        {vaneNodes.map(([className, text]) => (
-          <div className={`node ${className}`} key={className}>{text}</div>
-        ))}
-      </div>
-
-      <div className="pipeline-occupancy" aria-hidden="true">
-        <span className="occupancy-pulse pulse-main" />
-        <span className="occupancy-pulse pulse-main pulse-delay-a" />
-        <span className="occupancy-pulse pulse-lidar" />
-        <span className="occupancy-pulse pulse-lidar pulse-delay-b" />
-      </div>
-
-      <div className="compute-row">
-        <div className="compute cpu">CPU decode</div>
-        <div className="batch">
+    <div className="tl-exec-main vane" aria-label="Vane overlaps CPU decode, dynamic batching, and GPU inference">
+      <span className="tl-schedule-flow" aria-hidden="true">
+        <i className="stream-a" />
+        <i className="stream-b" />
+        <i className="stream-c" />
+        <i className="stream-d" />
+      </span>
+      <div className="tl-work-row overlap">
+        <span className="tl-work-card cpu">CPU decode</span>
+        <span className="tl-work-card batch">
           <span>dynamic batch</span>
-          <i />
-        </div>
-        <div className="compute gpu">GPU infer</div>
+          <i aria-hidden="true" />
+        </span>
+        <span className="tl-work-card gpu">GPU infer</span>
+      </div>
+    </div>
+  )
+}
+
+function ExecutionTimeline({ lane }: { lane: Lane }) {
+  return (
+    <div className={`tl-execution ${lane.key}`} aria-label={`${lane.name} execution timeline`}>
+      {lane.key === 'legacy' ? <LegacyExecution /> : <VaneExecution />}
+      <GpuCard lane={lane} />
+    </div>
+  )
+}
+
+function ExecutionPanel({ lane }: { lane: Lane }) {
+  return (
+    <article className={`tl-lane ${lane.key}`}>
+      <div className="tl-lane-head">
+        <span className={`tl-dot ${lane.key}`} />
+        <span className="tl-lane-copy">
+          <b>{lane.name}</b>
+          <small>{lane.mode}</small>
+        </span>
       </div>
 
-      <div className="gpu-card vane-gpu">
-        <header>GPU</header>
-        <strong>FULL</strong>
-        <GpuBars />
-        <small>CPU and GPU overlap</small>
-      </div>
+      <ExecutionTimeline lane={lane} />
+
+      <p className="tl-note">{lane.note}</p>
     </article>
   )
 }
@@ -219,32 +142,43 @@ export default function TrainingDataFactoryAnimation() {
           </p>
         </div>
 
-        <div className="factory-stage-scroll">
-          <main className="stage" aria-label="Vane autonomous data factory animation">
-            <HeroSample />
-
-            <section className="outcome-ledger" aria-label="Performance outcome comparison">
-              <div className="ledger-row legacy-ledger">
-                <b>Legacy</b>
-                <span className="result-badge transfer-result">queue buildup</span>
-                <span className="result-badge wait-result">stage wait</span>
-                <span className="result-badge gpu-result">GPU feed gap</span>
+        <Box className="tl-board">
+          <div className="tl-pipeline">
+            <div className="tl-pipeline-head">
+              <span className="tl-kicker">Same pipeline</span>
+              <span className="tl-pipeline-note">Legacy and Vane run these same stages; the lanes below compare execution.</span>
+            </div>
+            <div className="tl-flow">
+              <figure className="tl-sample">
+                <img src="/img/use-cases/hero-driving-intersection.webp" alt="Camera frame at an urban intersection" />
+                <figcaption>camera frame · ts 00:14.280</figcaption>
+              </figure>
+              <div className="tl-flow-main" aria-label="Multimodal training-data pipeline stages">
+                {PIPELINE.map((column, index) => (
+                  <div className="tl-flow-step" key={PIPELINE_LABELS[index]}>
+                    <span className="tl-mini-label">{PIPELINE_LABELS[index]}</span>
+                    <div className="tl-step-items">
+                      {column.map((label) => (
+                        <span className={index === 0 ? 'tl-chip' : 'tl-stage'} key={label}>
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    {index < PIPELINE.length - 1 && <span className="tl-flow-arrow" aria-hidden="true">→</span>}
+                  </div>
+                ))}
               </div>
-              <div className="ledger-row vane-ledger">
-                <b>Vane</b>
-                <span className="result-badge transfer-result">steady occupancy</span>
-                <span className="result-badge stream-result">streaming frames</span>
-                <span className="result-badge balance-result">balanced pipeline</span>
-              </div>
-            </section>
+            </div>
+          </div>
 
-            <section className="comparison">
-              <LegacyPanel />
-              <div className="divider" aria-hidden="true" />
-              <VanePanel />
-            </section>
-          </main>
-        </div>
+          <div className="tl-divider" aria-hidden="true" />
+
+          <div className="tl-lanes">
+            {LANES.map((lane) => (
+              <ExecutionPanel lane={lane} key={lane.key} />
+            ))}
+          </div>
+        </Box>
       </div>
     </section>
   )

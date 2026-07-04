@@ -9,7 +9,7 @@ const INPUTS = [
 
 const OUTPUTS = [
   { title: 'insights', detail: 'structured signals and issues' },
-  { title: 'evidence', detail: 'file · chunk · quote · confidence' },
+  { title: 'evidence', detail: 'document · rule · source URI' },
   { title: 'recommendations', detail: 'next action with rule context' },
 ]
 

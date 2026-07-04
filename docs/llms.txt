@@ -3,7 +3,7 @@
 Generated from docs/manifest.json. Routes are listed in sidebar order.
 
 - /docs/data: Vane Data Docs.
-- /docs/data/quickstart/what-is-vane: What Is Vane?
+- /docs/data/quickstart/what-is-vane-data: What Is Vane Data?
 - /docs/data/quickstart/installation: Installation.
 - /docs/data/quickstart/quickstart-sql: Quickstart: SQL.
 - /docs/data/quickstart/quickstart-python: Quickstart: Python.

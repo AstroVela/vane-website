@@ -12,16 +12,17 @@ const page = readFileSync(pagePath, 'utf8')
 const component = readFileSync(componentPath, 'utf8')
 const routes = readFileSync(routesPath, 'utf8')
 const footer = readFileSync('src/components/Footer.tsx', 'utf8')
+const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
 
 const mustIncludeInPage = [
   'Enterprise Multimodal Data Infrastructure — Vane',
-  'Turn messy multimodal business materials — PDFs, images, video, scans, forms, spreadsheets, logs, and documents — into auditable facts. One pipeline for files, models, and rules.',
-  'messy materials → auditable facts for enterprise PDFs, images, video, forms, spreadsheets, logs, and documents.',
+  'Use Vane Data to keep parsed document rows, media references, SQL rules, explicit UDF stages, and model-assisted review in one auditable relation workflow.',
+  'Keep source rows, rules, model output, and source references together for enterprise review workflows.',
   'Enterprise Multimodal Data Infrastructure',
   'Turn messy multimodal business materials into auditable facts.',
-  'PDFs, images, video, scans, forms, spreadsheets, logs, and documents — Vane extracts evidence, runs rules, and returns auditable insights, evidence, and recommendations.',
-  'PDFs · images · video · scans · forms · spreadsheets · logs · documents',
+  'Bring parsed document rows, media references, tables, logs, and model outputs into one pipeline. Use SQL for deterministic checks, explicit UDF stages for extraction, and model-assisted review where it belongs.',
+  'document rows · media refs · tables · logs · model outputs',
   'messy materials',
   'auditable facts',
   'insights',
@@ -32,28 +33,56 @@ const mustIncludeInPage = [
   'BEFORE — a fragmented chain',
   'AFTER — one pipeline',
   'scattered systems',
-  'missing provenance',
-  'One pipeline for files, models, and rules',
-  'File extraction, model inference, SQL rules, and review outputs run as one pipeline.',
-  'Every insight comes with evidence',
-  'Each insight carries its proof — source file, chunk, quote, confidence, triggering rule, and review status.',
-  'Scale without rewriting',
-  'Claims evidence pipeline',
-  'photos, scanned forms, estimates',
-  'files → extraction → model → SQL → insight, in one execution plan',
-  'extract_document(media_type, uri)',
-  "prompt('Extract fields as JSON; keep quote and confidence', doc)",
-  "read_files('claims/CLM-POC-001/*')",
-  'provenance()',
-  'recommended_review',
-  'fact.confidence < 0.8',
-  'Runs on public / synthetic proxy data',
-  'python -m vane_examples.claims_evidence',
-  'insights · evidence · recommendations',
-  'Turn a claim packet — photos, scanned forms, estimates — into insights, evidence, and recommendations.',
-  'Have PDFs, images, video, logs, and documents to turn into auditable facts?',
-  'Run the example pipeline',
-  'Become a design partner',
+  'lost source references',
+  'source rows → auditable outputs, as one relation pipeline.',
+  'Compose SQL, UDFs, and model review as relations',
+  'Start with parsed rows and source metadata, then add SQL rules, explicit UDF stages, and model-assisted review without splitting the workflow across separate jobs.',
+  'parsed rows',
+  'SQL rules',
+  'UDF stages',
+  'relation pipeline',
+  'Make source references part of the output',
+  'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
+  'review row',
+  'Move to Ray after local validation',
+  'Validate locally first, then switch runner and UDF backends when distribution helps. The relation shape stays stable; worker storage, dependencies, and credentials still matter.',
+  'local sample',
+  'Ray runner',
+  'same relation shape',
+  'Insurance document audit pattern',
+  'Parsed document table',
+  'document_id',
+  'source_uri',
+  'model review',
+  'audit rows',
+  'insurance_document_audit.py',
+  'from pydantic import BaseModel',
+  'class AuditResult(BaseModel):',
+  'import vane',
+  'const AUDIT_CODE',
+  'const INSURANCE_AUDIT_DOC',
+  '/docs/data/examples/insurance-document-audit',
+  "read_parquet('data/insurance_documents/*.parquet')",
+  "when lower(text) like '%missing signature%' then 'missing_signature'",
+  'audit_only = docs.prompt(',
+  'system_message="Audit the insurance document for missing evidence. Return JSON."',
+  'return_format=AuditResult',
+  'output_column="audit_json"',
+  'docs_table = docs.to_arrow_table()',
+  'audit_table = audit_only.to_arrow_table()',
+  'if docs_table.num_rows != audit_table.num_rows:',
+  'raise ValueError("model output row count changed")',
+  'final = con.sql("""',
+  'select claim_id, document_id, document_type, rule_hit, audit_json, source_uri',
+  'from audited join rule_hits using (document_id, claim_id, document_type, source_uri)',
+  'source_uri',
+  'Vane Data does not ship a dedicated insurance workflow.',
+  'This example shows the SQL and Relation API shape, not a production decision system.',
+  'OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages.',
+  'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
+  'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
+  'Run the pipeline',
+  'Request a demo',
 ]
 
 for (const text of mustIncludeInPage) {
@@ -61,14 +90,15 @@ for (const text of mustIncludeInPage) {
 }
 
 const motifCount = page.match(/<Motif/g)?.length ?? 0
-assert.ok(motifCount >= 3, 'motif should be rendered at least three times')
+assert.ok(motifCount >= 2, 'motif should be rendered in the hero and problem flow')
 
 const codeWindowCount = page.match(/<CodeWindow/g)?.length ?? 0
 assert.equal(codeWindowCount, 1, 'enterprise page should contain exactly one CodeWindow')
 
-assert.match(page, /<div className="enterprise-hero-visual">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise page should place the context animation in the hero right rail')
+assert.match(page, /<section className="intro enterprise-hero">\s*<div className="wrap enterprise-hero-grid">\s*<div className="enterprise-hero-copy">[\s\S]*<h1 className="h1 enterprise-hero-title">[\s\S]*<p className="lead enterprise-hero-lead">[\s\S]*<div className="enterprise-hero-actions">\s*<Button solid to=\{INSURANCE_AUDIT_DOC\} arrow>Run the pipeline<\/Button>\s*<Button href=\{ENTERPRISE_DESIGN_PARTNER_MAILTO\} arrow>Request a demo<\/Button>\s*<\/div>\s*<div className="enterprise-hero-meta">[\s\S]*<div className="enterprise-hero-art">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise hero should match the training two-column copy/action + right-rail visual pattern')
 assert.doesNotMatch(page, /function HeroDiagram|<HeroDiagram \/>|enterprise-hero-diagram/, 'enterprise page should replace the old hero mini diagram with the context animation')
 assert.doesNotMatch(page, /<Divider \/>\s*<EnterpriseContextAnimation \/>\s*<Divider \/>/, 'enterprise page should remove the standalone Context pipeline section')
+assert.doesNotMatch(page, /solution-hero-media|className="enterprise-audience"|extract_document\(media_type, uri\)|provenance\(\)|OCR \/ parse|recommended_review|fact\.confidence < 0\.8|source file, chunk, quote, confidence|<span>extract<\/span>|python -m vane_examples|claims_evidence\.sql|function RunTerminal|const CLAIMS_CODE|prompt\('Audit this document for missing evidence\. Return JSON\.', text\)|rule_hit IS NOT NULL|Runs on public \/ synthetic proxy data|Claims evidence pipeline|missing provenance|One pipeline for parsed files, models, and rules|One pipeline for source rows, models, and rules|Keep evidence beside each output|Scale without rewriting|business logic unchanged|same pipeline|Every insight comes with evidence|Run the example pipeline|Read the docs/, 'enterprise page should not imply built-in OCR/provenance helpers, runnable example modules, SQL scalar prompt helpers, old hero layout, or overclaim local-to-Ray / evidence behavior')
 
 assert.doesNotMatch(component, /import Eyebrow|<section className="section enterprise-context-animation"|enterprise-context-animation|<div className="wrap"|<div className="shead"|Context pipeline|<h2 className="h2">Multimodal context pipeline<\/h2>/, 'enterprise context animation should render as a hero visual, not a standalone section')
 assert.match(component, /contract\.pdf/, 'enterprise context animation should include broad enterprise document examples')
@@ -80,10 +110,18 @@ assert.match(component, /eca-media-grid|eca-waveform|eca-log-lines|eca-video-str
 assert.match(component, /<strong>Vane<\/strong>/, 'enterprise context animation should keep one central Vane mark')
 assert.doesNotMatch(component, /DAG_NODES|Parse documents|Decode media|Normalize tables|Parse logs\/events|Evidence units|Structured signals|Apply rules & package|className:\s*'parse-docs'|edge-docs-evidence|eca-dag|token-docs|token-media|token-tables|token-logs|token-evidence|token-signals|Vane multimodal compute/, 'enterprise context animation should remove all middle DAG nodes, edges, moving DAG tokens, and helper copy')
 assert.match(component, /insights[\s\S]*evidence[\s\S]*recommendations/, 'enterprise context animation should output insights, evidence, and recommendations')
+assert.match(component, /document · rule · source URI/, 'enterprise context animation should describe evidence using the documented output/source-reference shape')
 assert.match(component, /Agent-ready outputs/, 'enterprise context animation should include the richer right-side output panel')
 assert.doesNotMatch(component, /Context received|Evidence checked|Recommendation prepared|eca-agent-trace/, 'enterprise context animation should remove the right-side trace copy')
 assert.doesNotMatch(component, /<span className=\{`eca-dag-node \$\{node\.className\}`\} key=\{node\.label\}>lineage<\/span>|label:\s*'lineage'|lineage kept/, 'enterprise context animation should not model lineage as a DAG node')
-assert.match(css, /\.enterprise-hero-visual\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*flex-end;/, 'enterprise hero should reserve the right rail for the scaled animation')
+assert.match(css, /\.enterprise-hero-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*520px;[\s\S]*align-items:\s*center;/, 'enterprise hero should use a training-like two-column desktop layout')
+assert.match(css, /\.enterprise-hero-art\s*\{[\s\S]*--enterprise-context-scale:\s*0\.8125;[\s\S]*height:\s*calc\(330px \* var\(--enterprise-context-scale\)\);[\s\S]*\.enterprise-hero-art \.enterprise-context-stage\s*\{[\s\S]*right:\s*0;[\s\S]*top:\s*-8px;[\s\S]*width:\s*640px;[\s\S]*transform:\s*scale\(var\(--enterprise-context-scale\)\);[\s\S]*transform-origin:\s*top right;/, 'enterprise hero should reserve a scaled right rail for the context animation')
+assert.match(css, /\.enterprise-hero-title\s*\{[\s\S]*max-width:\s*760px;[\s\S]*font-size:\s*clamp\(34px,\s*4\.6vw,\s*52px\);[\s\S]*\.enterprise-hero-meta\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*\.enterprise-hero-actions\s*\{[\s\S]*display:\s*flex;/, 'enterprise hero layout classes should define title width, meta row, and actions')
+assert.match(page, /HOW_CARDS\.map\(\(card, index\)[\s\S]*enterprise-how-head[\s\S]*enterprise-how-step">STEP \{String\(index \+ 1\)\.padStart\(2, '0'\)\}[\s\S]*enterprise-how-viz-wrap/, 'enterprise how cards should render as numbered process cards')
+assert.match(css, /\.enterprise-how-card\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;[\s\S]*overflow:\s*hidden;[\s\S]*\.enterprise-how-head\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*border-bottom:\s*1\.5px solid var\(--line-2\);[\s\S]*\.enterprise-how-step\s*\{[\s\S]*gap:\s*9px;[\s\S]*font-family:\s*var\(--font-pixel\);[\s\S]*\.enterprise-how-step::after\s*\{[\s\S]*background:\s*var\(--line-2\);[\s\S]*\.enterprise-how-viz-wrap\s*\{[\s\S]*background-size:\s*34px 34px, 34px 34px, auto;/, 'enterprise how cards should use a designed numbered process layout')
+assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*\.enterprise-hero-grid,[\s\S]*grid-template-columns:\s*1fr;[\s\S]*\.enterprise-hero-art\s*\{[\s\S]*justify-content:\s*center;/, 'enterprise hero should stack cleanly on tablet and mobile widths')
+assert.doesNotMatch(css, /\.solution-hero-media/, 'enterprise hero should not keep the old centered-below media selector')
+assert.doesNotMatch(css, /\.enterprise-audience\s*\{/, 'enterprise hero should remove the redundant audience-only style')
 assert.match(css, /\.enterprise-context-stage\s*\{[\s\S]*width:\s*min\(100%,\s*640px\);[\s\S]*height:\s*330px;/, 'enterprise context animation should restore the previous hero-right stage size')
 assert.match(css, /\.eca-input-world\s*\{[\s\S]*left:\s*18px;[\s\S]*top:\s*24px;[\s\S]*width:\s*185px;[\s\S]*\.eca-output-world\s*\{[\s\S]*right:\s*18px;[\s\S]*top:\s*24px;[\s\S]*width:\s*190px;/, 'enterprise context animation should restore the previous left and right rail sizes')
 assert.match(css, /\.eca-source-card\s*\{[\s\S]*width:\s*112px;[\s\S]*min-height:\s*74px;/, 'enterprise context animation should restore the previous input card scale')
@@ -106,10 +144,14 @@ assert.doesNotMatch(component, /citation-return|Citation return|Needs review|Con
 assert.doesNotMatch(css, /citation-return|color-scheme:\s*dark|neon|box-shadow:\s*0 28px 90px/, 'enterprise context animation styles should not bring over the dark demo treatment or citation return')
 
 assert.doesNotMatch(page, /What You Get|Not a verdict|WhatYouGetDiagram|enterprise-object-diagram/, 'enterprise page should not include the What You Get section')
-assert.doesNotMatch(page, /Claims, compliance and document review|claims teams|compliance teams|document review teams|Run the claims pipeline|Have a stack of claims|Enterprise Multimodal Agent Infrastructure|WHERE confidence < 0\.8|finding \+ evidence|review task|case summary|claim summary|review_tasks|evidence · review · summary|Every finding comes with evidence|auditable findings|SQL → finding/, 'enterprise page should not include superseded claims-first copy outside the demo')
+assert.doesNotMatch(page, /Claims, compliance and document review|claims teams|compliance teams|document review teams|Run the claims pipeline|Run the example pipeline|Have a stack of claims|Enterprise Multimodal Agent Infrastructure|WHERE confidence < 0\.8|finding \+ evidence|review task|case summary|claim summary|review_tasks|evidence · review · summary|Every finding comes with evidence|auditable findings|SQL → finding/, 'enterprise page should not include superseded claims-first copy outside the demo')
 
 assert.match(routes, /path:\s*'\/use-cases\/enterprise-agent'[\s\S]*EnterpriseAgentUseCase\.tsx/, 'enterprise-agent route should render EnterpriseAgentUseCase.tsx')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
+assert.match(page, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'enterprise page should use the centralized enterprise design partner mailto')
+assert.match(siteLinks, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'siteLinks should define the enterprise design partner mailto')
+assert.doesNotMatch(page, /hello@vane\.ai|DESIGN_PARTNER_HREF/, 'enterprise page should not hardcode the old design partner mailto')
+assert.doesNotMatch(page, /to="\/docs\/examples\/insurance-document-audit"/, 'enterprise page should use the canonical data docs route for the insurance document audit example')
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
