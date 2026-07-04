@@ -2,9 +2,9 @@
 title: Performance Tuning
 ---
 
-Use this guide after your POC pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
+Use this guide after your multimodal, AI, or inference pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
 
-This is not a production benchmark, SLA guide, or advanced cluster tuning manual. For v0.1.0, the useful outcome is a clear bottleneck diagnosis and a run record that makes feedback actionable.
+This is not a production benchmark, SLA guide, or advanced cluster tuning manual. The useful outcome is a clear bottleneck diagnosis and a run record that makes performance feedback actionable.
 
 ## Start With Correctness
 
@@ -21,7 +21,7 @@ Then tune one variable at a time. Keep the dataset slice, code, model, provider,
 
 ## Performance vs Sizing
 
-Performance Tuning diagnoses where time or failures are coming from in a concrete POC run. Sizing estimates the resources needed for the next larger run.
+Performance Tuning diagnoses where time or failures are coming from in a concrete run. Sizing estimates the resources needed for the next larger run.
 
 | Question | Use Performance Tuning | Use Sizing |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ Performance Tuning diagnoses where time or failures are coming from in a concret
 
 Use the performance record in this guide as input when you later estimate resources in Sizing.
 
-## POC Tuning Order
+## Tuning Order
 
 Move through the pipeline in order. A later tuning knob will not help if an earlier stage is sending too much data, using inaccessible paths, or writing oversized output.
 
@@ -42,14 +42,14 @@ Move through the pipeline in order. A later tuning knob will not help if an earl
 | 1 | Data read | Input rows, input bytes, file count, object store latency, worker access to paths | Start with a smaller real slice; use worker-visible paths; avoid reading unused files |
 | 2 | SQL filter/project | Rows and columns entering the expensive stage | Filter early; project only the columns the UDF, AI function, or model needs |
 | 3 | UDF batch | Per-batch time, memory, long tail batches, retry cost | Adjust `batch_size` only after input columns and rows are reduced |
-| 4 | Actor reuse | Model or client initialization logs, repeated connection setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
+| 4 | Actor reuse | Model, tokenizer, media decoder, or client initialization logs, repeated setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
 | 5 | Provider rate limit | HTTP 429s, timeouts, retry waits, provider-side quota errors | Lower concurrency; batch only where the provider supports it; reduce unnecessary calls |
 | 6 | GPU utilization | GPU memory, utilization, model load time, CPU preprocessing time | Reuse model actors; tune batch size; add GPUs only after one GPU is understood |
 | 7 | Output write | Output rows, output bytes, wide columns, many small files, worker access to output path | Write only required columns; avoid carrying raw bytes or large intermediate objects unless needed |
 
 ## Core Knobs
 
-These are the main knobs for a POC. Change one at a time and keep the run record updated.
+These are the main knobs for an initial workflow. Change one at a time and keep the run record updated.
 
 | Knob | What it changes | Start here | Watch for |
 | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ Hosted APIs and local GPU inference fail in different ways. Separate them before
 | Workload type | Common bottleneck | Symptoms | Useful fixes |
 | --- | --- | --- | --- |
 | Hosted API | Provider quota, request latency, retries, cost | 429 or quota errors, long retry waits, idle local CPU/GPU, failures tied to credentials or provider limits | Lower `concurrency`; reduce rows before the call; use provider-supported batch requests; record provider/model/error details |
-| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
+| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, media decode, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
 
 Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat low GPU utilization as proof that more GPUs are needed. First confirm which stage is waiting and why.
 
@@ -83,7 +83,7 @@ Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat l
 | Local run works, Ray run fails with file not found, import errors, or missing credentials | Worker path, dependency, or credential visibility | Put data, models, and output on worker-visible storage; install dependencies on workers; pass credentials through the Ray environment |
 | GPU memory is full but throughput is unstable | Batch too large, output too wide, or actor memory growth | Reduce `batch_size`; avoid carrying unused columns; restart from a clean small run and compare |
 | GPU utilization stays low while CPU is busy | CPU preprocessing or data read is the bottleneck | Time decode/tokenization separately; filter/project before inference; cache or stage expensive preprocessing output |
-| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next POC step; avoid raw bytes and large Python object columns in final output |
+| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next workflow step; avoid raw bytes and large Python object columns in final output |
 
 ## Minimal Measurement Loop
 
@@ -104,12 +104,12 @@ For AI and inference workloads, measure at least:
 - GPU memory and utilization, if local GPU
 - output rows and bytes
 
-## POC Performance Record
+## Performance Record
 
 Include a record like this when you report a performance issue or compare tuning runs.
 
 ```markdown
-## POC Performance Record
+## Performance Record
 
 - Goal:
 - Dataset:

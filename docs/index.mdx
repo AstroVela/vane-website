@@ -2,21 +2,21 @@
 title: Vane Data Docs
 ---
 
-Vane Data helps teams build AI-ready datasets with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
+Vane Data helps teams build pipelines for multimodal data preparation, AI-ready datasets, and batch inference with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
 
-Use it when structured or semi-structured data needs SQL transformations plus Python libraries, model inference, embeddings, prompting, or distributed execution before it moves to training, search, analytics, or serving systems.
+Use it when documents, images, audio, video, text records, or model outputs need SQL filtering plus Python libraries, embeddings, prompting, model inference, GPU execution, or distributed reprocessing before they move to training, search, analytics, or downstream applications.
 
 SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`; Python is available through UDFs and AI helpers when the pipeline needs custom logic.
 
 Install `vane-ai` and import `vane`.
 
-Vane Data is a data processing layer, not a model server, vector database, workflow scheduler, or transactional database.
+Vane Data is a data processing layer for AI and multimodal workflows, not a model server, vector database, workflow scheduler, transactional database, or traditional structured ETL replacement.
 
 ## Choose a starting point
 
-### A. Python and performance workflows
+### A. Multimodal and AI performance workflows
 
-For pipelines where Python code, model inference, GPU work, or provider-backed AI calls dominate cost and runtime.
+For pipelines where media processing, Python code, model inference, GPU work, provider-backed AI calls, or historical reprocessing dominate cost and runtime.
 
 1. [Quickstart](/docs/data/quickstart/quickstart)
 2. [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
@@ -25,9 +25,9 @@ For pipelines where Python code, model inference, GPU work, or provider-backed A
 5. [GPU Inference](/docs/data/guides/gpu-inference)
 6. [Performance Tuning](/docs/data/guides/performance-tuning)
 
-### B. SQL and lightweight workflows
+### B. Table-shaped workflow setup
 
-For relational pipelines that should stay close to DuckDB-compatible SQL and add Python only where it is useful.
+For early runs that need source loading, SQL filtering, structured metadata handling, and validation before Python, AI, or GPU stages.
 
 1. [Quickstart](/docs/data/quickstart/quickstart)
 2. [Structured Data Load](/docs/data/guides/structured-data-load)

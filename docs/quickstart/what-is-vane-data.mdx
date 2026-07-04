@@ -2,9 +2,9 @@
 title: What Is Vane Data?
 ---
 
-Vane Data is an early-stage data processing engine for building AI-oriented datasets and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
+Vane Data is an early-stage data processing engine for multimodal data preparation, AI-oriented datasets, and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
 
-Use Vane when your data can be represented as tables, but the pipeline also needs Python libraries, custom business logic, embeddings, prompting, model inference, or multimodal processing before the result is ready for training, search, analytics, review, or downstream applications.
+Use Vane when multimodal objects, text records, model inputs, model outputs, and business metadata can be represented as rows, but the pipeline also needs Python libraries, custom logic, embeddings, prompting, model inference, or distributed execution before the result is ready for training, search, analytics, review, or downstream applications.
 
 The distribution package is `vane-ai`; the Python import package is `vane`.
 
@@ -12,43 +12,57 @@ The distribution package is `vane-ai`; the Python import package is `vane`.
 
 ## Why Vane exists
 
-Many AI data workflows are split across separate tools:
+Vane exists because AI data pipelines need both higher throughput and less glue code.
 
-- SQL jobs for reading, filtering, joining, and validating data.
-- Python scripts for custom parsing, cleaning, media processing, or model calls.
-- Ad hoc batch inference jobs for embeddings, classification, prompting, or GPU models.
-- Separate handoff steps to files, warehouses, lakehouse tables, search systems, or training pipelines.
+### Performance: higher throughput and fuller GPU utilization
 
-Vane's goal is to make that workflow feel like one table-oriented pipeline:
+Training-scale multimodal data preparation, offline captioning, auto-labeling, quality scoring, embedding, deduplication, and historical reprocessing are bottlenecked by throughput and GPU utilization. Expensive accelerators should stay fed while the pipeline reads data, decodes media, builds model inputs, runs inference, writes outputs, and handles failures.
+
+Vane is designed for that shape of work:
+
+- Efficient heterogeneous execution overlaps media decode, GPU captioning, auto-labeling, embedding, and I/O instead of forcing every stage into a separate job.
+- Streaming, backpressure, and dynamic batching move large media and sensor objects through the pipeline continuously without loading every intermediate object into memory.
+- Distributed execution on Ray lets larger historical reprocessing jobs run as one scalable graph instead of a multi-system, multi-day handoff.
+
+### Simplicity: one engine, no glue code
+
+Today, AI data pipelines often scatter file selection, media decoding, model inference, quality filters, embeddings, deduplication, and dataset packaging across separate jobs and hand-written integration code.
+
+Vane's goal is to make that work feel like one table-oriented pipeline:
 
 ```text
 source data -> relation/SQL -> Python UDF or AI function -> validation -> tabular output
 ```
 
-The important idea is not that every step must be SQL, Python, or AI. The important idea is that each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
+That means:
+
+- One engine and one graph combine DuckDB-compatible SQL, Python UDFs, AI functions, and optional Ray execution.
+- The DuckDB-compatible API keeps tabular data work familiar and lowers migration cost from existing Ray, Spark, Daft, or DuckDB-style pipelines.
+- The raw-data-to-release path can fit in one readable program without separate orchestration glue for every stage.
+- Each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
 
 ## What Vane is good for
 
-Vane is a good fit when you want to run an early POC on real business data and the work has this shape:
+Vane is a good fit when you want to run an early validation workflow on real data and the work has this shape:
 
-- Load structured or multimodal data from files, object storage, Arrow tables, or DuckDB-compatible sources.
+- Represent documents, images, audio, video, text records, model inputs, and model outputs as rows with stable IDs and metadata.
 - Use SQL to filter, project, join, aggregate, sample, and validate the relational parts.
 - Use Python UDFs when the logic needs external libraries, custom rules, media processing, or model pre/post-processing.
 - Use AI functions for common enrichment tasks such as embeddings, classification, prompting, and structured model output.
 - Use GPU inference, including vLLM-backed batch inference, when a larger prompt or model workload needs GPU execution.
-- Start locally, then move selected stages to Ray when a POC needs distributed workers, actor reuse, or GPU placement.
+- Start locally, then move selected stages to Ray when throughput, actor reuse, reprocessing scale, or GPU placement becomes important.
 
-Typical early POC scenarios include:
+Typical early validation scenarios include:
 
 - Turning raw text into training, evaluation, or retrieval datasets.
-- Cleaning and transforming structured business data before downstream loading.
 - Processing documents, images, audio, or video as rows with stable IDs and metadata.
 - Running batch AI enrichment over existing tables.
+- Reprocessing historical media, documents, or model outputs with higher throughput.
 - Testing whether a local workflow can later move to Ray-backed execution.
 
 ## What Vane is not
 
-Vane v0.1.0 is an early validation release. It is meant to help suitable early users try real POCs and report real issues, not to present a finished production platform.
+Vane v0.1.0 is an early validation release. It is meant to help suitable early users try Vane on real workflows and report real issues, not to present a finished production platform.
 
 Do not treat Vane as:
 
@@ -58,6 +72,7 @@ Do not treat Vane as:
 - A workflow scheduler, orchestration platform, or lineage system.
 - A complete MLOps platform.
 - A complete lakehouse, warehouse, or catalog management system.
+- A general-purpose replacement for traditional structured ETL tools or data warehouses.
 - A promise of full DuckDB compatibility in every edge case.
 - A production deployment manual with SLA, autoscaling, or operational guarantees.
 
@@ -65,21 +80,21 @@ Vane can hand off tabular outputs to downstream systems, but those systems remai
 
 ## How Vane relates to DuckDB and Ray
 
-Vane uses DuckDB-compatible SQL and relation concepts as the foundation for data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
+Vane uses DuckDB-compatible SQL and relation concepts as the foundation for table-shaped AI data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
 
-Vane adds AI-oriented and distributed execution features around that model. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
+Vane adds AI-oriented and distributed execution features around that model. The SQL layer is there to keep multimodal and AI pipelines inspectable, not to replace a mature warehouse or traditional ETL stack. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
 
 Ray is optional at the beginning. The recommended path is:
 
 1. Run a small local pipeline first.
 2. Confirm the schema, IDs, UDF behavior, and output are correct.
-3. Move selected stages to Ray only when the POC needs more parallelism, actor reuse, or GPU placement.
+3. Move selected stages to Ray only when the workload needs more parallelism, actor reuse, or GPU placement.
 
 ## The core workflow
 
-A Vane POC usually follows this sequence:
+A Vane workflow usually follows this sequence:
 
-1. Load a small but real slice of your data.
+1. Load a small but real slice of multimodal, text, model, or metadata records.
 2. Use SQL to inspect, filter, project, join, or summarize it.
 3. Add custom logic with a Python UDF, or use an AI function for a common model task.
 4. Keep stable IDs and source metadata so outputs can be traced back.
@@ -93,7 +108,9 @@ This is the smallest useful loop: real input, meaningful transformation, inspect
 Vane v0.1.0 is worth trying if most of these are true:
 
 - You have a real dataset or realistic data slice to test with.
-- Your POC needs both relational operations and Python, AI, or model inference work.
+- Your workflow involves multimodal data, text-heavy AI data, model inference, embeddings, prompting, or dataset preparation.
+- Your workflow needs both relational operations and Python, AI, or model inference work.
+- You care about throughput, GPU utilization, historical reprocessing, or reducing glue code across separate jobs.
 - You want the output to stay tabular and auditable.
 - You can start with local execution before moving to Ray.
 - You are willing to report missing features, rough edges, performance issues, or unclear APIs.
@@ -102,6 +119,7 @@ It is better to wait if you need:
 
 - A mature production system.
 - A stable long-term API guarantee.
+- A pipeline that is only traditional structured ETL, BI reporting, or warehouse loading.
 - Full connector coverage.
 - Complete operational documentation.
 - A turnkey industry solution.

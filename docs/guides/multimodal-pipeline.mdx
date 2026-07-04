@@ -4,13 +4,13 @@ title: Multimodal Pipeline
 
 A multimodal pipeline starts after ingest. The input is a relation with stable IDs, source locations, metadata, and optional bytes; the output is a curated table that can be inspected, joined, written, and used to report failures.
 
-Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged POC pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
+Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged multimodal pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
 
 ## Input relation
 
 Start from the relation created by multimodal ingest. At minimum, keep:
 
-- `id`: stable source identifier.
+- `asset_id`: stable source identifier.
 - `source_uri`: local path, object storage URI, or another reproducible source reference.
 - `media_type`: content type or coarse type such as `image`, `pdf`, `audio`, or `video`.
 - Metadata columns that help filter or route rows before expensive work.
@@ -23,13 +23,13 @@ con = vane.connect()
 
 ingested = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         customer_segment,
         captured_at
     from read_parquet('output/media_ingest/')
-    where id is not null
+    where asset_id is not null
       and source_uri is not null
 """)
 
@@ -40,7 +40,7 @@ If bytes are large or stored behind credentials, keep only `source_uri` during i
 
 ## Pipeline shape
 
-Build the POC as separate stages:
+Build the workflow as separate stages:
 
 1. Metadata filtering and projection.
 2. URI or bytes preparation.
@@ -58,7 +58,7 @@ Use relational filtering to reduce the input before decoding files or calling mo
 ```python
 candidates = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         customer_segment,
@@ -70,7 +70,7 @@ candidates = con.sql("""
 """)
 ```
 
-For a real POC, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
+For your own data, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
 
 ## 2. Prepare URIs or bytes
 
@@ -83,7 +83,7 @@ import pyarrow as pa
 
 
 def load_local_bytes(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
 
@@ -102,7 +102,7 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
             error_message.append(f"load_bytes: {type(exc).__name__}: {exc}")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "media_bytes": media_bytes,
@@ -114,7 +114,7 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
 prepared = candidates.map_batches(
     load_local_bytes,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "media_bytes": "BLOB",
@@ -140,7 +140,7 @@ from PIL import Image
 
 
 def inspect_images(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
     media_bytes = batch.column("media_bytes").to_pylist()
@@ -173,7 +173,7 @@ def inspect_images(batch: pa.Table) -> pa.Table:
             error_message.append(f"decode_image: {type(exc).__name__}: {exc}")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "image_width": width,
@@ -186,7 +186,7 @@ def inspect_images(batch: pa.Table) -> pa.Table:
 decoded = prepared.map_batches(
     inspect_images,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -212,11 +212,11 @@ import time
 import pyarrow as pa
 
 
-RUN_ID = os.environ.get("VANE_RUN_ID", "local-poc-001")
+RUN_ID = os.environ.get("VANE_RUN_ID", "local-run-001")
 
 
 def classify_by_shape(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
     widths = batch.column("image_width").to_pylist()
@@ -252,7 +252,7 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
             error_message.append("")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "image_width": widths,
@@ -261,16 +261,16 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
         "score": scores,
         "status": status,
         "error_message": error_message,
-        "run_id": [RUN_ID] * len(ids),
-        "pipeline_version": ["shape-v1"] * len(ids),
-        "processed_at_unix": [int(time.time())] * len(ids),
+        "run_id": [RUN_ID] * len(asset_ids),
+        "pipeline_version": ["shape-v1"] * len(asset_ids),
+        "processed_at_unix": [int(time.time())] * len(asset_ids),
     })
 
 
 scored = decoded.map_batches(
     classify_by_shape,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -292,11 +292,11 @@ Replace the rule with a model when the stage is correct. Use an actor backend wh
 
 ## Output contract
 
-Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the POC.
+Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the run.
 
 | Column | Purpose |
 | --- | --- |
-| `id` | Stable input identifier for joins and feedback. |
+| `asset_id` | Stable input identifier for joins and feedback. |
 | `source_uri` | Reproducible source reference. |
 | Stage outputs | Extracted text, frame metadata, labels, embeddings, OCR JSON, or other typed results. |
 | `score` | Confidence, rule score, similarity, or another comparable stage metric. |
@@ -327,10 +327,10 @@ summary = con.sql("""
 summary.show()
 
 failures = con.sql("""
-    select id, source_uri, media_type, error_message, run_id
+    select asset_id, source_uri, media_type, error_message, run_id
     from media_pipeline_scored
     where status <> 'ok'
-    order by id
+    order by asset_id
 """)
 ```
 
@@ -343,7 +343,7 @@ Write successes and failures deliberately. Large media bytes are usually interme
 ```python
 curated = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         image_width,
@@ -362,7 +362,7 @@ curated.write_parquet("output/media_pipeline/curated/")
 failures.write_parquet("output/media_pipeline/failures/")
 ```
 
-Keeping failures in the same contract makes the POC diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
+Keeping failures in the same contract makes the run diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
 
 ## Split expensive stages
 
@@ -389,7 +389,7 @@ vane.configure(runner="ray")
 scored = decoded.map_batches(
     classify_by_shape,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -414,7 +414,7 @@ For model stages, use `ray_actor` when model state should be reused:
 scored = decoded.map_batches(
     ModelStage,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "label": "VARCHAR",
         "score": "DOUBLE",
@@ -440,7 +440,7 @@ Every Ray worker must be able to import the UDF class or function and access the
 
 ## Practical checks
 
-- Preserve `id` and `source_uri` through every stage.
+- Preserve `asset_id` and `source_uri` through every stage.
 - Filter and project before byte loading, decoding, inference, or embedding.
 - Return `status` and `error_message` columns from failure-prone stages.
 - Keep media bytes out of curated outputs unless the downstream system needs them.

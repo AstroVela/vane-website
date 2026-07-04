@@ -2,47 +2,47 @@
 title: Structured Transformation
 ---
 
-Use Structured Transformation after Structured Data Load when you already have a relation for raw tabular data and need to turn it into a curated table for a POC.
+Use Structured Transformation after Structured Data Load when you already have table-shaped inputs for an AI or multimodal workflow and need to turn them into a stable relation for UDFs, AI functions, GPU inference, embeddings, review, or downstream handoff.
 
-The usual path is SQL-first: profile the input, reduce it to the rows and columns you need, normalize types, derive business columns, join reference data, deduplicate where needed, validate the result, and write a stable output. Add Python UDFs only for rules that are hard to express clearly in SQL.
+This guide is not a warehouse ETL tutorial. The goal is to keep metadata, labels, prompt inputs, model outputs, and validation summaries explicit and traceable while the workflow stays table-shaped.
 
 ## Starting relation
 
-This guide assumes Structured Data Load has produced one or more relations from files, object storage, or another DuckDB-supported source.
+This guide assumes Structured Data Load has produced one or more relations from manifests, text records, labels, prompt tables, model outputs, or another DuckDB-supported source.
 
 ```python
 import vane
 
 con = vane.connect()
 
-raw_orders = con.sql("""
+source_documents = con.sql("""
     select *
-    from read_parquet('data/raw/orders/*.parquet')
+    from read_parquet('data/source_documents/*.parquet')
 """)
-raw_orders.to_table("raw_orders")
+source_documents.to_table("source_documents")
 
-customer_reference = con.sql("""
+review_labels = con.sql("""
     select *
-    from read_parquet('data/reference/customers.parquet')
+    from read_parquet('data/review_labels/*.parquet')
 """)
-customer_reference.to_table("customer_reference")
+review_labels.to_table("review_labels")
 ```
 
-Keep the raw relation registered until validation is complete. It is the easiest way to compare raw and curated values when a business rule needs adjustment.
+Keep the raw source relation registered until validation is complete. It is the easiest way to compare source values, prompt inputs, labels, and model outputs when a rule needs adjustment.
 
 ## Transformation flow
 
-A practical structured transformation flow is:
+A practical table-shaped transformation flow is:
 
-1. Profile the raw relation.
+1. Profile the source relation.
 2. Filter unusable or out-of-scope rows.
-3. Project only the columns the POC needs.
-4. Normalize types and categorical values.
-5. Derive business columns.
-6. Join reference data.
-7. Deduplicate rows when the business key requires it.
+3. Project only the columns the workflow needs.
+4. Normalize IDs, media types, labels, timestamps, and categorical values.
+5. Derive prompt inputs, review fields, routing flags, or evaluation columns.
+6. Join label, metadata, rule, or model-output tables.
+7. Deduplicate rows when the source key or chunk key requires it.
 8. Validate row counts, keys, nulls, domains, and sample diffs.
-9. Write the curated relation with stable schema and traceability columns.
+9. Write the curated relation with stable schema, source traceability, and run metadata.
 
 Start with a small, real slice of data. The goal is to confirm the rules and output contract before spending time on a full run.
 
@@ -54,151 +54,207 @@ Profile with SQL before writing transformation logic:
 con.sql("""
     select
         count(*) as row_count,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        min(order_timestamp) as min_order_timestamp,
-        max(order_timestamp) as max_order_timestamp
-    from raw_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where text is null or length(text) = 0) as empty_text_rows,
+        min(created_at) as min_created_at,
+        max(created_at) as max_created_at
+    from source_documents
 """).show()
 ```
 
-For a POC, add checks for the columns that affect the business decision: entity IDs, timestamps, amount fields, status fields, and the fields used for joins.
+For the first validation run, add checks for the columns that affect the AI or multimodal workflow: source IDs, source URIs, media types, language, labels, prompt text, model output status, timestamps, and join keys.
 
 ## SQL-first transform
 
 Use SQL for relational work: filtering, projection, type normalization, derived columns, joins, aggregation, deduplication, and validation queries.
 
 ```python
-curated_orders = con.sql("""
+curated_documents = con.sql("""
     with typed as (
         select
-            cast(order_id as varchar) as order_id,
-            cast(customer_id as varchar) as customer_id,
-            try_cast(order_timestamp as timestamp) as order_ts,
-            upper(trim(status)) as status,
-            try_cast(amount as decimal(18, 2)) as order_amount,
+            cast(document_id as varchar) as document_id,
+            cast(source_uri as varchar) as source_uri,
+            lower(trim(cast(media_type as varchar))) as media_type,
+            lower(trim(cast(document_type as varchar))) as document_type,
+            lower(trim(cast(language as varchar))) as language,
+            cast(case_id as varchar) as case_id,
+            try_cast(created_at as timestamp) as created_at,
+            regexp_replace(trim(coalesce(text, '')), '\\s+', ' ', 'g') as normalized_text,
             source_file,
             source_row_number
-        from raw_orders
-        where order_id is not null
+        from source_documents
+        where document_id is not null
+          and source_uri is not null
     ),
     projected as (
         select
-            order_id,
-            customer_id,
-            order_ts,
-            date_trunc('day', order_ts) as order_date,
+            document_id,
+            source_uri,
+            media_type,
+            document_type,
+            language,
+            case_id,
+            created_at,
+            normalized_text,
+            length(normalized_text) as text_length,
             case
-                when order_amount < 0 then true
+                when length(normalized_text) >= 80 then true
                 else false
-            end as refund_flag,
-            status,
-            order_amount,
+            end as ready_for_ai,
             source_file,
             source_row_number
         from typed
-        where order_ts is not null
     )
     select
-        p.order_id,
-        p.customer_id,
-        coalesce(r.customer_segment, 'UNKNOWN') as customer_segment,
-        p.order_ts,
-        p.order_date,
-        p.refund_flag,
-        p.status,
-        p.order_amount,
+        p.document_id,
+        p.source_uri,
+        p.media_type,
+        p.document_type,
+        p.language,
+        p.case_id,
+        p.created_at,
+        p.normalized_text as text,
+        p.text_length,
+        p.ready_for_ai,
+        coalesce(l.review_label, 'unlabeled') as review_label,
         p.source_file,
         p.source_row_number
     from projected p
-    left join customer_reference r using (customer_id)
+    left join review_labels l using (document_id)
 """)
 
-curated_orders.to_table("curated_orders")
+curated_documents.to_table("curated_documents")
 ```
 
-Prefer deterministic rules in the SQL itself. That makes the transformation easier to review, rerun, and compare against raw data.
+Prefer deterministic rules in SQL when the logic is relational. That makes the transformation easier to review, rerun, and compare against source data.
+
+## Build prompt or model-input columns
+
+Prompt construction is often a structured transformation step before AI Functions or GPU Inference. Keep prompt text deterministic and keep the IDs and metadata needed to review model outputs later.
+
+```python
+prompt_rows = con.sql("""
+    select
+        document_id,
+        source_uri,
+        document_type,
+        language,
+        review_label,
+        'Review this '
+            || document_type
+            || ' document and return one short quality note: '
+            || text as prompt
+    from curated_documents
+    where ready_for_ai
+    order by document_id
+    limit 100
+""")
+
+prompt_rows.to_table("prompt_rows")
+```
+
+For GPU Inference or AI Functions, validate the prompt relation before sending it to a model:
+
+- `document_id` is present and stable.
+- `source_uri` is present for review and reproduction.
+- `prompt` contains only the fields the model should see.
+- The sample is small enough to inspect manually before increasing `limit`, `batch_size`, or `concurrency`.
 
 ## When to use Python UDFs
 
 Use a Python UDF when the transformation needs logic that SQL would make unclear or brittle:
 
-- complex text cleanup or parsing
+- tokenizer-aware chunking
 - fuzzy matching and custom scoring
-- external libraries
+- media or document library calls
 - domain rules that are easier to test in Python
-- model or API calls that enrich structured rows
+- model preprocessing or postprocessing that returns custom columns
 
 Keep the UDF boundary narrow. Filter and project with SQL first, return explicit columns, and carry the stable ID back to SQL for validation.
 
 ```python
 import pyarrow as pa
 
-def normalize_customer_name(batch: pa.Table) -> pa.Table:
-    customer_ids = batch.column("customer_id").to_pylist()
-    names = batch.column("customer_name").to_pylist()
-    normalized = [
-        " ".join(str(name or "").strip().lower().split())
-        for name in names
-    ]
+def score_text_quality(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    scores = []
+    reasons = []
+    for text in texts:
+        value = str(text or "")
+        score = min(len(value) / 1000.0, 1.0)
+        scores.append(score)
+        if not value:
+            reasons.append("empty")
+        elif len(value) < 80:
+            reasons.append("too_short")
+        else:
+            reasons.append("ok")
+
     return pa.table({
-        "customer_id": customer_ids,
-        "normalized_customer_name": normalized,
+        "document_id": document_ids,
+        "quality_score": scores,
+        "quality_reason": reasons,
     })
 
-customer_names = con.sql("""
-    select customer_id, customer_name
-    from customer_reference
-    where customer_name is not null
+quality = con.sql("""
+    select document_id, text
+    from curated_documents
 """).map_batches(
-    normalize_customer_name,
+    score_text_quality,
     schema={
-        "customer_id": "VARCHAR",
-        "normalized_customer_name": "VARCHAR",
+        "document_id": "VARCHAR",
+        "quality_score": "DOUBLE",
+        "quality_reason": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
 )
 
-customer_names.to_table("customer_names")
+quality.to_table("document_quality")
 ```
 
 After the UDF, join the result back with SQL and run the same validation checks as any other derived column.
 
 ## Dedup and clean pattern
 
-Deduplication is one structured transformation pattern. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
+Deduplication is common for document manifests, extracted text, labels, and model outputs. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
 
 ```python
-deduped_customers = con.sql("""
+deduped_documents = con.sql("""
     with keyed as (
         select
-            customer_id,
-            customer_name,
-            email,
-            updated_at,
+            document_id,
+            source_uri,
+            media_type,
+            document_type,
+            text,
+            created_at,
             source_file,
             source_row_number,
-            lower(regexp_replace(trim(coalesce(email, '')), '\\s+', '', 'g')) as normalized_key
-        from customer_reference
+            lower(regexp_replace(trim(coalesce(source_uri, '')), '\\s+', '', 'g')) as normalized_source_uri
+        from curated_documents
     ),
     ranked as (
         select
             *,
-            count(*) over (partition by normalized_key) as duplicate_count,
+            count(*) over (partition by normalized_source_uri) as duplicate_count,
             row_number() over (
-                partition by normalized_key
-                order by updated_at desc nulls last, source_file, source_row_number
+                partition by normalized_source_uri
+                order by created_at desc nulls last, source_file, source_row_number
             ) as representative_rank
         from keyed
-        where normalized_key <> ''
+        where normalized_source_uri <> ''
     )
     select
-        customer_id,
-        customer_name,
-        email,
-        normalized_key,
+        document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text,
         duplicate_count,
         true as is_representative,
         source_file,
@@ -207,12 +263,12 @@ deduped_customers = con.sql("""
     where representative_rank = 1
 """)
 
-deduped_customers.to_table("deduped_customers")
+deduped_documents.to_table("deduped_documents")
 ```
 
-The `normalized_key` should match your business definition of a duplicate. The representative row order should be stable and explainable, such as latest update timestamp followed by source metadata.
+The normalized key should match your definition of a duplicate. The representative row order should be stable and explainable, such as latest timestamp followed by source metadata.
 
-For near-duplicate matching, compute signatures or scores in a Python UDF, then use SQL to group, rank, and validate the retained rows.
+For near-duplicate text or image matching, compute signatures or scores in a Python UDF or embedding stage, then use SQL to group, rank, and validate the retained rows.
 
 ## Validation checklist
 
@@ -222,69 +278,69 @@ Run validation before writing the curated output.
 con.sql("""
     select
         count(*) as curated_rows,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        count(*) filter (
-            where status not in ('OPEN', 'PAID', 'CANCELLED', 'REFUNDED')
-        ) as invalid_status_rows,
-        count(*) filter (where order_amount is null) as null_amount_rows
-    from curated_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
+        count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
+    from curated_documents
 """).show()
 ```
 
 Check at least:
 
 - row count before and after each major filter
-- key uniqueness for the curated entity
+- ID uniqueness for the source object or model-input row
 - nulls in required fields
-- value domains for status, category, currency, region, or other controlled fields
-- sample diff between raw and curated values
+- value domains for media type, language, label, status, or task type
+- prompt text samples before model calls
+- model-output or quality-score distributions after enrichment
+- sample diff between source and curated values
 
 Use a sample diff for rules that change values:
 
 ```python
 con.sql("""
     select
-        r.order_id,
-        r.status as raw_status,
-        c.status as curated_status,
-        r.order_timestamp as raw_order_timestamp,
-        c.order_ts as curated_order_ts
-    from raw_orders r
-    join curated_orders c using (order_id)
-    where r.status <> c.status
-       or try_cast(r.order_timestamp as timestamp) <> c.order_ts
+        s.document_id,
+        left(s.text, 120) as raw_text_preview,
+        left(c.text, 120) as curated_text_preview,
+        c.ready_for_ai,
+        c.review_label
+    from source_documents s
+    join curated_documents c using (document_id)
+    where coalesce(s.text, '') <> coalesce(c.text, '')
     limit 20
 """).show()
 ```
 
-For a POC, the validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to downstream analysis, UDFs, AI functions, or examples.
+Validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to UDFs, AI functions, GPU inference, embedding jobs, examples, or downstream systems.
 
 ## Write the curated output
 
 Write outputs with a stable contract:
 
 - stable schema with explicit column names and types
-- stable IDs for the entity or event represented by each row
-- traceability columns such as `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
-- enough run metadata to compare one POC run with another
+- stable IDs for every source object, prompt, chunk, label, or model-output row
+- traceability columns such as `source_uri`, `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
+- enough run metadata to compare one run with another
 
 ```python
-curated_orders.write_parquet("output/curated/orders/")
+curated_documents.write_parquet("output/curated/documents/")
 
 con.sql("""
     copy (
         select
-            'orders' as dataset,
+            'documents' as dataset,
             count(*) as row_count,
-            min(order_date) as min_order_date,
-            max(order_date) as max_order_date
-        from curated_orders
+            count(*) filter (where ready_for_ai) as ready_for_ai_rows,
+            min(created_at) as min_created_at,
+            max(created_at) as max_created_at
+        from curated_documents
     )
-    to 'output/curated/orders_validation.parquet'
+    to 'output/curated/documents_validation.parquet'
     (format parquet)
 """)
 ```
 
-Keep the raw-to-curated traceability until the POC questions are answered. It is often the fastest way to explain surprising results and turn feedback into a reproducible issue.
+Keep raw-to-curated traceability until the business questions are answered. It is often the fastest way to explain surprising model outputs and turn feedback into a reproducible issue.

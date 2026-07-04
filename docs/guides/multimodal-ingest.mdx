@@ -2,13 +2,13 @@
 title: Multimodal Ingest
 ---
 
-Multimodal ingest turns images, documents, audio, and video into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger POC.
+Multimodal ingest turns images, documents, audio, video, and sensor objects into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger run.
 
 ## Why rows
 
-Vane works best when every source object has a row with explicit columns for identity, location, media type, and business context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
+Vane works best when every source object has a row with explicit columns for identity, location, media type, and workflow context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
 
-Rows also make POC feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
+Rows also make feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
 
 ## Input contract
 
@@ -21,7 +21,7 @@ Use these columns as the minimum contract:
 | `asset_id` | Stable ID for the media object. Use a business key when one exists; otherwise create a deterministic ID from source metadata. |
 | `source_uri` | URI or path where the original object can be read. Use one canonical column name even when values mix local paths and object storage URIs. |
 | `media_type` | MIME-like type such as `image/jpeg`, `application/pdf`, `audio/wav`, or `video/mp4`. |
-| business metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
+| source metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
 | optional bytes | A `BLOB` column such as `payload_bytes` only when embedding bytes in the relation is the right tradeoff. |
 
 Useful optional columns include `content_sha256`, `source_size_bytes`, `ingested_at`, and `ingest_status`. Keep metadata as normal typed columns when you need SQL filters. Use JSON strings only for sparse or rarely queried metadata.
@@ -32,7 +32,7 @@ import vane
 
 manifest = pa.table({
     "asset_id": ["img-001", "doc-042"],
-    "source_uri": ["s3://poc-media/images/img-001.jpg", "s3://poc-media/docs/doc-042.pdf"],
+    "source_uri": ["s3://sample-media/images/img-001.jpg", "s3://sample-media/docs/doc-042.pdf"],
     "media_type": ["image/jpeg", "application/pdf"],
     "case_id": ["case-17", "case-17"],
     "region": ["us-west", "us-west"],
@@ -61,7 +61,7 @@ Avoid bytes when:
 - Ray workers can access object storage directly;
 - the final output does not need to retain raw media.
 
-For many POCs, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
+For many initial workflows, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
 
 ## Recommended columns
 
@@ -94,7 +94,7 @@ where media_type in ('image/jpeg', 'image/png')
   and source_size_bytes < 20000000
 ```
 
-Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the POC can explain what was excluded.
+Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the run can explain what was excluded.
 
 ## Worker access
 
@@ -109,7 +109,7 @@ Check these items early:
 - Model files or provider credentials needed by later stages are available where those stages run.
 - Output paths are writable from the workers that will materialize results.
 
-If a POC must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
+If a workflow must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
 
 ## Output relation
 
@@ -118,7 +118,7 @@ The ingest output should still look like a source manifest, not a completed mode
 - `asset_id`
 - `source_uri`
 - `media_type`
-- business metadata needed for routing, filtering, or joins
+- source metadata needed for routing, filtering, or joins
 - optional `payload_bytes` when the next stage intentionally consumes embedded bytes
 - `ingest_status`
 - `ingest_error` or `error_message`
@@ -130,17 +130,17 @@ This shape feeds:
 - AI Functions, when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
 - GPU Inference, when later transformation stages construct prompt rows or model inputs from this stable source relation.
 
-## Practical POC checks
+## Practical ingest checks
 
 Before expanding the ingest job, verify a small but real slice:
 
 - `asset_id` is unique and stable across reruns.
 - `source_uri` resolves from the environment that will run the next stage.
 - `media_type` values are populated and match the actual files for a sample.
-- business metadata is sufficient to filter the POC population with SQL.
+- source metadata is sufficient to filter the target population with SQL.
 - optional bytes columns are only present when they are intentionally needed.
 - row counts by media type and business segment match expectations.
 - failed or skipped records have explicit status and error columns.
 - the relation can be written to and read back from the chosen handoff format.
 
-When reporting POC feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.
+When reporting feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.

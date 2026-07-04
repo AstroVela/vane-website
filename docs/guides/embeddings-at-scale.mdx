@@ -2,9 +2,9 @@
 title: Embeddings at Scale
 ---
 
-Use this guide when your POC needs to turn many documents or text records into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
+Use this guide when your workflow needs to turn many documents, extracted text records, captions, transcripts, or other AI-ready text rows into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
 
-The embedding model call is only one stage. A useful POC path is:
+The embedding model call is only one stage. A useful workflow path is:
 
 ```text
 read and filter source rows -> chunk documents -> embed chunks -> validate output -> write an embedding table
@@ -14,7 +14,7 @@ This guide stops at the embedding table. It is not a vector database, retrieval-
 
 ## Start with a small source relation
 
-Begin with real business rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
+Begin with real source rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
 
 ```python
 import vane
@@ -27,7 +27,7 @@ documents = con.sql("""
         source_uri,
         document_type,
         text
-    from read_parquet('data/documents/*.parquet')
+    from read_parquet('data/extracted_documents/*.parquet')
     where text is not null
       and length(text) > 0
     order by document_id
@@ -93,7 +93,7 @@ chunks = documents.flat_map(
 )
 ```
 
-For a real POC, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
+For your own data, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
 
 Chunk output should preserve:
 
@@ -101,7 +101,7 @@ Chunk output should preserve:
 - `chunk_id`: deterministic from document ID, chunking version, and chunk index or offset.
 - `chunk_text`: the exact text sent to the embedding model.
 - `source_uri`: the file, object, or source record used for traceability.
-- business metadata such as type, tenant, language, date, or case ID when it helps review failures.
+- source metadata such as type, tenant, language, date, or case ID when it helps review failures.
 
 ## Validate chunks before embedding
 
@@ -126,11 +126,11 @@ if empty_chunks:
     raise ValueError(f"empty chunks: {empty_chunks[:5]}")
 ```
 
-Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the POC question before increasing the sample size.
+Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the business question before increasing the sample size.
 
 ## Choose a provider
 
-Choose the smallest provider setup that answers the POC question.
+Choose the smallest provider setup that answers the current task.
 
 | Choice | Use it when | Watch for |
 | --- | --- | --- |
@@ -184,7 +184,7 @@ import pyarrow as pa
 
 PROVIDER = "openai"
 MODEL = "text-embedding-3-small"
-RUN_ID = "embedding-poc-run-001"
+RUN_ID = "embedding-validation-run-001"
 
 chunk_table = chunks.to_arrow_table()
 embedding_table = embedding_only.to_arrow_table()
@@ -226,11 +226,11 @@ Write an embedding table that a downstream system and a reviewer can understand 
 | `embedding_model` | Exact model identifier used for the run. |
 | `embedding_run_id` | Run identifier for repeatability and review. |
 
-Add business metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
+Add source metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
 
 ## Write a reviewable result
 
-Write to a run-specific path so you can compare runs without overwriting earlier POC output.
+Write to a run-specific path so you can compare runs without overwriting earlier output.
 
 ```python
 embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
@@ -272,4 +272,4 @@ Every Ray worker needs access to the provider libraries, local model files or ho
 
 ## Boundary
 
-This guide produces a reproducible embedding dataset for a POC. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.
+This guide produces a reproducible embedding dataset. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.

@@ -7,21 +7,21 @@ Generated from docs/manifest.json and the current MDX source files.
 Route: /docs/data
 Source: docs/index.mdx
 
-Vane Data helps teams build AI-ready datasets with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
+Vane Data helps teams build pipelines for multimodal data preparation, AI-ready datasets, and batch inference with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
 
-Use it when structured or semi-structured data needs SQL transformations plus Python libraries, model inference, embeddings, prompting, or distributed execution before it moves to training, search, analytics, or serving systems.
+Use it when documents, images, audio, video, text records, or model outputs need SQL filtering plus Python libraries, embeddings, prompting, model inference, GPU execution, or distributed reprocessing before they move to training, search, analytics, or downstream applications.
 
 SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`; Python is available through UDFs and AI helpers when the pipeline needs custom logic.
 
 Install `vane-ai` and import `vane`.
 
-Vane Data is a data processing layer, not a model server, vector database, workflow scheduler, or transactional database.
+Vane Data is a data processing layer for AI and multimodal workflows, not a model server, vector database, workflow scheduler, transactional database, or traditional structured ETL replacement.
 
 ## Choose a starting point
 
-### A. Python and performance workflows
+### A. Multimodal and AI performance workflows
 
-For pipelines where Python code, model inference, GPU work, or provider-backed AI calls dominate cost and runtime.
+For pipelines where media processing, Python code, model inference, GPU work, provider-backed AI calls, or historical reprocessing dominate cost and runtime.
 
 1. [Quickstart](/docs/data/quickstart/quickstart)
 2. [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
@@ -30,9 +30,9 @@ For pipelines where Python code, model inference, GPU work, or provider-backed A
 5. [GPU Inference](/docs/data/guides/gpu-inference)
 6. [Performance Tuning](/docs/data/guides/performance-tuning)
 
-### B. SQL and lightweight workflows
+### B. Table-shaped workflow setup
 
-For relational pipelines that should stay close to DuckDB-compatible SQL and add Python only where it is useful.
+For early runs that need source loading, SQL filtering, structured metadata handling, and validation before Python, AI, or GPU stages.
 
 1. [Quickstart](/docs/data/quickstart/quickstart)
 2. [Structured Data Load](/docs/data/guides/structured-data-load)
@@ -64,9 +64,9 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 Route: /docs/data/quickstart/what-is-vane-data
 Source: docs/quickstart/what-is-vane-data.mdx
 
-Vane Data is an early-stage data processing engine for building AI-oriented datasets and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
+Vane Data is an early-stage data processing engine for multimodal data preparation, AI-oriented datasets, and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
 
-Use Vane when your data can be represented as tables, but the pipeline also needs Python libraries, custom business logic, embeddings, prompting, model inference, or multimodal processing before the result is ready for training, search, analytics, review, or downstream applications.
+Use Vane when multimodal objects, text records, model inputs, model outputs, and business metadata can be represented as rows, but the pipeline also needs Python libraries, custom logic, embeddings, prompting, model inference, or distributed execution before the result is ready for training, search, analytics, review, or downstream applications.
 
 The distribution package is `vane-ai`; the Python import package is `vane`.
 
@@ -74,43 +74,57 @@ The distribution package is `vane-ai`; the Python import package is `vane`.
 
 ## Why Vane exists
 
-Many AI data workflows are split across separate tools:
+Vane exists because AI data pipelines need both higher throughput and less glue code.
 
-- SQL jobs for reading, filtering, joining, and validating data.
-- Python scripts for custom parsing, cleaning, media processing, or model calls.
-- Ad hoc batch inference jobs for embeddings, classification, prompting, or GPU models.
-- Separate handoff steps to files, warehouses, lakehouse tables, search systems, or training pipelines.
+### Performance: higher throughput and fuller GPU utilization
 
-Vane's goal is to make that workflow feel like one table-oriented pipeline:
+Training-scale multimodal data preparation, offline captioning, auto-labeling, quality scoring, embedding, deduplication, and historical reprocessing are bottlenecked by throughput and GPU utilization. Expensive accelerators should stay fed while the pipeline reads data, decodes media, builds model inputs, runs inference, writes outputs, and handles failures.
+
+Vane is designed for that shape of work:
+
+- Efficient heterogeneous execution overlaps media decode, GPU captioning, auto-labeling, embedding, and I/O instead of forcing every stage into a separate job.
+- Streaming, backpressure, and dynamic batching move large media and sensor objects through the pipeline continuously without loading every intermediate object into memory.
+- Distributed execution on Ray lets larger historical reprocessing jobs run as one scalable graph instead of a multi-system, multi-day handoff.
+
+### Simplicity: one engine, no glue code
+
+Today, AI data pipelines often scatter file selection, media decoding, model inference, quality filters, embeddings, deduplication, and dataset packaging across separate jobs and hand-written integration code.
+
+Vane's goal is to make that work feel like one table-oriented pipeline:
 
 ```text
 source data -> relation/SQL -> Python UDF or AI function -> validation -> tabular output
 ```
 
-The important idea is not that every step must be SQL, Python, or AI. The important idea is that each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
+That means:
+
+- One engine and one graph combine DuckDB-compatible SQL, Python UDFs, AI functions, and optional Ray execution.
+- The DuckDB-compatible API keeps tabular data work familiar and lowers migration cost from existing Ray, Spark, Daft, or DuckDB-style pipelines.
+- The raw-data-to-release path can fit in one readable program without separate orchestration glue for every stage.
+- Each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
 
 ## What Vane is good for
 
-Vane is a good fit when you want to run an early POC on real business data and the work has this shape:
+Vane is a good fit when you want to run an early validation workflow on real data and the work has this shape:
 
-- Load structured or multimodal data from files, object storage, Arrow tables, or DuckDB-compatible sources.
+- Represent documents, images, audio, video, text records, model inputs, and model outputs as rows with stable IDs and metadata.
 - Use SQL to filter, project, join, aggregate, sample, and validate the relational parts.
 - Use Python UDFs when the logic needs external libraries, custom rules, media processing, or model pre/post-processing.
 - Use AI functions for common enrichment tasks such as embeddings, classification, prompting, and structured model output.
 - Use GPU inference, including vLLM-backed batch inference, when a larger prompt or model workload needs GPU execution.
-- Start locally, then move selected stages to Ray when a POC needs distributed workers, actor reuse, or GPU placement.
+- Start locally, then move selected stages to Ray when throughput, actor reuse, reprocessing scale, or GPU placement becomes important.
 
-Typical early POC scenarios include:
+Typical early validation scenarios include:
 
 - Turning raw text into training, evaluation, or retrieval datasets.
-- Cleaning and transforming structured business data before downstream loading.
 - Processing documents, images, audio, or video as rows with stable IDs and metadata.
 - Running batch AI enrichment over existing tables.
+- Reprocessing historical media, documents, or model outputs with higher throughput.
 - Testing whether a local workflow can later move to Ray-backed execution.
 
 ## What Vane is not
 
-Vane v0.1.0 is an early validation release. It is meant to help suitable early users try real POCs and report real issues, not to present a finished production platform.
+Vane v0.1.0 is an early validation release. It is meant to help suitable early users try Vane on real workflows and report real issues, not to present a finished production platform.
 
 Do not treat Vane as:
 
@@ -120,6 +134,7 @@ Do not treat Vane as:
 - A workflow scheduler, orchestration platform, or lineage system.
 - A complete MLOps platform.
 - A complete lakehouse, warehouse, or catalog management system.
+- A general-purpose replacement for traditional structured ETL tools or data warehouses.
 - A promise of full DuckDB compatibility in every edge case.
 - A production deployment manual with SLA, autoscaling, or operational guarantees.
 
@@ -127,21 +142,21 @@ Vane can hand off tabular outputs to downstream systems, but those systems remai
 
 ## How Vane relates to DuckDB and Ray
 
-Vane uses DuckDB-compatible SQL and relation concepts as the foundation for data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
+Vane uses DuckDB-compatible SQL and relation concepts as the foundation for table-shaped AI data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
 
-Vane adds AI-oriented and distributed execution features around that model. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
+Vane adds AI-oriented and distributed execution features around that model. The SQL layer is there to keep multimodal and AI pipelines inspectable, not to replace a mature warehouse or traditional ETL stack. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
 
 Ray is optional at the beginning. The recommended path is:
 
 1. Run a small local pipeline first.
 2. Confirm the schema, IDs, UDF behavior, and output are correct.
-3. Move selected stages to Ray only when the POC needs more parallelism, actor reuse, or GPU placement.
+3. Move selected stages to Ray only when the workload needs more parallelism, actor reuse, or GPU placement.
 
 ## The core workflow
 
-A Vane POC usually follows this sequence:
+A Vane workflow usually follows this sequence:
 
-1. Load a small but real slice of your data.
+1. Load a small but real slice of multimodal, text, model, or metadata records.
 2. Use SQL to inspect, filter, project, join, or summarize it.
 3. Add custom logic with a Python UDF, or use an AI function for a common model task.
 4. Keep stable IDs and source metadata so outputs can be traced back.
@@ -155,7 +170,9 @@ This is the smallest useful loop: real input, meaningful transformation, inspect
 Vane v0.1.0 is worth trying if most of these are true:
 
 - You have a real dataset or realistic data slice to test with.
-- Your POC needs both relational operations and Python, AI, or model inference work.
+- Your workflow involves multimodal data, text-heavy AI data, model inference, embeddings, prompting, or dataset preparation.
+- Your workflow needs both relational operations and Python, AI, or model inference work.
+- You care about throughput, GPU utilization, historical reprocessing, or reducing glue code across separate jobs.
 - You want the output to stay tabular and auditable.
 - You can start with local execution before moving to Ray.
 - You are willing to report missing features, rough edges, performance issues, or unclear APIs.
@@ -164,6 +181,7 @@ It is better to wait if you need:
 
 - A mature production system.
 - A stable long-term API guarantee.
+- A pipeline that is only traditional structured ETL, BI reporting, or warehouse loading.
 - Full connector coverage.
 - Complete operational documentation.
 - A turnkey industry solution.
@@ -324,9 +342,9 @@ Next: [Quickstart](/docs/data/quickstart/quickstart).
 Route: /docs/data/quickstart/quickstart
 Source: docs/quickstart/quickstart.mdx
 
-This quickstart shows Vane Data as one continuous workflow: start with a relation, use SQL for the relational parts, add a small Python batch UDF for custom logic, then validate and write a tabular result.
+This quickstart shows Vane Data as a small multimodal AI data pipeline: represent documents, images, and audio as rows, use SQL to choose a representative slice, add Python logic for review fields, optionally call an AI function, then validate and write a tabular result.
 
-It runs locally. You do not need Ray, a GPU, model provider credentials, or remote storage for this first path.
+The required path runs locally with inline data. You do not need Ray, a GPU, remote storage, real media files, or model provider credentials for the required steps. The AI call is optional and clearly marked.
 
 ## Before you start
 
@@ -342,7 +360,11 @@ This quickstart also uses PyArrow for the Python UDF return value:
 python -m pip install pyarrow
 ```
 
-If you already installed the optional data-science extras, PyArrow may already be available in your environment.
+If you want to run the optional hosted AI step, install the provider package and set the provider credentials required by that provider:
+
+```bash
+python -m pip install openai
+```
 
 ## 1. Create a connection
 
@@ -359,155 +381,261 @@ Run a minimal SQL query to confirm the connection works:
 con.sql("select 42 as answer").show()
 ```
 
-## 2. Create a small relation
+## 2. Create a multimodal relation
 
-For the first run, use inline data so there are no file paths, credentials, or storage settings to debug.
+For the first run, use an inline manifest. It has the same shape as a real multimodal workflow: stable IDs, source locations, media types, text or extracted text, and business metadata.
 
 ```python
-docs = con.sql("""
+assets = con.sql("""
     select *
     from (
         values
-            (1, 'claim', 'Customer submitted a signed claim form.', 120.50),
-            (2, 'invoice', 'Vendor invoice is missing approval.', 88.00),
-            (3, 'claim', 'Claim note references an expired policy.', 19.25),
-            (4, 'memo', 'Internal follow-up note.', 0.00)
-    ) as t(id, document_type, text, amount)
+            (
+                'asset-001',
+                's3://sample-bucket/claims/claim-001.pdf',
+                'application/pdf',
+                'claim',
+                'high',
+                'Customer submitted a signed claim form with supporting notes.'
+            ),
+            (
+                'asset-002',
+                's3://sample-bucket/invoices/invoice-018.png',
+                'image/png',
+                'invoice',
+                'high',
+                'Invoice image is missing approval metadata.'
+            ),
+            (
+                'asset-003',
+                's3://sample-bucket/calls/call-077.wav',
+                'audio/wav',
+                'support_call',
+                'normal',
+                'Transcript mentions an expired policy reference.'
+            ),
+            (
+                'asset-004',
+                's3://sample-bucket/memos/memo-009.txt',
+                'text/plain',
+                'memo',
+                'low',
+                'Internal follow-up note.'
+            )
+    ) as t(asset_id, source_uri, media_type, document_type, priority, text)
 """)
 
-docs.show()
+assets.show()
 ```
 
-A relation represents table-shaped work. Vane materializes the result when you call a consumer such as `show()`, `fetchall()`, `to_arrow_table()`, or a write method.
+A relation represents table-shaped work. In your own data, `source_uri` might point to PDFs, images, audio, video, or extracted text. The important part is that every asset has a stable row that can be filtered, enriched, validated, and written back out.
 
-## 3. Use SQL for relational work
+## 3. Use SQL to choose the candidate slice
 
-Use SQL to filter, project, join, aggregate, sample, and validate before adding custom Python logic.
+Use SQL before Python, AI, or model work. Filter by media type, business priority, document type, date range, or any metadata that keeps the first run small and meaningful.
 
 ```python
-docs.to_table("docs")
+assets.to_table("assets")
 
-selected = con.sql("""
+candidates = con.sql("""
     select
-        id,
+        asset_id,
+        source_uri,
+        media_type,
         document_type,
-        text,
-        amount
-    from docs
-    where text is not null
-      and amount >= 0
-      and document_type in ('claim', 'invoice')
-    order by id
+        priority,
+        text
+    from assets
+    where priority in ('high', 'normal')
+      and media_type in ('application/pdf', 'image/png', 'audio/wav')
+      and text is not null
+    order by asset_id
 """)
 
-selected.show()
+candidates.show()
 ```
 
-Keep this stage simple in a first POC. The goal is to confirm that the input rows, important columns, and basic filters are correct before expensive Python, AI, or model work runs.
+This stage is where Vane's table-oriented multimodal model matters: the media can be different, but the candidate slice is still a relation with explicit columns.
 
-## 4. Add a Python batch UDF
+## 4. Add Python logic for AI-ready fields
 
-Use `map_batches(...)` when custom Python code should process Arrow batches and return explicit output columns.
+Use `map_batches(...)` when custom Python code should process Arrow batches and return explicit output columns. This example prepares review metadata and a prompt column that can be sent to an AI function.
 
 ```python
-def add_review_fields(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+def prepare_review_rows(batch: pa.Table) -> pa.Table:
+    asset_ids = batch.column("asset_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
     document_types = batch.column("document_type").to_pylist()
+    priorities = batch.column("priority").to_pylist()
     texts = batch.column("text").to_pylist()
-    amounts = batch.column("amount").to_pylist()
 
     review_priority = []
-    for document_type, text, amount in zip(document_types, texts, amounts):
-        normalized = str(text or "").lower()
-        if "missing" in normalized or "expired" in normalized:
+    status = []
+    prompts = []
+
+    for media_type, document_type, priority, text in zip(
+        media_types,
+        document_types,
+        priorities,
+        texts,
+    ):
+        normalized = str(text or "").strip()
+        lower_text = normalized.lower()
+
+        if not normalized:
+            status.append("missing_text")
+            review_priority.append("skip")
+            prompts.append("")
+            continue
+
+        status.append("ready")
+        if priority == "high" or "missing" in lower_text or "expired" in lower_text:
             review_priority.append("high")
-        elif document_type == "claim" and amount > 100:
-            review_priority.append("medium")
         else:
-            review_priority.append("low")
+            review_priority.append("normal")
+
+        prompts.append(
+            "Review this "
+            + document_type
+            + " asset of type "
+            + media_type
+            + ". Return one short business note: "
+            + normalized
+        )
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
         "document_type": document_types,
+        "priority": priorities,
         "text": texts,
-        "amount": amounts,
         "text_length": [len(str(value or "")) for value in texts],
         "review_priority": review_priority,
+        "status": status,
+        "prompt": prompts,
     })
 
-features = selected.map_batches(
-    add_review_fields,
+review_rows = candidates.map_batches(
+    prepare_review_rows,
     schema={
-        "id": "INTEGER",
+        "asset_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
+        "priority": "VARCHAR",
         "text": "VARCHAR",
-        "amount": "DOUBLE",
         "text_length": "BIGINT",
         "review_priority": "VARCHAR",
+        "status": "VARCHAR",
+        "prompt": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
 )
 
-features.show()
+review_rows.show()
 ```
 
-`schema` describes the columns returned by the UDF. `map_batches` returns the UDF output columns, so return identifiers and source fields such as `id`, `document_type`, and `text` when later stages still need them.
+`map_batches` returns the UDF output columns, so return identifiers and source metadata such as `asset_id`, `source_uri`, and `media_type` when later stages still need them.
 
-## 5. Validate the output
+## 5. Optional: call an AI function
 
-Turn the UDF result into a named table when you want to use SQL again for checks or summaries.
+The required quickstart path has already shown the multimodal relation shape and the AI-ready prompt column. If you have provider credentials configured, you can run a small hosted AI call with `prompt(...)`.
 
 ```python
-features.to_table("doc_features")
+ai_only = review_rows.prompt(
+    "prompt",
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="You review business assets. Return one concise note.",
+    output_column="ai_review_note",
+    batch_size=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+AI helpers return the configured output column. If your final output needs IDs and source fields, combine the helper output with the source rows after checking row counts:
+
+```python
+review_table = review_rows.to_arrow_table()
+ai_table = ai_only.to_arrow_table()
+
+if ai_table.num_rows != review_table.num_rows:
+    raise ValueError("AI output row count does not match source row count")
+
+reviewed_with_ai = con.from_arrow(
+    review_table.append_column("ai_review_note", ai_table["ai_review_note"])
+)
+```
+
+For the first run on your own data, run 10-100 rows before increasing `batch_size`, `concurrency`, or moving the AI stage to Ray.
+
+## 6. Validate the tabular result
+
+Use SQL again to check the output before writing it.
+
+```python
+review_rows.to_table("review_rows")
 
 summary = con.sql("""
     select
+        media_type,
         review_priority,
+        status,
         count(*) as rows,
         avg(text_length) as avg_text_length
-    from doc_features
-    group by review_priority
-    order by review_priority
+    from review_rows
+    group by media_type, review_priority, status
+    order by media_type, review_priority, status
 """)
 
 summary.show()
 ```
 
-Before moving to your own data, check the same things you would check in a real POC:
+Before moving to your own data, check the same things you would check in your own workflow:
 
 - Row counts match your expectation.
 - Stable IDs are still present.
-- Required source columns are still present.
-- New columns have the expected types and values.
+- Source URIs and media types are still present.
+- Rows that should be skipped have explicit `status`.
+- Prompt text contains only the fields the model should see.
 - A few sample rows make business sense.
 
-## 6. Write the result
+## 7. Write the result
 
 Write a tabular output when the result is ready for review or handoff.
 
 ```python
-features.write_parquet("quickstart-doc-features.parquet")
+review_rows.write_parquet("quickstart-multimodal-review/")
 ```
 
-For a real POC, write to a run-specific path and keep enough source metadata to reproduce or explain every output row.
+If you ran the optional AI step, write `reviewed_with_ai` instead:
+
+```python
+reviewed_with_ai.write_parquet("quickstart-multimodal-ai-review/")
+```
+
+For your own data, write to a run-specific path and keep enough source metadata to reproduce or explain every output row.
 
 ## Use the same shape with your data
 
-The inline dataset in this page is only there to remove setup noise. The shape you should carry into your own POC is:
+The inline manifest in this page removes setup noise. The shape you should carry into your own workflow is:
 
 ```text
-load a small real slice -> SQL inspect/filter -> Python UDF or AI function -> SQL validation -> write tabular output
+load a small multimodal slice -> SQL select candidates -> prepare AI-ready fields -> optional AI function -> SQL validation -> write tabular output
 ```
 
-Start with local execution. Move selected stages to `ray_task` or `ray_actor` only after the local data contract, UDF behavior, and output checks are correct.
+Start locally. Move to Ray, vLLM, GPU inference, or larger media decoding only after the local data contract, IDs, prompts, output schema, and validation checks are correct.
 
 ## Next
 
+- [Multimodal Ingest](/docs/data/guides/multimodal-ingest)
+- [AI Functions](/docs/data/guides/ai-functions)
+- [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
+- [GPU Inference](/docs/data/guides/gpu-inference)
 - [SQL vs Python](/docs/data/concepts/sql-vs-python)
-- [UDFs](/docs/data/concepts/udfs)
-- [AI Functions](/docs/data/concepts/ai-functions)
-- [Execution Model](/docs/data/concepts/execution-model)
 
 ## Architecture
 
@@ -1301,13 +1429,13 @@ Use provider API concurrency carefully. Increasing concurrency can improve throu
 Route: /docs/data/guides/multimodal-ingest
 Source: docs/guides/multimodal-ingest.mdx
 
-Multimodal ingest turns images, documents, audio, and video into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger POC.
+Multimodal ingest turns images, documents, audio, video, and sensor objects into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger run.
 
 ## Why rows
 
-Vane works best when every source object has a row with explicit columns for identity, location, media type, and business context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
+Vane works best when every source object has a row with explicit columns for identity, location, media type, and workflow context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
 
-Rows also make POC feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
+Rows also make feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
 
 ## Input contract
 
@@ -1320,7 +1448,7 @@ Use these columns as the minimum contract:
 | `asset_id` | Stable ID for the media object. Use a business key when one exists; otherwise create a deterministic ID from source metadata. |
 | `source_uri` | URI or path where the original object can be read. Use one canonical column name even when values mix local paths and object storage URIs. |
 | `media_type` | MIME-like type such as `image/jpeg`, `application/pdf`, `audio/wav`, or `video/mp4`. |
-| business metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
+| source metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
 | optional bytes | A `BLOB` column such as `payload_bytes` only when embedding bytes in the relation is the right tradeoff. |
 
 Useful optional columns include `content_sha256`, `source_size_bytes`, `ingested_at`, and `ingest_status`. Keep metadata as normal typed columns when you need SQL filters. Use JSON strings only for sparse or rarely queried metadata.
@@ -1331,7 +1459,7 @@ import vane
 
 manifest = pa.table({
     "asset_id": ["img-001", "doc-042"],
-    "source_uri": ["s3://poc-media/images/img-001.jpg", "s3://poc-media/docs/doc-042.pdf"],
+    "source_uri": ["s3://sample-media/images/img-001.jpg", "s3://sample-media/docs/doc-042.pdf"],
     "media_type": ["image/jpeg", "application/pdf"],
     "case_id": ["case-17", "case-17"],
     "region": ["us-west", "us-west"],
@@ -1360,7 +1488,7 @@ Avoid bytes when:
 - Ray workers can access object storage directly;
 - the final output does not need to retain raw media.
 
-For many POCs, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
+For many initial workflows, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
 
 ## Recommended columns
 
@@ -1393,7 +1521,7 @@ where media_type in ('image/jpeg', 'image/png')
   and source_size_bytes < 20000000
 ```
 
-Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the POC can explain what was excluded.
+Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the run can explain what was excluded.
 
 ## Worker access
 
@@ -1408,7 +1536,7 @@ Check these items early:
 - Model files or provider credentials needed by later stages are available where those stages run.
 - Output paths are writable from the workers that will materialize results.
 
-If a POC must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
+If a workflow must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
 
 ## Output relation
 
@@ -1417,7 +1545,7 @@ The ingest output should still look like a source manifest, not a completed mode
 - `asset_id`
 - `source_uri`
 - `media_type`
-- business metadata needed for routing, filtering, or joins
+- source metadata needed for routing, filtering, or joins
 - optional `payload_bytes` when the next stage intentionally consumes embedded bytes
 - `ingest_status`
 - `ingest_error` or `error_message`
@@ -1429,40 +1557,52 @@ This shape feeds:
 - AI Functions, when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
 - GPU Inference, when later transformation stages construct prompt rows or model inputs from this stable source relation.
 
-## Practical POC checks
+## Practical ingest checks
 
 Before expanding the ingest job, verify a small but real slice:
 
 - `asset_id` is unique and stable across reruns.
 - `source_uri` resolves from the environment that will run the next stage.
 - `media_type` values are populated and match the actual files for a sample.
-- business metadata is sufficient to filter the POC population with SQL.
+- source metadata is sufficient to filter the target population with SQL.
 - optional bytes columns are only present when they are intentionally needed.
 - row counts by media type and business segment match expectations.
 - failed or skipped records have explicit status and error columns.
 - the relation can be written to and read back from the chosen handoff format.
 
-When reporting POC feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.
+When reporting feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.
 
 ## Structured Data Load
 
 Route: /docs/data/guides/structured-data-load
 Source: docs/guides/structured-data-load.mdx
 
-Use this guide when your POC starts from structured business data: orders, claims, tickets, invoices, events, customer records, or other table-shaped files.
+Use this guide when your AI or multimodal workflow starts from table-shaped inputs: media manifests, document metadata, text records, labels, prompt tables, model outputs, evaluation samples, or business IDs that need to be joined to source objects.
 
-The goal is to load a small real slice, verify that the data contract is credible, and produce a source relation that later stages can use for structured transformation, Python UDFs, or AI functions.
+This guide is not a traditional ETL tutorial. The goal is to load a small, real slice, verify that the data contract is credible, and produce a source relation that later Vane stages can use for multimodal processing, Python UDFs, AI functions, GPU inference, embeddings, or validation.
 
-## Start with a small real slice
+## Start with the data contract
 
-Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose business shape:
+Before loading files, decide what the relation must preserve for downstream AI work.
 
-- One time window, region, customer group, product line, or workflow state.
+Typical source columns include:
+
+| Column | Purpose |
+| --- | --- |
+| `asset_id`, `document_id`, `case_id`, or `sample_id` | Stable identifiers used to join outputs back to source rows. |
+| `source_uri` | File, object storage, or application URI for the original document, image, audio, video, or record. |
+| `media_type` or `record_type` | Routing and filtering before expensive decode, model, or embedding stages. |
+| `text`, `prompt`, `label`, or `model_output` | The text or model-facing value used by later AI stages. |
+| business metadata | Priority, tenant, language, timestamp, workflow state, reviewer label, or other fields used for slicing and review. |
+
+Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose the shape of your data:
+
+- One time window, source system, document family, tenant, language, or workflow state.
 - Enough rows to include normal cases and known edge cases.
-- The columns needed for IDs, joins, filters, text fields, labels, amounts, dates, and status values.
-- Stable source identifiers that can be carried through later transformations.
+- Stable IDs and source metadata that can be carried through later transformations.
+- The columns needed for prompt construction, labels, model review, quality checks, or output joins.
 
-If the full dataset is remote or large, either export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
+If the full dataset is remote or large, export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
 
 ## Load local Parquet
 
@@ -1473,22 +1613,23 @@ import vane
 
 con = vane.connect()
 
-orders = con.sql("""
+documents = con.sql("""
     select *
-    from read_parquet('data/orders/*.parquet', union_by_name=true)
-    where order_date >= date '2026-01-01'
+    from read_parquet('data/document_manifest/*.parquet', union_by_name=true)
+    where text is not null
+    order by document_id
     limit 10000
 """)
 
-orders.to_table("raw_orders")
+documents.to_table("raw_documents")
 ```
 
 For nested directories, use a recursive glob:
 
 ```python
-events = con.sql("""
+media_events = con.sql("""
     select *
-    from read_parquet('data/events/**/*.parquet', union_by_name=true)
+    from read_parquet('data/media_events/**/*.parquet', union_by_name=true)
     limit 10000
 """)
 ```
@@ -1497,23 +1638,23 @@ Use `union_by_name=true` when multiple files may have columns in different order
 
 ## Load local CSV
 
-Use CSV for small or exported slices. Prefer Parquet once you control the export format, because it carries column types more reliably.
+Use CSV for small exports such as labels, review samples, prompt tables, or issue lists. Prefer Parquet once you control the export format, because it carries column types more reliably.
 
 ```python
-claims = con.sql("""
+labels = con.sql("""
     select *
-    from read_csv_auto('data/claims/*.csv', header=true)
+    from read_csv_auto('data/labels/*.csv', header=true)
     limit 10000
 """)
 
-claims.to_table("raw_claims")
+labels.to_table("raw_labels")
 ```
 
 If type inference is wrong, keep the load simple, inspect the inferred schema, then cast important columns explicitly in the source relation.
 
 ## Load from S3 or MinIO
 
-Keep object storage configuration minimal for a POC. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
+Keep object storage configuration minimal for the first validation run. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
 
 ```python
 import vane
@@ -1528,7 +1669,7 @@ con.execute("SET s3_url_style='path'")
 
 source = con.sql("""
     select *
-    from read_parquet('s3://my-bucket/poc/orders/*.parquet')
+    from read_parquet('s3://my-bucket/sample/document_manifest/*.parquet')
     limit 10000
 """)
 ```
@@ -1548,43 +1689,49 @@ Do not put long-lived secrets in checked-in scripts or documentation snippets. I
 Materialize the raw scan as a temporary table when you want to run several checks against the same slice.
 
 ```python
-orders.to_table("raw_orders")
+documents.to_table("raw_documents")
 
-con.sql("describe raw_orders").show()
+con.sql("describe raw_documents").show()
 
 con.sql("""
-    select *
-    from raw_orders
+    select
+        document_id,
+        source_uri,
+        media_type,
+        document_type,
+        language,
+        left(text, 160) as text_preview
+    from raw_documents
     limit 10
 """).show()
 ```
 
-Before adding transformation, UDF, or AI work, confirm that column names, types, sample values, encodings, and date/time assumptions match the business data you expected.
+Before adding UDF, AI, or GPU work, confirm that column names, types, sample values, encodings, URI formats, and timestamp assumptions match the data you expected.
 
-## Run basic POC checks
+## Run basic load checks
 
-Start with row count, key uniqueness, null checks, and a few distributions that would catch a bad slice.
+Start with row count, key uniqueness, null checks, URI coverage, and a few distributions that would catch a bad slice.
 
 ```python
 con.sql("""
     select
         count(*) as rows,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) - count(distinct order_id) as duplicate_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        count(*) filter (where amount is null) as null_amounts
-    from raw_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) - count(distinct document_id) as duplicate_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where text is null or length(text) = 0) as empty_text_rows
+    from raw_documents
 """).show()
 ```
 
-Check important categorical or time distributions:
+Check important media or business distributions:
 
 ```python
 con.sql("""
-    select status, count(*) as rows
-    from raw_orders
-    group by status
+    select media_type, document_type, count(*) as rows
+    from raw_documents
+    group by media_type, document_type
     order by rows desc
     limit 20
 """).show()
@@ -1592,42 +1739,46 @@ con.sql("""
 
 ```python
 con.sql("""
-    select date_trunc('month', order_date) as month, count(*) as rows
-    from raw_orders
-    group by month
-    order by month
+    select language, count(*) as rows
+    from raw_documents
+    group by language
+    order by rows desc
 """).show()
 ```
 
-Replace `order_id`, `customer_id`, `amount`, `status`, and `order_date` with fields that matter for your POC. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them.
+Replace the column names with fields that matter for your workflow. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them behind Python, AI, or GPU work.
 
 ## Produce the source relation
 
 Create a narrow relation with the columns downstream stages need. Keep IDs and source metadata, cast important fields deliberately, and filter out rows that cannot be traced.
 
 ```python
-source_orders = con.sql("""
+source_documents = con.sql("""
     select
-        cast(order_id as varchar) as order_id,
-        cast(customer_id as varchar) as customer_id,
-        cast(order_date as date) as order_date,
-        cast(status as varchar) as status,
-        cast(amount as double) as amount,
-        notes
-    from raw_orders
-    where order_id is not null
+        cast(document_id as varchar) as document_id,
+        cast(source_uri as varchar) as source_uri,
+        cast(media_type as varchar) as media_type,
+        cast(document_type as varchar) as document_type,
+        cast(language as varchar) as language,
+        cast(case_id as varchar) as case_id,
+        text
+    from raw_documents
+    where document_id is not null
+      and source_uri is not null
+      and text is not null
 """)
 
-source_orders.to_table("source_orders_poc")
+source_documents.to_table("source_documents")
 ```
 
 Use this relation as the input for the next guide:
 
-- Structured Transformation for filtering, joins, derived columns, and validation summaries.
-- Custom Python UDFs when business logic needs Python libraries or external services.
-- AI Functions when a text column should be embedded, classified, or prompted.
+- Multimodal Pipeline when source URIs need decode, OCR, transcript, or media-specific processing.
+- Structured Transformation when metadata, labels, prompt inputs, or model outputs need filtering, joining, deduplication, or validation.
+- Custom Python UDFs when the workflow needs Python libraries, private clients, model preprocessing, or a custom output schema.
+- AI Functions, Embeddings at Scale, or GPU Inference when a text or prompt column should be embedded, classified, prompted, or sent to vLLM.
 
-Keep the source relation small while the POC logic is changing. Increase the slice only after row counts, schemas, and sample outputs are explainable.
+Keep the source relation small while the workflow logic is changing. Increase the slice only after row counts, schemas, source IDs, sample outputs, and error behavior are explainable.
 
 ## Local vs Ray accessibility
 
@@ -1638,7 +1789,8 @@ Ray execution may schedule scans, writes, or UDFs on workers. Every worker must 
 - See the same local path, mounted filesystem, or object storage URI.
 - Load the same DuckDB extensions required by the scan.
 - Access the same credentials and endpoint settings.
-- Import the same Python packages used by later UDF stages.
+- Import the same Python packages used by later UDF or AI stages.
+- Access model files or provider credentials if later stages need them.
 - Write to an output path that is visible outside the worker.
 
 Configure Ray before creating the connection:
@@ -1650,7 +1802,7 @@ vane.configure(runner="ray")
 con = vane.connect()
 ```
 
-Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the POC needs distributed scan, UDF, or write behavior.
+Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the workflow needs distributed scan, UDF, AI, GPU, or write behavior.
 
 ## Common failures and feedback
 
@@ -1659,11 +1811,12 @@ When a structured load fails, classify the failure before changing the pipeline:
 | Category | What to check |
 | --- | --- |
 | Path not found | Current working directory, absolute path, glob pattern, file permissions, mounted paths on Ray workers |
-| Empty or wrong slice | Filters, date ranges, partition paths, `limit`, recursive glob depth |
+| Empty or wrong slice | Filters, partition paths, `limit`, recursive glob depth, export freshness |
 | Schema mismatch | CSV inference, Parquet schema drift, `union_by_name`, explicit casts, unexpected nullable fields |
 | Bad identifiers | Null keys, duplicate keys, keys that are only unique within a partition |
+| Bad source references | Missing `source_uri`, mixed URI formats, local paths not visible to workers |
 | Object storage auth | Region, endpoint, SSL setting, path-style setting, credential availability |
-| Ray access | Worker environment variables, mounted filesystems, package availability, output path visibility |
+| Ray access | Worker environment variables, mounted filesystems, package availability, model files, provider credentials, output path visibility |
 
 Useful feedback includes:
 
@@ -1679,9 +1832,9 @@ Useful feedback includes:
 Route: /docs/data/guides/custom-python-udfs
 Source: docs/guides/custom-python-udfs.mdx
 
-Use Custom Python UDFs when your POC needs business logic that does not belong in SQL: text cleanup, domain rules, external Python libraries, model preprocessing, model inference, or client calls.
+Use Custom Python UDFs when an AI or multimodal workflow needs logic that does not belong in SQL: text cleanup, media metadata checks, domain rules, external Python libraries, model preprocessing, custom inference, or client calls.
 
-The goal is to make one UDF correct on a small slice of your own data, keep its table contract explicit, then move the same logic to Ray only when distribution or actor reuse is worth the extra setup.
+The goal is to make one UDF correct on a small real slice, keep its table contract explicit, then move the same logic to Ray only when distribution, actor reuse, or GPU placement is worth the extra setup.
 
 ## UDF contract
 
@@ -1691,27 +1844,28 @@ For `map_batches`, the contract is:
 2. The callable returns a `pyarrow.Table`.
 3. The returned table must match the declared `schema`.
 
-`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, or audit.
+`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, review, or audit.
 
 ```python
-import pyarrow as pa
 import vane
 
 con = vane.connect()
 
 documents = con.sql("""
     select
-        id,
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
         document_type,
-        text,
-        amount
+        text
     from read_parquet('data/documents/*.parquet')
     where text is not null
+    order by document_id
     limit 100
 """)
 ```
 
-Keep the first sample small and real. Inline data is fine for learning, but the first useful POC UDF should touch the same columns and messy values that your real pipeline will use.
+Keep the first sample small and real. Inline data is fine for learning, but the first useful UDF should touch the same columns, source metadata, and messy values that your real pipeline will use.
 
 ## First stateless batch UDF
 
@@ -1722,49 +1876,64 @@ import re
 
 import pyarrow as pa
 
-def add_review_fields(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
     document_types = batch.column("document_type").to_pylist()
     texts = batch.column("text").to_pylist()
-    amounts = batch.column("amount").to_pylist()
 
     normalized_text = []
+    text_length = []
     needs_review = []
     review_reason = []
 
-    for document_type, text, amount in zip(document_types, texts, amounts):
-        clean = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    for media_type, text in zip(media_types, texts, strict=False):
+        clean = re.sub(r"\s+", " ", str(text or "")).strip()
+        lower = clean.lower()
+
         normalized_text.append(clean)
+        text_length.append(len(clean))
 
-        has_risk_term = "missing" in clean or "expired" in clean
-        high_amount = amount is not None and amount >= 1000
-
-        needs_review.append(has_risk_term or high_amount)
-        if has_risk_term:
+        if media_type not in SUPPORTED_MEDIA_TYPES:
+            needs_review.append(True)
+            review_reason.append("unsupported_media_type")
+        elif not clean:
+            needs_review.append(True)
+            review_reason.append("empty_text")
+        elif any(term in lower for term in RISK_TERMS):
+            needs_review.append(True)
             review_reason.append("risk_term")
-        elif high_amount:
-            review_reason.append("high_amount")
         else:
+            needs_review.append(False)
             review_reason.append("none")
 
     return pa.table({
-        "id": ids,
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
         "document_type": document_types,
-        "text": texts,
-        "amount": amounts,
         "normalized_text": normalized_text,
+        "text_length": text_length,
         "needs_review": needs_review,
         "review_reason": review_reason,
     })
 
-reviewed = documents.map_batches(
-    add_review_fields,
+
+prepared = documents.map_batches(
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -1772,32 +1941,34 @@ reviewed = documents.map_batches(
     execution_backend="subprocess_task",
 )
 
-reviewed.show()
+prepared.show()
 ```
 
-This example returns the source `id`, `document_type`, `text`, and `amount` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
+This example returns the source `document_id`, `source_uri`, `media_type`, and `document_type` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
 
 ## Validate with SQL
 
 Turn the UDF output into a named table when you want relational checks.
 
 ```python
-reviewed.to_table("reviewed_documents")
+prepared.to_table("prepared_documents")
 
 summary = con.sql("""
     select
         document_type,
+        media_type,
         needs_review,
+        review_reason,
         count(*) as rows
-    from reviewed_documents
-    group by document_type, needs_review
-    order by document_type, needs_review
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
 """)
 
 summary.show()
 ```
 
-For a first POC, check row counts, IDs, a few high-risk rows, and a few rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
+For the first validation run, check row counts, IDs, unsupported media types, empty text, and rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
 
 ## Schema and Arrow outputs
 
@@ -1806,21 +1977,21 @@ Treat the schema as part of the UDF interface.
 | Topic | Guidance |
 | --- | --- |
 | Column names | Return exactly the columns declared in `schema`. |
-| Required source columns | Return IDs, source URI/path, business keys, and text or metadata needed later. |
+| Required source columns | Return IDs, source URI/path, media type, business keys, text, or metadata needed later. |
 | Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
-| Nulls | Keep null behavior explicit, especially for numeric and list columns. |
+| Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
 | Row count | A `map_batches` UDF normally returns one output row per input row. Use `flat_map` when one input can create zero or many rows. |
 
 If Arrow cannot infer the type you want, build an explicit array:
 
 ```python
 return pa.table({
-    "id": pa.array(ids, type=pa.int64()),
+    "document_id": pa.array(document_ids, type=pa.string()),
     "review_reason": pa.array(review_reason, type=pa.string()),
 })
 ```
 
-Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, or structured JSON strings before returning.
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, structs, JSON strings, or explicit Arrow arrays before returning.
 
 ## Batch size
 
@@ -1830,13 +2001,14 @@ Start small while debugging:
 
 ```python
 debugged = documents.map_batches(
-    add_review_fields,
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -1864,37 +2036,41 @@ Actor backends construct the class inside the worker and reuse it for multiple b
 ```python
 import pyarrow as pa
 
-class KeywordTagger:
+
+class PromptBuilder:
     def __init__(self) -> None:
-        self.terms_by_label = {
-            "policy_issue": ("expired policy", "coverage gap"),
-            "approval_issue": ("missing approval", "unsigned"),
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
         }
 
     def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        texts = batch.column("text").to_pylist()
+        document_ids = batch.column("document_id").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
 
-        labels = []
-        for text in texts:
-            normalized = str(text or "").lower()
-            label = "none"
-            for candidate, terms in self.terms_by_label.items():
-                if any(term in normalized for term in terms):
-                    label = candidate
-                    break
-            labels.append(label)
+        prompts = []
+        prompt_template = []
+
+        for document_type, text in zip(document_types, texts, strict=False):
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
 
         return pa.table({
-            "id": ids,
-            "issue_label": labels,
+            "document_id": document_ids,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
         })
 
-tagged = documents.map_batches(
-    KeywordTagger,
+
+prompts = prepared.map_batches(
+    PromptBuilder,
     schema={
-        "id": "BIGINT",
-        "issue_label": "VARCHAR",
+        "document_id": "VARCHAR",
+        "prompt_template": "VARCHAR",
+        "prompt": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_actor",
@@ -1902,7 +2078,7 @@ tagged = documents.map_batches(
 )
 ```
 
-In a real model UDF, load the model or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+In a real model UDF, load the model, tokenizer, or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
 
 ## Backend choices
 
@@ -1922,14 +2098,15 @@ import vane
 
 vane.configure(runner="ray")
 
-ray_reviewed = documents.map_batches(
-    add_review_fields,
+ray_prepared = documents.map_batches(
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -1941,11 +2118,12 @@ ray_reviewed = documents.map_batches(
 For a stateful or GPU-backed model, keep the class shape and switch the backend:
 
 ```python
-ray_tagged = documents.map_batches(
-    KeywordTagger,
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
     schema={
-        "id": "BIGINT",
-        "issue_label": "VARCHAR",
+        "document_id": "VARCHAR",
+        "prompt_template": "VARCHAR",
+        "prompt": "VARCHAR",
     },
     batch_size=128,
     execution_backend="ray_actor",
@@ -1968,15 +2146,15 @@ Use this sequence before moving a UDF into a larger pipeline.
 
 ```python
 sample = con.sql("""
-    select id, document_type, text, amount
+    select document_id, source_uri, media_type, document_type, text
     from read_parquet('data/documents/*.parquet')
     where text is not null
-    order by id
+    order by document_id
     limit 20
 """)
 
 sample_arrow = sample.to_arrow_table()
-debug_arrow = add_review_fields(sample_arrow)
+debug_arrow = prepare_document_text(sample_arrow)
 
 assert len(debug_arrow) == len(sample_arrow)
 print(debug_arrow.schema)
@@ -1987,13 +2165,14 @@ Then run it through Vane:
 
 ```python
 debug_relation = sample.map_batches(
-    add_review_fields,
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -2020,7 +2199,7 @@ If this fails, keep the failure local. A Ray run will add import, dependency, st
 
 ## How this guide connects to the rest of the docs
 
-- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is relational cleanup, joins, deduplication, validation, or output shaping, and add a UDF only for logic SQL should not own.
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is table-shaped cleanup, joins, deduplication, validation, or output shaping for an AI or multimodal workflow, and add a UDF only for logic SQL should not own.
 - Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
 - Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Come back to Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
 - Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind `map_batches`, callable classes, and execution backends.
@@ -2032,13 +2211,13 @@ Source: docs/guides/multimodal-pipeline.mdx
 
 A multimodal pipeline starts after ingest. The input is a relation with stable IDs, source locations, metadata, and optional bytes; the output is a curated table that can be inspected, joined, written, and used to report failures.
 
-Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged POC pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
+Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged multimodal pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
 
 ## Input relation
 
 Start from the relation created by multimodal ingest. At minimum, keep:
 
-- `id`: stable source identifier.
+- `asset_id`: stable source identifier.
 - `source_uri`: local path, object storage URI, or another reproducible source reference.
 - `media_type`: content type or coarse type such as `image`, `pdf`, `audio`, or `video`.
 - Metadata columns that help filter or route rows before expensive work.
@@ -2051,13 +2230,13 @@ con = vane.connect()
 
 ingested = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         customer_segment,
         captured_at
     from read_parquet('output/media_ingest/')
-    where id is not null
+    where asset_id is not null
       and source_uri is not null
 """)
 
@@ -2068,7 +2247,7 @@ If bytes are large or stored behind credentials, keep only `source_uri` during i
 
 ## Pipeline shape
 
-Build the POC as separate stages:
+Build the workflow as separate stages:
 
 1. Metadata filtering and projection.
 2. URI or bytes preparation.
@@ -2086,7 +2265,7 @@ Use relational filtering to reduce the input before decoding files or calling mo
 ```python
 candidates = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         customer_segment,
@@ -2098,7 +2277,7 @@ candidates = con.sql("""
 """)
 ```
 
-For a real POC, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
+For your own data, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
 
 ## 2. Prepare URIs or bytes
 
@@ -2111,7 +2290,7 @@ import pyarrow as pa
 
 
 def load_local_bytes(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
 
@@ -2130,7 +2309,7 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
             error_message.append(f"load_bytes: {type(exc).__name__}: {exc}")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "media_bytes": media_bytes,
@@ -2142,7 +2321,7 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
 prepared = candidates.map_batches(
     load_local_bytes,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "media_bytes": "BLOB",
@@ -2168,7 +2347,7 @@ from PIL import Image
 
 
 def inspect_images(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
     media_bytes = batch.column("media_bytes").to_pylist()
@@ -2201,7 +2380,7 @@ def inspect_images(batch: pa.Table) -> pa.Table:
             error_message.append(f"decode_image: {type(exc).__name__}: {exc}")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "image_width": width,
@@ -2214,7 +2393,7 @@ def inspect_images(batch: pa.Table) -> pa.Table:
 decoded = prepared.map_batches(
     inspect_images,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -2240,11 +2419,11 @@ import time
 import pyarrow as pa
 
 
-RUN_ID = os.environ.get("VANE_RUN_ID", "local-poc-001")
+RUN_ID = os.environ.get("VANE_RUN_ID", "local-run-001")
 
 
 def classify_by_shape(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+    asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
     widths = batch.column("image_width").to_pylist()
@@ -2280,7 +2459,7 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
             error_message.append("")
 
     return pa.table({
-        "id": ids,
+        "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
         "image_width": widths,
@@ -2289,16 +2468,16 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
         "score": scores,
         "status": status,
         "error_message": error_message,
-        "run_id": [RUN_ID] * len(ids),
-        "pipeline_version": ["shape-v1"] * len(ids),
-        "processed_at_unix": [int(time.time())] * len(ids),
+        "run_id": [RUN_ID] * len(asset_ids),
+        "pipeline_version": ["shape-v1"] * len(asset_ids),
+        "processed_at_unix": [int(time.time())] * len(asset_ids),
     })
 
 
 scored = decoded.map_batches(
     classify_by_shape,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -2320,11 +2499,11 @@ Replace the rule with a model when the stage is correct. Use an actor backend wh
 
 ## Output contract
 
-Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the POC.
+Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the run.
 
 | Column | Purpose |
 | --- | --- |
-| `id` | Stable input identifier for joins and feedback. |
+| `asset_id` | Stable input identifier for joins and feedback. |
 | `source_uri` | Reproducible source reference. |
 | Stage outputs | Extracted text, frame metadata, labels, embeddings, OCR JSON, or other typed results. |
 | `score` | Confidence, rule score, similarity, or another comparable stage metric. |
@@ -2355,10 +2534,10 @@ summary = con.sql("""
 summary.show()
 
 failures = con.sql("""
-    select id, source_uri, media_type, error_message, run_id
+    select asset_id, source_uri, media_type, error_message, run_id
     from media_pipeline_scored
     where status <> 'ok'
-    order by id
+    order by asset_id
 """)
 ```
 
@@ -2371,7 +2550,7 @@ Write successes and failures deliberately. Large media bytes are usually interme
 ```python
 curated = con.sql("""
     select
-        id,
+        asset_id,
         source_uri,
         media_type,
         image_width,
@@ -2390,7 +2569,7 @@ curated.write_parquet("output/media_pipeline/curated/")
 failures.write_parquet("output/media_pipeline/failures/")
 ```
 
-Keeping failures in the same contract makes the POC diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
+Keeping failures in the same contract makes the run diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
 
 ## Split expensive stages
 
@@ -2417,7 +2596,7 @@ vane.configure(runner="ray")
 scored = decoded.map_batches(
     classify_by_shape,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
         "image_width": "BIGINT",
@@ -2442,7 +2621,7 @@ For model stages, use `ray_actor` when model state should be reused:
 scored = decoded.map_batches(
     ModelStage,
     schema={
-        "id": "BIGINT",
+        "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "label": "VARCHAR",
         "score": "DOUBLE",
@@ -2468,7 +2647,7 @@ Every Ray worker must be able to import the UDF class or function and access the
 
 ## Practical checks
 
-- Preserve `id` and `source_uri` through every stage.
+- Preserve `asset_id` and `source_uri` through every stage.
 - Filter and project before byte loading, decoding, inference, or embedding.
 - Return `status` and `error_message` columns from failure-prone stages.
 - Keep media bytes out of curated outputs unless the downstream system needs them.
@@ -2481,47 +2660,47 @@ Every Ray worker must be able to import the UDF class or function and access the
 Route: /docs/data/guides/structured-transformation
 Source: docs/guides/structured-transformation.mdx
 
-Use Structured Transformation after Structured Data Load when you already have a relation for raw tabular data and need to turn it into a curated table for a POC.
+Use Structured Transformation after Structured Data Load when you already have table-shaped inputs for an AI or multimodal workflow and need to turn them into a stable relation for UDFs, AI functions, GPU inference, embeddings, review, or downstream handoff.
 
-The usual path is SQL-first: profile the input, reduce it to the rows and columns you need, normalize types, derive business columns, join reference data, deduplicate where needed, validate the result, and write a stable output. Add Python UDFs only for rules that are hard to express clearly in SQL.
+This guide is not a warehouse ETL tutorial. The goal is to keep metadata, labels, prompt inputs, model outputs, and validation summaries explicit and traceable while the workflow stays table-shaped.
 
 ## Starting relation
 
-This guide assumes Structured Data Load has produced one or more relations from files, object storage, or another DuckDB-supported source.
+This guide assumes Structured Data Load has produced one or more relations from manifests, text records, labels, prompt tables, model outputs, or another DuckDB-supported source.
 
 ```python
 import vane
 
 con = vane.connect()
 
-raw_orders = con.sql("""
+source_documents = con.sql("""
     select *
-    from read_parquet('data/raw/orders/*.parquet')
+    from read_parquet('data/source_documents/*.parquet')
 """)
-raw_orders.to_table("raw_orders")
+source_documents.to_table("source_documents")
 
-customer_reference = con.sql("""
+review_labels = con.sql("""
     select *
-    from read_parquet('data/reference/customers.parquet')
+    from read_parquet('data/review_labels/*.parquet')
 """)
-customer_reference.to_table("customer_reference")
+review_labels.to_table("review_labels")
 ```
 
-Keep the raw relation registered until validation is complete. It is the easiest way to compare raw and curated values when a business rule needs adjustment.
+Keep the raw source relation registered until validation is complete. It is the easiest way to compare source values, prompt inputs, labels, and model outputs when a rule needs adjustment.
 
 ## Transformation flow
 
-A practical structured transformation flow is:
+A practical table-shaped transformation flow is:
 
-1. Profile the raw relation.
+1. Profile the source relation.
 2. Filter unusable or out-of-scope rows.
-3. Project only the columns the POC needs.
-4. Normalize types and categorical values.
-5. Derive business columns.
-6. Join reference data.
-7. Deduplicate rows when the business key requires it.
+3. Project only the columns the workflow needs.
+4. Normalize IDs, media types, labels, timestamps, and categorical values.
+5. Derive prompt inputs, review fields, routing flags, or evaluation columns.
+6. Join label, metadata, rule, or model-output tables.
+7. Deduplicate rows when the source key or chunk key requires it.
 8. Validate row counts, keys, nulls, domains, and sample diffs.
-9. Write the curated relation with stable schema and traceability columns.
+9. Write the curated relation with stable schema, source traceability, and run metadata.
 
 Start with a small, real slice of data. The goal is to confirm the rules and output contract before spending time on a full run.
 
@@ -2533,151 +2712,207 @@ Profile with SQL before writing transformation logic:
 con.sql("""
     select
         count(*) as row_count,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        min(order_timestamp) as min_order_timestamp,
-        max(order_timestamp) as max_order_timestamp
-    from raw_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where text is null or length(text) = 0) as empty_text_rows,
+        min(created_at) as min_created_at,
+        max(created_at) as max_created_at
+    from source_documents
 """).show()
 ```
 
-For a POC, add checks for the columns that affect the business decision: entity IDs, timestamps, amount fields, status fields, and the fields used for joins.
+For the first validation run, add checks for the columns that affect the AI or multimodal workflow: source IDs, source URIs, media types, language, labels, prompt text, model output status, timestamps, and join keys.
 
 ## SQL-first transform
 
 Use SQL for relational work: filtering, projection, type normalization, derived columns, joins, aggregation, deduplication, and validation queries.
 
 ```python
-curated_orders = con.sql("""
+curated_documents = con.sql("""
     with typed as (
         select
-            cast(order_id as varchar) as order_id,
-            cast(customer_id as varchar) as customer_id,
-            try_cast(order_timestamp as timestamp) as order_ts,
-            upper(trim(status)) as status,
-            try_cast(amount as decimal(18, 2)) as order_amount,
+            cast(document_id as varchar) as document_id,
+            cast(source_uri as varchar) as source_uri,
+            lower(trim(cast(media_type as varchar))) as media_type,
+            lower(trim(cast(document_type as varchar))) as document_type,
+            lower(trim(cast(language as varchar))) as language,
+            cast(case_id as varchar) as case_id,
+            try_cast(created_at as timestamp) as created_at,
+            regexp_replace(trim(coalesce(text, '')), '\\s+', ' ', 'g') as normalized_text,
             source_file,
             source_row_number
-        from raw_orders
-        where order_id is not null
+        from source_documents
+        where document_id is not null
+          and source_uri is not null
     ),
     projected as (
         select
-            order_id,
-            customer_id,
-            order_ts,
-            date_trunc('day', order_ts) as order_date,
+            document_id,
+            source_uri,
+            media_type,
+            document_type,
+            language,
+            case_id,
+            created_at,
+            normalized_text,
+            length(normalized_text) as text_length,
             case
-                when order_amount < 0 then true
+                when length(normalized_text) >= 80 then true
                 else false
-            end as refund_flag,
-            status,
-            order_amount,
+            end as ready_for_ai,
             source_file,
             source_row_number
         from typed
-        where order_ts is not null
     )
     select
-        p.order_id,
-        p.customer_id,
-        coalesce(r.customer_segment, 'UNKNOWN') as customer_segment,
-        p.order_ts,
-        p.order_date,
-        p.refund_flag,
-        p.status,
-        p.order_amount,
+        p.document_id,
+        p.source_uri,
+        p.media_type,
+        p.document_type,
+        p.language,
+        p.case_id,
+        p.created_at,
+        p.normalized_text as text,
+        p.text_length,
+        p.ready_for_ai,
+        coalesce(l.review_label, 'unlabeled') as review_label,
         p.source_file,
         p.source_row_number
     from projected p
-    left join customer_reference r using (customer_id)
+    left join review_labels l using (document_id)
 """)
 
-curated_orders.to_table("curated_orders")
+curated_documents.to_table("curated_documents")
 ```
 
-Prefer deterministic rules in the SQL itself. That makes the transformation easier to review, rerun, and compare against raw data.
+Prefer deterministic rules in SQL when the logic is relational. That makes the transformation easier to review, rerun, and compare against source data.
+
+## Build prompt or model-input columns
+
+Prompt construction is often a structured transformation step before AI Functions or GPU Inference. Keep prompt text deterministic and keep the IDs and metadata needed to review model outputs later.
+
+```python
+prompt_rows = con.sql("""
+    select
+        document_id,
+        source_uri,
+        document_type,
+        language,
+        review_label,
+        'Review this '
+            || document_type
+            || ' document and return one short quality note: '
+            || text as prompt
+    from curated_documents
+    where ready_for_ai
+    order by document_id
+    limit 100
+""")
+
+prompt_rows.to_table("prompt_rows")
+```
+
+For GPU Inference or AI Functions, validate the prompt relation before sending it to a model:
+
+- `document_id` is present and stable.
+- `source_uri` is present for review and reproduction.
+- `prompt` contains only the fields the model should see.
+- The sample is small enough to inspect manually before increasing `limit`, `batch_size`, or `concurrency`.
 
 ## When to use Python UDFs
 
 Use a Python UDF when the transformation needs logic that SQL would make unclear or brittle:
 
-- complex text cleanup or parsing
+- tokenizer-aware chunking
 - fuzzy matching and custom scoring
-- external libraries
+- media or document library calls
 - domain rules that are easier to test in Python
-- model or API calls that enrich structured rows
+- model preprocessing or postprocessing that returns custom columns
 
 Keep the UDF boundary narrow. Filter and project with SQL first, return explicit columns, and carry the stable ID back to SQL for validation.
 
 ```python
 import pyarrow as pa
 
-def normalize_customer_name(batch: pa.Table) -> pa.Table:
-    customer_ids = batch.column("customer_id").to_pylist()
-    names = batch.column("customer_name").to_pylist()
-    normalized = [
-        " ".join(str(name or "").strip().lower().split())
-        for name in names
-    ]
+def score_text_quality(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    scores = []
+    reasons = []
+    for text in texts:
+        value = str(text or "")
+        score = min(len(value) / 1000.0, 1.0)
+        scores.append(score)
+        if not value:
+            reasons.append("empty")
+        elif len(value) < 80:
+            reasons.append("too_short")
+        else:
+            reasons.append("ok")
+
     return pa.table({
-        "customer_id": customer_ids,
-        "normalized_customer_name": normalized,
+        "document_id": document_ids,
+        "quality_score": scores,
+        "quality_reason": reasons,
     })
 
-customer_names = con.sql("""
-    select customer_id, customer_name
-    from customer_reference
-    where customer_name is not null
+quality = con.sql("""
+    select document_id, text
+    from curated_documents
 """).map_batches(
-    normalize_customer_name,
+    score_text_quality,
     schema={
-        "customer_id": "VARCHAR",
-        "normalized_customer_name": "VARCHAR",
+        "document_id": "VARCHAR",
+        "quality_score": "DOUBLE",
+        "quality_reason": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
 )
 
-customer_names.to_table("customer_names")
+quality.to_table("document_quality")
 ```
 
 After the UDF, join the result back with SQL and run the same validation checks as any other derived column.
 
 ## Dedup and clean pattern
 
-Deduplication is one structured transformation pattern. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
+Deduplication is common for document manifests, extracted text, labels, and model outputs. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
 
 ```python
-deduped_customers = con.sql("""
+deduped_documents = con.sql("""
     with keyed as (
         select
-            customer_id,
-            customer_name,
-            email,
-            updated_at,
+            document_id,
+            source_uri,
+            media_type,
+            document_type,
+            text,
+            created_at,
             source_file,
             source_row_number,
-            lower(regexp_replace(trim(coalesce(email, '')), '\\s+', '', 'g')) as normalized_key
-        from customer_reference
+            lower(regexp_replace(trim(coalesce(source_uri, '')), '\\s+', '', 'g')) as normalized_source_uri
+        from curated_documents
     ),
     ranked as (
         select
             *,
-            count(*) over (partition by normalized_key) as duplicate_count,
+            count(*) over (partition by normalized_source_uri) as duplicate_count,
             row_number() over (
-                partition by normalized_key
-                order by updated_at desc nulls last, source_file, source_row_number
+                partition by normalized_source_uri
+                order by created_at desc nulls last, source_file, source_row_number
             ) as representative_rank
         from keyed
-        where normalized_key <> ''
+        where normalized_source_uri <> ''
     )
     select
-        customer_id,
-        customer_name,
-        email,
-        normalized_key,
+        document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text,
         duplicate_count,
         true as is_representative,
         source_file,
@@ -2686,12 +2921,12 @@ deduped_customers = con.sql("""
     where representative_rank = 1
 """)
 
-deduped_customers.to_table("deduped_customers")
+deduped_documents.to_table("deduped_documents")
 ```
 
-The `normalized_key` should match your business definition of a duplicate. The representative row order should be stable and explainable, such as latest update timestamp followed by source metadata.
+The normalized key should match your definition of a duplicate. The representative row order should be stable and explainable, such as latest timestamp followed by source metadata.
 
-For near-duplicate matching, compute signatures or scores in a Python UDF, then use SQL to group, rank, and validate the retained rows.
+For near-duplicate text or image matching, compute signatures or scores in a Python UDF or embedding stage, then use SQL to group, rank, and validate the retained rows.
 
 ## Validation checklist
 
@@ -2701,87 +2936,87 @@ Run validation before writing the curated output.
 con.sql("""
     select
         count(*) as curated_rows,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        count(*) filter (
-            where status not in ('OPEN', 'PAID', 'CANCELLED', 'REFUNDED')
-        ) as invalid_status_rows,
-        count(*) filter (where order_amount is null) as null_amount_rows
-    from curated_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
+        count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
+    from curated_documents
 """).show()
 ```
 
 Check at least:
 
 - row count before and after each major filter
-- key uniqueness for the curated entity
+- ID uniqueness for the source object or model-input row
 - nulls in required fields
-- value domains for status, category, currency, region, or other controlled fields
-- sample diff between raw and curated values
+- value domains for media type, language, label, status, or task type
+- prompt text samples before model calls
+- model-output or quality-score distributions after enrichment
+- sample diff between source and curated values
 
 Use a sample diff for rules that change values:
 
 ```python
 con.sql("""
     select
-        r.order_id,
-        r.status as raw_status,
-        c.status as curated_status,
-        r.order_timestamp as raw_order_timestamp,
-        c.order_ts as curated_order_ts
-    from raw_orders r
-    join curated_orders c using (order_id)
-    where r.status <> c.status
-       or try_cast(r.order_timestamp as timestamp) <> c.order_ts
+        s.document_id,
+        left(s.text, 120) as raw_text_preview,
+        left(c.text, 120) as curated_text_preview,
+        c.ready_for_ai,
+        c.review_label
+    from source_documents s
+    join curated_documents c using (document_id)
+    where coalesce(s.text, '') <> coalesce(c.text, '')
     limit 20
 """).show()
 ```
 
-For a POC, the validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to downstream analysis, UDFs, AI functions, or examples.
+Validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to UDFs, AI functions, GPU inference, embedding jobs, examples, or downstream systems.
 
 ## Write the curated output
 
 Write outputs with a stable contract:
 
 - stable schema with explicit column names and types
-- stable IDs for the entity or event represented by each row
-- traceability columns such as `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
-- enough run metadata to compare one POC run with another
+- stable IDs for every source object, prompt, chunk, label, or model-output row
+- traceability columns such as `source_uri`, `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
+- enough run metadata to compare one run with another
 
 ```python
-curated_orders.write_parquet("output/curated/orders/")
+curated_documents.write_parquet("output/curated/documents/")
 
 con.sql("""
     copy (
         select
-            'orders' as dataset,
+            'documents' as dataset,
             count(*) as row_count,
-            min(order_date) as min_order_date,
-            max(order_date) as max_order_date
-        from curated_orders
+            count(*) filter (where ready_for_ai) as ready_for_ai_rows,
+            min(created_at) as min_created_at,
+            max(created_at) as max_created_at
+        from curated_documents
     )
-    to 'output/curated/orders_validation.parquet'
+    to 'output/curated/documents_validation.parquet'
     (format parquet)
 """)
 ```
 
-Keep the raw-to-curated traceability until the POC questions are answered. It is often the fastest way to explain surprising results and turn feedback into a reproducible issue.
+Keep raw-to-curated traceability until the business questions are answered. It is often the fastest way to explain surprising model outputs and turn feedback into a reproducible issue.
 
 ## AI Functions
 
 Route: /docs/data/guides/ai-functions
 Source: docs/guides/ai-functions.mdx
 
-Use AI Functions when you want to add a small AI enrichment column to an existing relation and then inspect the result before scaling the run.
+Use AI Functions when you want to add AI enrichment columns to an existing relation and then inspect the result before scaling the run. Typical inputs are extracted document text, captions, transcripts, labels, prompts, or other table-shaped outputs from a multimodal or AI data workflow.
 
-This guide starts from a relation that already has a stable business identifier and one or more text fields. The goal is a minimal POC loop:
+This guide starts from a relation that already has a stable row identifier and one or more text fields. The goal is a small validation loop:
 
 ```text
-load a small real slice -> select ID and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
+load a small real slice -> select IDs and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
 ```
 
-AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, or per-row error columns.
+AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, preprocessing, or per-row error columns.
 
 ## Input relation
 
@@ -2789,7 +3024,7 @@ Start with a relation that contains:
 
 - A stable business ID such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
 - The text column or fields needed by the model.
-- Source metadata that helps you review bad outputs later, such as `source_uri`, `document_type`, or `created_at`.
+- Source metadata that helps you review bad outputs later, such as `source_uri`, `media_type`, `document_type`, or `created_at`.
 
 ```python
 import vane
@@ -2834,7 +3069,7 @@ with_output = con.from_arrow(
 )
 ```
 
-Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns `id`, source fields, status, error columns, and model output in one schema.
+Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns stable IDs, source fields, status, error columns, and model output in one schema.
 
 ## Embed Text
 
@@ -2969,7 +3204,7 @@ For structured outputs, use `return_format` with a Pydantic model and validate t
 
 ## Provider and Execution Choices
 
-Choose the smallest provider setup that can answer the POC question.
+Choose the smallest provider setup that can answer the current task.
 
 | Choice | Use it when | Watch for |
 | --- | --- | --- |
@@ -3000,7 +3235,7 @@ Before scaling the relation:
 
 Write the relation you created in the task above, such as `embedded`, `classified`, or `reviewed`, to a run-specific path.
 
-For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors.
+For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors. If the input came from a multimodal pipeline, also keep the extraction version, prompt version, source URI, and media type needed to reproduce bad outputs.
 
 ## Common Failures
 
@@ -3024,14 +3259,14 @@ For a larger run, keep the same validation checks and record provider, model, `b
 Route: /docs/data/guides/gpu-inference
 Source: docs/guides/gpu-inference.mdx
 
-Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table.
+Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table. Typical inputs are extracted documents, captions, transcripts, labels, or prompt rows prepared by earlier Vane stages.
 
 This guide focuses on Vane's vLLM path for batch prompt inference. For generic GPU model code that is not vLLM-backed, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
 
-The usual POC shape is:
+The usual workflow shape is:
 
 ```text
-load business data -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
 ```
 
 ## When to Use GPU Inference
@@ -3067,7 +3302,7 @@ The high-level `prompt(...)` helper returns the configured output column. If you
 
 ## Build the Prompt Relation
 
-Start with a small, real slice of business data. Keep the prompt text separate from the identifiers and metadata you need later.
+Start with a small, real slice of source rows. Keep the prompt text separate from the identifiers and metadata you need later.
 
 ```python
 import vane
@@ -3095,9 +3330,9 @@ Recommended input columns:
 
 | Column | Purpose |
 | --- | --- |
-| `case_id`, `document_id`, or another business key | Join the response back to the source system. |
+| `case_id`, `document_id`, `asset_id`, or another stable key | Join the response back to the source system. |
 | `source_uri` or source metadata | Review bad outputs and reproduce failures. |
-| `document_type`, category, tenant, or task type | Group prompts and compare output quality by business segment. |
+| `document_type`, `media_type`, category, tenant, or task type | Group prompts and compare output quality by source segment. |
 | `prompt` | The final text sent to vLLM. |
 | `system_prefix` or template ID, if you use one | Helps explain prompt groups and cache locality experiments. |
 
@@ -3169,11 +3404,11 @@ result_table = result_table.append_column(
 )
 result_table = result_table.append_column(
     "run_id",
-    pa.array(["claims-vllm-poc-001"] * prompt_table.num_rows, type=pa.string()),
+    pa.array(["claims-vllm-validation-001"] * prompt_table.num_rows, type=pa.string()),
 )
 
 results = con.from_arrow(result_table)
-results.write_parquet("output/claims-vllm-poc-001/")
+results.write_parquet("output/claims-vllm-validation-001/")
 ```
 
 Suggested output columns:
@@ -3185,7 +3420,7 @@ Suggested output columns:
 | `prompt` or prompt version | Explain what the model saw. |
 | `response_text` | The generated text. |
 | `status` | `ok`, `error`, or a business review state you define. |
-| `error_message` | A nullable diagnostic column for POC review. |
+| `error_message` | A nullable diagnostic column for review. |
 | `model`, `run_id`, and config summary | Compare runs without guessing which settings changed. |
 
 For stricter structured output, pass `return_format` to `prompt(...)` and validate the returned JSON strings before writing the final table.
@@ -3217,7 +3452,7 @@ ray_response_only = prompts.prompt(
     gpus_per_actor=1,
     execution_backend="ray_actor",
     use_ray=True,
-    ray_actor_pool_name="claims-vllm-poc",
+    ray_actor_pool_name="claims-vllm-validation",
     engine_args={
         "trust_remote_code": True,
         "max_model_len": 2048,
@@ -3241,7 +3476,7 @@ Start by changing one layer at a time. If the local sample is not correct, Ray w
 
 ## Batch Cache Optimization
 
-vLLM throughput depends on more than GPU count. For batch POCs, tune for engine reuse, bounded batches, and prompt locality.
+vLLM throughput depends on more than GPU count. For batch inference runs, tune for engine reuse, bounded batches, and prompt locality.
 
 ### Reuse actors and engines
 
@@ -3250,7 +3485,7 @@ Avoid patterns that reload the model for each row or each tiny batch. Use actor-
 For Ray-backed vLLM, use a named actor pool when multiple distributed tasks should share the same vLLM actors:
 
 ```python
-ray_actor_pool_name="claims-vllm-poc"
+ray_actor_pool_name="claims-vllm-validation"
 ```
 
 Local code supports named vLLM actor pools and shared inflight tracking by pool name. That lets multiple executors see the current load on each actor and route new prompt batches with better load awareness. It also avoids repeatedly creating the same actor pool during a distributed plan.
@@ -3307,9 +3542,9 @@ If `concurrency=2` and `gpus_per_actor=1`, the Ray environment needs at least tw
 | `concurrency` | Actor or vLLM pool size | Increase only when workers and GPUs have headroom. |
 | `gpus_per_actor` | Ray GPU resource request for vLLM actors | Match the model and engine setup. |
 | `ray_actor_pool_name` | Native vLLM Ray actor pool | Use for shared actor reuse in distributed runs. |
-| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for POC sweeps where failed rows should remain visible for review. |
+| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for validation runs where failed rows should remain visible for review. |
 
-Vane applies throughput-oriented defaults for the native vLLM engine scheduler, and you can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a POC run unless you know which setting you are testing.
+Vane applies throughput-oriented defaults for the native vLLM engine scheduler, and you can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a validation run unless you know which setting you are testing.
 
 ## Verification Checklist
 
@@ -3328,7 +3563,7 @@ For cache locality experiments, keep the model and sampling settings fixed. Comp
 
 ## Boundaries
 
-This guide is not a vLLM manual. It shows how to place vLLM batch inference inside a Vane relation workflow and what to validate for a POC.
+This guide is not a vLLM manual. It shows how to place vLLM batch inference inside a Vane relation workflow and what to validate before increasing scale.
 
 It is also not a production serving guide. It does not cover autoscaling, SLAs, traffic management, online request routing, or long-running service operations.
 
@@ -3339,9 +3574,9 @@ For non-vLLM GPU models, custom tokenizers, multimodal preprocessing, or a full 
 Route: /docs/data/guides/embeddings-at-scale
 Source: docs/guides/embeddings-at-scale.mdx
 
-Use this guide when your POC needs to turn many documents or text records into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
+Use this guide when your workflow needs to turn many documents, extracted text records, captions, transcripts, or other AI-ready text rows into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
 
-The embedding model call is only one stage. A useful POC path is:
+The embedding model call is only one stage. A useful workflow path is:
 
 ```text
 read and filter source rows -> chunk documents -> embed chunks -> validate output -> write an embedding table
@@ -3351,7 +3586,7 @@ This guide stops at the embedding table. It is not a vector database, retrieval-
 
 ## Start with a small source relation
 
-Begin with real business rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
+Begin with real source rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
 
 ```python
 import vane
@@ -3364,7 +3599,7 @@ documents = con.sql("""
         source_uri,
         document_type,
         text
-    from read_parquet('data/documents/*.parquet')
+    from read_parquet('data/extracted_documents/*.parquet')
     where text is not null
       and length(text) > 0
     order by document_id
@@ -3430,7 +3665,7 @@ chunks = documents.flat_map(
 )
 ```
 
-For a real POC, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
+For your own data, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
 
 Chunk output should preserve:
 
@@ -3438,7 +3673,7 @@ Chunk output should preserve:
 - `chunk_id`: deterministic from document ID, chunking version, and chunk index or offset.
 - `chunk_text`: the exact text sent to the embedding model.
 - `source_uri`: the file, object, or source record used for traceability.
-- business metadata such as type, tenant, language, date, or case ID when it helps review failures.
+- source metadata such as type, tenant, language, date, or case ID when it helps review failures.
 
 ## Validate chunks before embedding
 
@@ -3463,11 +3698,11 @@ if empty_chunks:
     raise ValueError(f"empty chunks: {empty_chunks[:5]}")
 ```
 
-Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the POC question before increasing the sample size.
+Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the business question before increasing the sample size.
 
 ## Choose a provider
 
-Choose the smallest provider setup that answers the POC question.
+Choose the smallest provider setup that answers the current task.
 
 | Choice | Use it when | Watch for |
 | --- | --- | --- |
@@ -3521,7 +3756,7 @@ import pyarrow as pa
 
 PROVIDER = "openai"
 MODEL = "text-embedding-3-small"
-RUN_ID = "embedding-poc-run-001"
+RUN_ID = "embedding-validation-run-001"
 
 chunk_table = chunks.to_arrow_table()
 embedding_table = embedding_only.to_arrow_table()
@@ -3563,11 +3798,11 @@ Write an embedding table that a downstream system and a reviewer can understand 
 | `embedding_model` | Exact model identifier used for the run. |
 | `embedding_run_id` | Run identifier for repeatability and review. |
 
-Add business metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
+Add source metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
 
 ## Write a reviewable result
 
-Write to a run-specific path so you can compare runs without overwriting earlier POC output.
+Write to a run-specific path so you can compare runs without overwriting earlier output.
 
 ```python
 embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
@@ -3609,16 +3844,16 @@ Every Ray worker needs access to the provider libraries, local model files or ho
 
 ## Boundary
 
-This guide produces a reproducible embedding dataset for a POC. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.
+This guide produces a reproducible embedding dataset. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.
 
 ## Performance Tuning
 
 Route: /docs/data/guides/performance-tuning
 Source: docs/guides/performance-tuning.mdx
 
-Use this guide after your POC pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
+Use this guide after your multimodal, AI, or inference pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
 
-This is not a production benchmark, SLA guide, or advanced cluster tuning manual. For v0.1.0, the useful outcome is a clear bottleneck diagnosis and a run record that makes feedback actionable.
+This is not a production benchmark, SLA guide, or advanced cluster tuning manual. The useful outcome is a clear bottleneck diagnosis and a run record that makes performance feedback actionable.
 
 ## Start With Correctness
 
@@ -3635,7 +3870,7 @@ Then tune one variable at a time. Keep the dataset slice, code, model, provider,
 
 ## Performance vs Sizing
 
-Performance Tuning diagnoses where time or failures are coming from in a concrete POC run. Sizing estimates the resources needed for the next larger run.
+Performance Tuning diagnoses where time or failures are coming from in a concrete run. Sizing estimates the resources needed for the next larger run.
 
 | Question | Use Performance Tuning | Use Sizing |
 | --- | --- | --- |
@@ -3647,7 +3882,7 @@ Performance Tuning diagnoses where time or failures are coming from in a concret
 
 Use the performance record in this guide as input when you later estimate resources in Sizing.
 
-## POC Tuning Order
+## Tuning Order
 
 Move through the pipeline in order. A later tuning knob will not help if an earlier stage is sending too much data, using inaccessible paths, or writing oversized output.
 
@@ -3656,14 +3891,14 @@ Move through the pipeline in order. A later tuning knob will not help if an earl
 | 1 | Data read | Input rows, input bytes, file count, object store latency, worker access to paths | Start with a smaller real slice; use worker-visible paths; avoid reading unused files |
 | 2 | SQL filter/project | Rows and columns entering the expensive stage | Filter early; project only the columns the UDF, AI function, or model needs |
 | 3 | UDF batch | Per-batch time, memory, long tail batches, retry cost | Adjust `batch_size` only after input columns and rows are reduced |
-| 4 | Actor reuse | Model or client initialization logs, repeated connection setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
+| 4 | Actor reuse | Model, tokenizer, media decoder, or client initialization logs, repeated setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
 | 5 | Provider rate limit | HTTP 429s, timeouts, retry waits, provider-side quota errors | Lower concurrency; batch only where the provider supports it; reduce unnecessary calls |
 | 6 | GPU utilization | GPU memory, utilization, model load time, CPU preprocessing time | Reuse model actors; tune batch size; add GPUs only after one GPU is understood |
 | 7 | Output write | Output rows, output bytes, wide columns, many small files, worker access to output path | Write only required columns; avoid carrying raw bytes or large intermediate objects unless needed |
 
 ## Core Knobs
 
-These are the main knobs for a POC. Change one at a time and keep the run record updated.
+These are the main knobs for an initial workflow. Change one at a time and keep the run record updated.
 
 | Knob | What it changes | Start here | Watch for |
 | --- | --- | --- | --- |
@@ -3682,7 +3917,7 @@ Hosted APIs and local GPU inference fail in different ways. Separate them before
 | Workload type | Common bottleneck | Symptoms | Useful fixes |
 | --- | --- | --- | --- |
 | Hosted API | Provider quota, request latency, retries, cost | 429 or quota errors, long retry waits, idle local CPU/GPU, failures tied to credentials or provider limits | Lower `concurrency`; reduce rows before the call; use provider-supported batch requests; record provider/model/error details |
-| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
+| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, media decode, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
 
 Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat low GPU utilization as proof that more GPUs are needed. First confirm which stage is waiting and why.
 
@@ -3697,7 +3932,7 @@ Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat l
 | Local run works, Ray run fails with file not found, import errors, or missing credentials | Worker path, dependency, or credential visibility | Put data, models, and output on worker-visible storage; install dependencies on workers; pass credentials through the Ray environment |
 | GPU memory is full but throughput is unstable | Batch too large, output too wide, or actor memory growth | Reduce `batch_size`; avoid carrying unused columns; restart from a clean small run and compare |
 | GPU utilization stays low while CPU is busy | CPU preprocessing or data read is the bottleneck | Time decode/tokenization separately; filter/project before inference; cache or stage expensive preprocessing output |
-| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next POC step; avoid raw bytes and large Python object columns in final output |
+| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next workflow step; avoid raw bytes and large Python object columns in final output |
 
 ## Minimal Measurement Loop
 
@@ -3718,12 +3953,12 @@ For AI and inference workloads, measure at least:
 - GPU memory and utilization, if local GPU
 - output rows and bytes
 
-## POC Performance Record
+## Performance Record
 
 Include a record like this when you report a performance issue or compare tuning runs.
 
 ```markdown
-## POC Performance Record
+## Performance Record
 
 - Goal:
 - Dataset:

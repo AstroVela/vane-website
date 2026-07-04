@@ -2,15 +2,15 @@
 title: AI Functions
 ---
 
-Use AI Functions when you want to add a small AI enrichment column to an existing relation and then inspect the result before scaling the run.
+Use AI Functions when you want to add AI enrichment columns to an existing relation and then inspect the result before scaling the run. Typical inputs are extracted document text, captions, transcripts, labels, prompts, or other table-shaped outputs from a multimodal or AI data workflow.
 
-This guide starts from a relation that already has a stable business identifier and one or more text fields. The goal is a minimal POC loop:
+This guide starts from a relation that already has a stable row identifier and one or more text fields. The goal is a small validation loop:
 
 ```text
-load a small real slice -> select ID and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
+load a small real slice -> select IDs and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
 ```
 
-AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, or per-row error columns.
+AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, preprocessing, or per-row error columns.
 
 ## Input relation
 
@@ -18,7 +18,7 @@ Start with a relation that contains:
 
 - A stable business ID such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
 - The text column or fields needed by the model.
-- Source metadata that helps you review bad outputs later, such as `source_uri`, `document_type`, or `created_at`.
+- Source metadata that helps you review bad outputs later, such as `source_uri`, `media_type`, `document_type`, or `created_at`.
 
 ```python
 import vane
@@ -63,7 +63,7 @@ with_output = con.from_arrow(
 )
 ```
 
-Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns `id`, source fields, status, error columns, and model output in one schema.
+Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns stable IDs, source fields, status, error columns, and model output in one schema.
 
 ## Embed Text
 
@@ -198,7 +198,7 @@ For structured outputs, use `return_format` with a Pydantic model and validate t
 
 ## Provider and Execution Choices
 
-Choose the smallest provider setup that can answer the POC question.
+Choose the smallest provider setup that can answer the current task.
 
 | Choice | Use it when | Watch for |
 | --- | --- | --- |
@@ -229,7 +229,7 @@ Before scaling the relation:
 
 Write the relation you created in the task above, such as `embedded`, `classified`, or `reviewed`, to a run-specific path.
 
-For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors.
+For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors. If the input came from a multimodal pipeline, also keep the extraction version, prompt version, source URI, and media type needed to reproduce bad outputs.
 
 ## Common Failures
 

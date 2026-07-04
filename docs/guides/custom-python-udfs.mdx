@@ -2,9 +2,9 @@
 title: Custom Python UDFs
 ---
 
-Use Custom Python UDFs when your POC needs business logic that does not belong in SQL: text cleanup, domain rules, external Python libraries, model preprocessing, model inference, or client calls.
+Use Custom Python UDFs when an AI or multimodal workflow needs logic that does not belong in SQL: text cleanup, media metadata checks, domain rules, external Python libraries, model preprocessing, custom inference, or client calls.
 
-The goal is to make one UDF correct on a small slice of your own data, keep its table contract explicit, then move the same logic to Ray only when distribution or actor reuse is worth the extra setup.
+The goal is to make one UDF correct on a small real slice, keep its table contract explicit, then move the same logic to Ray only when distribution, actor reuse, or GPU placement is worth the extra setup.
 
 ## UDF contract
 
@@ -14,27 +14,28 @@ For `map_batches`, the contract is:
 2. The callable returns a `pyarrow.Table`.
 3. The returned table must match the declared `schema`.
 
-`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, or audit.
+`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, review, or audit.
 
 ```python
-import pyarrow as pa
 import vane
 
 con = vane.connect()
 
 documents = con.sql("""
     select
-        id,
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
         document_type,
-        text,
-        amount
+        text
     from read_parquet('data/documents/*.parquet')
     where text is not null
+    order by document_id
     limit 100
 """)
 ```
 
-Keep the first sample small and real. Inline data is fine for learning, but the first useful POC UDF should touch the same columns and messy values that your real pipeline will use.
+Keep the first sample small and real. Inline data is fine for learning, but the first useful UDF should touch the same columns, source metadata, and messy values that your real pipeline will use.
 
 ## First stateless batch UDF
 
@@ -45,49 +46,64 @@ import re
 
 import pyarrow as pa
 
-def add_review_fields(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
     document_types = batch.column("document_type").to_pylist()
     texts = batch.column("text").to_pylist()
-    amounts = batch.column("amount").to_pylist()
 
     normalized_text = []
+    text_length = []
     needs_review = []
     review_reason = []
 
-    for document_type, text, amount in zip(document_types, texts, amounts):
-        clean = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    for media_type, text in zip(media_types, texts, strict=False):
+        clean = re.sub(r"\s+", " ", str(text or "")).strip()
+        lower = clean.lower()
+
         normalized_text.append(clean)
+        text_length.append(len(clean))
 
-        has_risk_term = "missing" in clean or "expired" in clean
-        high_amount = amount is not None and amount >= 1000
-
-        needs_review.append(has_risk_term or high_amount)
-        if has_risk_term:
+        if media_type not in SUPPORTED_MEDIA_TYPES:
+            needs_review.append(True)
+            review_reason.append("unsupported_media_type")
+        elif not clean:
+            needs_review.append(True)
+            review_reason.append("empty_text")
+        elif any(term in lower for term in RISK_TERMS):
+            needs_review.append(True)
             review_reason.append("risk_term")
-        elif high_amount:
-            review_reason.append("high_amount")
         else:
+            needs_review.append(False)
             review_reason.append("none")
 
     return pa.table({
-        "id": ids,
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
         "document_type": document_types,
-        "text": texts,
-        "amount": amounts,
         "normalized_text": normalized_text,
+        "text_length": text_length,
         "needs_review": needs_review,
         "review_reason": review_reason,
     })
 
-reviewed = documents.map_batches(
-    add_review_fields,
+
+prepared = documents.map_batches(
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -95,32 +111,34 @@ reviewed = documents.map_batches(
     execution_backend="subprocess_task",
 )
 
-reviewed.show()
+prepared.show()
 ```
 
-This example returns the source `id`, `document_type`, `text`, and `amount` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
+This example returns the source `document_id`, `source_uri`, `media_type`, and `document_type` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
 
 ## Validate with SQL
 
 Turn the UDF output into a named table when you want relational checks.
 
 ```python
-reviewed.to_table("reviewed_documents")
+prepared.to_table("prepared_documents")
 
 summary = con.sql("""
     select
         document_type,
+        media_type,
         needs_review,
+        review_reason,
         count(*) as rows
-    from reviewed_documents
-    group by document_type, needs_review
-    order by document_type, needs_review
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
 """)
 
 summary.show()
 ```
 
-For a first POC, check row counts, IDs, a few high-risk rows, and a few rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
+For the first validation run, check row counts, IDs, unsupported media types, empty text, and rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
 
 ## Schema and Arrow outputs
 
@@ -129,21 +147,21 @@ Treat the schema as part of the UDF interface.
 | Topic | Guidance |
 | --- | --- |
 | Column names | Return exactly the columns declared in `schema`. |
-| Required source columns | Return IDs, source URI/path, business keys, and text or metadata needed later. |
+| Required source columns | Return IDs, source URI/path, media type, business keys, text, or metadata needed later. |
 | Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
-| Nulls | Keep null behavior explicit, especially for numeric and list columns. |
+| Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
 | Row count | A `map_batches` UDF normally returns one output row per input row. Use `flat_map` when one input can create zero or many rows. |
 
 If Arrow cannot infer the type you want, build an explicit array:
 
 ```python
 return pa.table({
-    "id": pa.array(ids, type=pa.int64()),
+    "document_id": pa.array(document_ids, type=pa.string()),
     "review_reason": pa.array(review_reason, type=pa.string()),
 })
 ```
 
-Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, or structured JSON strings before returning.
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, structs, JSON strings, or explicit Arrow arrays before returning.
 
 ## Batch size
 
@@ -153,13 +171,14 @@ Start small while debugging:
 
 ```python
 debugged = documents.map_batches(
-    add_review_fields,
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -187,37 +206,41 @@ Actor backends construct the class inside the worker and reuse it for multiple b
 ```python
 import pyarrow as pa
 
-class KeywordTagger:
+
+class PromptBuilder:
     def __init__(self) -> None:
-        self.terms_by_label = {
-            "policy_issue": ("expired policy", "coverage gap"),
-            "approval_issue": ("missing approval", "unsigned"),
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
         }
 
     def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        texts = batch.column("text").to_pylist()
+        document_ids = batch.column("document_id").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
 
-        labels = []
-        for text in texts:
-            normalized = str(text or "").lower()
-            label = "none"
-            for candidate, terms in self.terms_by_label.items():
-                if any(term in normalized for term in terms):
-                    label = candidate
-                    break
-            labels.append(label)
+        prompts = []
+        prompt_template = []
+
+        for document_type, text in zip(document_types, texts, strict=False):
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
 
         return pa.table({
-            "id": ids,
-            "issue_label": labels,
+            "document_id": document_ids,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
         })
 
-tagged = documents.map_batches(
-    KeywordTagger,
+
+prompts = prepared.map_batches(
+    PromptBuilder,
     schema={
-        "id": "BIGINT",
-        "issue_label": "VARCHAR",
+        "document_id": "VARCHAR",
+        "prompt_template": "VARCHAR",
+        "prompt": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_actor",
@@ -225,7 +248,7 @@ tagged = documents.map_batches(
 )
 ```
 
-In a real model UDF, load the model or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+In a real model UDF, load the model, tokenizer, or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
 
 ## Backend choices
 
@@ -245,14 +268,15 @@ import vane
 
 vane.configure(runner="ray")
 
-ray_reviewed = documents.map_batches(
-    add_review_fields,
+ray_prepared = documents.map_batches(
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -264,11 +288,12 @@ ray_reviewed = documents.map_batches(
 For a stateful or GPU-backed model, keep the class shape and switch the backend:
 
 ```python
-ray_tagged = documents.map_batches(
-    KeywordTagger,
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
     schema={
-        "id": "BIGINT",
-        "issue_label": "VARCHAR",
+        "document_id": "VARCHAR",
+        "prompt_template": "VARCHAR",
+        "prompt": "VARCHAR",
     },
     batch_size=128,
     execution_backend="ray_actor",
@@ -291,15 +316,15 @@ Use this sequence before moving a UDF into a larger pipeline.
 
 ```python
 sample = con.sql("""
-    select id, document_type, text, amount
+    select document_id, source_uri, media_type, document_type, text
     from read_parquet('data/documents/*.parquet')
     where text is not null
-    order by id
+    order by document_id
     limit 20
 """)
 
 sample_arrow = sample.to_arrow_table()
-debug_arrow = add_review_fields(sample_arrow)
+debug_arrow = prepare_document_text(sample_arrow)
 
 assert len(debug_arrow) == len(sample_arrow)
 print(debug_arrow.schema)
@@ -310,13 +335,14 @@ Then run it through Vane:
 
 ```python
 debug_relation = sample.map_batches(
-    add_review_fields,
+    prepare_document_text,
     schema={
-        "id": "BIGINT",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
         "document_type": "VARCHAR",
-        "text": "VARCHAR",
-        "amount": "DOUBLE",
         "normalized_text": "VARCHAR",
+        "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
     },
@@ -343,7 +369,7 @@ If this fails, keep the failure local. A Ray run will add import, dependency, st
 
 ## How this guide connects to the rest of the docs
 
-- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is relational cleanup, joins, deduplication, validation, or output shaping, and add a UDF only for logic SQL should not own.
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is table-shaped cleanup, joins, deduplication, validation, or output shaping for an AI or multimodal workflow, and add a UDF only for logic SQL should not own.
 - Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
 - Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Come back to Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
 - Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind `map_batches`, callable classes, and execution backends.

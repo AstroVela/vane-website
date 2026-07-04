@@ -2,20 +2,32 @@
 title: Structured Data Load
 ---
 
-Use this guide when your POC starts from structured business data: orders, claims, tickets, invoices, events, customer records, or other table-shaped files.
+Use this guide when your AI or multimodal workflow starts from table-shaped inputs: media manifests, document metadata, text records, labels, prompt tables, model outputs, evaluation samples, or business IDs that need to be joined to source objects.
 
-The goal is to load a small real slice, verify that the data contract is credible, and produce a source relation that later stages can use for structured transformation, Python UDFs, or AI functions.
+This guide is not a traditional ETL tutorial. The goal is to load a small, real slice, verify that the data contract is credible, and produce a source relation that later Vane stages can use for multimodal processing, Python UDFs, AI functions, GPU inference, embeddings, or validation.
 
-## Start with a small real slice
+## Start with the data contract
 
-Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose business shape:
+Before loading files, decide what the relation must preserve for downstream AI work.
 
-- One time window, region, customer group, product line, or workflow state.
+Typical source columns include:
+
+| Column | Purpose |
+| --- | --- |
+| `asset_id`, `document_id`, `case_id`, or `sample_id` | Stable identifiers used to join outputs back to source rows. |
+| `source_uri` | File, object storage, or application URI for the original document, image, audio, video, or record. |
+| `media_type` or `record_type` | Routing and filtering before expensive decode, model, or embedding stages. |
+| `text`, `prompt`, `label`, or `model_output` | The text or model-facing value used by later AI stages. |
+| business metadata | Priority, tenant, language, timestamp, workflow state, reviewer label, or other fields used for slicing and review. |
+
+Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose the shape of your data:
+
+- One time window, source system, document family, tenant, language, or workflow state.
 - Enough rows to include normal cases and known edge cases.
-- The columns needed for IDs, joins, filters, text fields, labels, amounts, dates, and status values.
-- Stable source identifiers that can be carried through later transformations.
+- Stable IDs and source metadata that can be carried through later transformations.
+- The columns needed for prompt construction, labels, model review, quality checks, or output joins.
 
-If the full dataset is remote or large, either export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
+If the full dataset is remote or large, export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
 
 ## Load local Parquet
 
@@ -26,22 +38,23 @@ import vane
 
 con = vane.connect()
 
-orders = con.sql("""
+documents = con.sql("""
     select *
-    from read_parquet('data/orders/*.parquet', union_by_name=true)
-    where order_date >= date '2026-01-01'
+    from read_parquet('data/document_manifest/*.parquet', union_by_name=true)
+    where text is not null
+    order by document_id
     limit 10000
 """)
 
-orders.to_table("raw_orders")
+documents.to_table("raw_documents")
 ```
 
 For nested directories, use a recursive glob:
 
 ```python
-events = con.sql("""
+media_events = con.sql("""
     select *
-    from read_parquet('data/events/**/*.parquet', union_by_name=true)
+    from read_parquet('data/media_events/**/*.parquet', union_by_name=true)
     limit 10000
 """)
 ```
@@ -50,23 +63,23 @@ Use `union_by_name=true` when multiple files may have columns in different order
 
 ## Load local CSV
 
-Use CSV for small or exported slices. Prefer Parquet once you control the export format, because it carries column types more reliably.
+Use CSV for small exports such as labels, review samples, prompt tables, or issue lists. Prefer Parquet once you control the export format, because it carries column types more reliably.
 
 ```python
-claims = con.sql("""
+labels = con.sql("""
     select *
-    from read_csv_auto('data/claims/*.csv', header=true)
+    from read_csv_auto('data/labels/*.csv', header=true)
     limit 10000
 """)
 
-claims.to_table("raw_claims")
+labels.to_table("raw_labels")
 ```
 
 If type inference is wrong, keep the load simple, inspect the inferred schema, then cast important columns explicitly in the source relation.
 
 ## Load from S3 or MinIO
 
-Keep object storage configuration minimal for a POC. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
+Keep object storage configuration minimal for the first validation run. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
 
 ```python
 import vane
@@ -81,7 +94,7 @@ con.execute("SET s3_url_style='path'")
 
 source = con.sql("""
     select *
-    from read_parquet('s3://my-bucket/poc/orders/*.parquet')
+    from read_parquet('s3://my-bucket/sample/document_manifest/*.parquet')
     limit 10000
 """)
 ```
@@ -101,43 +114,49 @@ Do not put long-lived secrets in checked-in scripts or documentation snippets. I
 Materialize the raw scan as a temporary table when you want to run several checks against the same slice.
 
 ```python
-orders.to_table("raw_orders")
+documents.to_table("raw_documents")
 
-con.sql("describe raw_orders").show()
+con.sql("describe raw_documents").show()
 
 con.sql("""
-    select *
-    from raw_orders
+    select
+        document_id,
+        source_uri,
+        media_type,
+        document_type,
+        language,
+        left(text, 160) as text_preview
+    from raw_documents
     limit 10
 """).show()
 ```
 
-Before adding transformation, UDF, or AI work, confirm that column names, types, sample values, encodings, and date/time assumptions match the business data you expected.
+Before adding UDF, AI, or GPU work, confirm that column names, types, sample values, encodings, URI formats, and timestamp assumptions match the data you expected.
 
-## Run basic POC checks
+## Run basic load checks
 
-Start with row count, key uniqueness, null checks, and a few distributions that would catch a bad slice.
+Start with row count, key uniqueness, null checks, URI coverage, and a few distributions that would catch a bad slice.
 
 ```python
 con.sql("""
     select
         count(*) as rows,
-        count(distinct order_id) as distinct_order_ids,
-        count(*) - count(distinct order_id) as duplicate_order_ids,
-        count(*) filter (where order_id is null) as null_order_ids,
-        count(*) filter (where customer_id is null) as null_customer_ids,
-        count(*) filter (where amount is null) as null_amounts
-    from raw_orders
+        count(distinct document_id) as distinct_document_ids,
+        count(*) - count(distinct document_id) as duplicate_document_ids,
+        count(*) filter (where document_id is null) as null_document_ids,
+        count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where text is null or length(text) = 0) as empty_text_rows
+    from raw_documents
 """).show()
 ```
 
-Check important categorical or time distributions:
+Check important media or business distributions:
 
 ```python
 con.sql("""
-    select status, count(*) as rows
-    from raw_orders
-    group by status
+    select media_type, document_type, count(*) as rows
+    from raw_documents
+    group by media_type, document_type
     order by rows desc
     limit 20
 """).show()
@@ -145,42 +164,46 @@ con.sql("""
 
 ```python
 con.sql("""
-    select date_trunc('month', order_date) as month, count(*) as rows
-    from raw_orders
-    group by month
-    order by month
+    select language, count(*) as rows
+    from raw_documents
+    group by language
+    order by rows desc
 """).show()
 ```
 
-Replace `order_id`, `customer_id`, `amount`, `status`, and `order_date` with fields that matter for your POC. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them.
+Replace the column names with fields that matter for your workflow. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them behind Python, AI, or GPU work.
 
 ## Produce the source relation
 
 Create a narrow relation with the columns downstream stages need. Keep IDs and source metadata, cast important fields deliberately, and filter out rows that cannot be traced.
 
 ```python
-source_orders = con.sql("""
+source_documents = con.sql("""
     select
-        cast(order_id as varchar) as order_id,
-        cast(customer_id as varchar) as customer_id,
-        cast(order_date as date) as order_date,
-        cast(status as varchar) as status,
-        cast(amount as double) as amount,
-        notes
-    from raw_orders
-    where order_id is not null
+        cast(document_id as varchar) as document_id,
+        cast(source_uri as varchar) as source_uri,
+        cast(media_type as varchar) as media_type,
+        cast(document_type as varchar) as document_type,
+        cast(language as varchar) as language,
+        cast(case_id as varchar) as case_id,
+        text
+    from raw_documents
+    where document_id is not null
+      and source_uri is not null
+      and text is not null
 """)
 
-source_orders.to_table("source_orders_poc")
+source_documents.to_table("source_documents")
 ```
 
 Use this relation as the input for the next guide:
 
-- Structured Transformation for filtering, joins, derived columns, and validation summaries.
-- Custom Python UDFs when business logic needs Python libraries or external services.
-- AI Functions when a text column should be embedded, classified, or prompted.
+- Multimodal Pipeline when source URIs need decode, OCR, transcript, or media-specific processing.
+- Structured Transformation when metadata, labels, prompt inputs, or model outputs need filtering, joining, deduplication, or validation.
+- Custom Python UDFs when the workflow needs Python libraries, private clients, model preprocessing, or a custom output schema.
+- AI Functions, Embeddings at Scale, or GPU Inference when a text or prompt column should be embedded, classified, prompted, or sent to vLLM.
 
-Keep the source relation small while the POC logic is changing. Increase the slice only after row counts, schemas, and sample outputs are explainable.
+Keep the source relation small while the workflow logic is changing. Increase the slice only after row counts, schemas, source IDs, sample outputs, and error behavior are explainable.
 
 ## Local vs Ray accessibility
 
@@ -191,7 +214,8 @@ Ray execution may schedule scans, writes, or UDFs on workers. Every worker must 
 - See the same local path, mounted filesystem, or object storage URI.
 - Load the same DuckDB extensions required by the scan.
 - Access the same credentials and endpoint settings.
-- Import the same Python packages used by later UDF stages.
+- Import the same Python packages used by later UDF or AI stages.
+- Access model files or provider credentials if later stages need them.
 - Write to an output path that is visible outside the worker.
 
 Configure Ray before creating the connection:
@@ -203,7 +227,7 @@ vane.configure(runner="ray")
 con = vane.connect()
 ```
 
-Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the POC needs distributed scan, UDF, or write behavior.
+Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the workflow needs distributed scan, UDF, AI, GPU, or write behavior.
 
 ## Common failures and feedback
 
@@ -212,11 +236,12 @@ When a structured load fails, classify the failure before changing the pipeline:
 | Category | What to check |
 | --- | --- |
 | Path not found | Current working directory, absolute path, glob pattern, file permissions, mounted paths on Ray workers |
-| Empty or wrong slice | Filters, date ranges, partition paths, `limit`, recursive glob depth |
+| Empty or wrong slice | Filters, partition paths, `limit`, recursive glob depth, export freshness |
 | Schema mismatch | CSV inference, Parquet schema drift, `union_by_name`, explicit casts, unexpected nullable fields |
 | Bad identifiers | Null keys, duplicate keys, keys that are only unique within a partition |
+| Bad source references | Missing `source_uri`, mixed URI formats, local paths not visible to workers |
 | Object storage auth | Region, endpoint, SSL setting, path-style setting, credential availability |
-| Ray access | Worker environment variables, mounted filesystems, package availability, output path visibility |
+| Ray access | Worker environment variables, mounted filesystems, package availability, model files, provider credentials, output path visibility |
 
 Useful feedback includes:
 

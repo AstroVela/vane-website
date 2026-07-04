@@ -2,14 +2,14 @@
 title: GPU Inference
 ---
 
-Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table.
+Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table. Typical inputs are extracted documents, captions, transcripts, labels, or prompt rows prepared by earlier Vane stages.
 
 This guide focuses on Vane's vLLM path for batch prompt inference. For generic GPU model code that is not vLLM-backed, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
 
-The usual POC shape is:
+The usual workflow shape is:
 
 ```text
-load business data -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
 ```
 
 ## When to Use GPU Inference
@@ -45,7 +45,7 @@ The high-level `prompt(...)` helper returns the configured output column. If you
 
 ## Build the Prompt Relation
 
-Start with a small, real slice of business data. Keep the prompt text separate from the identifiers and metadata you need later.
+Start with a small, real slice of source rows. Keep the prompt text separate from the identifiers and metadata you need later.
 
 ```python
 import vane
@@ -73,9 +73,9 @@ Recommended input columns:
 
 | Column | Purpose |
 | --- | --- |
-| `case_id`, `document_id`, or another business key | Join the response back to the source system. |
+| `case_id`, `document_id`, `asset_id`, or another stable key | Join the response back to the source system. |
 | `source_uri` or source metadata | Review bad outputs and reproduce failures. |
-| `document_type`, category, tenant, or task type | Group prompts and compare output quality by business segment. |
+| `document_type`, `media_type`, category, tenant, or task type | Group prompts and compare output quality by source segment. |
 | `prompt` | The final text sent to vLLM. |
 | `system_prefix` or template ID, if you use one | Helps explain prompt groups and cache locality experiments. |
 
@@ -147,11 +147,11 @@ result_table = result_table.append_column(
 )
 result_table = result_table.append_column(
     "run_id",
-    pa.array(["claims-vllm-poc-001"] * prompt_table.num_rows, type=pa.string()),
+    pa.array(["claims-vllm-validation-001"] * prompt_table.num_rows, type=pa.string()),
 )
 
 results = con.from_arrow(result_table)
-results.write_parquet("output/claims-vllm-poc-001/")
+results.write_parquet("output/claims-vllm-validation-001/")
 ```
 
 Suggested output columns:
@@ -163,7 +163,7 @@ Suggested output columns:
 | `prompt` or prompt version | Explain what the model saw. |
 | `response_text` | The generated text. |
 | `status` | `ok`, `error`, or a business review state you define. |
-| `error_message` | A nullable diagnostic column for POC review. |
+| `error_message` | A nullable diagnostic column for review. |
 | `model`, `run_id`, and config summary | Compare runs without guessing which settings changed. |
 
 For stricter structured output, pass `return_format` to `prompt(...)` and validate the returned JSON strings before writing the final table.
@@ -195,7 +195,7 @@ ray_response_only = prompts.prompt(
     gpus_per_actor=1,
     execution_backend="ray_actor",
     use_ray=True,
-    ray_actor_pool_name="claims-vllm-poc",
+    ray_actor_pool_name="claims-vllm-validation",
     engine_args={
         "trust_remote_code": True,
         "max_model_len": 2048,
@@ -219,7 +219,7 @@ Start by changing one layer at a time. If the local sample is not correct, Ray w
 
 ## Batch Cache Optimization
 
-vLLM throughput depends on more than GPU count. For batch POCs, tune for engine reuse, bounded batches, and prompt locality.
+vLLM throughput depends on more than GPU count. For batch inference runs, tune for engine reuse, bounded batches, and prompt locality.
 
 ### Reuse actors and engines
 
@@ -228,7 +228,7 @@ Avoid patterns that reload the model for each row or each tiny batch. Use actor-
 For Ray-backed vLLM, use a named actor pool when multiple distributed tasks should share the same vLLM actors:
 
 ```python
-ray_actor_pool_name="claims-vllm-poc"
+ray_actor_pool_name="claims-vllm-validation"
 ```
 
 Local code supports named vLLM actor pools and shared inflight tracking by pool name. That lets multiple executors see the current load on each actor and route new prompt batches with better load awareness. It also avoids repeatedly creating the same actor pool during a distributed plan.
@@ -285,9 +285,9 @@ If `concurrency=2` and `gpus_per_actor=1`, the Ray environment needs at least tw
 | `concurrency` | Actor or vLLM pool size | Increase only when workers and GPUs have headroom. |
 | `gpus_per_actor` | Ray GPU resource request for vLLM actors | Match the model and engine setup. |
 | `ray_actor_pool_name` | Native vLLM Ray actor pool | Use for shared actor reuse in distributed runs. |
-| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for POC sweeps where failed rows should remain visible for review. |
+| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for validation runs where failed rows should remain visible for review. |
 
-Vane applies throughput-oriented defaults for the native vLLM engine scheduler, and you can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a POC run unless you know which setting you are testing.
+Vane applies throughput-oriented defaults for the native vLLM engine scheduler, and you can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a validation run unless you know which setting you are testing.
 
 ## Verification Checklist
 
@@ -306,7 +306,7 @@ For cache locality experiments, keep the model and sampling settings fixed. Comp
 
 ## Boundaries
 
-This guide is not a vLLM manual. It shows how to place vLLM batch inference inside a Vane relation workflow and what to validate for a POC.
+This guide is not a vLLM manual. It shows how to place vLLM batch inference inside a Vane relation workflow and what to validate before increasing scale.
 
 It is also not a production serving guide. It does not cover autoscaling, SLAs, traffic management, online request routing, or long-running service operations.
 
