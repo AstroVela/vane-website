@@ -10,8 +10,7 @@
     "items": [
       { "slug": "quickstart/what-is-vane-data" },
       { "slug": "quickstart/installation" },
-      { "slug": "quickstart/quickstart-sql" },
-      { "slug": "quickstart/quickstart-python" }
+      { "slug": "quickstart/quickstart" }
     ]
   },
   {
@@ -25,15 +24,31 @@
     ]
   },
   {
-    "group": "Guides",
+    "group": "Guides / Data Ingestion",
     "items": [
       { "slug": "guides/multimodal-ingest" },
-      { "slug": "guides/embeddings-at-scale" },
-      { "slug": "guides/dedup-and-clean" },
-      { "slug": "guides/sql-multimodal-pipeline" },
-      { "slug": "guides/doris-integration" },
-      { "slug": "guides/iceberg-lakehouse" },
-      { "slug": "guides/gpu-inference-udf" },
+      { "slug": "guides/structured-data-load" }
+    ]
+  },
+  {
+    "group": "Guides / Data Transformation",
+    "items": [
+      { "slug": "guides/custom-python-udfs" },
+      { "slug": "guides/multimodal-pipeline" },
+      { "slug": "guides/structured-transformation" }
+    ]
+  },
+  {
+    "group": "Guides / AI & Inference",
+    "items": [
+      { "slug": "guides/ai-functions" },
+      { "slug": "guides/gpu-inference" },
+      { "slug": "guides/embeddings-at-scale" }
+    ]
+  },
+  {
+    "group": "Guides / Optimization",
+    "items": [
       { "slug": "guides/performance-tuning" }
     ]
   },

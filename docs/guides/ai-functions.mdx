@@ -1,0 +1,249 @@
+---
+title: AI Functions
+---
+
+Use AI Functions when you want to add a small AI enrichment column to an existing relation and then inspect the result before scaling the run.
+
+This guide starts from a relation that already has a stable business identifier and one or more text fields. The goal is a minimal POC loop:
+
+```text
+load a small real slice -> select ID and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
+```
+
+AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, or per-row error columns.
+
+## Input relation
+
+Start with a relation that contains:
+
+- A stable business ID such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
+- The text column or fields needed by the model.
+- Source metadata that helps you review bad outputs later, such as `source_uri`, `document_type`, or `created_at`.
+
+```python
+import vane
+
+con = vane.connect()
+
+source = con.sql("""
+    select
+        document_id,
+        document_type,
+        text,
+        source_uri
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+source.to_table("source_sample")
+```
+
+Keep the first sample small and ordered. Ordering gives you a deterministic way to validate and combine helper output with the source rows.
+
+## Preserve IDs
+
+`embed_text(...)`, `classify_text(...)`, and `prompt(...)` return the configured output column. If the final result also needs IDs and source columns, explicitly combine the output column with the source rows after validating row counts and ordering.
+
+```python
+source_table = source.to_arrow_table()
+```
+
+For each task below, materialize the helper output, compare row counts, and append the new column to `source_table` only after the check passes:
+
+```python
+output_table = output_only.to_arrow_table()
+
+if output_table.num_rows != source_table.num_rows:
+    raise ValueError("AI output row count does not match source row count")
+
+with_output = con.from_arrow(
+    source_table.append_column("ai_output", output_table["ai_output"])
+)
+```
+
+Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns `id`, source fields, status, error columns, and model output in one schema.
+
+## Embed Text
+
+Use `embed_text` when each input row should receive one vector. For long documents, chunk first and use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale).
+
+```python
+embedding_only = source.embed_text(
+    "text",
+    provider="openai",
+    model="text-embedding-3-small",
+    output_column="embedding",
+    batch_size=64,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should be non-null after filtering.
+- Output column: `embedding` should be present and have the expected vector length for the model.
+- ID preservation: combine the embedding column back with `document_id` only after the row count check passes.
+- Result review: inspect a few rows and confirm that empty or very short text was not embedded accidentally.
+
+```python
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != source_table.num_rows:
+    raise ValueError("embedding row count mismatch")
+
+if embedding_table.num_rows == 0:
+    raise ValueError("empty embedding sample")
+
+if not embedding_table["embedding"][0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded = con.from_arrow(
+    source_table.append_column("embedding", embedding_table["embedding"])
+)
+```
+
+## Classify Text
+
+Use `classify_text` for a small label set where every input row should receive one label.
+
+```python
+label_only = source.classify_text(
+    "text",
+    labels=["invoice", "claim", "memo", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="ai_label",
+    batch_size=16,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should contain the text you expect the classifier to see.
+- Output column: `ai_label` should only contain one of the labels you supplied.
+- ID preservation: append `ai_label` to the source table after row count validation.
+- Result review: sample rows per label and check whether the label set is too broad, too narrow, or missing a business category.
+
+```python
+label_table = label_only.to_arrow_table()
+
+if label_table.num_rows != source_table.num_rows:
+    raise ValueError("classification row count mismatch")
+
+labels = set(label_table["ai_label"].to_pylist())
+allowed = {"invoice", "claim", "memo", "other"}
+unexpected = labels - allowed
+if unexpected:
+    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
+
+classified = con.from_arrow(
+    source_table.append_column("ai_label", label_table["ai_label"])
+)
+```
+
+## Prompt
+
+Use `prompt` when the output should be generated from a row-level prompt. Keep the first prompt narrow and easy to inspect.
+
+```python
+prompts = con.sql("""
+    select
+        document_id,
+        document_type,
+        source_uri,
+        'Summarize this document in one sentence: ' || text as review_prompt
+    from source_sample
+""")
+
+response_only = prompts.prompt(
+    "review_prompt",
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Return concise business review notes.",
+    output_column="review_note",
+    batch_size=8,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `review_prompt` should include only the fields the model should see.
+- Output column: `review_note` should be non-empty and short enough for review.
+- ID preservation: combine output with `document_id`, `document_type`, and `source_uri`.
+- Result review: manually inspect a small sample before increasing `limit`, `batch_size`, or `concurrency`.
+
+```python
+prompt_table = prompts.to_arrow_table()
+response_table = response_only.to_arrow_table()
+
+if response_table.num_rows != prompt_table.num_rows:
+    raise ValueError("prompt row count mismatch")
+
+empty = [x for x in response_table["review_note"].to_pylist() if not x]
+if empty:
+    raise ValueError("prompt returned empty responses")
+
+reviewed = con.from_arrow(
+    prompt_table.append_column("review_note", response_table["review_note"])
+)
+```
+
+For structured outputs, use `return_format` with a Pydantic model and validate the JSON strings before writing the final relation.
+
+## Provider and Execution Choices
+
+Choose the smallest provider setup that can answer the POC question.
+
+| Choice | Use it when | Watch for |
+| --- | --- | --- |
+| Hosted provider | You want managed models and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
+| Local model | You want local execution with installed model libraries. | Model download, dependency versions, memory use, and actor initialization time. |
+| vLLM or GPU model | You need GPU-backed prompt throughput or private LLM inference. | Use [GPU Inference](/docs/data/guides/gpu-inference) for the vLLM path and GPU-specific tuning. |
+
+Minimal configuration to set explicitly:
+
+- `provider`: for example `openai`, `transformers`, or `vllm`.
+- `model`: the exact hosted or local model identifier.
+- `batch_size`: how many rows each model call or batch processes.
+- `concurrency`: how many workers or actor calls run in parallel when supported.
+- `execution_backend`: start with `subprocess_actor`; use `ray_actor` only after the local sample is correct.
+
+Increase one setting at a time. Higher `batch_size` or `concurrency` can improve throughput, but it can also increase memory use, trigger provider rate limits, or make failures harder to isolate.
+
+## Small Sample First
+
+Before scaling the relation:
+
+1. Run 10-100 representative rows.
+2. Confirm the source relation has the expected IDs and input columns.
+3. Validate AI output row count against source row count.
+4. Check nulls, empty strings, invalid labels, invalid JSON, or unexpected vector dimensions.
+5. Manually inspect examples that represent the important business categories.
+6. Write the result to a run-specific path only after the output is reviewable.
+
+Write the relation you created in the task above, such as `embedded`, `classified`, or `reviewed`, to a run-specific path.
+
+For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors.
+
+## Common Failures
+
+| Symptom | Likely cause | What to check |
+| --- | --- | --- |
+| Authentication error | Missing or unavailable hosted provider credentials. | API key environment variables, worker environment, provider account access. |
+| Rate limit or timeout | Too much provider concurrency or too large a batch. | Lower `concurrency`, lower `batch_size`, review provider quota and retry behavior. |
+| Invalid label or JSON | Prompt, label set, model, or structured schema is too loose. | Reduce task scope, inspect raw outputs, tighten labels or `return_format`. |
+| Output row count mismatch | Input relation changed, ordering was not stable, or a failure path dropped rows. | Re-run on a small ordered sample and compare source/output counts before combining columns. |
+| Missing source column | The selected relation did not include the column used by the helper. | Check the input relation schema and project required fields before the AI call. |
+| Worker import failure | Local or Ray worker cannot import provider libraries. | Install provider dependencies in the worker environment and retry locally before Ray. |
+
+## Next Steps
+
+- Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) for document chunking, stable chunk IDs, embedding output schema, and larger embedding jobs.
+- Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM-backed prompt batches, GPU actor reuse, and Ray GPU execution.
+- Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when AI Functions are too narrow or when the output must include IDs, source fields, status, errors, and model output from a single batch function.

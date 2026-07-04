@@ -1,0 +1,349 @@
+---
+title: Custom Python UDFs
+---
+
+Use Custom Python UDFs when your POC needs business logic that does not belong in SQL: text cleanup, domain rules, external Python libraries, model preprocessing, model inference, or client calls.
+
+The goal is to make one UDF correct on a small slice of your own data, keep its table contract explicit, then move the same logic to Ray only when distribution or actor reuse is worth the extra setup.
+
+## UDF contract
+
+For `map_batches`, the contract is:
+
+1. The callable receives a `pyarrow.Table`.
+2. The callable returns a `pyarrow.Table`.
+3. The returned table must match the declared `schema`.
+
+`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, or audit.
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select
+        id,
+        document_type,
+        text,
+        amount
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    limit 100
+""")
+```
+
+Keep the first sample small and real. Inline data is fine for learning, but the first useful POC UDF should touch the same columns and messy values that your real pipeline will use.
+
+## First stateless batch UDF
+
+Start with a plain function when the work is deterministic and does not need a model, network client, cache, or other reusable state.
+
+```python
+import re
+
+import pyarrow as pa
+
+def add_review_fields(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+    amounts = batch.column("amount").to_pylist()
+
+    normalized_text = []
+    needs_review = []
+    review_reason = []
+
+    for document_type, text, amount in zip(document_types, texts, amounts):
+        clean = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+        normalized_text.append(clean)
+
+        has_risk_term = "missing" in clean or "expired" in clean
+        high_amount = amount is not None and amount >= 1000
+
+        needs_review.append(has_risk_term or high_amount)
+        if has_risk_term:
+            review_reason.append("risk_term")
+        elif high_amount:
+            review_reason.append("high_amount")
+        else:
+            review_reason.append("none")
+
+    return pa.table({
+        "id": ids,
+        "document_type": document_types,
+        "text": texts,
+        "amount": amounts,
+        "normalized_text": normalized_text,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+    })
+
+reviewed = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+
+reviewed.show()
+```
+
+This example returns the source `id`, `document_type`, `text`, and `amount` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
+
+## Validate with SQL
+
+Turn the UDF output into a named table when you want relational checks.
+
+```python
+reviewed.to_table("reviewed_documents")
+
+summary = con.sql("""
+    select
+        document_type,
+        needs_review,
+        count(*) as rows
+    from reviewed_documents
+    group by document_type, needs_review
+    order by document_type, needs_review
+""")
+
+summary.show()
+```
+
+For a first POC, check row counts, IDs, a few high-risk rows, and a few rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
+
+## Schema and Arrow outputs
+
+Treat the schema as part of the UDF interface.
+
+| Topic | Guidance |
+| --- | --- |
+| Column names | Return exactly the columns declared in `schema`. |
+| Required source columns | Return IDs, source URI/path, business keys, and text or metadata needed later. |
+| Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
+| Nulls | Keep null behavior explicit, especially for numeric and list columns. |
+| Row count | A `map_batches` UDF normally returns one output row per input row. Use `flat_map` when one input can create zero or many rows. |
+
+If Arrow cannot infer the type you want, build an explicit array:
+
+```python
+return pa.table({
+    "id": pa.array(ids, type=pa.int64()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, or structured JSON strings before returning.
+
+## Batch size
+
+`batch_size` controls how many input rows Vane passes to one `map_batches` call.
+
+Start small while debugging:
+
+```python
+debugged = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=8,
+    execution_backend="subprocess_task",
+)
+```
+
+Then increase it after the schema and output rows are correct. CPU text transforms often tolerate larger batches. Media decoding, embeddings, LLM calls, and GPU inference usually need smaller batches that fit memory and provider limits.
+
+Batch size should not change the meaning of the result. If output changes when the batch size changes, the UDF is probably relying on hidden batch state.
+
+## Callable classes and actors
+
+Use a callable class when setup is expensive or state should be reused across batches:
+
+- model or tokenizer loading
+- API client setup
+- database or object-store client setup
+- lookup tables or caches
+- GPU model state
+
+Actor backends construct the class inside the worker and reuse it for multiple batches. Pass the class itself, not an already-created instance.
+
+```python
+import pyarrow as pa
+
+class KeywordTagger:
+    def __init__(self) -> None:
+        self.terms_by_label = {
+            "policy_issue": ("expired policy", "coverage gap"),
+            "approval_issue": ("missing approval", "unsigned"),
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch.column("id").to_pylist()
+        texts = batch.column("text").to_pylist()
+
+        labels = []
+        for text in texts:
+            normalized = str(text or "").lower()
+            label = "none"
+            for candidate, terms in self.terms_by_label.items():
+                if any(term in normalized for term in terms):
+                    label = candidate
+                    break
+            labels.append(label)
+
+        return pa.table({
+            "id": ids,
+            "issue_label": labels,
+        })
+
+tagged = documents.map_batches(
+    KeywordTagger,
+    schema={
+        "id": "BIGINT",
+        "issue_label": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+In a real model UDF, load the model or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+
+## Backend choices
+
+Pick the simplest backend that proves the current question.
+
+| Backend | Callable shape | Use it for |
+| --- | --- | --- |
+| `subprocess_task` | Function | First stateless UDFs, local isolation, CPU transforms. |
+| `subprocess_actor` | Callable class | Local model or client reuse without Ray. |
+| `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
+| `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
+
+Ray backends require Ray execution to be configured before the distributed pipeline is created and run.
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+ray_reviewed = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
+
+For a stateful or GPU-backed model, keep the class shape and switch the backend:
+
+```python
+ray_tagged = documents.map_batches(
+    KeywordTagger,
+    schema={
+        "id": "BIGINT",
+        "issue_label": "VARCHAR",
+    },
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+
+## Local debug sequence
+
+Use this sequence before moving a UDF into a larger pipeline.
+
+1. Select a small real sample with stable IDs.
+2. Call the Python function directly on an Arrow table.
+3. Run the same function through `map_batches` with a small `batch_size`.
+4. Validate row counts, IDs, source columns, and output types with SQL.
+5. Increase `batch_size` locally.
+6. Move to `ray_task` or `ray_actor` only after the local contract is correct.
+
+```python
+sample = con.sql("""
+    select id, document_type, text, amount
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by id
+    limit 20
+""")
+
+sample_arrow = sample.to_arrow_table()
+debug_arrow = add_review_fields(sample_arrow)
+
+assert len(debug_arrow) == len(sample_arrow)
+print(debug_arrow.schema)
+print(debug_arrow.to_pydict())
+```
+
+Then run it through Vane:
+
+```python
+debug_relation = sample.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=4,
+    execution_backend="subprocess_task",
+)
+
+debug_relation.show()
+```
+
+If this fails, keep the failure local. A Ray run will add import, dependency, storage, and resource variables before the UDF contract is fixed.
+
+## Common failures
+
+| Failure | What it usually means | How to fix it |
+| --- | --- | --- |
+| Schema mismatch | Returned columns or types do not match `schema`. | Print the returned Arrow schema, then align column names and Arrow-compatible types. |
+| Missing ID or source columns | The UDF returned only derived columns. | Return stable IDs and source fields that downstream SQL, joins, and review need. |
+| Arrow type incompatibility | The UDF returned Python objects Arrow cannot serialize. | Convert outputs to primitives, bytes, lists, structs, JSON strings, or explicit `pa.array` values. |
+| Worker import failure | A subprocess or Ray worker cannot import the module defining the UDF. | Put the callable in an importable module and install the same package/dependencies on every worker. |
+| Model loads at import time | Each worker import triggers heavy setup or fails before the actor starts. | Move model, tokenizer, and client setup into callable class `__init__`. |
+| Batch works locally but fails on Ray | Workers cannot access data, credentials, model files, or compatible package versions. | Verify worker paths and environment with a tiny Ray sample before increasing data size. |
+| Memory spikes | Batch size, media bytes, or model outputs are too large. | Project fewer columns, lower `batch_size`, split stages, or use actor reuse for model state. |
+
+## How this guide connects to the rest of the docs
+
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is relational cleanup, joins, deduplication, validation, or output shaping, and add a UDF only for logic SQL should not own.
+- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
+- Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Come back to Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
+- Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind `map_batches`, callable classes, and execution backends.

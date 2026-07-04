@@ -2,122 +2,149 @@
 title: Performance Tuning
 ---
 
-Start with a correct local pipeline, then tune the smallest number of variables.
+Use this guide after your POC pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
 
-## Runner
+This is not a production benchmark, SLA guide, or advanced cluster tuning manual. For v0.1.0, the useful outcome is a clear bottleneck diagnosis and a run record that makes feedback actionable.
 
-Local:
+## Start With Correctness
 
-```python
-vane.configure(runner="native")
+Do not tune a pipeline that is still changing shape. First make sure the run is small, repeatable, and checkable.
+
+- Keep stable IDs from input through output.
+- Check row counts before and after every expensive stage.
+- Validate the output schema and a few sample rows by hand.
+- Keep explicit `status` and `error_message` columns for rows that fail.
+- Use a representative sample, not only the easiest records.
+- Record a baseline before changing any tuning knob.
+
+Then tune one variable at a time. Keep the dataset slice, code, model, provider, and output path fixed while you compare runs. If a change does not improve the bottleneck you measured, revert it before trying the next knob.
+
+## Performance vs Sizing
+
+Performance Tuning diagnoses where time or failures are coming from in a concrete POC run. Sizing estimates the resources needed for the next larger run.
+
+| Question | Use Performance Tuning | Use Sizing |
+| --- | --- | --- |
+| "Why is this run slow?" | Yes | No |
+| "Which stage is the bottleneck?" | Yes | No |
+| "Should I change batch size or concurrency?" | Yes | Maybe |
+| "How many CPUs, GPUs, or workers might I need for a larger slice?" | No | Yes |
+| "Can I promise production throughput?" | No | No |
+
+Use the performance record in this guide as input when you later estimate resources in Sizing.
+
+## POC Tuning Order
+
+Move through the pipeline in order. A later tuning knob will not help if an earlier stage is sending too much data, using inaccessible paths, or writing oversized output.
+
+| Order | Stage | What to check | Smallest useful change |
+| --- | --- | --- | --- |
+| 1 | Data read | Input rows, input bytes, file count, object store latency, worker access to paths | Start with a smaller real slice; use worker-visible paths; avoid reading unused files |
+| 2 | SQL filter/project | Rows and columns entering the expensive stage | Filter early; project only the columns the UDF, AI function, or model needs |
+| 3 | UDF batch | Per-batch time, memory, long tail batches, retry cost | Adjust `batch_size` only after input columns and rows are reduced |
+| 4 | Actor reuse | Model or client initialization logs, repeated connection setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
+| 5 | Provider rate limit | HTTP 429s, timeouts, retry waits, provider-side quota errors | Lower concurrency; batch only where the provider supports it; reduce unnecessary calls |
+| 6 | GPU utilization | GPU memory, utilization, model load time, CPU preprocessing time | Reuse model actors; tune batch size; add GPUs only after one GPU is understood |
+| 7 | Output write | Output rows, output bytes, wide columns, many small files, worker access to output path | Write only required columns; avoid carrying raw bytes or large intermediate objects unless needed |
+
+## Core Knobs
+
+These are the main knobs for a POC. Change one at a time and keep the run record updated.
+
+| Knob | What it changes | Start here | Watch for |
+| --- | --- | --- | --- |
+| `batch_size` | Rows per UDF, AI, or inference call | Increase when per-call overhead dominates; decrease when memory or retries dominate | Out-of-memory errors, slow long-tail batches, worse provider latency |
+| `concurrency` | Number of batches or requests in flight | Increase only after each batch is reasonably efficient | Provider rate limits, memory pressure, output write contention |
+| Task vs actor | Whether work is stateless or reuses state | Use tasks for light stateless CPU work; actors for models, clients, GPU, or connection reuse | Model reload per batch, unbounded actor memory, worker startup failures |
+| Local vs Ray | Whether the pipeline stays local or uses Ray workers | Stay local for correctness and small samples; move to Ray when parallelism, worker placement, or GPUs matter | Path, dependency, credential, and output locations visible only on the driver |
+| GPU count | Available GPU resources for inference actors | Tune one GPU first; add GPUs when the GPU stage is confirmed as the bottleneck | CPU preprocessing bottlenecks, output bottlenecks, low utilization across many actors |
+
+Runner and backend are related but different. The runner controls the overall execution path, such as local execution versus Ray execution. The UDF or AI execution backend controls how a stage runs, such as task versus actor.
+
+## Hosted API vs GPU Bottlenecks
+
+Hosted APIs and local GPU inference fail in different ways. Separate them before changing knobs.
+
+| Workload type | Common bottleneck | Symptoms | Useful fixes |
+| --- | --- | --- | --- |
+| Hosted API | Provider quota, request latency, retries, cost | 429 or quota errors, long retry waits, idle local CPU/GPU, failures tied to credentials or provider limits | Lower `concurrency`; reduce rows before the call; use provider-supported batch requests; record provider/model/error details |
+| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
+
+Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat low GPU utilization as proof that more GPUs are needed. First confirm which stage is waiting and why.
+
+## Symptoms and Fixes
+
+| Symptom | Likely cause | Fix to try first |
+| --- | --- | --- |
+| Many tiny UDF or AI calls, high scheduling overhead, low model throughput | Batches are too small | Increase `batch_size` gradually while watching memory and error rate |
+| Out-of-memory errors, very slow retries, or one large batch dominates elapsed time | Batches are too large | Reduce `batch_size`; project fewer columns; split decode, transform, and inference into separate stages |
+| Logs show model loading or API client setup for every batch | Stateless task is recreating expensive state | Move model or client initialization into a callable class and run with an actor backend |
+| Hosted API returns 429, timeout, quota, or authentication errors | Provider rate limit or credential issue | Lower `concurrency`; reduce calls with SQL filters; verify credentials in the same environment as the workers |
+| Local run works, Ray run fails with file not found, import errors, or missing credentials | Worker path, dependency, or credential visibility | Put data, models, and output on worker-visible storage; install dependencies on workers; pass credentials through the Ray environment |
+| GPU memory is full but throughput is unstable | Batch too large, output too wide, or actor memory growth | Reduce `batch_size`; avoid carrying unused columns; restart from a clean small run and compare |
+| GPU utilization stays low while CPU is busy | CPU preprocessing or data read is the bottleneck | Time decode/tokenization separately; filter/project before inference; cache or stage expensive preprocessing output |
+| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next POC step; avoid raw bytes and large Python object columns in final output |
+
+## Minimal Measurement Loop
+
+Use the same small representative slice for a short tuning loop.
+
+1. Run the baseline and record elapsed time, errors, and stage-level observations.
+2. Pick the first bottleneck in the tuning order.
+3. Change one knob.
+4. Run the same slice again.
+5. Keep the change only if it improves the measured bottleneck without breaking correctness.
+
+For AI and inference workloads, measure at least:
+
+- rows entering the AI or model stage
+- calls or batches sent
+- successful rows and failed rows
+- provider retry or rate-limit count, if hosted
+- GPU memory and utilization, if local GPU
+- output rows and bytes
+
+## POC Performance Record
+
+Include a record like this when you report a performance issue or compare tuning runs.
+
+```markdown
+## POC Performance Record
+
+- Goal:
+- Dataset:
+  - input rows:
+  - input bytes:
+  - file count:
+  - sample method:
+- Pipeline stage being measured:
+- Runner:
+- UDF/AI execution backend:
+- Batch size:
+- Concurrency:
+- Task or actor:
+- Provider/model:
+- GPU:
+  - GPU count:
+  - GPUs per actor:
+  - observed utilization:
+  - observed memory:
+- Output:
+  - output rows:
+  - output bytes:
+  - output path type:
+- Timing:
+  - data read:
+  - SQL filter/project:
+  - UDF/AI/inference:
+  - output write:
+  - total elapsed:
+- Errors:
+  - failed rows:
+  - retry count:
+  - error messages:
+- Change tested:
+- Result:
 ```
 
-Ray:
-
-```python
-vane.configure(runner="ray")
-```
-
-The native runner streams Arrow record batches. The Ray runner initializes Ray when needed and sends a logical plan to a Ray query driver.
-
-## Batch size
-
-For `map_batches`, `batch_size` controls how many rows are passed to one UDF call.
-
-Small batches:
-
-- lower memory
-- worse model throughput
-- more scheduling overhead
-
-Large batches:
-
-- better throughput
-- higher memory
-- slower retries
-
-Tune with representative data.
-
-## Actor reuse
-
-Use actor backends for model inference:
-
-- `subprocess_actor` for local stateful reuse.
-- `ray_actor` for distributed stateful reuse.
-
-Use task backends for light stateless work:
-
-- `subprocess_task`
-- `ray_task`
-
-## CPU and GPU resources
-
-`map_batches` accepts:
-
-- `cpus`
-- `gpus`
-- `concurrency`
-
-Ray uses resource requests for placement. Make sure the Ray cluster advertises matching resources before increasing `concurrency`.
-
-## Ray scan task grouping
-
-Public config:
-
-```python
-vane.configure(ray_scan_task_size_grouping=True)
-```
-
-Environment variable:
-
-```bash
-export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
-```
-
-The registry describes this as size-based scan task grouping, useful for merging small files into larger scan tasks.
-
-Related public config:
-
-- `ray_max_task_backlog`
-- `ray_scan_task_open_cost_bytes`
-- `ray_scan_task_min_partition_num`
-- `ray_init_sql`
-
-## Backpressure
-
-`VANE_RAY_MAX_TASK_BACKLOG` limits pending Ray tasks when set to a positive value. `0` means unlimited in the public registry.
-
-Use it when the driver can submit faster than workers can consume.
-
-## Native runner batch size
-
-`VANE_NATIVE_RUNNER_BATCH_SIZE` overrides the native runner batch size when you need an explicit value for measurement or memory control.
-
-```bash
-export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
-```
-
-## Avoid common bottlenecks
-
-- Project only columns needed by the UDF.
-- Filter before model calls.
-- Keep image/audio/video decoding separate from model inference when tuning.
-- Write to a filesystem all workers can access.
-- Avoid one row per UDF call for model workloads.
-- Use structured output schemas instead of Python object columns.
-
-## Measure
-
-Keep a simple run record:
-
-- input rows
-- input bytes
-- batch size
-- backend
-- concurrency
-- GPUs per actor
-- elapsed time
-- output rows
-- failure count
-
-Benchmark workloads can be useful references for environment-driven performance experiments, but benchmark-specific file locations, storage endpoints, and model defaults are not general deployment defaults.
+If the issue only appears on Ray, include whether workers can access the same data paths, model files, Python dependencies, credentials, and output location as the driver.

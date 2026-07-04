@@ -2,197 +2,114 @@
 title: What Is Vane Data?
 ---
 
-Vane Data is a Python-first data processing engine for building AI-ready datasets. It combines DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions in one relation workflow.
+Vane Data is an early-stage data processing engine for building AI-oriented datasets and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
 
-Use Vane Data when your data is already structured or can be represented as rows, but the pipeline still needs Python libraries, model inference, embeddings, prompting, media processing, or distributed execution before the data is ready for training, search, analytics, or application systems.
+Use Vane when your data can be represented as tables, but the pipeline also needs Python libraries, custom business logic, embeddings, prompting, model inference, or multimodal processing before the result is ready for training, search, analytics, review, or downstream applications.
 
 The distribution package is `vane-ai`; the Python import package is `vane`.
 
 <DataArchitecture />
 
-## The role Vane Data plays
+## Why Vane exists
 
-Vane Data sits between storage and downstream systems.
+Many AI data workflows are split across separate tools:
 
-It is designed to prepare datasets before they move into:
+- SQL jobs for reading, filtering, joining, and validating data.
+- Python scripts for custom parsing, cleaning, media processing, or model calls.
+- Ad hoc batch inference jobs for embeddings, classification, prompting, or GPU models.
+- Separate handoff steps to files, warehouses, lakehouse tables, search systems, or training pipelines.
 
-- Model training or fine-tuning jobs.
-- Search and retrieval systems.
-- Vector databases.
-- Analytical warehouses or lakehouse tables.
-- Model serving and application storage.
+Vane's goal is to make that workflow feel like one table-oriented pipeline:
 
-It is not an online model server, vector index, workflow scheduler, or transactional database. It focuses on the batch and analytical data processing step where SQL, Python, and AI model work need to stay in one pipeline.
-
-## The core idea
-
-Vane Data keeps work table-oriented.
-
-A pipeline starts with SQL, files, Arrow data, or another DuckDB-compatible input. Each stage returns a relation. You can keep adding relational operations, Python UDFs, or AI helpers, then materialize the result by showing, fetching, converting, or writing it.
-
-That gives the pipeline one consistent shape:
-
-1. Use SQL to scan, filter, project, join, aggregate, and write tabular data.
-2. Use Python UDFs for logic that should not be forced into SQL.
-3. Use AI helpers for common embedding, classification, and prompting tasks.
-4. Use Ray-backed execution when selected stages need distributed workers or GPU placement.
-
-## A small example
-
-The example below starts with SQL, runs a Python Arrow batch UDF, and returns another relation.
-
-```python
-import pyarrow as pa
-import vane
-
-con = vane.connect()
-
-docs = con.sql("""
-    select *
-    from (values
-        (1, 'Quarterly revenue report'),
-        (2, 'Customer support policy'),
-        (3, 'Model evaluation notes')
-    ) as t(id, text)
-    where text is not null
-""")
-
-def add_text_features(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-
-    return pa.table({
-        "id": ids,
-        "text": texts,
-        "text_length": [len(value) for value in texts],
-        "mentions_policy": ["policy" in value.lower() for value in texts],
-    })
-
-features = docs.map_batches(
-    add_text_features,
-    schema={
-        "id": "INTEGER",
-        "text": "VARCHAR",
-        "text_length": "BIGINT",
-        "mentions_policy": "BOOLEAN",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-
-features.show()
+```text
+source data -> relation/SQL -> Python UDF or AI function -> validation -> tabular output
 ```
 
-`map_batches` returns the columns produced by the UDF. If the next stage needs input columns such as `id` or `text`, return them from the UDF and include them in `schema`, as shown above.
+The important idea is not that every step must be SQL, Python, or AI. The important idea is that each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
 
-## Core capabilities
+## What Vane is good for
 
-### DuckDB-compatible SQL
+Vane is a good fit when you want to run an early POC on real business data and the work has this shape:
 
-SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`.
+- Load structured or multimodal data from files, object storage, Arrow tables, or DuckDB-compatible sources.
+- Use SQL to filter, project, join, aggregate, sample, and validate the relational parts.
+- Use Python UDFs when the logic needs external libraries, custom rules, media processing, or model pre/post-processing.
+- Use AI functions for common enrichment tasks such as embeddings, classification, prompting, and structured model output.
+- Use GPU inference, including vLLM-backed batch inference, when a larger prompt or model workload needs GPU execution.
+- Start locally, then move selected stages to Ray when a POC needs distributed workers, actor reuse, or GPU placement.
 
-Use SQL for relational work:
+Typical early POC scenarios include:
 
-- Read files and tables supported by DuckDB-compatible APIs and configured extensions.
-- Filter and project rows before expensive Python or model stages.
-- Join metadata, labels, and feature tables.
-- Aggregate quality metrics and dataset summaries.
-- Write curated tabular outputs.
+- Turning raw text into training, evaluation, or retrieval datasets.
+- Cleaning and transforming structured business data before downstream loading.
+- Processing documents, images, audio, or video as rows with stable IDs and metadata.
+- Running batch AI enrichment over existing tables.
+- Testing whether a local workflow can later move to Ray-backed execution.
 
-Vane Data does not define a separate SQL dialect. Treat the SQL surface as DuckDB-compatible SQL with Vane Data execution features around it.
+## What Vane is not
 
-### Python and Arrow UDFs
+Vane v0.1.0 is an early validation release. It is meant to help suitable early users try real POCs and report real issues, not to present a finished production platform.
 
-Use UDFs when a step needs Python libraries, custom code, model state, or row expansion.
+Do not treat Vane as:
 
-| API | Shape | Typical use |
-| --- | --- | --- |
-| `map_batches(...)` | Arrow batch to Arrow batch | Batch transforms, model inference, decoding, enrichment |
-| `flat_map(...)` | Row to zero, one, or many rows | Chunking, normalization, expansion |
-| `map(...)` | Input values to one scalar value | Small row-wise enrichments |
+- A persistent transactional database.
+- A low-latency online model server.
+- A vector database or retrieval serving layer.
+- A workflow scheduler, orchestration platform, or lineage system.
+- A complete MLOps platform.
+- A complete lakehouse, warehouse, or catalog management system.
+- A promise of full DuckDB compatibility in every edge case.
+- A production deployment manual with SLA, autoscaling, or operational guarantees.
 
-UDFs declare output schemas at the relation boundary. This keeps columns explicit even when Python code creates the data.
+Vane can hand off tabular outputs to downstream systems, but those systems remain responsible for serving, transactions, catalog semantics, governance, and production operations.
 
-Use task-style backends for stateless functions. Use actor-style backends when a model, tokenizer, client, or other expensive object should be initialized once and reused across batches.
+## How Vane relates to DuckDB and Ray
 
-### AI helper functions
+Vane uses DuckDB-compatible SQL and relation concepts as the foundation for data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
 
-Vane Data exposes relation methods for common AI data enrichment tasks:
+Vane adds AI-oriented and distributed execution features around that model. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
 
-- `rel.embed_text(...)` for text embeddings.
-- `rel.classify_text(...)` for text classification.
-- `rel.prompt(...)` for text and multimodal prompting.
+Ray is optional at the beginning. The recommended path is:
 
-These helpers use the same relation and UDF execution model as custom Python code. Use them when the built-in provider pattern fits the task. Use custom UDFs when you need full control over model loading, batching, retry behavior, output shape, or provider-specific logic.
+1. Run a small local pipeline first.
+2. Confirm the schema, IDs, UDF behavior, and output are correct.
+3. Move selected stages to Ray only when the POC needs more parallelism, actor reuse, or GPU placement.
 
-### Local and Ray-backed execution
+## The core workflow
 
-The native runner is the local execution path. It is the right starting point for development, testing, lightweight SQL, and single-node UDF jobs.
+A Vane POC usually follows this sequence:
 
-Configure Ray when the workload needs distributed scans, distributed writes, multiple Python workers, or GPU-aware model execution:
+1. Load a small but real slice of your data.
+2. Use SQL to inspect, filter, project, join, or summarize it.
+3. Add custom logic with a Python UDF, or use an AI function for a common model task.
+4. Keep stable IDs and source metadata so outputs can be traced back.
+5. Validate row counts, schemas, sample outputs, failures, and business meaning.
+6. Write a tabular result that can be reviewed or passed to a downstream system.
 
-```python
-import vane
+This is the smallest useful loop: real input, meaningful transformation, inspectable output, and enough context to report problems clearly.
 
-vane.configure(runner="ray")
-```
+## Should you try Vane now?
 
-The pipeline shape stays the same. The execution mode changes how selected work is scheduled and where Python UDFs can run.
+Vane v0.1.0 is worth trying if most of these are true:
 
-## Common workflow patterns
+- You have a real dataset or realistic data slice to test with.
+- Your POC needs both relational operations and Python, AI, or model inference work.
+- You want the output to stay tabular and auditable.
+- You can start with local execution before moving to Ray.
+- You are willing to report missing features, rough edges, performance issues, or unclear APIs.
 
-### AI-ready dataset preparation
+It is better to wait if you need:
 
-Use SQL to select source rows and normalize metadata, then add embeddings, labels, prompts, scores, or model-derived features before writing a curated dataset.
-
-This is the typical pattern for training data, retrieval corpora, offline evaluation sets, and analytics-ready enrichment tables.
-
-### Multimodal data processing
-
-Represent documents, images, audio, video, or other media as table rows with paths, bytes, metadata, and derived columns. SQL keeps metadata work inspectable, while Python UDFs handle decoding, parsing, OCR, transcription, image processing, or model inference.
-
-Vane Data does not require a universal multimodal file format. The table schema is the contract between stages.
-
-### Local-to-distributed scaling
-
-Start locally with the native runner and subprocess UDF backends. After the data contract and UDF behavior are correct, move expensive stages to Ray-backed execution.
-
-This keeps early development simple while leaving a path to larger scans, distributed writes, and model workers across a Ray cluster.
-
-## When Vane Data is a good fit
-
-Choose Vane Data when:
-
-- SQL is useful for the relational parts of the pipeline.
-- Python libraries or custom code are required for the expensive parts.
-- The output should remain tabular and inspectable.
-- Model calls, embeddings, or prompting are part of the data preparation path.
-- A local workflow may later need distributed execution.
-- You want one relation pipeline instead of separate SQL jobs, Python scripts, and ad hoc model enrichment steps.
-
-Use another primary system when:
-
-- The main requirement is online, low-latency inference.
-- You need a persistent transactional database.
-- You need a vector index or retrieval service as the serving layer.
-- You need a workflow scheduler, lineage system, or cross-job orchestration platform.
-- The required connector or storage feature is not available through DuckDB-compatible APIs, configured extensions, or your own UDFs.
-
-## Import and compatibility model
-
-New Vane Data projects should use:
-
-```python
-import vane
-
-con = vane.connect()
-```
-
-Vane Data exposes DuckDB-compatible Python APIs and relation behavior where compatibility applies. Existing DuckDB-style code can often continue to use familiar connection, SQL, relation, and type APIs, while Vane-specific configuration and AI helpers are available through `vane`.
+- A mature production system.
+- A stable long-term API guarantee.
+- Full connector coverage.
+- Complete operational documentation.
+- A turnkey industry solution.
 
 ## Next
 
 - [Installation](/docs/data/quickstart/installation)
-- [SQL quickstart](/docs/data/quickstart/quickstart-sql)
-- [Python quickstart](/docs/data/quickstart/quickstart-python)
+- [Quickstart](/docs/data/quickstart/quickstart)
+- [Architecture](/docs/data/concepts/architecture)
+- [SQL vs Python](/docs/data/concepts/sql-vs-python)
 - [Documentation map](/docs/data)

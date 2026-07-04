@@ -1,0 +1,188 @@
+---
+title: Quickstart
+---
+
+This quickstart shows Vane Data as one continuous workflow: start with a relation, use SQL for the relational parts, add a small Python batch UDF for custom logic, then validate and write a tabular result.
+
+It runs locally. You do not need Ray, a GPU, model provider credentials, or remote storage for this first path.
+
+## Before you start
+
+Install Vane Data and verify that `import vane` works:
+
+```bash
+python -m pip install vane-ai
+```
+
+This quickstart also uses PyArrow for the Python UDF return value:
+
+```bash
+python -m pip install pyarrow
+```
+
+If you already installed the optional data-science extras, PyArrow may already be available in your environment.
+
+## 1. Create a connection
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+```
+
+Run a minimal SQL query to confirm the connection works:
+
+```python
+con.sql("select 42 as answer").show()
+```
+
+## 2. Create a small relation
+
+For the first run, use inline data so there are no file paths, credentials, or storage settings to debug.
+
+```python
+docs = con.sql("""
+    select *
+    from (
+        values
+            (1, 'claim', 'Customer submitted a signed claim form.', 120.50),
+            (2, 'invoice', 'Vendor invoice is missing approval.', 88.00),
+            (3, 'claim', 'Claim note references an expired policy.', 19.25),
+            (4, 'memo', 'Internal follow-up note.', 0.00)
+    ) as t(id, document_type, text, amount)
+""")
+
+docs.show()
+```
+
+A relation represents table-shaped work. Vane materializes the result when you call a consumer such as `show()`, `fetchall()`, `to_arrow_table()`, or a write method.
+
+## 3. Use SQL for relational work
+
+Use SQL to filter, project, join, aggregate, sample, and validate before adding custom Python logic.
+
+```python
+docs.to_table("docs")
+
+selected = con.sql("""
+    select
+        id,
+        document_type,
+        text,
+        amount
+    from docs
+    where text is not null
+      and amount >= 0
+      and document_type in ('claim', 'invoice')
+    order by id
+""")
+
+selected.show()
+```
+
+Keep this stage simple in a first POC. The goal is to confirm that the input rows, important columns, and basic filters are correct before expensive Python, AI, or model work runs.
+
+## 4. Add a Python batch UDF
+
+Use `map_batches(...)` when custom Python code should process Arrow batches and return explicit output columns.
+
+```python
+def add_review_fields(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+    amounts = batch.column("amount").to_pylist()
+
+    review_priority = []
+    for document_type, text, amount in zip(document_types, texts, amounts):
+        normalized = str(text or "").lower()
+        if "missing" in normalized or "expired" in normalized:
+            review_priority.append("high")
+        elif document_type == "claim" and amount > 100:
+            review_priority.append("medium")
+        else:
+            review_priority.append("low")
+
+    return pa.table({
+        "id": ids,
+        "document_type": document_types,
+        "text": texts,
+        "amount": amounts,
+        "text_length": [len(str(value or "")) for value in texts],
+        "review_priority": review_priority,
+    })
+
+features = selected.map_batches(
+    add_review_fields,
+    schema={
+        "id": "INTEGER",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "text_length": "BIGINT",
+        "review_priority": "VARCHAR",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+
+features.show()
+```
+
+`schema` describes the columns returned by the UDF. `map_batches` returns the UDF output columns, so return identifiers and source fields such as `id`, `document_type`, and `text` when later stages still need them.
+
+## 5. Validate the output
+
+Turn the UDF result into a named table when you want to use SQL again for checks or summaries.
+
+```python
+features.to_table("doc_features")
+
+summary = con.sql("""
+    select
+        review_priority,
+        count(*) as rows,
+        avg(text_length) as avg_text_length
+    from doc_features
+    group by review_priority
+    order by review_priority
+""")
+
+summary.show()
+```
+
+Before moving to your own data, check the same things you would check in a real POC:
+
+- Row counts match your expectation.
+- Stable IDs are still present.
+- Required source columns are still present.
+- New columns have the expected types and values.
+- A few sample rows make business sense.
+
+## 6. Write the result
+
+Write a tabular output when the result is ready for review or handoff.
+
+```python
+features.write_parquet("quickstart-doc-features.parquet")
+```
+
+For a real POC, write to a run-specific path and keep enough source metadata to reproduce or explain every output row.
+
+## Use the same shape with your data
+
+The inline dataset in this page is only there to remove setup noise. The shape you should carry into your own POC is:
+
+```text
+load a small real slice -> SQL inspect/filter -> Python UDF or AI function -> SQL validation -> write tabular output
+```
+
+Start with local execution. Move selected stages to `ray_task` or `ray_actor` only after the local data contract, UDF behavior, and output checks are correct.
+
+## Next
+
+- [SQL vs Python](/docs/data/concepts/sql-vs-python)
+- [UDFs](/docs/data/concepts/udfs)
+- [AI Functions](/docs/data/concepts/ai-functions)
+- [Execution Model](/docs/data/concepts/execution-model)

@@ -16,18 +16,18 @@ import InsuranceDocumentAuditDoc from '../../docs/examples/insurance-document-au
 import MultimodalDataLakeDoc from '../../docs/examples/multimodal-data-lake.mdx'
 import TenderComplianceCheckDoc from '../../docs/examples/tender-compliance-check.mdx'
 import TrainingDataPipelineDoc from '../../docs/examples/training-data-pipeline.mdx'
-import DedupAndCleanDoc from '../../docs/guides/dedup-and-clean.mdx'
-import DorisIntegrationDoc from '../../docs/guides/doris-integration.mdx'
+import GuideAiFunctionsDoc from '../../docs/guides/ai-functions.mdx'
+import CustomPythonUdfsDoc from '../../docs/guides/custom-python-udfs.mdx'
 import EmbeddingsAtScaleDoc from '../../docs/guides/embeddings-at-scale.mdx'
-import GpuInferenceUdfDoc from '../../docs/guides/gpu-inference-udf.mdx'
-import IcebergLakehouseDoc from '../../docs/guides/iceberg-lakehouse.mdx'
+import GpuInferenceDoc from '../../docs/guides/gpu-inference.mdx'
 import MultimodalIngestDoc from '../../docs/guides/multimodal-ingest.mdx'
+import MultimodalPipelineDoc from '../../docs/guides/multimodal-pipeline.mdx'
 import PerformanceTuningDoc from '../../docs/guides/performance-tuning.mdx'
-import SqlMultimodalPipelineDoc from '../../docs/guides/sql-multimodal-pipeline.mdx'
+import StructuredDataLoadDoc from '../../docs/guides/structured-data-load.mdx'
+import StructuredTransformationDoc from '../../docs/guides/structured-transformation.mdx'
 import InstallationDoc from '../../docs/quickstart/installation.mdx'
-import QuickstartPythonDoc from '../../docs/quickstart/quickstart-python.mdx'
-import QuickstartSqlDoc from '../../docs/quickstart/quickstart-sql.mdx'
 import WhatIsVaneDoc from '../../docs/quickstart/what-is-vane-data.mdx'
+import QuickstartDoc from '../../docs/quickstart/quickstart.mdx'
 
 export type DocPage = {
   Component: ComponentType
@@ -51,15 +51,10 @@ export const DOCS_PAGES = {
     source: 'docs/quickstart/installation.mdx',
     title: 'Installation',
   },
-  'quickstart/quickstart-sql': {
-    Component: QuickstartSqlDoc,
-    source: 'docs/quickstart/quickstart-sql.mdx',
-    title: 'Quickstart: SQL',
-  },
-  'quickstart/quickstart-python': {
-    Component: QuickstartPythonDoc,
-    source: 'docs/quickstart/quickstart-python.mdx',
-    title: 'Quickstart: Python',
+  'quickstart/quickstart': {
+    Component: QuickstartDoc,
+    source: 'docs/quickstart/quickstart.mdx',
+    title: 'Quickstart',
   },
   'concepts/architecture': {
     Component: ArchitectureDoc,
@@ -91,35 +86,40 @@ export const DOCS_PAGES = {
     source: 'docs/guides/multimodal-ingest.mdx',
     title: 'Multimodal Ingest',
   },
+  'guides/structured-data-load': {
+    Component: StructuredDataLoadDoc,
+    source: 'docs/guides/structured-data-load.mdx',
+    title: 'Structured Data Load',
+  },
+  'guides/custom-python-udfs': {
+    Component: CustomPythonUdfsDoc,
+    source: 'docs/guides/custom-python-udfs.mdx',
+    title: 'Custom Python UDFs',
+  },
+  'guides/multimodal-pipeline': {
+    Component: MultimodalPipelineDoc,
+    source: 'docs/guides/multimodal-pipeline.mdx',
+    title: 'Multimodal Pipeline',
+  },
+  'guides/structured-transformation': {
+    Component: StructuredTransformationDoc,
+    source: 'docs/guides/structured-transformation.mdx',
+    title: 'Structured Transformation',
+  },
+  'guides/ai-functions': {
+    Component: GuideAiFunctionsDoc,
+    source: 'docs/guides/ai-functions.mdx',
+    title: 'AI Functions',
+  },
+  'guides/gpu-inference': {
+    Component: GpuInferenceDoc,
+    source: 'docs/guides/gpu-inference.mdx',
+    title: 'GPU Inference',
+  },
   'guides/embeddings-at-scale': {
     Component: EmbeddingsAtScaleDoc,
     source: 'docs/guides/embeddings-at-scale.mdx',
     title: 'Embeddings at Scale',
-  },
-  'guides/dedup-and-clean': {
-    Component: DedupAndCleanDoc,
-    source: 'docs/guides/dedup-and-clean.mdx',
-    title: 'Dedup and Clean',
-  },
-  'guides/sql-multimodal-pipeline': {
-    Component: SqlMultimodalPipelineDoc,
-    source: 'docs/guides/sql-multimodal-pipeline.mdx',
-    title: 'SQL Multimodal Pipeline',
-  },
-  'guides/doris-integration': {
-    Component: DorisIntegrationDoc,
-    source: 'docs/guides/doris-integration.mdx',
-    title: 'Doris Integration',
-  },
-  'guides/iceberg-lakehouse': {
-    Component: IcebergLakehouseDoc,
-    source: 'docs/guides/iceberg-lakehouse.mdx',
-    title: 'Iceberg Lakehouse',
-  },
-  'guides/gpu-inference-udf': {
-    Component: GpuInferenceUdfDoc,
-    source: 'docs/guides/gpu-inference-udf.mdx',
-    title: 'GPU Inference UDF',
   },
   'guides/performance-tuning': {
     Component: PerformanceTuningDoc,

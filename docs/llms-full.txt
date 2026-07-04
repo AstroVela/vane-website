@@ -23,21 +23,21 @@ Vane Data is a data processing layer, not a model server, vector database, workf
 
 For pipelines where Python code, model inference, GPU work, or provider-backed AI calls dominate cost and runtime.
 
-1. [Python quickstart](/docs/data/quickstart/quickstart-python)
-2. [UDFs](/docs/data/concepts/udfs)
-3. [AI functions](/docs/data/concepts/ai-functions)
-4. [Embeddings at scale](/docs/data/guides/embeddings-at-scale)
-5. [GPU inference UDF](/docs/data/guides/gpu-inference-udf)
-6. [Performance tuning](/docs/data/guides/performance-tuning)
+1. [Quickstart](/docs/data/quickstart/quickstart)
+2. [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
+3. [AI Functions](/docs/data/guides/ai-functions)
+4. [Embeddings at Scale](/docs/data/guides/embeddings-at-scale)
+5. [GPU Inference](/docs/data/guides/gpu-inference)
+6. [Performance Tuning](/docs/data/guides/performance-tuning)
 
 ### B. SQL and lightweight workflows
 
 For relational pipelines that should stay close to DuckDB-compatible SQL and add Python only where it is useful.
 
-1. [SQL quickstart](/docs/data/quickstart/quickstart-sql)
-2. [SQL vs Python](/docs/data/concepts/sql-vs-python)
-3. [SQL multimodal pipeline](/docs/data/guides/sql-multimodal-pipeline)
-4. [Doris integration](/docs/data/guides/doris-integration)
+1. [Quickstart](/docs/data/quickstart/quickstart)
+2. [Structured Data Load](/docs/data/guides/structured-data-load)
+3. [Structured Transformation](/docs/data/guides/structured-transformation)
+4. [SQL vs Python](/docs/data/concepts/sql-vs-python)
 5. [Single-node deployment](/docs/data/deploy/single-node)
 
 ### Advanced: distributed execution
@@ -51,9 +51,9 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 
 ## Documentation map
 
-- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane-data), [Installation](/docs/data/quickstart/installation), [SQL quickstart](/docs/data/quickstart/quickstart-sql), [Python quickstart](/docs/data/quickstart/quickstart-python)
+- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane-data), [Installation](/docs/data/quickstart/installation), [Quickstart](/docs/data/quickstart/quickstart)
 - Concepts: [Architecture](/docs/data/concepts/architecture), [Execution model](/docs/data/concepts/execution-model), [SQL vs Python](/docs/data/concepts/sql-vs-python), [UDFs](/docs/data/concepts/udfs), [AI functions](/docs/data/concepts/ai-functions)
-- Task guides: [Multimodal ingest](/docs/data/guides/multimodal-ingest), [Embeddings at scale](/docs/data/guides/embeddings-at-scale), [Dedup and clean](/docs/data/guides/dedup-and-clean), [SQL multimodal pipeline](/docs/data/guides/sql-multimodal-pipeline), [Doris integration](/docs/data/guides/doris-integration), [Iceberg and lakehouse](/docs/data/guides/iceberg-lakehouse), [GPU inference UDF](/docs/data/guides/gpu-inference-udf), [Performance tuning](/docs/data/guides/performance-tuning)
+- Task guides: [Multimodal ingest](/docs/data/guides/multimodal-ingest), [Structured data load](/docs/data/guides/structured-data-load), [Custom Python UDFs](/docs/data/guides/custom-python-udfs), [Multimodal pipeline](/docs/data/guides/multimodal-pipeline), [Structured transformation](/docs/data/guides/structured-transformation), [AI Functions](/docs/data/guides/ai-functions), [GPU inference](/docs/data/guides/gpu-inference), [Embeddings at scale](/docs/data/guides/embeddings-at-scale), [Performance tuning](/docs/data/guides/performance-tuning)
 - Examples: [Examples index](/docs/data/examples), [Training data pipeline](/docs/data/examples/training-data-pipeline), [Insurance document audit](/docs/data/examples/insurance-document-audit), [Tender compliance check](/docs/data/examples/tender-compliance-check), [Multimodal data lake](/docs/data/examples/multimodal-data-lake)
 - Deploy: [Single node](/docs/data/deploy/single-node), [Ray cluster](/docs/data/deploy/ray-cluster), [Sizing](/docs/data/deploy/sizing)
 - Contributing: [Development](/docs/data/contributing/development)
@@ -64,199 +64,116 @@ For workloads where data size, scan parallelism, GPU placement, or multi-node ex
 Route: /docs/data/quickstart/what-is-vane-data
 Source: docs/quickstart/what-is-vane-data.mdx
 
-Vane Data is a Python-first data processing engine for building AI-ready datasets. It combines DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions in one relation workflow.
+Vane Data is an early-stage data processing engine for building AI-oriented datasets and batch inference pipelines. It combines DuckDB-compatible SQL, Python/Arrow UDFs, AI helper functions, and optional Ray-backed execution in one relation workflow.
 
-Use Vane Data when your data is already structured or can be represented as rows, but the pipeline still needs Python libraries, model inference, embeddings, prompting, media processing, or distributed execution before the data is ready for training, search, analytics, or application systems.
+Use Vane when your data can be represented as tables, but the pipeline also needs Python libraries, custom business logic, embeddings, prompting, model inference, or multimodal processing before the result is ready for training, search, analytics, review, or downstream applications.
 
 The distribution package is `vane-ai`; the Python import package is `vane`.
 
 <DataArchitecture />
 
-## The role Vane Data plays
+## Why Vane exists
 
-Vane Data sits between storage and downstream systems.
+Many AI data workflows are split across separate tools:
 
-It is designed to prepare datasets before they move into:
+- SQL jobs for reading, filtering, joining, and validating data.
+- Python scripts for custom parsing, cleaning, media processing, or model calls.
+- Ad hoc batch inference jobs for embeddings, classification, prompting, or GPU models.
+- Separate handoff steps to files, warehouses, lakehouse tables, search systems, or training pipelines.
 
-- Model training or fine-tuning jobs.
-- Search and retrieval systems.
-- Vector databases.
-- Analytical warehouses or lakehouse tables.
-- Model serving and application storage.
+Vane's goal is to make that workflow feel like one table-oriented pipeline:
 
-It is not an online model server, vector index, workflow scheduler, or transactional database. It focuses on the batch and analytical data processing step where SQL, Python, and AI model work need to stay in one pipeline.
-
-## The core idea
-
-Vane Data keeps work table-oriented.
-
-A pipeline starts with SQL, files, Arrow data, or another DuckDB-compatible input. Each stage returns a relation. You can keep adding relational operations, Python UDFs, or AI helpers, then materialize the result by showing, fetching, converting, or writing it.
-
-That gives the pipeline one consistent shape:
-
-1. Use SQL to scan, filter, project, join, aggregate, and write tabular data.
-2. Use Python UDFs for logic that should not be forced into SQL.
-3. Use AI helpers for common embedding, classification, and prompting tasks.
-4. Use Ray-backed execution when selected stages need distributed workers or GPU placement.
-
-## A small example
-
-The example below starts with SQL, runs a Python Arrow batch UDF, and returns another relation.
-
-```python
-import pyarrow as pa
-import vane
-
-con = vane.connect()
-
-docs = con.sql("""
-    select *
-    from (values
-        (1, 'Quarterly revenue report'),
-        (2, 'Customer support policy'),
-        (3, 'Model evaluation notes')
-    ) as t(id, text)
-    where text is not null
-""")
-
-def add_text_features(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-
-    return pa.table({
-        "id": ids,
-        "text": texts,
-        "text_length": [len(value) for value in texts],
-        "mentions_policy": ["policy" in value.lower() for value in texts],
-    })
-
-features = docs.map_batches(
-    add_text_features,
-    schema={
-        "id": "INTEGER",
-        "text": "VARCHAR",
-        "text_length": "BIGINT",
-        "mentions_policy": "BOOLEAN",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-
-features.show()
+```text
+source data -> relation/SQL -> Python UDF or AI function -> validation -> tabular output
 ```
 
-`map_batches` returns the columns produced by the UDF. If the next stage needs input columns such as `id` or `text`, return them from the UDF and include them in `schema`, as shown above.
+The important idea is not that every step must be SQL, Python, or AI. The important idea is that each step produces another relation with explicit columns, so the pipeline stays inspectable and can be checked before it is scaled up.
 
-## Core capabilities
+## What Vane is good for
 
-### DuckDB-compatible SQL
+Vane is a good fit when you want to run an early POC on real business data and the work has this shape:
 
-SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`.
+- Load structured or multimodal data from files, object storage, Arrow tables, or DuckDB-compatible sources.
+- Use SQL to filter, project, join, aggregate, sample, and validate the relational parts.
+- Use Python UDFs when the logic needs external libraries, custom rules, media processing, or model pre/post-processing.
+- Use AI functions for common enrichment tasks such as embeddings, classification, prompting, and structured model output.
+- Use GPU inference, including vLLM-backed batch inference, when a larger prompt or model workload needs GPU execution.
+- Start locally, then move selected stages to Ray when a POC needs distributed workers, actor reuse, or GPU placement.
 
-Use SQL for relational work:
+Typical early POC scenarios include:
 
-- Read files and tables supported by DuckDB-compatible APIs and configured extensions.
-- Filter and project rows before expensive Python or model stages.
-- Join metadata, labels, and feature tables.
-- Aggregate quality metrics and dataset summaries.
-- Write curated tabular outputs.
+- Turning raw text into training, evaluation, or retrieval datasets.
+- Cleaning and transforming structured business data before downstream loading.
+- Processing documents, images, audio, or video as rows with stable IDs and metadata.
+- Running batch AI enrichment over existing tables.
+- Testing whether a local workflow can later move to Ray-backed execution.
 
-Vane Data does not define a separate SQL dialect. Treat the SQL surface as DuckDB-compatible SQL with Vane Data execution features around it.
+## What Vane is not
 
-### Python and Arrow UDFs
+Vane v0.1.0 is an early validation release. It is meant to help suitable early users try real POCs and report real issues, not to present a finished production platform.
 
-Use UDFs when a step needs Python libraries, custom code, model state, or row expansion.
+Do not treat Vane as:
 
-| API | Shape | Typical use |
-| --- | --- | --- |
-| `map_batches(...)` | Arrow batch to Arrow batch | Batch transforms, model inference, decoding, enrichment |
-| `flat_map(...)` | Row to zero, one, or many rows | Chunking, normalization, expansion |
-| `map(...)` | Input values to one scalar value | Small row-wise enrichments |
+- A persistent transactional database.
+- A low-latency online model server.
+- A vector database or retrieval serving layer.
+- A workflow scheduler, orchestration platform, or lineage system.
+- A complete MLOps platform.
+- A complete lakehouse, warehouse, or catalog management system.
+- A promise of full DuckDB compatibility in every edge case.
+- A production deployment manual with SLA, autoscaling, or operational guarantees.
 
-UDFs declare output schemas at the relation boundary. This keeps columns explicit even when Python code creates the data.
+Vane can hand off tabular outputs to downstream systems, but those systems remain responsible for serving, transactions, catalog semantics, governance, and production operations.
 
-Use task-style backends for stateless functions. Use actor-style backends when a model, tokenizer, client, or other expensive object should be initialized once and reused across batches.
+## How Vane relates to DuckDB and Ray
 
-### AI helper functions
+Vane uses DuckDB-compatible SQL and relation concepts as the foundation for data work. If you already know DuckDB, the basic mental model of connections, SQL, relations, and file reads will feel familiar.
 
-Vane Data exposes relation methods for common AI data enrichment tasks:
+Vane adds AI-oriented and distributed execution features around that model. Compatibility with DuckDB is a project goal, but v0.1.0 should not be treated as a guarantee that every DuckDB behavior, extension, connector, or edge case works identically.
 
-- `rel.embed_text(...)` for text embeddings.
-- `rel.classify_text(...)` for text classification.
-- `rel.prompt(...)` for text and multimodal prompting.
+Ray is optional at the beginning. The recommended path is:
 
-These helpers use the same relation and UDF execution model as custom Python code. Use them when the built-in provider pattern fits the task. Use custom UDFs when you need full control over model loading, batching, retry behavior, output shape, or provider-specific logic.
+1. Run a small local pipeline first.
+2. Confirm the schema, IDs, UDF behavior, and output are correct.
+3. Move selected stages to Ray only when the POC needs more parallelism, actor reuse, or GPU placement.
 
-### Local and Ray-backed execution
+## The core workflow
 
-The native runner is the local execution path. It is the right starting point for development, testing, lightweight SQL, and single-node UDF jobs.
+A Vane POC usually follows this sequence:
 
-Configure Ray when the workload needs distributed scans, distributed writes, multiple Python workers, or GPU-aware model execution:
+1. Load a small but real slice of your data.
+2. Use SQL to inspect, filter, project, join, or summarize it.
+3. Add custom logic with a Python UDF, or use an AI function for a common model task.
+4. Keep stable IDs and source metadata so outputs can be traced back.
+5. Validate row counts, schemas, sample outputs, failures, and business meaning.
+6. Write a tabular result that can be reviewed or passed to a downstream system.
 
-```python
-import vane
+This is the smallest useful loop: real input, meaningful transformation, inspectable output, and enough context to report problems clearly.
 
-vane.configure(runner="ray")
-```
+## Should you try Vane now?
 
-The pipeline shape stays the same. The execution mode changes how selected work is scheduled and where Python UDFs can run.
+Vane v0.1.0 is worth trying if most of these are true:
 
-## Common workflow patterns
+- You have a real dataset or realistic data slice to test with.
+- Your POC needs both relational operations and Python, AI, or model inference work.
+- You want the output to stay tabular and auditable.
+- You can start with local execution before moving to Ray.
+- You are willing to report missing features, rough edges, performance issues, or unclear APIs.
 
-### AI-ready dataset preparation
+It is better to wait if you need:
 
-Use SQL to select source rows and normalize metadata, then add embeddings, labels, prompts, scores, or model-derived features before writing a curated dataset.
-
-This is the typical pattern for training data, retrieval corpora, offline evaluation sets, and analytics-ready enrichment tables.
-
-### Multimodal data processing
-
-Represent documents, images, audio, video, or other media as table rows with paths, bytes, metadata, and derived columns. SQL keeps metadata work inspectable, while Python UDFs handle decoding, parsing, OCR, transcription, image processing, or model inference.
-
-Vane Data does not require a universal multimodal file format. The table schema is the contract between stages.
-
-### Local-to-distributed scaling
-
-Start locally with the native runner and subprocess UDF backends. After the data contract and UDF behavior are correct, move expensive stages to Ray-backed execution.
-
-This keeps early development simple while leaving a path to larger scans, distributed writes, and model workers across a Ray cluster.
-
-## When Vane Data is a good fit
-
-Choose Vane Data when:
-
-- SQL is useful for the relational parts of the pipeline.
-- Python libraries or custom code are required for the expensive parts.
-- The output should remain tabular and inspectable.
-- Model calls, embeddings, or prompting are part of the data preparation path.
-- A local workflow may later need distributed execution.
-- You want one relation pipeline instead of separate SQL jobs, Python scripts, and ad hoc model enrichment steps.
-
-Use another primary system when:
-
-- The main requirement is online, low-latency inference.
-- You need a persistent transactional database.
-- You need a vector index or retrieval service as the serving layer.
-- You need a workflow scheduler, lineage system, or cross-job orchestration platform.
-- The required connector or storage feature is not available through DuckDB-compatible APIs, configured extensions, or your own UDFs.
-
-## Import and compatibility model
-
-New Vane Data projects should use:
-
-```python
-import vane
-
-con = vane.connect()
-```
-
-Vane Data exposes DuckDB-compatible Python APIs and relation behavior where compatibility applies. Existing DuckDB-style code can often continue to use familiar connection, SQL, relation, and type APIs, while Vane-specific configuration and AI helpers are available through `vane`.
+- A mature production system.
+- A stable long-term API guarantee.
+- Full connector coverage.
+- Complete operational documentation.
+- A turnkey industry solution.
 
 ## Next
 
 - [Installation](/docs/data/quickstart/installation)
-- [SQL quickstart](/docs/data/quickstart/quickstart-sql)
-- [Python quickstart](/docs/data/quickstart/quickstart-python)
+- [Quickstart](/docs/data/quickstart/quickstart)
+- [Architecture](/docs/data/concepts/architecture)
+- [SQL vs Python](/docs/data/concepts/sql-vs-python)
 - [Documentation map](/docs/data)
 
 ## Installation
@@ -400,182 +317,133 @@ The project includes wheel-build configuration for Linux manylinux 2.28 on x86_6
 - Ray workers cannot import a module: install the same dependencies on every worker or provide a Ray runtime environment that includes them.
 - Remote file reads fail: verify the DuckDB extension, storage credentials, endpoint settings, and worker-side environment variables.
 
-Next: [SQL quickstart](/docs/data/quickstart/quickstart-sql) or [Python quickstart](/docs/data/quickstart/quickstart-python).
+Next: [Quickstart](/docs/data/quickstart/quickstart).
 
-## Quickstart: SQL
+## Quickstart
 
-Route: /docs/data/quickstart/quickstart-sql
-Source: docs/quickstart/quickstart-sql.mdx
+Route: /docs/data/quickstart/quickstart
+Source: docs/quickstart/quickstart.mdx
 
-This quickstart uses DuckDB-compatible SQL with local execution. It does not require a GPU or a Ray cluster.
+This quickstart shows Vane Data as one continuous workflow: start with a relation, use SQL for the relational parts, add a small Python batch UDF for custom logic, then validate and write a tabular result.
+
+It runs locally. You do not need Ray, a GPU, model provider credentials, or remote storage for this first path.
+
+## Before you start
+
+Install Vane Data and verify that `import vane` works:
+
+```bash
+python -m pip install vane-ai
+```
+
+This quickstart also uses PyArrow for the Python UDF return value:
+
+```bash
+python -m pip install pyarrow
+```
+
+If you already installed the optional data-science extras, PyArrow may already be available in your environment.
 
 ## 1. Create a connection
-
-```python
-import vane
-
-con = vane.connect()
-```
-
-## 2. Run a query
-
-Use `con.sql(...)` for SQL that returns a relation:
-
-```python
-docs = con.sql("""
-    select *
-    from (
-        values
-            (1, 'claim', 120.50),
-            (2, 'invoice', 88.00),
-            (3, 'claim', 19.25)
-    ) as t(id, document_type, amount)
-""")
-
-docs.show()
-```
-
-Relation work is materialized when you call a consumer such as `show()`, `fetchall()`, `to_arrow_table()`, or a write method.
-
-## 3. Filter and aggregate
-
-Keep relational work in SQL before adding Python or AI stages:
-
-```python
-summary = con.sql("""
-    with docs(id, document_type, amount) as (
-        values
-            (1, 'claim', 120.50),
-            (2, 'invoice', 88.00),
-            (3, 'claim', 19.25)
-    )
-    select
-        document_type,
-        count(*) as rows,
-        sum(amount) as total_amount
-    from docs
-    where amount > 20
-    group by document_type
-    order by document_type
-""")
-
-summary.show()
-```
-
-Use `con.execute(...)` for statements that should run immediately, such as settings, extension loading, or DDL.
-
-## 4. Read local files
-
-Vane Data uses DuckDB-compatible SQL file functions. For local Parquet:
-
-```python
-rel = con.sql("""
-    select *
-    from read_parquet('data/*.parquet')
-    limit 10
-""")
-
-rel.show()
-```
-
-The same pattern applies to other file formats supported by the configured DuckDB build and extensions.
-
-## 5. Optional: read from S3-compatible storage
-
-For S3-compatible storage, configure DuckDB/httpfs settings before reading remote files:
-
-```python
-con.execute("LOAD httpfs")
-con.execute("SET s3_region='us-east-1'")
-con.execute("SET s3_url_style='path'")
-
-rel = con.sql("""
-    select *
-    from read_parquet('s3://bucket/path/*.parquet')
-    limit 10
-""")
-
-rel.show()
-```
-
-Credentials and endpoint settings must be available in the Python process. In distributed execution, workers need the same access.
-
-## 6. Optional: switch to Ray
-
-SQL text does not need to change when you move a suitable workload to the Ray runner:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-
-con = vane.connect()
-rel = con.sql("""
-    select count(*) as rows
-    from read_parquet('s3://bucket/table/*.parquet')
-""")
-
-rel.show()
-```
-
-Keep local execution for development, small data, and single-node jobs. Use Ray when scans, writes, UDFs, or model stages need distributed execution.
-
-## Next steps
-
-- [SQL vs Python](/docs/data/concepts/sql-vs-python)
-- [Python quickstart](/docs/data/quickstart/quickstart-python)
-- [Documentation map](/docs/data)
-
-## Quickstart: Python
-
-Route: /docs/data/quickstart/quickstart-python
-Source: docs/quickstart/quickstart-python.mdx
-
-This quickstart shows the Python relation API, Arrow batch UDFs, and the path from local execution to Ray-backed execution.
-
-The examples use PyArrow. Install `vane-ai[all]` or install `pyarrow` directly if your environment does not already include it.
-
-## 1. Create a relation
 
 ```python
 import pyarrow as pa
 import vane
 
 con = vane.connect()
-
-table = pa.table({
-    "id": [1, 2, 3],
-    "text": ["hello Vane Data", "batch UDF", "distributed SQL"],
-})
-
-rel = con.from_arrow(table)
-rel.show()
 ```
 
-A relation represents a table-shaped computation. You can create one from SQL, Arrow data, files, or other DuckDB-compatible inputs.
-
-## 2. Add a batch UDF
-
-Use `map_batches(...)` when a Python function should process Arrow batches and return declared output columns:
+Run a minimal SQL query to confirm the connection works:
 
 ```python
-def add_features(batch: pa.Table) -> pa.Table:
+con.sql("select 42 as answer").show()
+```
+
+## 2. Create a small relation
+
+For the first run, use inline data so there are no file paths, credentials, or storage settings to debug.
+
+```python
+docs = con.sql("""
+    select *
+    from (
+        values
+            (1, 'claim', 'Customer submitted a signed claim form.', 120.50),
+            (2, 'invoice', 'Vendor invoice is missing approval.', 88.00),
+            (3, 'claim', 'Claim note references an expired policy.', 19.25),
+            (4, 'memo', 'Internal follow-up note.', 0.00)
+    ) as t(id, document_type, text, amount)
+""")
+
+docs.show()
+```
+
+A relation represents table-shaped work. Vane materializes the result when you call a consumer such as `show()`, `fetchall()`, `to_arrow_table()`, or a write method.
+
+## 3. Use SQL for relational work
+
+Use SQL to filter, project, join, aggregate, sample, and validate before adding custom Python logic.
+
+```python
+docs.to_table("docs")
+
+selected = con.sql("""
+    select
+        id,
+        document_type,
+        text,
+        amount
+    from docs
+    where text is not null
+      and amount >= 0
+      and document_type in ('claim', 'invoice')
+    order by id
+""")
+
+selected.show()
+```
+
+Keep this stage simple in a first POC. The goal is to confirm that the input rows, important columns, and basic filters are correct before expensive Python, AI, or model work runs.
+
+## 4. Add a Python batch UDF
+
+Use `map_batches(...)` when custom Python code should process Arrow batches and return explicit output columns.
+
+```python
+def add_review_fields(batch: pa.Table) -> pa.Table:
     ids = batch.column("id").to_pylist()
-    text = batch.column("text").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+    amounts = batch.column("amount").to_pylist()
+
+    review_priority = []
+    for document_type, text, amount in zip(document_types, texts, amounts):
+        normalized = str(text or "").lower()
+        if "missing" in normalized or "expired" in normalized:
+            review_priority.append("high")
+        elif document_type == "claim" and amount > 100:
+            review_priority.append("medium")
+        else:
+            review_priority.append("low")
+
     return pa.table({
         "id": ids,
-        "text": text,
-        "length": [len(value) for value in text],
-        "upper_text": [value.upper() for value in text],
+        "document_type": document_types,
+        "text": texts,
+        "amount": amounts,
+        "text_length": [len(str(value or "")) for value in texts],
+        "review_priority": review_priority,
     })
 
-features = rel.map_batches(
-    add_features,
+features = selected.map_batches(
+    add_review_fields,
     schema={
-        "id": "BIGINT",
+        "id": "INTEGER",
+        "document_type": "VARCHAR",
         "text": "VARCHAR",
-        "length": "BIGINT",
-        "upper_text": "VARCHAR",
+        "amount": "DOUBLE",
+        "text_length": "BIGINT",
+        "review_priority": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
@@ -584,113 +452,62 @@ features = rel.map_batches(
 features.show()
 ```
 
-`schema` describes the columns returned by the UDF. `map_batches` returns the UDF output columns; include input columns such as `id` or `text` in the returned table when later stages still need them.
+`schema` describes the columns returned by the UDF. `map_batches` returns the UDF output columns, so return identifiers and source fields such as `id`, `document_type`, and `text` when later stages still need them.
 
-## 3. Reuse state with an actor backend
+## 5. Validate the output
 
-Use an actor backend when setup is expensive and should be reused across batches. Pass a callable class to actor backends:
-
-```python
-class Prefixer:
-    def __init__(self) -> None:
-        self.prefix = "vane:"
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        values = batch.column("text").to_pylist()
-        return pa.table({
-            "id": ids,
-            "prefixed": [self.prefix + value for value in values],
-        })
-
-prefixed = rel.map_batches(
-    Prefixer,
-    schema={"id": "BIGINT", "prefixed": "VARCHAR"},
-    batch_size=1024,
-    execution_backend="subprocess_actor",
-    concurrency=2,
-)
-
-prefixed.show()
-```
-
-Use task backends for plain functions. Use actor backends for callable classes that hold reusable state, such as models or service clients.
-
-## 4. Optional: run UDFs on Ray
-
-Use Ray after the local UDF path is correct and the workload needs distributed execution:
+Turn the UDF result into a named table when you want to use SQL again for checks or summaries.
 
 ```python
-import vane
+features.to_table("doc_features")
 
-vane.configure(runner="ray")
+summary = con.sql("""
+    select
+        review_priority,
+        count(*) as rows,
+        avg(text_length) as avg_text_length
+    from doc_features
+    group by review_priority
+    order by review_priority
+""")
 
-con = vane.connect()
-rel = con.sql("select * from read_parquet('s3://bucket/data/*.parquet')")
+summary.show()
 ```
 
-For distributed stateless UDF work, use `ray_task`:
+Before moving to your own data, check the same things you would check in a real POC:
+
+- Row counts match your expectation.
+- Stable IDs are still present.
+- Required source columns are still present.
+- New columns have the expected types and values.
+- A few sample rows make business sense.
+
+## 6. Write the result
+
+Write a tabular output when the result is ready for review or handoff.
 
 ```python
-processed = rel.map_batches(
-    add_features,
-    schema={
-        "id": "BIGINT",
-        "text": "VARCHAR",
-        "length": "BIGINT",
-        "upper_text": "VARCHAR",
-    },
-    batch_size=1024,
-    execution_backend="ray_task",
-)
+features.write_parquet("quickstart-doc-features.parquet")
 ```
 
-For distributed model reuse or GPU-backed inference, use `ray_actor` with a callable class:
+For a real POC, write to a run-specific path and keep enough source metadata to reproduce or explain every output row.
 
-```python
-embedded = rel.map_batches(
-    MyModelBatch,
-    schema={"id": "BIGINT", "embedding": "FLOAT[]"},
-    batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
+## Use the same shape with your data
+
+The inline dataset in this page is only there to remove setup noise. The shape you should carry into your own POC is:
+
+```text
+load a small real slice -> SQL inspect/filter -> Python UDF or AI function -> SQL validation -> write tabular output
 ```
 
-Replace `MyModelBatch` with your own callable class. Return identifiers or metadata from the UDF when downstream stages need to join model outputs back to source rows.
+Start with local execution. Move selected stages to `ray_task` or `ray_actor` only after the local data contract, UDF behavior, and output checks are correct.
 
-Every Ray worker must be able to import the UDF code, access the same storage, and see any model files or credentials required by the callable.
+## Next
 
-## 5. Optional: use AI helpers
-
-Vane Data exposes common AI operations as relation methods:
-
-- `rel.embed_text(...)`
-- `rel.classify_text(...)`
-- `rel.prompt(...)`
-
-Example:
-
-```python
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
-```
-
-AI helpers return the configured output column. If the final dataset needs source columns as well, use a custom `map_batches` UDF that returns the complete schema, or explicitly combine helper output with source rows in a validated step.
-
-Install the provider libraries required by the provider and model you choose.
-
-## Next steps
-
+- [SQL vs Python](/docs/data/concepts/sql-vs-python)
 - [UDFs](/docs/data/concepts/udfs)
-- [AI functions](/docs/data/concepts/ai-functions)
-- [Execution model](/docs/data/concepts/execution-model)
+- [AI Functions](/docs/data/concepts/ai-functions)
+- [Execution Model](/docs/data/concepts/execution-model)
 
 ## Architecture
 
@@ -1484,47 +1301,864 @@ Use provider API concurrency carefully. Increasing concurrency can improve throu
 Route: /docs/data/guides/multimodal-ingest
 Source: docs/guides/multimodal-ingest.mdx
 
-Vane Data treats multimodal records as table rows. Paths, bytes, metadata, decoded features, labels, embeddings, and model outputs can move through one relation as explicit columns.
+Multimodal ingest turns images, documents, audio, and video into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger POC.
 
-Use this pattern when you need SQL filtering and table outputs, but part of the pipeline must call Python libraries for decoding, feature extraction, or model inference.
+## Why rows
 
-## Ingest pattern
+Vane works best when every source object has a row with explicit columns for identity, location, media type, and business context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
 
-1. Build a relation with stable IDs, source locations, metadata, and optional bytes.
-2. Filter and project with SQL before expensive Python work.
-3. Use `map_batches` for decoding, feature extraction, or model inference.
-4. Keep UDF output schemas explicit.
-5. Write curated outputs to Parquet or another DuckDB-supported target.
+Rows also make POC feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
 
-Vane Data does not define a universal multimodal file format. Choose column names and output formats based on the downstream system.
+## Input contract
 
-## Images
+Start with a manifest relation. It can come from Parquet, CSV, object storage listings, an application export, or a small Arrow table for local validation.
 
-For local image files, start with metadata and bytes:
+Use these columns as the minimum contract:
+
+| Column | Purpose |
+| --- | --- |
+| `asset_id` | Stable ID for the media object. Use a business key when one exists; otherwise create a deterministic ID from source metadata. |
+| `source_uri` | URI or path where the original object can be read. Use one canonical column name even when values mix local paths and object storage URIs. |
+| `media_type` | MIME-like type such as `image/jpeg`, `application/pdf`, `audio/wav`, or `video/mp4`. |
+| business metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
+| optional bytes | A `BLOB` column such as `payload_bytes` only when embedding bytes in the relation is the right tradeoff. |
+
+Useful optional columns include `content_sha256`, `source_size_bytes`, `ingested_at`, and `ingest_status`. Keep metadata as normal typed columns when you need SQL filters. Use JSON strings only for sparse or rarely queried metadata.
+
+```python
+import pyarrow as pa
+import vane
+
+manifest = pa.table({
+    "asset_id": ["img-001", "doc-042"],
+    "source_uri": ["s3://poc-media/images/img-001.jpg", "s3://poc-media/docs/doc-042.pdf"],
+    "media_type": ["image/jpeg", "application/pdf"],
+    "case_id": ["case-17", "case-17"],
+    "region": ["us-west", "us-west"],
+})
+
+con = vane.connect()
+media = con.from_arrow(manifest)
+media.show()
+```
+
+## URI or bytes
+
+Prefer `source_uri` for the initial ingest relation. URI-first relations are smaller, easier to inspect, and easier to move between SQL filtering, Ray workers, and downstream processing.
+
+Use bytes when:
+
+- the sample is small enough to inspect locally;
+- the source system is difficult to access from workers but the bytes can be exported once;
+- the next stage requires exact byte snapshots for reproducibility;
+- you are intentionally writing a compact fixture for a bug report or example.
+
+Avoid bytes when:
+
+- objects are large, especially audio and video;
+- the same media will be processed by multiple stages and can be reread from shared storage;
+- Ray workers can access object storage directly;
+- the final output does not need to retain raw media.
+
+For many POCs, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
+
+## Recommended columns
+
+Use one common prefix-free contract across media types, then add media-specific metadata. Keep the first version small enough that you can fill every field reliably.
+
+| Media | Minimal recommended columns |
+| --- | --- |
+| Images | `asset_id`, `source_uri`, `media_type`, `capture_time`, `width`, `height`, `camera_id` or another business grouping key, optional `payload_bytes` |
+| Documents | `asset_id`, `source_uri`, `media_type`, `document_type`, `case_id` or `account_id`, `language`, optional `page_count`, optional `payload_bytes` |
+| Audio | `asset_id`, `source_uri`, `media_type`, `call_id` or session key, `language`, optional `duration_seconds`, optional `sample_rate`, optional `payload_bytes` |
+| Video | `asset_id`, `source_uri`, `media_type`, `event_id` or session key, `capture_time`, optional `duration_seconds`, optional `frame_rate`, optional `payload_bytes` |
+
+Do not invent decoded output columns during ingest. Columns such as `transcript`, `ocr_text`, `frame_label`, `embedding`, and `model_score` belong to Multimodal Pipeline, AI Functions, GPU Inference, or Embeddings at Scale after the source relation is stable.
+
+## Filter before expensive work
+
+Use SQL to reduce the candidate set before loading bytes, decoding media, calling models, or scheduling GPU work. This is one of the main reasons to represent multimodal data as rows.
+
+```sql
+select
+  asset_id,
+  source_uri,
+  media_type,
+  case_id,
+  region
+from read_parquet('data/media_manifest/*.parquet')
+where media_type in ('image/jpeg', 'image/png')
+  and region = 'us-west'
+  and case_priority in ('high', 'review')
+  and source_size_bytes < 20000000
+```
+
+Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the POC can explain what was excluded.
+
+## Worker access
+
+Local execution can read local files that only exist on the driver. Ray execution cannot assume that. Before moving a multimodal ingest relation to Ray-backed stages, confirm worker access for every external dependency.
+
+Check these items early:
+
+- `source_uri` values are absolute paths, mounted paths, or object storage URIs that workers can resolve.
+- Object storage credentials, endpoints, and required environment variables are visible to workers.
+- Workers have network access to the storage system.
+- Any Python package used later for decoding or extraction is installed on workers.
+- Model files or provider credentials needed by later stages are available where those stages run.
+- Output paths are writable from the workers that will materialize results.
+
+If a POC must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
+
+## Output relation
+
+The ingest output should still look like a source manifest, not a completed model result. A good handoff relation contains:
+
+- `asset_id`
+- `source_uri`
+- `media_type`
+- business metadata needed for routing, filtering, or joins
+- optional `payload_bytes` when the next stage intentionally consumes embedded bytes
+- `ingest_status`
+- `ingest_error` or `error_message`
+- optional run metadata such as `ingest_run_id` and `ingested_at`
+
+This shape feeds:
+
+- Multimodal Pipeline, which can decode, extract, chunk, label, and record per-stage status.
+- AI Functions, when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
+- GPU Inference, when later transformation stages construct prompt rows or model inputs from this stable source relation.
+
+## Practical POC checks
+
+Before expanding the ingest job, verify a small but real slice:
+
+- `asset_id` is unique and stable across reruns.
+- `source_uri` resolves from the environment that will run the next stage.
+- `media_type` values are populated and match the actual files for a sample.
+- business metadata is sufficient to filter the POC population with SQL.
+- optional bytes columns are only present when they are intentionally needed.
+- row counts by media type and business segment match expectations.
+- failed or skipped records have explicit status and error columns.
+- the relation can be written to and read back from the chosen handoff format.
+
+When reporting POC feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.
+
+## Structured Data Load
+
+Route: /docs/data/guides/structured-data-load
+Source: docs/guides/structured-data-load.mdx
+
+Use this guide when your POC starts from structured business data: orders, claims, tickets, invoices, events, customer records, or other table-shaped files.
+
+The goal is to load a small real slice, verify that the data contract is credible, and produce a source relation that later stages can use for structured transformation, Python UDFs, or AI functions.
+
+## Start with a small real slice
+
+Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose business shape:
+
+- One time window, region, customer group, product line, or workflow state.
+- Enough rows to include normal cases and known edge cases.
+- The columns needed for IDs, joins, filters, text fields, labels, amounts, dates, and status values.
+- Stable source identifiers that can be carried through later transformations.
+
+If the full dataset is remote or large, either export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
+
+## Load local Parquet
+
+Use `read_parquet(...)` for Parquet files and Parquet part directories. A directory is usually read through a glob that points at files inside it.
+
+```python
+import vane
+
+con = vane.connect()
+
+orders = con.sql("""
+    select *
+    from read_parquet('data/orders/*.parquet', union_by_name=true)
+    where order_date >= date '2026-01-01'
+    limit 10000
+""")
+
+orders.to_table("raw_orders")
+```
+
+For nested directories, use a recursive glob:
+
+```python
+events = con.sql("""
+    select *
+    from read_parquet('data/events/**/*.parquet', union_by_name=true)
+    limit 10000
+""")
+```
+
+Use `union_by_name=true` when multiple files may have columns in different orders or when a small amount of schema drift is expected. If the schemas differ in meaning, stop and reconcile them before continuing.
+
+## Load local CSV
+
+Use CSV for small or exported slices. Prefer Parquet once you control the export format, because it carries column types more reliably.
+
+```python
+claims = con.sql("""
+    select *
+    from read_csv_auto('data/claims/*.csv', header=true)
+    limit 10000
+""")
+
+claims.to_table("raw_claims")
+```
+
+If type inference is wrong, keep the load simple, inspect the inferred schema, then cast important columns explicitly in the source relation.
+
+## Load from S3 or MinIO
+
+Keep object storage configuration minimal for a POC. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+
+# Prefer environment variables for credentials:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN when needed.
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+source = con.sql("""
+    select *
+    from read_parquet('s3://my-bucket/poc/orders/*.parquet')
+    limit 10000
+""")
+```
+
+For MinIO or another S3-compatible endpoint, add the endpoint settings:
+
+```python
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+```
+
+Do not put long-lived secrets in checked-in scripts or documentation snippets. If Ray will run the query, the same credentials and endpoint settings must be available to the workers.
+
+## Inspect the schema and sample
+
+Materialize the raw scan as a temporary table when you want to run several checks against the same slice.
+
+```python
+orders.to_table("raw_orders")
+
+con.sql("describe raw_orders").show()
+
+con.sql("""
+    select *
+    from raw_orders
+    limit 10
+""").show()
+```
+
+Before adding transformation, UDF, or AI work, confirm that column names, types, sample values, encodings, and date/time assumptions match the business data you expected.
+
+## Run basic POC checks
+
+Start with row count, key uniqueness, null checks, and a few distributions that would catch a bad slice.
+
+```python
+con.sql("""
+    select
+        count(*) as rows,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) - count(distinct order_id) as duplicate_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        count(*) filter (where amount is null) as null_amounts
+    from raw_orders
+""").show()
+```
+
+Check important categorical or time distributions:
+
+```python
+con.sql("""
+    select status, count(*) as rows
+    from raw_orders
+    group by status
+    order by rows desc
+    limit 20
+""").show()
+```
+
+```python
+con.sql("""
+    select date_trunc('month', order_date) as month, count(*) as rows
+    from raw_orders
+    group by month
+    order by month
+""").show()
+```
+
+Replace `order_id`, `customer_id`, `amount`, `status`, and `order_date` with fields that matter for your POC. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them.
+
+## Produce the source relation
+
+Create a narrow relation with the columns downstream stages need. Keep IDs and source metadata, cast important fields deliberately, and filter out rows that cannot be traced.
+
+```python
+source_orders = con.sql("""
+    select
+        cast(order_id as varchar) as order_id,
+        cast(customer_id as varchar) as customer_id,
+        cast(order_date as date) as order_date,
+        cast(status as varchar) as status,
+        cast(amount as double) as amount,
+        notes
+    from raw_orders
+    where order_id is not null
+""")
+
+source_orders.to_table("source_orders_poc")
+```
+
+Use this relation as the input for the next guide:
+
+- Structured Transformation for filtering, joins, derived columns, and validation summaries.
+- Custom Python UDFs when business logic needs Python libraries or external services.
+- AI Functions when a text column should be embedded, classified, or prompted.
+
+Keep the source relation small while the POC logic is changing. Increase the slice only after row counts, schemas, and sample outputs are explainable.
+
+## Local vs Ray accessibility
+
+Local execution can read files visible to the Python process. This is the simplest path for the first slice.
+
+Ray execution may schedule scans, writes, or UDFs on workers. Every worker must be able to:
+
+- See the same local path, mounted filesystem, or object storage URI.
+- Load the same DuckDB extensions required by the scan.
+- Access the same credentials and endpoint settings.
+- Import the same Python packages used by later UDF stages.
+- Write to an output path that is visible outside the worker.
+
+Configure Ray before creating the connection:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+```
+
+Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the POC needs distributed scan, UDF, or write behavior.
+
+## Common failures and feedback
+
+When a structured load fails, classify the failure before changing the pipeline:
+
+| Category | What to check |
+| --- | --- |
+| Path not found | Current working directory, absolute path, glob pattern, file permissions, mounted paths on Ray workers |
+| Empty or wrong slice | Filters, date ranges, partition paths, `limit`, recursive glob depth |
+| Schema mismatch | CSV inference, Parquet schema drift, `union_by_name`, explicit casts, unexpected nullable fields |
+| Bad identifiers | Null keys, duplicate keys, keys that are only unique within a partition |
+| Object storage auth | Region, endpoint, SSL setting, path-style setting, credential availability |
+| Ray access | Worker environment variables, mounted filesystems, package availability, output path visibility |
+
+Useful feedback includes:
+
+- Vane version, Python version, operating system, and whether `VANE_RUNNER` or `vane.configure(runner="ray")` was used.
+- The file format, path style, and redacted scan query.
+- Whether the same scan works locally without Ray.
+- Schema output and row-count/null/key-check output from the small slice.
+- Redacted S3 or MinIO endpoint settings, without secrets.
+- The shortest error traceback and, when possible, a tiny sample file that reproduces the issue.
+
+## Custom Python UDFs
+
+Route: /docs/data/guides/custom-python-udfs
+Source: docs/guides/custom-python-udfs.mdx
+
+Use Custom Python UDFs when your POC needs business logic that does not belong in SQL: text cleanup, domain rules, external Python libraries, model preprocessing, model inference, or client calls.
+
+The goal is to make one UDF correct on a small slice of your own data, keep its table contract explicit, then move the same logic to Ray only when distribution or actor reuse is worth the extra setup.
+
+## UDF contract
+
+For `map_batches`, the contract is:
+
+1. The callable receives a `pyarrow.Table`.
+2. The callable returns a `pyarrow.Table`.
+3. The returned table must match the declared `schema`.
+
+`map_batches` returns the columns produced by the UDF. It does not automatically preserve upstream columns. Return stable IDs and any source columns that later stages need for joins, validation, or audit.
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select
+        id,
+        document_type,
+        text,
+        amount
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    limit 100
+""")
+```
+
+Keep the first sample small and real. Inline data is fine for learning, but the first useful POC UDF should touch the same columns and messy values that your real pipeline will use.
+
+## First stateless batch UDF
+
+Start with a plain function when the work is deterministic and does not need a model, network client, cache, or other reusable state.
+
+```python
+import re
+
+import pyarrow as pa
+
+def add_review_fields(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+    amounts = batch.column("amount").to_pylist()
+
+    normalized_text = []
+    needs_review = []
+    review_reason = []
+
+    for document_type, text, amount in zip(document_types, texts, amounts):
+        clean = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+        normalized_text.append(clean)
+
+        has_risk_term = "missing" in clean or "expired" in clean
+        high_amount = amount is not None and amount >= 1000
+
+        needs_review.append(has_risk_term or high_amount)
+        if has_risk_term:
+            review_reason.append("risk_term")
+        elif high_amount:
+            review_reason.append("high_amount")
+        else:
+            review_reason.append("none")
+
+    return pa.table({
+        "id": ids,
+        "document_type": document_types,
+        "text": texts,
+        "amount": amounts,
+        "normalized_text": normalized_text,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+    })
+
+reviewed = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+
+reviewed.show()
+```
+
+This example returns the source `id`, `document_type`, `text`, and `amount` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
+
+## Validate with SQL
+
+Turn the UDF output into a named table when you want relational checks.
+
+```python
+reviewed.to_table("reviewed_documents")
+
+summary = con.sql("""
+    select
+        document_type,
+        needs_review,
+        count(*) as rows
+    from reviewed_documents
+    group by document_type, needs_review
+    order by document_type, needs_review
+""")
+
+summary.show()
+```
+
+For a first POC, check row counts, IDs, a few high-risk rows, and a few rows that should not be flagged. Correctness failures are easier to fix before a model, provider, or Ray cluster is involved.
+
+## Schema and Arrow outputs
+
+Treat the schema as part of the UDF interface.
+
+| Topic | Guidance |
+| --- | --- |
+| Column names | Return exactly the columns declared in `schema`. |
+| Required source columns | Return IDs, source URI/path, business keys, and text or metadata needed later. |
+| Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
+| Nulls | Keep null behavior explicit, especially for numeric and list columns. |
+| Row count | A `map_batches` UDF normally returns one output row per input row. Use `flat_map` when one input can create zero or many rows. |
+
+If Arrow cannot infer the type you want, build an explicit array:
+
+```python
+return pa.table({
+    "id": pa.array(ids, type=pa.int64()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, or structured JSON strings before returning.
+
+## Batch size
+
+`batch_size` controls how many input rows Vane passes to one `map_batches` call.
+
+Start small while debugging:
+
+```python
+debugged = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=8,
+    execution_backend="subprocess_task",
+)
+```
+
+Then increase it after the schema and output rows are correct. CPU text transforms often tolerate larger batches. Media decoding, embeddings, LLM calls, and GPU inference usually need smaller batches that fit memory and provider limits.
+
+Batch size should not change the meaning of the result. If output changes when the batch size changes, the UDF is probably relying on hidden batch state.
+
+## Callable classes and actors
+
+Use a callable class when setup is expensive or state should be reused across batches:
+
+- model or tokenizer loading
+- API client setup
+- database or object-store client setup
+- lookup tables or caches
+- GPU model state
+
+Actor backends construct the class inside the worker and reuse it for multiple batches. Pass the class itself, not an already-created instance.
+
+```python
+import pyarrow as pa
+
+class KeywordTagger:
+    def __init__(self) -> None:
+        self.terms_by_label = {
+            "policy_issue": ("expired policy", "coverage gap"),
+            "approval_issue": ("missing approval", "unsigned"),
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch.column("id").to_pylist()
+        texts = batch.column("text").to_pylist()
+
+        labels = []
+        for text in texts:
+            normalized = str(text or "").lower()
+            label = "none"
+            for candidate, terms in self.terms_by_label.items():
+                if any(term in normalized for term in terms):
+                    label = candidate
+                    break
+            labels.append(label)
+
+        return pa.table({
+            "id": ids,
+            "issue_label": labels,
+        })
+
+tagged = documents.map_batches(
+    KeywordTagger,
+    schema={
+        "id": "BIGINT",
+        "issue_label": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+In a real model UDF, load the model or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+
+## Backend choices
+
+Pick the simplest backend that proves the current question.
+
+| Backend | Callable shape | Use it for |
+| --- | --- | --- |
+| `subprocess_task` | Function | First stateless UDFs, local isolation, CPU transforms. |
+| `subprocess_actor` | Callable class | Local model or client reuse without Ray. |
+| `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
+| `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
+
+Ray backends require Ray execution to be configured before the distributed pipeline is created and run.
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+ray_reviewed = documents.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
+
+For a stateful or GPU-backed model, keep the class shape and switch the backend:
+
+```python
+ray_tagged = documents.map_batches(
+    KeywordTagger,
+    schema={
+        "id": "BIGINT",
+        "issue_label": "VARCHAR",
+    },
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+
+## Local debug sequence
+
+Use this sequence before moving a UDF into a larger pipeline.
+
+1. Select a small real sample with stable IDs.
+2. Call the Python function directly on an Arrow table.
+3. Run the same function through `map_batches` with a small `batch_size`.
+4. Validate row counts, IDs, source columns, and output types with SQL.
+5. Increase `batch_size` locally.
+6. Move to `ray_task` or `ray_actor` only after the local contract is correct.
+
+```python
+sample = con.sql("""
+    select id, document_type, text, amount
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by id
+    limit 20
+""")
+
+sample_arrow = sample.to_arrow_table()
+debug_arrow = add_review_fields(sample_arrow)
+
+assert len(debug_arrow) == len(sample_arrow)
+print(debug_arrow.schema)
+print(debug_arrow.to_pydict())
+```
+
+Then run it through Vane:
+
+```python
+debug_relation = sample.map_batches(
+    add_review_fields,
+    schema={
+        "id": "BIGINT",
+        "document_type": "VARCHAR",
+        "text": "VARCHAR",
+        "amount": "DOUBLE",
+        "normalized_text": "VARCHAR",
+        "needs_review": "BOOLEAN",
+        "review_reason": "VARCHAR",
+    },
+    batch_size=4,
+    execution_backend="subprocess_task",
+)
+
+debug_relation.show()
+```
+
+If this fails, keep the failure local. A Ray run will add import, dependency, storage, and resource variables before the UDF contract is fixed.
+
+## Common failures
+
+| Failure | What it usually means | How to fix it |
+| --- | --- | --- |
+| Schema mismatch | Returned columns or types do not match `schema`. | Print the returned Arrow schema, then align column names and Arrow-compatible types. |
+| Missing ID or source columns | The UDF returned only derived columns. | Return stable IDs and source fields that downstream SQL, joins, and review need. |
+| Arrow type incompatibility | The UDF returned Python objects Arrow cannot serialize. | Convert outputs to primitives, bytes, lists, structs, JSON strings, or explicit `pa.array` values. |
+| Worker import failure | A subprocess or Ray worker cannot import the module defining the UDF. | Put the callable in an importable module and install the same package/dependencies on every worker. |
+| Model loads at import time | Each worker import triggers heavy setup or fails before the actor starts. | Move model, tokenizer, and client setup into callable class `__init__`. |
+| Batch works locally but fails on Ray | Workers cannot access data, credentials, model files, or compatible package versions. | Verify worker paths and environment with a tiny Ray sample before increasing data size. |
+| Memory spikes | Batch size, media bytes, or model outputs are too large. | Project fewer columns, lower `batch_size`, split stages, or use actor reuse for model state. |
+
+## How this guide connects to the rest of the docs
+
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is relational cleanup, joins, deduplication, validation, or output shaping, and add a UDF only for logic SQL should not own.
+- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
+- Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Come back to Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
+- Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind `map_batches`, callable classes, and execution backends.
+
+## Multimodal Pipeline
+
+Route: /docs/data/guides/multimodal-pipeline
+Source: docs/guides/multimodal-pipeline.mdx
+
+A multimodal pipeline starts after ingest. The input is a relation with stable IDs, source locations, metadata, and optional bytes; the output is a curated table that can be inspected, joined, written, and used to report failures.
+
+Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged POC pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
+
+## Input relation
+
+Start from the relation created by multimodal ingest. At minimum, keep:
+
+- `id`: stable source identifier.
+- `source_uri`: local path, object storage URI, or another reproducible source reference.
+- `media_type`: content type or coarse type such as `image`, `pdf`, `audio`, or `video`.
+- Metadata columns that help filter or route rows before expensive work.
+- Optional bytes columns when ingest already loaded the media content.
+
+```python
+import vane
+
+con = vane.connect()
+
+ingested = con.sql("""
+    select
+        id,
+        source_uri,
+        media_type,
+        customer_segment,
+        captured_at
+    from read_parquet('output/media_ingest/')
+    where id is not null
+      and source_uri is not null
+""")
+
+ingested.to_table("media_ingest")
+```
+
+If bytes are large or stored behind credentials, keep only `source_uri` during ingest and load bytes inside a preparation stage. That keeps early filtering cheap and makes worker storage access explicit.
+
+## Pipeline shape
+
+Build the POC as separate stages:
+
+1. Metadata filtering and projection.
+2. URI or bytes preparation.
+3. Decode, OCR, transcript, frame, or text extraction.
+4. Model, AI helper, or business rule stage.
+5. Validation summary.
+6. Curated output and failure output.
+
+The important property is not the exact model. It is that every stage returns a typed relation with IDs, status, errors, and enough metadata to inspect what happened.
+
+## 1. Filter before expensive work
+
+Use relational filtering to reduce the input before decoding files or calling models.
+
+```python
+candidates = con.sql("""
+    select
+        id,
+        source_uri,
+        media_type,
+        customer_segment,
+        captured_at
+    from media_ingest
+    where media_type in ('image/png', 'image/jpeg', 'application/pdf')
+      and customer_segment is not null
+    limit 1000
+""")
+```
+
+For a real POC, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
+
+## 2. Prepare URIs or bytes
+
+Keep this stage separate from decoding and inference. It lets you tune I/O, credentials, and retry behavior without changing model code.
 
 ```python
 from pathlib import Path
 
 import pyarrow as pa
-import vane
 
-rows = []
-for idx, path in enumerate(Path("images").glob("*.png")):
-    rows.append({
-        "id": idx,
-        "source_uri": str(path),
-        "image_bytes": path.read_bytes(),
+
+def load_local_bytes(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+
+    media_bytes = []
+    status = []
+    error_message = []
+
+    for uri in source_uris:
+        try:
+            media_bytes.append(Path(uri).read_bytes())
+            status.append("ok")
+            error_message.append("")
+        except Exception as exc:
+            media_bytes.append(None)
+            status.append("failed")
+            error_message.append(f"load_bytes: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "id": ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "media_bytes": media_bytes,
+        "prepare_status": status,
+        "prepare_error": error_message,
     })
 
-con = vane.connect()
-rel = con.from_arrow(pa.table({
-    "id": [row["id"] for row in rows],
-    "source_uri": [row["source_uri"] for row in rows],
-    "image_bytes": [row["image_bytes"] for row in rows],
-}))
+
+prepared = candidates.map_batches(
+    load_local_bytes,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "media_bytes": "BLOB",
+        "prepare_status": "VARCHAR",
+        "prepare_error": "VARCHAR",
+    },
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
 ```
 
-Decode or inspect the images with a batch UDF:
+For object storage, replace `Path(uri).read_bytes()` with a storage client that is available wherever the UDF runs. Do not hide missing credentials or inaccessible paths by returning partial output without a failure column.
+
+## 3. Decode or extract
+
+Decode, OCR, transcript generation, PDF text extraction, and video frame extraction should be their own stages when they are expensive or failure-prone.
 
 ```python
 import io
@@ -1532,223 +2166,1320 @@ import io
 import pyarrow as pa
 from PIL import Image
 
+
 def inspect_images(batch: pa.Table) -> pa.Table:
     ids = batch.column("id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
-    sizes = []
-    modes = []
-    for data in batch.column("image_bytes").to_pylist():
-        image = Image.open(io.BytesIO(data))
-        sizes.append(f"{image.width}x{image.height}")
-        modes.append(image.mode)
+    media_types = batch.column("media_type").to_pylist()
+    media_bytes = batch.column("media_bytes").to_pylist()
+    prepare_status = batch.column("prepare_status").to_pylist()
+    prepare_error = batch.column("prepare_error").to_pylist()
+
+    width = []
+    height = []
+    status = []
+    error_message = []
+
+    for data, previous_status, previous_error in zip(media_bytes, prepare_status, prepare_error):
+        if previous_status != "ok":
+            width.append(None)
+            height.append(None)
+            status.append("skipped")
+            error_message.append(previous_error)
+            continue
+
+        try:
+            image = Image.open(io.BytesIO(data))
+            width.append(image.width)
+            height.append(image.height)
+            status.append("ok")
+            error_message.append("")
+        except Exception as exc:
+            width.append(None)
+            height.append(None)
+            status.append("failed")
+            error_message.append(f"decode_image: {type(exc).__name__}: {exc}")
+
     return pa.table({
         "id": ids,
         "source_uri": source_uris,
-        "image_size": sizes,
-        "image_mode": modes,
+        "media_type": media_types,
+        "image_width": width,
+        "image_height": height,
+        "decode_status": status,
+        "decode_error": error_message,
     })
 
-out = rel.map_batches(
+
+decoded = prepared.map_batches(
     inspect_images,
     schema={
         "id": "BIGINT",
         "source_uri": "VARCHAR",
-        "image_size": "VARCHAR",
-        "image_mode": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "decode_status": "VARCHAR",
+        "decode_error": "VARCHAR",
     },
     batch_size=32,
     execution_backend="subprocess_task",
 )
-
-out.show()
 ```
 
-For model inference, keep decoding and inference in separate UDF stages when possible. That makes failures easier to isolate and lets you tune batch sizes independently.
+This example inspects images so the relation contract is visible. Use the same pattern for document text extraction, audio transcription, or video frame metadata.
 
-## Audio
+## 4. Add a model or rule stage
 
-Represent audio as a source URI plus either bytes or a resolved local path. Use a UDF for transcription or acoustic feature extraction.
-
-Recommended output columns:
-
-- `audio_id`
-- `source_uri`
-- `transcript`
-- `language`
-- `segment_json` or one row per segment
-- `start_time` and `end_time` when segment rows are used
-
-Keep provider-specific transcription code inside the UDF. Vane Data manages the relation, batching, schema, and execution backend; it does not provide a built-in transcription engine.
-
-## Documents
-
-For PDFs, office documents, HTML, or long text files, keep extraction, chunking, and embedding as separate stages:
-
-1. Extract text and document metadata.
-2. Split text into chunks with stable IDs.
-3. Embed or classify chunks.
-4. Write document-level and chunk-level outputs.
-
-Recommended columns:
-
-- `document_id`
-- `source_uri`
-- `page_number`
-- `chunk_id`
-- `text`
-- `embedding`
-- model/provider metadata when model outputs are stored
-
-## Video
-
-Treat video ingest as a heavier pipeline:
-
-1. Read metadata and file paths.
-2. Decode frames or clips in controlled batches.
-3. Run model UDFs over frames or clips.
-4. Store frame-level or clip-level outputs with timestamps.
-
-Avoid returning large Python objects from UDFs. Convert outputs to Arrow-compatible values such as strings, numbers, lists, bytes, or structured JSON strings.
-
-## Local vs Ray
-
-Start locally:
+The next stage can be a Python UDF, an AI helper, or a GPU-backed actor. It should return a complete row-level contract instead of only a model output column.
 
 ```python
-out = rel.map_batches(
-    decode_batch,
-    schema={"id": "BIGINT", "feature": "VARCHAR"},
-    batch_size=32,
+import os
+import time
+
+import pyarrow as pa
+
+
+RUN_ID = os.environ.get("VANE_RUN_ID", "local-poc-001")
+
+
+def classify_by_shape(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    widths = batch.column("image_width").to_pylist()
+    heights = batch.column("image_height").to_pylist()
+    decode_status = batch.column("decode_status").to_pylist()
+    decode_error = batch.column("decode_error").to_pylist()
+
+    labels = []
+    scores = []
+    status = []
+    error_message = []
+
+    for width, height, previous_status, previous_error in zip(
+        widths,
+        heights,
+        decode_status,
+        decode_error,
+    ):
+        if previous_status != "ok":
+            labels.append("")
+            scores.append(0.0)
+            status.append("failed")
+            error_message.append(previous_error)
+        elif width and height and width >= height:
+            labels.append("landscape_or_document")
+            scores.append(0.8)
+            status.append("ok")
+            error_message.append("")
+        else:
+            labels.append("portrait_or_detail")
+            scores.append(0.7)
+            status.append("ok")
+            error_message.append("")
+
+    return pa.table({
+        "id": ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "image_width": widths,
+        "image_height": heights,
+        "label": labels,
+        "score": scores,
+        "status": status,
+        "error_message": error_message,
+        "run_id": [RUN_ID] * len(ids),
+        "pipeline_version": ["shape-v1"] * len(ids),
+        "processed_at_unix": [int(time.time())] * len(ids),
+    })
+
+
+scored = decoded.map_batches(
+    classify_by_shape,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+        "pipeline_version": "VARCHAR",
+        "processed_at_unix": "BIGINT",
+    },
+    batch_size=64,
     execution_backend="subprocess_task",
 )
 ```
 
-Move to Ray when input size, decoding cost, model throughput, or GPU placement requires it:
+Replace the rule with a model when the stage is correct. Use an actor backend when the model, tokenizer, client, or GPU context should be initialized once and reused across batches.
+
+## Output contract
+
+Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the POC.
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Stable input identifier for joins and feedback. |
+| `source_uri` | Reproducible source reference. |
+| Stage outputs | Extracted text, frame metadata, labels, embeddings, OCR JSON, or other typed results. |
+| `score` | Confidence, rule score, similarity, or another comparable stage metric. |
+| `status` | `ok`, `failed`, `skipped`, or another explicit state. |
+| `error_message` | Empty on success; populated with the stage and exception class on failure. |
+| Run metadata | `run_id`, `pipeline_version`, model/provider name, and timestamp fields. |
+
+Prefer explicit columns over opaque nested objects until you know what the downstream consumer needs.
+
+## 5. Validate before writing
+
+Register the stage output and use SQL for summaries, checks, and failure review.
+
+```python
+scored.to_table("media_pipeline_scored")
+
+summary = con.sql("""
+    select
+        media_type,
+        status,
+        count(*) as rows,
+        avg(score) as avg_score
+    from media_pipeline_scored
+    group by media_type, status
+    order by media_type, status
+""")
+
+summary.show()
+
+failures = con.sql("""
+    select id, source_uri, media_type, error_message, run_id
+    from media_pipeline_scored
+    where status <> 'ok'
+    order by id
+""")
+```
+
+Do not rely only on exceptions or logs. Write failure rows so a teammate can inspect source records, reproduce the problem, and decide whether it is data quality, storage access, dependency setup, or model behavior.
+
+## 6. Write curated outputs
+
+Write successes and failures deliberately. Large media bytes are usually intermediate data, not part of the curated output.
+
+```python
+curated = con.sql("""
+    select
+        id,
+        source_uri,
+        media_type,
+        image_width,
+        image_height,
+        label,
+        score,
+        status,
+        error_message,
+        run_id,
+        pipeline_version,
+        processed_at_unix
+    from media_pipeline_scored
+""")
+
+curated.write_parquet("output/media_pipeline/curated/")
+failures.write_parquet("output/media_pipeline/failures/")
+```
+
+Keeping failures in the same contract makes the POC diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
+
+## Split expensive stages
+
+Tune each expensive stage independently:
+
+| Stage | Typical backend | Tune first |
+| --- | --- | --- |
+| URI or bytes preparation | `subprocess_task`, then `ray_task` | Storage access, `batch_size`, path or credential failures. |
+| Decode or extract | `subprocess_task`, then `ray_task` | CPU, memory, media library behavior, output row size. |
+| Model inference | `subprocess_actor`, then `ray_actor` | Actor reuse, `batch_size`, `concurrency`, `gpus`. |
+| Embedding | AI helper or actor UDF | Chunking, model/provider choice, output dimensions, batch size. |
+
+For documents, keep extraction, chunking, embedding, and classification as separate relations. For video, keep frame sampling separate from frame inference. For audio, keep transcript extraction separate from downstream classification or summarization.
+
+## Local first, Ray later
+
+Start locally with a small representative sample. Move only the expensive stages to Ray after the local relation contract is correct.
 
 ```python
 import vane
 
 vane.configure(runner="ray")
 
-out = rel.map_batches(
-    ModelBatch,
-    schema={"id": "BIGINT", "label": "VARCHAR"},
+scored = decoded.map_batches(
+    classify_by_shape,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "image_width": "BIGINT",
+        "image_height": "BIGINT",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+        "pipeline_version": "VARCHAR",
+        "processed_at_unix": "BIGINT",
+    },
     batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
+    execution_backend="ray_task",
     concurrency=4,
 )
 ```
 
-Replace `decode_batch` and `ModelBatch` with your own function or callable class. Return stable IDs from each UDF when later stages need to join model outputs back to source records. Every Ray worker must be able to import the callable and access the same storage, model files, and credentials.
+For model stages, use `ray_actor` when model state should be reused:
+
+```python
+scored = decoded.map_batches(
+    ModelStage,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "label": "VARCHAR",
+        "score": "DOUBLE",
+        "status": "VARCHAR",
+        "error_message": "VARCHAR",
+        "run_id": "VARCHAR",
+    },
+    batch_size=16,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=2,
+)
+```
+
+Every Ray worker must be able to import the UDF class or function and access the same storage, credentials, model files, provider keys, and Python dependencies. Validate that access before increasing concurrency.
+
+## Related guides
+
+- [AI Functions](/docs/data/guides/ai-functions): use relation helpers for common embedding, classification, and prompting stages.
+- [GPU Inference](/docs/data/guides/gpu-inference): use vLLM or GPU actor stages when batch inference is the bottleneck.
+- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale): split document extraction, chunking, embedding, and output validation.
+- [SQL vs Python](/docs/data/concepts/sql-vs-python): decide which pipeline stages should stay relational and which should use Python.
 
 ## Practical checks
 
-- Keep stable IDs before decoding or model inference.
-- Store source URI and enough metadata to reproduce a row.
-- Filter and project before loading bytes when possible.
-- Keep UDF outputs small and typed.
-- Validate a small sample before running a large media job.
-- Write outputs to a filesystem that all workers can access when using Ray.
+- Preserve `id` and `source_uri` through every stage.
+- Filter and project before byte loading, decoding, inference, or embedding.
+- Return `status` and `error_message` columns from failure-prone stages.
+- Keep media bytes out of curated outputs unless the downstream system needs them.
+- Use different batch sizes for I/O, decode, inference, and embedding stages.
+- Verify local output schema and failure behavior before switching stages to Ray.
+- Confirm worker access to storage, credentials, models, and dependencies before scaling a Ray run.
+
+## Structured Transformation
+
+Route: /docs/data/guides/structured-transformation
+Source: docs/guides/structured-transformation.mdx
+
+Use Structured Transformation after Structured Data Load when you already have a relation for raw tabular data and need to turn it into a curated table for a POC.
+
+The usual path is SQL-first: profile the input, reduce it to the rows and columns you need, normalize types, derive business columns, join reference data, deduplicate where needed, validate the result, and write a stable output. Add Python UDFs only for rules that are hard to express clearly in SQL.
+
+## Starting relation
+
+This guide assumes Structured Data Load has produced one or more relations from files, object storage, or another DuckDB-supported source.
+
+```python
+import vane
+
+con = vane.connect()
+
+raw_orders = con.sql("""
+    select *
+    from read_parquet('data/raw/orders/*.parquet')
+""")
+raw_orders.to_table("raw_orders")
+
+customer_reference = con.sql("""
+    select *
+    from read_parquet('data/reference/customers.parquet')
+""")
+customer_reference.to_table("customer_reference")
+```
+
+Keep the raw relation registered until validation is complete. It is the easiest way to compare raw and curated values when a business rule needs adjustment.
+
+## Transformation flow
+
+A practical structured transformation flow is:
+
+1. Profile the raw relation.
+2. Filter unusable or out-of-scope rows.
+3. Project only the columns the POC needs.
+4. Normalize types and categorical values.
+5. Derive business columns.
+6. Join reference data.
+7. Deduplicate rows when the business key requires it.
+8. Validate row counts, keys, nulls, domains, and sample diffs.
+9. Write the curated relation with stable schema and traceability columns.
+
+Start with a small, real slice of data. The goal is to confirm the rules and output contract before spending time on a full run.
+
+## Profile first
+
+Profile with SQL before writing transformation logic:
+
+```python
+con.sql("""
+    select
+        count(*) as row_count,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        min(order_timestamp) as min_order_timestamp,
+        max(order_timestamp) as max_order_timestamp
+    from raw_orders
+""").show()
+```
+
+For a POC, add checks for the columns that affect the business decision: entity IDs, timestamps, amount fields, status fields, and the fields used for joins.
+
+## SQL-first transform
+
+Use SQL for relational work: filtering, projection, type normalization, derived columns, joins, aggregation, deduplication, and validation queries.
+
+```python
+curated_orders = con.sql("""
+    with typed as (
+        select
+            cast(order_id as varchar) as order_id,
+            cast(customer_id as varchar) as customer_id,
+            try_cast(order_timestamp as timestamp) as order_ts,
+            upper(trim(status)) as status,
+            try_cast(amount as decimal(18, 2)) as order_amount,
+            source_file,
+            source_row_number
+        from raw_orders
+        where order_id is not null
+    ),
+    projected as (
+        select
+            order_id,
+            customer_id,
+            order_ts,
+            date_trunc('day', order_ts) as order_date,
+            case
+                when order_amount < 0 then true
+                else false
+            end as refund_flag,
+            status,
+            order_amount,
+            source_file,
+            source_row_number
+        from typed
+        where order_ts is not null
+    )
+    select
+        p.order_id,
+        p.customer_id,
+        coalesce(r.customer_segment, 'UNKNOWN') as customer_segment,
+        p.order_ts,
+        p.order_date,
+        p.refund_flag,
+        p.status,
+        p.order_amount,
+        p.source_file,
+        p.source_row_number
+    from projected p
+    left join customer_reference r using (customer_id)
+""")
+
+curated_orders.to_table("curated_orders")
+```
+
+Prefer deterministic rules in the SQL itself. That makes the transformation easier to review, rerun, and compare against raw data.
+
+## When to use Python UDFs
+
+Use a Python UDF when the transformation needs logic that SQL would make unclear or brittle:
+
+- complex text cleanup or parsing
+- fuzzy matching and custom scoring
+- external libraries
+- domain rules that are easier to test in Python
+- model or API calls that enrich structured rows
+
+Keep the UDF boundary narrow. Filter and project with SQL first, return explicit columns, and carry the stable ID back to SQL for validation.
+
+```python
+import pyarrow as pa
+
+def normalize_customer_name(batch: pa.Table) -> pa.Table:
+    customer_ids = batch.column("customer_id").to_pylist()
+    names = batch.column("customer_name").to_pylist()
+    normalized = [
+        " ".join(str(name or "").strip().lower().split())
+        for name in names
+    ]
+    return pa.table({
+        "customer_id": customer_ids,
+        "normalized_customer_name": normalized,
+    })
+
+customer_names = con.sql("""
+    select customer_id, customer_name
+    from customer_reference
+    where customer_name is not null
+""").map_batches(
+    normalize_customer_name,
+    schema={
+        "customer_id": "VARCHAR",
+        "normalized_customer_name": "VARCHAR",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+
+customer_names.to_table("customer_names")
+```
+
+After the UDF, join the result back with SQL and run the same validation checks as any other derived column.
+
+## Dedup and clean pattern
+
+Deduplication is one structured transformation pattern. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
+
+```python
+deduped_customers = con.sql("""
+    with keyed as (
+        select
+            customer_id,
+            customer_name,
+            email,
+            updated_at,
+            source_file,
+            source_row_number,
+            lower(regexp_replace(trim(coalesce(email, '')), '\\s+', '', 'g')) as normalized_key
+        from customer_reference
+    ),
+    ranked as (
+        select
+            *,
+            count(*) over (partition by normalized_key) as duplicate_count,
+            row_number() over (
+                partition by normalized_key
+                order by updated_at desc nulls last, source_file, source_row_number
+            ) as representative_rank
+        from keyed
+        where normalized_key <> ''
+    )
+    select
+        customer_id,
+        customer_name,
+        email,
+        normalized_key,
+        duplicate_count,
+        true as is_representative,
+        source_file,
+        source_row_number
+    from ranked
+    where representative_rank = 1
+""")
+
+deduped_customers.to_table("deduped_customers")
+```
+
+The `normalized_key` should match your business definition of a duplicate. The representative row order should be stable and explainable, such as latest update timestamp followed by source metadata.
+
+For near-duplicate matching, compute signatures or scores in a Python UDF, then use SQL to group, rank, and validate the retained rows.
+
+## Validation checklist
+
+Run validation before writing the curated output.
+
+```python
+con.sql("""
+    select
+        count(*) as curated_rows,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        count(*) filter (
+            where status not in ('OPEN', 'PAID', 'CANCELLED', 'REFUNDED')
+        ) as invalid_status_rows,
+        count(*) filter (where order_amount is null) as null_amount_rows
+    from curated_orders
+""").show()
+```
+
+Check at least:
+
+- row count before and after each major filter
+- key uniqueness for the curated entity
+- nulls in required fields
+- value domains for status, category, currency, region, or other controlled fields
+- sample diff between raw and curated values
+
+Use a sample diff for rules that change values:
+
+```python
+con.sql("""
+    select
+        r.order_id,
+        r.status as raw_status,
+        c.status as curated_status,
+        r.order_timestamp as raw_order_timestamp,
+        c.order_ts as curated_order_ts
+    from raw_orders r
+    join curated_orders c using (order_id)
+    where r.status <> c.status
+       or try_cast(r.order_timestamp as timestamp) <> c.order_ts
+    limit 20
+""").show()
+```
+
+For a POC, the validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to downstream analysis, UDFs, AI functions, or examples.
+
+## Write the curated output
+
+Write outputs with a stable contract:
+
+- stable schema with explicit column names and types
+- stable IDs for the entity or event represented by each row
+- traceability columns such as `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
+- enough run metadata to compare one POC run with another
+
+```python
+curated_orders.write_parquet("output/curated/orders/")
+
+con.sql("""
+    copy (
+        select
+            'orders' as dataset,
+            count(*) as row_count,
+            min(order_date) as min_order_date,
+            max(order_date) as max_order_date
+        from curated_orders
+    )
+    to 'output/curated/orders_validation.parquet'
+    (format parquet)
+""")
+```
+
+Keep the raw-to-curated traceability until the POC questions are answered. It is often the fastest way to explain surprising results and turn feedback into a reproducible issue.
+
+## AI Functions
+
+Route: /docs/data/guides/ai-functions
+Source: docs/guides/ai-functions.mdx
+
+Use AI Functions when you want to add a small AI enrichment column to an existing relation and then inspect the result before scaling the run.
+
+This guide starts from a relation that already has a stable business identifier and one or more text fields. The goal is a minimal POC loop:
+
+```text
+load a small real slice -> select ID and input text -> run one AI function -> validate row count and outputs -> write a reviewable table
+```
+
+AI Functions are a good first path for common tasks such as embeddings, text classification, and row-level prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, or per-row error columns.
+
+## Input relation
+
+Start with a relation that contains:
+
+- A stable business ID such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
+- The text column or fields needed by the model.
+- Source metadata that helps you review bad outputs later, such as `source_uri`, `document_type`, or `created_at`.
+
+```python
+import vane
+
+con = vane.connect()
+
+source = con.sql("""
+    select
+        document_id,
+        document_type,
+        text,
+        source_uri
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+source.to_table("source_sample")
+```
+
+Keep the first sample small and ordered. Ordering gives you a deterministic way to validate and combine helper output with the source rows.
+
+## Preserve IDs
+
+`embed_text(...)`, `classify_text(...)`, and `prompt(...)` return the configured output column. If the final result also needs IDs and source columns, explicitly combine the output column with the source rows after validating row counts and ordering.
+
+```python
+source_table = source.to_arrow_table()
+```
+
+For each task below, materialize the helper output, compare row counts, and append the new column to `source_table` only after the check passes:
+
+```python
+output_table = output_only.to_arrow_table()
+
+if output_table.num_rows != source_table.num_rows:
+    raise ValueError("AI output row count does not match source row count")
+
+with_output = con.from_arrow(
+    source_table.append_column("ai_output", output_table["ai_output"])
+)
+```
+
+Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns `id`, source fields, status, error columns, and model output in one schema.
+
+## Embed Text
+
+Use `embed_text` when each input row should receive one vector. For long documents, chunk first and use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale).
+
+```python
+embedding_only = source.embed_text(
+    "text",
+    provider="openai",
+    model="text-embedding-3-small",
+    output_column="embedding",
+    batch_size=64,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should be non-null after filtering.
+- Output column: `embedding` should be present and have the expected vector length for the model.
+- ID preservation: combine the embedding column back with `document_id` only after the row count check passes.
+- Result review: inspect a few rows and confirm that empty or very short text was not embedded accidentally.
+
+```python
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != source_table.num_rows:
+    raise ValueError("embedding row count mismatch")
+
+if embedding_table.num_rows == 0:
+    raise ValueError("empty embedding sample")
+
+if not embedding_table["embedding"][0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded = con.from_arrow(
+    source_table.append_column("embedding", embedding_table["embedding"])
+)
+```
+
+## Classify Text
+
+Use `classify_text` for a small label set where every input row should receive one label.
+
+```python
+label_only = source.classify_text(
+    "text",
+    labels=["invoice", "claim", "memo", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="ai_label",
+    batch_size=16,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should contain the text you expect the classifier to see.
+- Output column: `ai_label` should only contain one of the labels you supplied.
+- ID preservation: append `ai_label` to the source table after row count validation.
+- Result review: sample rows per label and check whether the label set is too broad, too narrow, or missing a business category.
+
+```python
+label_table = label_only.to_arrow_table()
+
+if label_table.num_rows != source_table.num_rows:
+    raise ValueError("classification row count mismatch")
+
+labels = set(label_table["ai_label"].to_pylist())
+allowed = {"invoice", "claim", "memo", "other"}
+unexpected = labels - allowed
+if unexpected:
+    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
+
+classified = con.from_arrow(
+    source_table.append_column("ai_label", label_table["ai_label"])
+)
+```
+
+## Prompt
+
+Use `prompt` when the output should be generated from a row-level prompt. Keep the first prompt narrow and easy to inspect.
+
+```python
+prompts = con.sql("""
+    select
+        document_id,
+        document_type,
+        source_uri,
+        'Summarize this document in one sentence: ' || text as review_prompt
+    from source_sample
+""")
+
+response_only = prompts.prompt(
+    "review_prompt",
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Return concise business review notes.",
+    output_column="review_note",
+    batch_size=8,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `review_prompt` should include only the fields the model should see.
+- Output column: `review_note` should be non-empty and short enough for review.
+- ID preservation: combine output with `document_id`, `document_type`, and `source_uri`.
+- Result review: manually inspect a small sample before increasing `limit`, `batch_size`, or `concurrency`.
+
+```python
+prompt_table = prompts.to_arrow_table()
+response_table = response_only.to_arrow_table()
+
+if response_table.num_rows != prompt_table.num_rows:
+    raise ValueError("prompt row count mismatch")
+
+empty = [x for x in response_table["review_note"].to_pylist() if not x]
+if empty:
+    raise ValueError("prompt returned empty responses")
+
+reviewed = con.from_arrow(
+    prompt_table.append_column("review_note", response_table["review_note"])
+)
+```
+
+For structured outputs, use `return_format` with a Pydantic model and validate the JSON strings before writing the final relation.
+
+## Provider and Execution Choices
+
+Choose the smallest provider setup that can answer the POC question.
+
+| Choice | Use it when | Watch for |
+| --- | --- | --- |
+| Hosted provider | You want managed models and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
+| Local model | You want local execution with installed model libraries. | Model download, dependency versions, memory use, and actor initialization time. |
+| vLLM or GPU model | You need GPU-backed prompt throughput or private LLM inference. | Use [GPU Inference](/docs/data/guides/gpu-inference) for the vLLM path and GPU-specific tuning. |
+
+Minimal configuration to set explicitly:
+
+- `provider`: for example `openai`, `transformers`, or `vllm`.
+- `model`: the exact hosted or local model identifier.
+- `batch_size`: how many rows each model call or batch processes.
+- `concurrency`: how many workers or actor calls run in parallel when supported.
+- `execution_backend`: start with `subprocess_actor`; use `ray_actor` only after the local sample is correct.
+
+Increase one setting at a time. Higher `batch_size` or `concurrency` can improve throughput, but it can also increase memory use, trigger provider rate limits, or make failures harder to isolate.
+
+## Small Sample First
+
+Before scaling the relation:
+
+1. Run 10-100 representative rows.
+2. Confirm the source relation has the expected IDs and input columns.
+3. Validate AI output row count against source row count.
+4. Check nulls, empty strings, invalid labels, invalid JSON, or unexpected vector dimensions.
+5. Manually inspect examples that represent the important business categories.
+6. Write the result to a run-specific path only after the output is reviewable.
+
+Write the relation you created in the task above, such as `embedded`, `classified`, or `reviewed`, to a run-specific path.
+
+For a larger run, keep the same validation checks and record provider, model, `batch_size`, `concurrency`, `execution_backend`, input row count, output row count, and any errors.
+
+## Common Failures
+
+| Symptom | Likely cause | What to check |
+| --- | --- | --- |
+| Authentication error | Missing or unavailable hosted provider credentials. | API key environment variables, worker environment, provider account access. |
+| Rate limit or timeout | Too much provider concurrency or too large a batch. | Lower `concurrency`, lower `batch_size`, review provider quota and retry behavior. |
+| Invalid label or JSON | Prompt, label set, model, or structured schema is too loose. | Reduce task scope, inspect raw outputs, tighten labels or `return_format`. |
+| Output row count mismatch | Input relation changed, ordering was not stable, or a failure path dropped rows. | Re-run on a small ordered sample and compare source/output counts before combining columns. |
+| Missing source column | The selected relation did not include the column used by the helper. | Check the input relation schema and project required fields before the AI call. |
+| Worker import failure | Local or Ray worker cannot import provider libraries. | Install provider dependencies in the worker environment and retry locally before Ray. |
+
+## Next Steps
+
+- Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) for document chunking, stable chunk IDs, embedding output schema, and larger embedding jobs.
+- Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM-backed prompt batches, GPU actor reuse, and Ray GPU execution.
+- Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when AI Functions are too narrow or when the output must include IDs, source fields, status, errors, and model output from a single batch function.
+
+## GPU Inference
+
+Route: /docs/data/guides/gpu-inference
+Source: docs/guides/gpu-inference.mdx
+
+Use GPU Inference when you want to run a large set of prompts from SQL or relation data through a local or private LLM, then write the responses back as a reviewable table.
+
+This guide focuses on Vane's vLLM path for batch prompt inference. For generic GPU model code that is not vLLM-backed, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
+
+The usual POC shape is:
+
+```text
+load business data -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
+```
+
+## When to Use GPU Inference
+
+Use this guide when:
+
+- You have many prompts, not a few interactive chat requests.
+- The model should run locally or inside your own Ray environment.
+- Model or engine initialization is expensive and should be reused across batches.
+- You need to validate GPU actor reuse, multi-GPU scheduling, or Ray-backed vLLM actor pools.
+- Similar prompts share a system prefix or template, and cache locality may affect throughput.
+
+Do not start here for lightweight text cleanup, simple SQL transforms, hosted API calls that are rate-limit bound, or non-vLLM custom GPU models.
+
+## vLLM in Vane
+
+Vane exposes vLLM through the AI prompt workflow:
+
+```python
+response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=8,
+    execution_backend="subprocess_actor",
+)
+```
+
+The input is still a Vane relation. Build prompts with SQL, keep the business columns you need for review, and run the vLLM provider over the prompt column.
+
+The high-level `prompt(...)` helper returns the configured output column. If your final table also needs IDs, source fields, status, or run metadata, combine those columns explicitly after checking row counts and ordering. Use a custom UDF when you need full row-level exception text or a provider-specific output contract.
+
+## Build the Prompt Relation
+
+Start with a small, real slice of business data. Keep the prompt text separate from the identifiers and metadata you need later.
+
+```python
+import vane
+
+con = vane.connect()
+
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        source_uri,
+        document_type,
+        'Extract the claim decision and one short reason from this document: '
+            || text as prompt
+    from read_parquet('data/claims/documents/*.parquet')
+    where text is not null
+    order by case_id, document_id
+    limit 50
+""")
+
+prompt_table = prompts.to_arrow_table()
+```
+
+Recommended input columns:
+
+| Column | Purpose |
+| --- | --- |
+| `case_id`, `document_id`, or another business key | Join the response back to the source system. |
+| `source_uri` or source metadata | Review bad outputs and reproduce failures. |
+| `document_type`, category, tenant, or task type | Group prompts and compare output quality by business segment. |
+| `prompt` | The final text sent to vLLM. |
+| `system_prefix` or template ID, if you use one | Helps explain prompt groups and cache locality experiments. |
+
+Keep prompt construction deterministic for the first run. If you change templates, record a `run_id` or prompt version in the output.
+
+## Run a Local vLLM Sample
+
+Use the local path first to validate the model, prompt shape, output length, and GPU memory behavior before adding Ray actor-pool complexity.
+
+```python
+response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    system_message="Return concise JSON-like business notes.",
+    output_column="response_text",
+    batch_size=8,
+    execution_backend="subprocess_actor",
+    engine_args={
+        "trust_remote_code": True,
+        "max_model_len": 2048,
+    },
+    generate_args={
+        "sampling_params": {
+            "temperature": 0.0,
+            "max_tokens": 128,
+        }
+    },
+    on_error="log",
+)
+```
+
+`execution_backend="subprocess_actor"` keeps the vLLM prompter state in an actor process so the engine can be reused across batches during the run. Ray is not required for this first correctness check.
+
+## Preserve IDs and Write Results
+
+Validate the helper output before appending it to the original relation.
+
+```python
+import pyarrow as pa
+
+response_table = response_only.to_arrow_table()
+
+if response_table.num_rows != prompt_table.num_rows:
+    raise ValueError("vLLM output row count does not match prompt row count")
+
+responses = response_table["response_text"].to_pylist()
+status = ["ok" if value else "error" for value in responses]
+error_message = [
+    None if value else "vLLM returned null or empty output"
+    for value in responses
+]
+
+result_table = prompt_table.append_column(
+    "response_text",
+    pa.array(responses, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "status",
+    pa.array(status, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "error_message",
+    pa.array(error_message, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "model",
+    pa.array(["Qwen/Qwen3-1.7B"] * prompt_table.num_rows, type=pa.string()),
+)
+result_table = result_table.append_column(
+    "run_id",
+    pa.array(["claims-vllm-poc-001"] * prompt_table.num_rows, type=pa.string()),
+)
+
+results = con.from_arrow(result_table)
+results.write_parquet("output/claims-vllm-poc-001/")
+```
+
+Suggested output columns:
+
+| Column | Purpose |
+| --- | --- |
+| Business ID columns | Trace every response back to source rows. |
+| Source metadata | Reproduce and review failures. |
+| `prompt` or prompt version | Explain what the model saw. |
+| `response_text` | The generated text. |
+| `status` | `ok`, `error`, or a business review state you define. |
+| `error_message` | A nullable diagnostic column for POC review. |
+| `model`, `run_id`, and config summary | Compare runs without guessing which settings changed. |
+
+For stricter structured output, pass `return_format` to `prompt(...)` and validate the returned JSON strings before writing the final table.
+
+## Local vLLM vs Ray-Backed vLLM
+
+Use the smallest execution shape that answers the current question.
+
+| Shape | Use it for | What to validate |
+| --- | --- | --- |
+| Local vLLM sample | Prompt correctness, model loading, output quality, first GPU memory check. | 10-100 rows, non-empty outputs, expected output format, no model reload per row. |
+| Ray actor execution | Multi-GPU validation, actor reuse, larger prompt batches. | Ray sees the expected GPUs, workers can import vLLM, and each actor has model files and dependencies. |
+| Native vLLM Ray actor pool | Larger batch inference where Vane should reuse vLLM actors and route work across them. | Actor pool size, GPU assignment, shared pool reuse, inflight load distribution, and throughput. |
+
+For a Ray-backed vLLM validation, configure Ray before building the distributed run and keep the model options the same as the local sample.
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+ray_response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=32,
+    concurrency=2,
+    gpus_per_actor=1,
+    execution_backend="ray_actor",
+    use_ray=True,
+    ray_actor_pool_name="claims-vllm-poc",
+    engine_args={
+        "trust_remote_code": True,
+        "max_model_len": 2048,
+    },
+    generate_args={
+        "sampling_params": {
+            "temperature": 0.0,
+            "max_tokens": 128,
+        }
+    },
+    on_error="log",
+)
+```
+
+There are two layers to keep straight:
+
+- `execution_backend` controls where Vane runs the prompt UDF stage.
+- vLLM options such as `use_ray`, `concurrency`, `gpus_per_actor`, and `ray_actor_pool_name` control the vLLM executor and actor pool behavior.
+
+Start by changing one layer at a time. If the local sample is not correct, Ray will make the failure harder to diagnose.
+
+## Batch Cache Optimization
+
+vLLM throughput depends on more than GPU count. For batch POCs, tune for engine reuse, bounded batches, and prompt locality.
+
+### Reuse actors and engines
+
+Avoid patterns that reload the model for each row or each tiny batch. Use actor-style execution for vLLM prompts, and keep `model`, `engine_args`, and dependency versions stable during a run.
+
+For Ray-backed vLLM, use a named actor pool when multiple distributed tasks should share the same vLLM actors:
+
+```python
+ray_actor_pool_name="claims-vllm-poc"
+```
+
+Local code supports named vLLM actor pools and shared inflight tracking by pool name. That lets multiple executors see the current load on each actor and route new prompt batches with better load awareness. It also avoids repeatedly creating the same actor pool during a distributed plan.
+
+### Group similar prefixes
+
+When many prompts share the same system message, task template, or long prefix, group them before inference when that grouping still preserves the business meaning of the run.
+
+```python
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        document_type,
+        source_uri,
+        case
+            when document_type = 'claim'
+                then 'You review insurance claim documents.'
+            when document_type = 'invoice'
+                then 'You review invoice support documents.'
+            else 'You review business documents.'
+        end as system_prefix,
+        'Return a short decision and reason: ' || text as prompt
+    from source_documents
+    where text is not null
+    order by document_type, case_id, document_id
+""")
+```
+
+Use `system_message` when one prefix applies to every row. If prefixes vary by row, include the prefix in the prompt text or split the relation by task type. Keep the final output keyed by business IDs so grouped execution does not make review ambiguous.
+
+The native vLLM executor includes prefix-routing controls such as `do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`, and `load_balance_threshold`. Treat them as tuning controls after you have a baseline. They are not generic UDF routing options.
+
+### Tune batch and concurrency together
+
+Set `batch_size` explicitly for vLLM relation prompts. A larger batch can improve GPU utilization and vLLM continuous batching, but it can also increase latency, memory pressure, and failure blast radius.
+
+Increase `concurrency` only when you have enough GPUs and actor memory. A simple capacity check is:
+
+```text
+required GPUs = concurrency * gpus_per_actor
+```
+
+If `concurrency=2` and `gpus_per_actor=1`, the Ray environment needs at least two available GPUs for full parallelism. If the model uses tensor parallelism or other vLLM engine-level GPU settings, include those in your own capacity estimate.
+
+## Key Configuration Concepts
+
+| Concept | Where it appears | Guidance |
+| --- | --- | --- |
+| `model` | `prompt(..., model=...)` | Use the exact model identifier you validated locally. |
+| `engine_args` | vLLM engine configuration | Put model loading and engine-level settings here, such as context length or trust settings. |
+| `generate_args` | vLLM generation request | Put sampling parameters here, usually under `sampling_params`. |
+| `batch_size` | Vane UDF batches and vLLM submissions | Start small, then increase until GPU utilization, latency, or memory becomes the bottleneck. |
+| `concurrency` | Actor or vLLM pool size | Increase only when workers and GPUs have headroom. |
+| `gpus_per_actor` | Ray GPU resource request for vLLM actors | Match the model and engine setup. |
+| `ray_actor_pool_name` | Native vLLM Ray actor pool | Use for shared actor reuse in distributed runs. |
+| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for POC sweeps where failed rows should remain visible for review. |
+
+Vane applies throughput-oriented defaults for the native vLLM engine scheduler, and you can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a POC run unless you know which setting you are testing.
+
+## Verification Checklist
+
+Before increasing the sample:
+
+1. Run 10-100 representative rows.
+2. Confirm IDs, source metadata, prompt text, and output row counts match.
+3. Manually inspect output quality for each important business category.
+4. Check nulls, empty strings, invalid JSON, and unexpectedly long outputs.
+5. Watch GPU utilization and memory while the run is active.
+6. Record rows processed, `batch_size`, `concurrency`, `gpus_per_actor`, elapsed time, throughput, and errors.
+7. Compare latency and throughput before and after prompt grouping or prefix-routing changes.
+8. Verify that Ray workers can import vLLM and access model files, input data, and output paths.
+
+For cache locality experiments, keep the model and sampling settings fixed. Compare only prompt ordering, grouping, or prefix-routing settings, otherwise the result will not explain what changed.
+
+## Boundaries
+
+This guide is not a vLLM manual. It shows how to place vLLM batch inference inside a Vane relation workflow and what to validate for a POC.
+
+It is also not a production serving guide. It does not cover autoscaling, SLAs, traffic management, online request routing, or long-running service operations.
+
+For non-vLLM GPU models, custom tokenizers, multimodal preprocessing, or a full custom output schema, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For hosted provider prompting and small AI enrichment tasks, use [AI Functions](/docs/data/guides/ai-functions).
 
 ## Embeddings at Scale
 
 Route: /docs/data/guides/embeddings-at-scale
 Source: docs/guides/embeddings-at-scale.mdx
 
-Use Vane Data for embedding pipelines when you want SQL filtering, batch model execution, and table outputs in one workflow.
+Use this guide when your POC needs to turn many documents or text records into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
 
-The usual shape is:
+The embedding model call is only one stage. A useful POC path is:
 
-1. Read and filter source rows with SQL.
-2. Chunk long text into stable units.
-3. Embed chunks with `rel.embed_text(...)` or a custom UDF.
-4. Write embeddings with stable document and chunk IDs.
+```text
+read and filter source rows -> chunk documents -> embed chunks -> validate output -> write an embedding table
+```
 
-## Basic text embedding
+This guide stops at the embedding table. It is not a vector database, retrieval-ranking, or production RAG guide.
+
+## Start with a small source relation
+
+Begin with real business rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select id, text
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        document_type,
+        text
     from read_parquet('data/documents/*.parquet')
     where text is not null
+      and length(text) > 0
+    order by document_id
+    limit 100
 """)
-
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
 ```
 
-`embed_text` returns a relation with the configured embedding output column. The high-level helper writes embeddings as `FLOAT[]`; it does not automatically include source columns such as `id` or `text`.
+Keep the first relation ordered and limited so you can compare source rows, chunks, and embedding output deterministically. Remove the `limit` only after the chunking and validation checks are correct.
 
-## Chunk long text first
+## Chunk with stable IDs
 
-Do not send whole documents to an embedding model unless that is intentional. Create bounded chunks with stable IDs.
+Chunking is a one-to-many transform: one document can produce zero, one, or many chunks. Use `flat_map(...)` for this stage and return all columns needed later.
 
 ```python
-import pyarrow as pa
+CHUNK_SIZE = 1200
+OVERLAP = 150
+CHUNKER_VERSION = "fixed-char-v1"
 
-def chunk_rows(batch: pa.Table) -> pa.Table:
-    doc_ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    out_doc_id = []
-    out_chunk_id = []
-    out_text = []
+def chunk_document(row: dict) -> list[dict]:
+    document_id = str(row["document_id"])
+    text = str(row["text"] or "")
+    source_uri = row.get("source_uri")
+    document_type = row.get("document_type")
 
-    for doc_id, text in zip(doc_ids, texts):
-        parts = [part.strip() for part in str(text).split(".") if part.strip()]
-        for idx, part in enumerate(parts):
-            out_doc_id.append(doc_id)
-            out_chunk_id.append(idx)
-            out_text.append(part)
+    chunks = []
+    start = 0
+    chunk_index = 0
 
-    return pa.table({
-        "id": out_doc_id,
-        "chunk_id": out_chunk_id,
-        "chunk_text": out_text,
-    })
+    while start < len(text):
+        end = min(start + CHUNK_SIZE, len(text))
+        chunk_text = text[start:end].strip()
 
-chunks = rel.map_batches(
-    chunk_rows,
+        if chunk_text:
+            chunks.append({
+                "document_id": document_id,
+                "chunk_id": f"{document_id}:{CHUNKER_VERSION}:{chunk_index:06d}",
+                "chunk_index": chunk_index,
+                "chunk_text": chunk_text,
+                "source_uri": source_uri,
+                "document_type": document_type,
+                "chunker_version": CHUNKER_VERSION,
+            })
+
+        if end == len(text):
+            break
+        start = max(end - OVERLAP, 0)
+        chunk_index += 1
+
+    return chunks
+
+chunks = documents.flat_map(
+    chunk_document,
     schema={
-        "id": "BIGINT",
-        "chunk_id": "BIGINT",
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_index": "BIGINT",
         "chunk_text": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "document_type": "VARCHAR",
+        "chunker_version": "VARCHAR",
     },
-    batch_size=512,
     execution_backend="subprocess_task",
 )
 ```
 
-For production systems, use a tokenizer-aware chunker that matches the model context window and preserves enough overlap for retrieval quality.
+For a real POC, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
 
-## Use a local embedding model
+Chunk output should preserve:
 
-Local models are usually best with an actor backend, because model initialization is expensive:
+- `document_id`: the stable source or business document ID.
+- `chunk_id`: deterministic from document ID, chunking version, and chunk index or offset.
+- `chunk_text`: the exact text sent to the embedding model.
+- `source_uri`: the file, object, or source record used for traceability.
+- business metadata such as type, tenant, language, date, or case ID when it helps review failures.
+
+## Validate chunks before embedding
+
+Do cheap checks before sending data to a model or hosted API.
 
 ```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
-)
+chunk_table = chunks.to_arrow_table()
+
+if chunk_table.num_rows == 0:
+    raise ValueError("chunking produced no rows")
+
+chunk_ids = chunk_table["chunk_id"].to_pylist()
+if len(chunk_ids) != len(set(chunk_ids)):
+    raise ValueError("chunk_id values must be unique")
+
+empty_chunks = [
+    chunk_id
+    for chunk_id, text in zip(chunk_ids, chunk_table["chunk_text"].to_pylist(), strict=False)
+    if not text
+]
+if empty_chunks:
+    raise ValueError(f"empty chunks: {empty_chunks[:5]}")
 ```
 
-When the provider detects usable GPU resources, it may pass a GPU resource request to the UDF execution layer. For strict device control or complete output rows with IDs, use a custom `map_batches` callable class that returns identifiers, text, and embeddings.
+Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the POC question before increasing the sample size.
 
-## Use hosted embedding APIs
+## Choose a provider
 
-Hosted providers are useful when you want managed models and can tolerate API latency and rate limits:
+Choose the smallest provider setup that answers the POC question.
+
+| Choice | Use it when | Watch for |
+| --- | --- | --- |
+| Hosted API | You want managed models and can use external calls. | Credentials, cost, latency, rate limits, retries, and provider-specific dimensions. |
+| Local model | You want local execution or private data handling with installed model libraries. | Dependency versions, model download, CPU/GPU memory, and model initialization time. |
+| Custom UDF | You need full control over IDs, retries, status columns, or embedding schema in one step. | More code to maintain; validate schema and errors carefully. |
+
+AI helper methods such as `embed_text(...)` are convenient, but their output relation contains the configured embedding column. If your final table needs IDs and metadata, explicitly combine helper output with the chunk rows after validating row counts and ordering, or use a custom UDF that returns the full schema.
+
+## Embed with a hosted API
+
+Hosted APIs are useful for quick model access, but tune concurrency against your account limits.
 
 ```python
 embedding_only = chunks.embed_text(
@@ -1756,21 +3487,99 @@ embedding_only = chunks.embed_text(
     provider="openai",
     model="text-embedding-3-small",
     output_column="embedding",
-    execution_backend="subprocess_actor",
     batch_size=64,
-    concurrency=8,
+    concurrency=4,
+    execution_backend="subprocess_actor",
 )
 ```
 
-Tune `batch_size` and `concurrency` carefully. Higher concurrency can improve throughput, but it can also hit provider rate limits or amplify retries. If you combine provider output with source columns after the helper call, validate row counts and preserve stable ordering in that step.
+Start with conservative `batch_size` and `concurrency`. Increase one setting at a time and record provider errors, timeouts, and rate-limit responses.
 
-## Use Ray for larger jobs
+## Embed with a local model
 
-Move to Ray after the local path is correct:
+Local models avoid hosted API calls but add local dependencies and model-loading cost. Actor backends are usually the right first choice because the model can be initialized once per actor and reused across batches.
 
 ```python
-import vane
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    batch_size=64,
+    execution_backend="subprocess_actor",
+)
+```
 
+For strict GPU placement, custom retry behavior, or a single UDF that returns identifiers, text, status, errors, and embeddings together, use a callable class with `map_batches(...)` instead of the high-level helper.
+
+## Combine and validate output
+
+When you use `embed_text(...)`, combine the embedding column with the source chunk rows only after validation.
+
+```python
+import pyarrow as pa
+
+PROVIDER = "openai"
+MODEL = "text-embedding-3-small"
+RUN_ID = "embedding-poc-run-001"
+
+chunk_table = chunks.to_arrow_table()
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != chunk_table.num_rows:
+    raise ValueError("embedding row count does not match chunk row count")
+
+embeddings = embedding_table["embedding"]
+if chunk_table.num_rows and not embeddings[0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded_table = (
+    chunk_table
+    .append_column("embedding", embeddings)
+    .append_column("embedding_provider", pa.array([PROVIDER] * chunk_table.num_rows))
+    .append_column("embedding_model", pa.array([MODEL] * chunk_table.num_rows))
+    .append_column("embedding_run_id", pa.array([RUN_ID] * chunk_table.num_rows))
+)
+
+embedded = con.from_arrow(embedded_table)
+```
+
+If you cannot make row order stable, do not rely on positional recombination. Write a custom embedding UDF that returns the full output schema, including IDs and error/status columns, in one relation.
+
+## Output schema
+
+Write an embedding table that a downstream system and a reviewer can understand without re-reading the whole pipeline.
+
+| Column | Purpose |
+| --- | --- |
+| `document_id` | Stable source or business document ID. |
+| `chunk_id` | Stable, deterministic chunk ID. |
+| `chunk_index` | Numeric order of the chunk within the document. |
+| `chunk_text` | Text sent to the embedding model. |
+| `embedding` | Vector returned by the provider or local model. |
+| `source_uri` | Original file, object, or source record. |
+| `chunker_version` | Reproducibility metadata for the chunking rule. |
+| `embedding_provider` | Provider name, such as `openai` or `transformers`. |
+| `embedding_model` | Exact model identifier used for the run. |
+| `embedding_run_id` | Run identifier for repeatability and review. |
+
+Add business metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
+
+## Write a reviewable result
+
+Write to a run-specific path so you can compare runs without overwriting earlier POC output.
+
+```python
+embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
+```
+
+For distributed writes, make sure every worker can access the output filesystem or object store.
+
+## Scale after the sample is correct
+
+Move from local sample to Ray or larger batches only after chunk and embedding validation is passing on a small representative slice.
+
+```python
 vane.configure(runner="ray")
 
 embedding_only = chunks.embed_text(
@@ -1778,891 +3587,181 @@ embedding_only = chunks.embed_text(
     provider="transformers",
     model="sentence-transformers/all-MiniLM-L6-v2",
     output_column="embedding",
+    batch_size=128,
+    concurrency=8,
     execution_backend="ray_actor",
 )
 ```
 
-Every Ray worker must be able to import the provider libraries and access model files or provider credentials.
-
-## Output shape
-
-Write a complete relation that makes downstream retrieval and auditing straightforward:
-
-- `document_id`
-- `chunk_id`
-- `chunk_text`
-- `embedding`
-- `source_uri`
-- model name and provider
-- creation timestamp or run ID when needed
-
-Write results with a relation writer:
-
-```python
-embedded_with_ids.write_parquet("output/embeddings/")
-```
-
-`embedded_with_ids` should include the identifier and metadata columns listed above. Build it either with a custom embedding UDF that returns the full schema, or by explicitly combining AI helper output with source rows after validating row counts and ordering.
-
-For distributed writes, ensure every worker can access the output filesystem.
+Every Ray worker needs access to the provider libraries, local model files or hosted API credentials, source data, and output path. Keep the same chunking configuration when you scale; otherwise you are measuring a different pipeline.
 
 ## Tuning checklist
 
-- Filter and project before embedding.
-- Keep chunks bounded and deterministic.
-- Use actor backends for local models.
-- Increase `batch_size` until latency or memory becomes the bottleneck.
-- Increase `concurrency` only when workers or API quota have headroom.
-- Use Ray when scan, inference, or write throughput exceeds one process.
-- Keep output rows deterministic with stable document and chunk IDs.
-
-## Dedup and Clean
-
-Route: /docs/data/guides/dedup-and-clean
-Source: docs/guides/dedup-and-clean.mdx
-
-Use Vane Data for deduplication and cleaning when you want SQL filtering, Python text processing, and table outputs in one pipeline.
-
-Vane Data does not provide a built-in MinHash or data-quality framework. It gives you relation management, SQL, UDF execution, and write paths; the cleaning and deduplication logic remains explicit Python or SQL code.
-
-## Pipeline shape
-
-A typical text-cleaning pipeline follows this shape:
-
-1. Load text rows with stable IDs and source metadata.
-2. Normalize text with SQL or a Python UDF.
-3. Remove exact duplicates when normalized text is identical.
-4. Use approximate similarity logic, such as MinHash, only when exact dedup is not enough.
-5. Keep one representative per duplicate group.
-6. Write retained rows and audit columns.
-
-## Minimal cleaning UDF
-
-```python
-import re
-
-import pyarrow as pa
-
-def clean_text(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    text = batch.column("text").to_pylist()
-    cleaned = []
-
-    for value in text:
-        s = str(value or "")
-        s = re.sub(r"\s+", " ", s).strip().lower()
-        cleaned.append(s)
-
-    return pa.table({
-        "id": ids,
-        "text": text,
-        "clean_text": cleaned,
-    })
-
-cleaned = rel.map_batches(
-    clean_text,
-    schema={
-        "id": "BIGINT",
-        "text": "VARCHAR",
-        "clean_text": "VARCHAR",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-```
-
-Keep the original text column available until validation is complete. Cleaning rules can remove useful information if they are too aggressive.
-
-## Exact dedup with SQL
-
-For small or highly normalized datasets, SQL exact dedup is often enough:
-
-```python
-cleaned.to_table("cleaned")
-
-deduped = con.sql("""
-    select
-        any_value(id) as id,
-        any_value(text) as text,
-        clean_text,
-        count(*) as duplicate_count
-    from cleaned
-    group by clean_text
-""")
-```
-
-This keeps one representative per normalized text value and records how many rows collapsed into each group.
-
-## Near-duplicate strategy
-
-For near-duplicate text, use a Python UDF to compute signatures, then use SQL for grouping and scoring.
-
-Common approach:
-
-1. Normalize text.
-2. Compute a signature, such as MinHash, in `map_batches`.
-3. Generate candidate pairs with bounded LSH buckets.
-4. Score candidates.
-5. Build duplicate components.
-6. Keep one representative per component.
-
-Keep candidate expansion bounded. Approximate dedup pipelines can become expensive when a bucket grows too large.
-
-## Columns to keep
-
-For training data and retrieval datasets, keep audit-friendly columns:
-
-- stable source ID
-- original URI or file path
-- raw text
-- normalized text
-- duplicate component ID
-- representative flag
-- duplicate count or similarity score
-- filter reason or quality score
-
-These columns make it possible to explain why a row was retained or removed.
-
-## Scaling
-
-Start with local execution:
-
-```python
-signatures = cleaned.map_batches(
-    signature_batch,
-    schema={
-        "id": "BIGINT",
-        "clean_text": "VARCHAR",
-        "signature": "UBIGINT[]",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-```
-
-Move CPU-heavy signature generation to Ray when distribution helps:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-
-signatures = cleaned.map_batches(
-    signature_batch,
-    schema={
-        "id": "BIGINT",
-        "clean_text": "VARCHAR",
-        "signature": "UBIGINT[]",
-    },
-    batch_size=2048,
-    execution_backend="ray_task",
-)
-```
-
-Replace `signature_batch` with your own deterministic signature function. Return stable IDs and normalized text along with the signature so later SQL stages can audit and group rows.
-
-## Practical checks
-
-- Sample removed rows before trusting a rule.
-- Track row counts at each stage.
-- Keep raw text until the final validation step.
-- Make normalization deterministic.
-- Keep representative selection deterministic.
-- Write retained rows and rejected-row summaries separately when auditing matters.
-
-## SQL Multimodal Pipeline
-
-Route: /docs/data/guides/sql-multimodal-pipeline
-Source: docs/guides/sql-multimodal-pipeline.mdx
-
-This guide shows a SQL-first pattern for multimodal data preparation. SQL owns metadata filtering and validation; Python UDFs handle the media-specific step; the result returns to SQL for inspection and output.
-
-Use this style when most of the pipeline should remain readable to SQL users, but one stage needs Python libraries for decoding, feature extraction, or model inference.
-
-## Pipeline shape
-
-The pattern has five stages:
-
-1. Select candidate rows with SQL.
-2. Load bytes or keep stable media references.
-3. Run a Python UDF for decoding or inference.
-4. Return to SQL for validation and summaries.
-5. Write a curated tabular output.
-
-Vane Data does not add image, audio, or video syntax to SQL. Multimodal work is represented as table columns and explicit Python UDF stages.
-
-## 1. Start with metadata in SQL
-
-Keep the first step relational. Filter rows, normalize metadata, and reduce the input before Python sees it.
-
-```python
-import vane
-
-con = vane.connect()
-
-items = con.sql("""
-    select
-        id,
-        path,
-        media_type
-    from read_parquet('data/media_index/*.parquet')
-    where media_type in ('image/png', 'image/jpeg')
-      and path is not null
-""")
-```
-
-## 2. Add bytes or references
-
-If media bytes are already in Parquet, keep them in the relation and skip this step. If the table stores paths, use a UDF to load bytes and return the columns needed by later stages.
-
-```python
-from pathlib import Path
-
-import pyarrow as pa
-
-def load_image_bytes(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    paths = batch.column("path").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-
-    return pa.table({
-        "id": ids,
-        "path": paths,
-        "media_type": media_types,
-        "image_bytes": [Path(path).read_bytes() for path in paths],
-    })
-
-with_bytes = items.map_batches(
-    load_image_bytes,
-    schema={
-        "id": "BIGINT",
-        "path": "VARCHAR",
-        "media_type": "VARCHAR",
-        "image_bytes": "BLOB",
-    },
-    batch_size=32,
-    execution_backend="subprocess_task",
-)
-```
-
-`map_batches` returns the columns produced by the UDF. Return input columns such as `id`, `path`, and `media_type` when downstream stages still need them.
-
-## 3. Run the model step
-
-Use an actor backend when a model, tokenizer, image processor, or client should be initialized once and reused across batches.
-
-```python
-class ImageClassifier:
-    def __init__(self) -> None:
-        # Initialize model state here in a real pipeline.
-        self.labels = ("invoice", "claim", "other")
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        paths = batch.column("path").to_pylist()
-        media_types = batch.column("media_type").to_pylist()
-        image_bytes = batch.column("image_bytes").to_pylist()
-
-        labels = []
-        scores = []
-        for value in image_bytes:
-            labels.append(self.labels[0] if value else self.labels[2])
-            scores.append(1.0 if value else 0.0)
-
-        return pa.table({
-            "id": ids,
-            "path": paths,
-            "media_type": media_types,
-            "label": labels,
-            "score": scores,
-        })
-
-classified = with_bytes.map_batches(
-    ImageClassifier,
-    schema={
-        "id": "BIGINT",
-        "path": "VARCHAR",
-        "media_type": "VARCHAR",
-        "label": "VARCHAR",
-        "score": "DOUBLE",
-    },
-    batch_size=16,
-    execution_backend="subprocess_actor",
-)
-```
-
-The example classifier is deliberately simple so the relation contract is visible. In production, put decoding, preprocessing, and inference inside the actor while keeping the returned schema stable.
-
-## 4. Return to SQL
-
-Create a table from the relation when you want to use normal SQL for validation, summaries, or downstream joins.
-
-```python
-classified.to_table("classified_media")
-
-summary = con.sql("""
-    select
-        label,
-        count(*) as rows,
-        avg(score) as avg_score
-    from classified_media
-    group by label
-    order by rows desc
-""")
-
-summary.show()
-```
-
-## 5. Write output
-
-Write only the columns that downstream systems need. Large media bytes are often useful during inference but unnecessary in curated outputs.
-
-```python
-curated = con.sql("""
-    select id, path, media_type, label, score
-    from classified_media
-""")
-
-curated.write_parquet("output/classified_media/")
-```
-
-## Move to Ray
-
-The SQL text and UDF contract do not need to change when the expensive stage moves to Ray. Configure the runner before creating and executing the pipeline:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-Then select a Ray UDF backend for the expensive stage:
-
-```python
-classified = with_bytes.map_batches(
-    ImageClassifier,
-    schema={
-        "id": "BIGINT",
-        "path": "VARCHAR",
-        "media_type": "VARCHAR",
-        "label": "VARCHAR",
-        "score": "DOUBLE",
-    },
-    batch_size=16,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
-```
-
-Every Ray worker must be able to import the UDF class and access the same storage, credentials, model files, and Python dependencies.
-
-## Practical checks
-
-Before promoting a multimodal pipeline:
-
-- Verify the UDF output schema with a small local run.
-- Keep filters and column projections before byte loading and inference.
-- Preserve stable identifiers so model outputs can be joined back to source records.
-- Decide whether media bytes belong in the final output or only in intermediate stages.
-- Test path, storage, and credential access from every Ray worker before scaling.
-
-## Doris Integration
-
-Route: /docs/data/guides/doris-integration
-Source: docs/guides/doris-integration.mdx
-
-This guide describes the current integration boundary between Vane Data and Doris.
-
-Vane Data prepares clean tabular data with DuckDB-compatible SQL, Python UDFs, AI helpers, and Parquet writes. Doris owns Doris-specific ingestion, table definitions, serving, and query execution after handoff.
-
-Vane Data does not provide a Doris-specific connector, Doris writer, Doris catalog integration, or Doris SQL dialect adapter.
-
-## Supported boundary
-
-Use Vane Data for:
-
-- Reading and writing Parquet through DuckDB-compatible relation APIs.
-- Reading remote files through DuckDB/httpfs when configured.
-- Applying SQL filters, joins, projections, and aggregations before handoff.
-- Adding Python UDF or AI-derived columns before data is loaded into Doris.
-- Producing tabular files with stable column names and types.
-
-Use Doris tooling and Doris-supported load paths for:
-
-- Creating Doris databases and tables.
-- Choosing keys, partitions, buckets, and distribution strategy.
-- Loading files into Doris.
-- Managing Doris credentials, load jobs, retries, and serving behavior.
-
-Do not assume `vane.connect()` can connect to Doris or create Doris tables.
-
-## Recommended handoff pattern
-
-Prepare curated Parquet with Vane Data, then load it into Doris outside Vane Data.
-
-```python
-import vane
-
-con = vane.connect()
-
-clean = con.sql("""
-    select
-        id,
-        label,
-        score,
-        updated_at
-    from read_parquet('s3://bucket/raw/*.parquet')
-    where label is not null
-      and score is not null
-""")
-
-clean.write_parquet(
-    "s3://bucket/curated/doris_load/run_id/",
-    partition_by=["label"],
-)
-```
-
-After the files are written, use the ingestion method supported by your Doris deployment to load `s3://bucket/curated/doris_load/run_id/`.
-
-## Recommended workflow
-
-For SQL-light teams, keep the boundary simple:
-
-1. Use Vane Data SQL for filtering, projection, joins, and validation.
-2. Use Python UDFs or AI helpers only for enrichment steps that SQL should not own.
-3. Write Parquet to a run-specific location.
-4. Validate row counts, schema, and nullability before loading.
-5. Load into Doris with Doris tooling.
-6. Query and serve from Doris.
-
-This keeps Vane Data focused on dataset preparation and keeps Doris-specific operational behavior in Doris.
-
-## Schema handoff checklist
-
-Before loading Vane Data output into Doris:
-
-- Confirm every output column has a stable name and expected type.
-- Avoid nested fields unless the Doris table definition and load path support them.
-- Decide whether arrays, embeddings, JSON, or structs should be flattened or serialized before handoff.
-- Keep stable primary identifiers for reconciliation.
-- Write to a run-specific prefix, then promote or register that prefix only after validation.
-- Record row counts and basic checksums for load verification.
-
-## Ray and remote storage
-
-Ray-backed execution can help prepare larger outputs before the Doris load step:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-When writing to S3-compatible storage, make sure the driver and every Ray worker can access the same bucket, credentials, network path, and Python dependencies.
-
-## Scope notes
-
-This page documents a file-based handoff pattern. If a native Doris integration is added later, this guide should be updated with the exact public API, supported Doris versions, and an end-to-end tested load path.
-
-## Iceberg Lakehouse
-
-Route: /docs/data/guides/iceberg-lakehouse
-Source: docs/guides/iceberg-lakehouse.mdx
-
-This guide explains how Vane Data fits into lakehouse-style workflows.
-
-Vane Data is useful for SQL pruning, Python UDF enrichment, AI-derived columns, and Parquet output. Lakehouse catalogs and table formats remain responsible for table registration, snapshot management, permissions, and cross-engine consistency.
-
-## Baseline: Parquet and object storage
-
-The configured Vane Data build includes Parquet and `httpfs` support. That makes Parquet on local or S3-compatible storage the safest baseline for lakehouse handoff.
-
-```python
-import vane
-
-con = vane.connect()
-con.execute("LOAD httpfs")
-con.execute("SET s3_region='us-east-1'")
-con.execute("SET s3_url_style='path'")
-
-rel = con.sql("""
-    select *
-    from read_parquet('s3://bucket/raw/table/*.parquet')
-    where event_date is not null
-""")
-```
-
-Use SQL to reduce the data before Python UDFs or AI calls run.
-
-## Curate Parquet outputs
-
-After filtering and enrichment, write the resulting relation to a staging prefix.
-
-```python
-# `enriched` is the relation produced by your SQL, UDF, or AI pipeline.
-enriched.write_parquet(
-    "s3://bucket/curated/events/run_id/",
-    partition_by=["event_date"],
-)
-```
-
-Write to a run-specific location first. Promote, register, or commit the output only after validation succeeds.
-
-## Iceberg extension boundary
-
-Vane Data does not define a Vane-specific Iceberg catalog API.
-
-If your runtime has DuckDB's Iceberg extension available, use the documented DuckDB SQL interface for that extension:
-
-```sql
-INSTALL iceberg;
-LOAD iceberg;
-
--- Use the table functions and options documented by your DuckDB/Iceberg runtime.
-```
-
-Verify Iceberg extension availability, catalog configuration, authentication, and supported read/write behavior in your target runtime before making it a production dependency.
-
-## Recommended lakehouse pattern
-
-Use Vane Data for:
-
-- Reading Parquet or extension-backed table data through DuckDB-compatible SQL.
-- Filtering and projecting source rows before expensive Python stages.
-- Running Python UDFs for parsing, feature extraction, media processing, or model inference.
-- Adding embeddings, labels, prompts, or model scores as table columns.
-- Writing validated Parquet outputs for downstream registration or ingestion.
-
-Use your lakehouse stack for:
-
-- Catalog registration.
-- Iceberg snapshot commits.
-- Transactional table updates.
-- Permissions and governance.
-- Cross-engine consistency semantics.
-
-This separation keeps Vane Data focused on dataset preparation and avoids implying that Vane Data owns catalog-level table semantics.
-
-## Validation checklist
-
-Before registering or promoting Vane Data output:
-
-- Verify row counts against the source selection.
-- Check partition columns and partition cardinality.
-- Confirm column names, types, nullability, and timestamp semantics.
-- Validate nested columns, arrays, embeddings, or JSON columns with the downstream table format.
-- Keep the run prefix immutable after validation.
-- Let the lakehouse catalog tool perform the final table commit when governed table semantics matter.
-
-## Ray-backed preparation
-
-Use Ray when the preparation step needs distributed scans, writes, UDFs, or model workers:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-Every Ray worker must be able to access the same object storage, credentials, Python packages, model files, and runtime extension configuration as the driver.
-
-## Scope notes
-
-This guide documents Vane Data's lakehouse boundary: DuckDB-compatible reads, Python and AI enrichment, Parquet writes, and handoff to the catalog or table-management system that owns Iceberg semantics.
-
-## GPU Inference UDF
-
-Route: /docs/data/guides/gpu-inference-udf
-Source: docs/guides/gpu-inference-udf.mdx
-
-Use GPU UDFs when a model should be loaded once, kept warm, and reused across many Arrow batches.
-
-Vane Data provides the relation boundary, actor-style UDF execution, and Ray resource requests. Your UDF or AI provider is responsible for loading the model, selecting the device, batching inputs, and returning Arrow-compatible columns.
-
-## When to use this pattern
-
-Use a GPU actor when:
-
-- Model initialization is expensive.
-- Each batch needs the same model or tokenizer state.
-- The model library benefits from batched inputs.
-- Ray should place model actors on GPU workers.
-
-Do not use a GPU actor for lightweight row-wise logic, simple SQL transforms, or provider calls that are rate-limit bound rather than compute bound.
-
-## Actor contract
-
-Pass a callable class, not an already-created instance, to `map_batches(...)`. Vane Data constructs the class inside the executor so each actor owns its model state.
-
-```python
-import pyarrow as pa
-
-class ModelBatch:
-    def __init__(self) -> None:
-        self.model = load_model_on_worker()
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        values = batch.column("input").to_pylist()
-        outputs = self.model.predict(values)
-
-        return pa.table({
-            "id": ids,
-            "output": outputs,
-        })
-
-out = rel.map_batches(
-    ModelBatch,
-    schema={
-        "id": "BIGINT",
-        "output": "VARCHAR",
-    },
-    batch_size=32,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
-```
-
-`gpus=1` asks Ray to reserve one GPU per actor. It does not automatically move tensors or models to the GPU; do that inside the model initialization code for the library you use.
-
-## SentenceTransformer example
-
-This example uses a stateful actor and explicitly selects a CUDA device. Adapt the model name, output type, and device selection to your runtime.
-
-```python
-import pyarrow as pa
-
-class SentenceEmbedder:
-    def __init__(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        self.model = SentenceTransformer(
-            "sentence-transformers/all-MiniLM-L6-v2",
-            device="cuda",
-        )
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        ids = batch.column("id").to_pylist()
-        texts = batch.column("text").to_pylist()
-        vectors = self.model.encode(texts, convert_to_numpy=True).tolist()
-
-        return pa.table({
-            "id": ids,
-            "embedding": vectors,
-        })
-
-embedded = rel.map_batches(
-    SentenceEmbedder,
-    schema={
-        "id": "BIGINT",
-        "embedding": "FLOAT[]",
-    },
-    batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=2,
-)
-```
-
-Return identifiers such as `id` when downstream stages need to join model outputs back to source rows.
-
-## vLLM provider
-
-The `vllm` AI provider supports `prompt(...)` and maps provider options into UDF execution options.
-
-```python
-response_only = rel.prompt(
-    "prompt",
-    provider="vllm",
-    execution_backend="ray_actor",
-    batch_size=32,
-    concurrency=2,
-    gpus_per_actor=1,
-)
-```
-
-`gpus_per_actor` is a vLLM provider option. The provider maps it to the UDF GPU request internally. Validate the selected model, vLLM options, and GPU memory requirements with a small batch before scaling.
-
-## Local first
-
-Debug the batch contract locally before moving to Ray:
-
-```python
-out = rel.map_batches(
-    ModelBatch,
-    schema={"id": "BIGINT", "output": "VARCHAR"},
-    batch_size=8,
-    execution_backend="subprocess_actor",
-)
-```
-
-Then configure Ray before creating and executing the distributed pipeline:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-Use `execution_backend="ray_actor"` for the GPU actor stage.
-
-## Tuning order
-
-Tune in this order:
-
-1. Project only the columns required by the model.
-2. Choose a batch size that keeps the GPU busy without exhausting memory.
-3. Set `gpus` per actor.
-4. Increase `concurrency` only when the cluster has enough available GPUs.
-5. Keep the output schema narrow and Arrow-compatible.
-
-Sizing rule:
-
-```text
-required GPUs = concurrency * gpus
-```
-
-If `concurrency=4` and `gpus=1`, the Ray cluster needs at least 4 available GPUs for full parallelism.
-
-## Failure boundaries
-
-Avoid loading models at module import time. Load them in `__init__` so workers own their model state.
-
-Avoid returning Python objects that Arrow cannot serialize. Convert outputs to strings, numbers, lists, bytes, or Arrow arrays.
-
-Make sure every Ray worker can access:
-
-- The Python module that defines the UDF class.
-- Model files or model registry credentials.
-- Storage credentials for input and output data.
-- The same package versions needed by the model library.
+- Filter and project before chunking so you do not embed irrelevant rows.
+- Keep chunk IDs deterministic and preserve `document_id`, `chunk_text`, `source_uri`, provider, model, and run metadata.
+- Validate 10-100 representative rows before increasing data size, `batch_size`, `concurrency`, or Ray resources.
+- Increase `batch_size` until memory, provider payload size, or latency becomes the bottleneck.
+- Increase `concurrency` only when local workers, GPU capacity, or hosted provider quota have headroom.
+- Use actor backends for local models so model initialization is reused across batches.
+- Use Ray when one process is no longer enough for scan, embedding, or write throughput.
+- Estimate output size early: vector dimension times chunk count can dominate storage and write time.
+- Keep run-specific output paths and record chunker version, provider, model, batch size, concurrency, backend, input row count, chunk count, and failures.
+
+## Boundary
+
+This guide produces a reproducible embedding dataset for a POC. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.
 
 ## Performance Tuning
 
 Route: /docs/data/guides/performance-tuning
 Source: docs/guides/performance-tuning.mdx
 
-Start with a correct local pipeline, then tune the smallest number of variables.
+Use this guide after your POC pipeline produces correct results on a small, representative slice of your own data. Performance tuning should answer two questions: which stage is slow, and which single variable is worth changing next.
 
-## Runner
+This is not a production benchmark, SLA guide, or advanced cluster tuning manual. For v0.1.0, the useful outcome is a clear bottleneck diagnosis and a run record that makes feedback actionable.
 
-Local:
+## Start With Correctness
 
-```python
-vane.configure(runner="native")
+Do not tune a pipeline that is still changing shape. First make sure the run is small, repeatable, and checkable.
+
+- Keep stable IDs from input through output.
+- Check row counts before and after every expensive stage.
+- Validate the output schema and a few sample rows by hand.
+- Keep explicit `status` and `error_message` columns for rows that fail.
+- Use a representative sample, not only the easiest records.
+- Record a baseline before changing any tuning knob.
+
+Then tune one variable at a time. Keep the dataset slice, code, model, provider, and output path fixed while you compare runs. If a change does not improve the bottleneck you measured, revert it before trying the next knob.
+
+## Performance vs Sizing
+
+Performance Tuning diagnoses where time or failures are coming from in a concrete POC run. Sizing estimates the resources needed for the next larger run.
+
+| Question | Use Performance Tuning | Use Sizing |
+| --- | --- | --- |
+| "Why is this run slow?" | Yes | No |
+| "Which stage is the bottleneck?" | Yes | No |
+| "Should I change batch size or concurrency?" | Yes | Maybe |
+| "How many CPUs, GPUs, or workers might I need for a larger slice?" | No | Yes |
+| "Can I promise production throughput?" | No | No |
+
+Use the performance record in this guide as input when you later estimate resources in Sizing.
+
+## POC Tuning Order
+
+Move through the pipeline in order. A later tuning knob will not help if an earlier stage is sending too much data, using inaccessible paths, or writing oversized output.
+
+| Order | Stage | What to check | Smallest useful change |
+| --- | --- | --- | --- |
+| 1 | Data read | Input rows, input bytes, file count, object store latency, worker access to paths | Start with a smaller real slice; use worker-visible paths; avoid reading unused files |
+| 2 | SQL filter/project | Rows and columns entering the expensive stage | Filter early; project only the columns the UDF, AI function, or model needs |
+| 3 | UDF batch | Per-batch time, memory, long tail batches, retry cost | Adjust `batch_size` only after input columns and rows are reduced |
+| 4 | Actor reuse | Model or client initialization logs, repeated connection setup, low throughput | Use an actor backend for stateful model/client/GPU reuse |
+| 5 | Provider rate limit | HTTP 429s, timeouts, retry waits, provider-side quota errors | Lower concurrency; batch only where the provider supports it; reduce unnecessary calls |
+| 6 | GPU utilization | GPU memory, utilization, model load time, CPU preprocessing time | Reuse model actors; tune batch size; add GPUs only after one GPU is understood |
+| 7 | Output write | Output rows, output bytes, wide columns, many small files, worker access to output path | Write only required columns; avoid carrying raw bytes or large intermediate objects unless needed |
+
+## Core Knobs
+
+These are the main knobs for a POC. Change one at a time and keep the run record updated.
+
+| Knob | What it changes | Start here | Watch for |
+| --- | --- | --- | --- |
+| `batch_size` | Rows per UDF, AI, or inference call | Increase when per-call overhead dominates; decrease when memory or retries dominate | Out-of-memory errors, slow long-tail batches, worse provider latency |
+| `concurrency` | Number of batches or requests in flight | Increase only after each batch is reasonably efficient | Provider rate limits, memory pressure, output write contention |
+| Task vs actor | Whether work is stateless or reuses state | Use tasks for light stateless CPU work; actors for models, clients, GPU, or connection reuse | Model reload per batch, unbounded actor memory, worker startup failures |
+| Local vs Ray | Whether the pipeline stays local or uses Ray workers | Stay local for correctness and small samples; move to Ray when parallelism, worker placement, or GPUs matter | Path, dependency, credential, and output locations visible only on the driver |
+| GPU count | Available GPU resources for inference actors | Tune one GPU first; add GPUs when the GPU stage is confirmed as the bottleneck | CPU preprocessing bottlenecks, output bottlenecks, low utilization across many actors |
+
+Runner and backend are related but different. The runner controls the overall execution path, such as local execution versus Ray execution. The UDF or AI execution backend controls how a stage runs, such as task versus actor.
+
+## Hosted API vs GPU Bottlenecks
+
+Hosted APIs and local GPU inference fail in different ways. Separate them before changing knobs.
+
+| Workload type | Common bottleneck | Symptoms | Useful fixes |
+| --- | --- | --- | --- |
+| Hosted API | Provider quota, request latency, retries, cost | 429 or quota errors, long retry waits, idle local CPU/GPU, failures tied to credentials or provider limits | Lower `concurrency`; reduce rows before the call; use provider-supported batch requests; record provider/model/error details |
+| GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
+
+Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat low GPU utilization as proof that more GPUs are needed. First confirm which stage is waiting and why.
+
+## Symptoms and Fixes
+
+| Symptom | Likely cause | Fix to try first |
+| --- | --- | --- |
+| Many tiny UDF or AI calls, high scheduling overhead, low model throughput | Batches are too small | Increase `batch_size` gradually while watching memory and error rate |
+| Out-of-memory errors, very slow retries, or one large batch dominates elapsed time | Batches are too large | Reduce `batch_size`; project fewer columns; split decode, transform, and inference into separate stages |
+| Logs show model loading or API client setup for every batch | Stateless task is recreating expensive state | Move model or client initialization into a callable class and run with an actor backend |
+| Hosted API returns 429, timeout, quota, or authentication errors | Provider rate limit or credential issue | Lower `concurrency`; reduce calls with SQL filters; verify credentials in the same environment as the workers |
+| Local run works, Ray run fails with file not found, import errors, or missing credentials | Worker path, dependency, or credential visibility | Put data, models, and output on worker-visible storage; install dependencies on workers; pass credentials through the Ray environment |
+| GPU memory is full but throughput is unstable | Batch too large, output too wide, or actor memory growth | Reduce `batch_size`; avoid carrying unused columns; restart from a clean small run and compare |
+| GPU utilization stays low while CPU is busy | CPU preprocessing or data read is the bottleneck | Time decode/tokenization separately; filter/project before inference; cache or stage expensive preprocessing output |
+| Output write takes most of the run | Output is too large or too wide | Write only the columns needed for the next POC step; avoid raw bytes and large Python object columns in final output |
+
+## Minimal Measurement Loop
+
+Use the same small representative slice for a short tuning loop.
+
+1. Run the baseline and record elapsed time, errors, and stage-level observations.
+2. Pick the first bottleneck in the tuning order.
+3. Change one knob.
+4. Run the same slice again.
+5. Keep the change only if it improves the measured bottleneck without breaking correctness.
+
+For AI and inference workloads, measure at least:
+
+- rows entering the AI or model stage
+- calls or batches sent
+- successful rows and failed rows
+- provider retry or rate-limit count, if hosted
+- GPU memory and utilization, if local GPU
+- output rows and bytes
+
+## POC Performance Record
+
+Include a record like this when you report a performance issue or compare tuning runs.
+
+```markdown
+## POC Performance Record
+
+- Goal:
+- Dataset:
+  - input rows:
+  - input bytes:
+  - file count:
+  - sample method:
+- Pipeline stage being measured:
+- Runner:
+- UDF/AI execution backend:
+- Batch size:
+- Concurrency:
+- Task or actor:
+- Provider/model:
+- GPU:
+  - GPU count:
+  - GPUs per actor:
+  - observed utilization:
+  - observed memory:
+- Output:
+  - output rows:
+  - output bytes:
+  - output path type:
+- Timing:
+  - data read:
+  - SQL filter/project:
+  - UDF/AI/inference:
+  - output write:
+  - total elapsed:
+- Errors:
+  - failed rows:
+  - retry count:
+  - error messages:
+- Change tested:
+- Result:
 ```
 
-Ray:
-
-```python
-vane.configure(runner="ray")
-```
-
-The native runner streams Arrow record batches. The Ray runner initializes Ray when needed and sends a logical plan to a Ray query driver.
-
-## Batch size
-
-For `map_batches`, `batch_size` controls how many rows are passed to one UDF call.
-
-Small batches:
-
-- lower memory
-- worse model throughput
-- more scheduling overhead
-
-Large batches:
-
-- better throughput
-- higher memory
-- slower retries
-
-Tune with representative data.
-
-## Actor reuse
-
-Use actor backends for model inference:
-
-- `subprocess_actor` for local stateful reuse.
-- `ray_actor` for distributed stateful reuse.
-
-Use task backends for light stateless work:
-
-- `subprocess_task`
-- `ray_task`
-
-## CPU and GPU resources
-
-`map_batches` accepts:
-
-- `cpus`
-- `gpus`
-- `concurrency`
-
-Ray uses resource requests for placement. Make sure the Ray cluster advertises matching resources before increasing `concurrency`.
-
-## Ray scan task grouping
-
-Public config:
-
-```python
-vane.configure(ray_scan_task_size_grouping=True)
-```
-
-Environment variable:
-
-```bash
-export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
-```
-
-The registry describes this as size-based scan task grouping, useful for merging small files into larger scan tasks.
-
-Related public config:
-
-- `ray_max_task_backlog`
-- `ray_scan_task_open_cost_bytes`
-- `ray_scan_task_min_partition_num`
-- `ray_init_sql`
-
-## Backpressure
-
-`VANE_RAY_MAX_TASK_BACKLOG` limits pending Ray tasks when set to a positive value. `0` means unlimited in the public registry.
-
-Use it when the driver can submit faster than workers can consume.
-
-## Native runner batch size
-
-`VANE_NATIVE_RUNNER_BATCH_SIZE` overrides the native runner batch size when you need an explicit value for measurement or memory control.
-
-```bash
-export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
-```
-
-## Avoid common bottlenecks
-
-- Project only columns needed by the UDF.
-- Filter before model calls.
-- Keep image/audio/video decoding separate from model inference when tuning.
-- Write to a filesystem all workers can access.
-- Avoid one row per UDF call for model workloads.
-- Use structured output schemas instead of Python object columns.
-
-## Measure
-
-Keep a simple run record:
-
-- input rows
-- input bytes
-- batch size
-- backend
-- concurrency
-- GPUs per actor
-- elapsed time
-- output rows
-- failure count
-
-Benchmark workloads can be useful references for environment-driven performance experiments, but benchmark-specific file locations, storage endpoints, and model defaults are not general deployment defaults.
+If the issue only appears on Ray, include whether workers can access the same data paths, model files, Python dependencies, credentials, and output location as the driver.
 
 ## Examples
 

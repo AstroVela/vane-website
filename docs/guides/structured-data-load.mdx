@@ -1,0 +1,228 @@
+---
+title: Structured Data Load
+---
+
+Use this guide when your POC starts from structured business data: orders, claims, tickets, invoices, events, customer records, or other table-shaped files.
+
+The goal is to load a small real slice, verify that the data contract is credible, and produce a source relation that later stages can use for structured transformation, Python UDFs, or AI functions.
+
+## Start with a small real slice
+
+Do not begin with every historical file. Pick a slice that is small enough to debug locally but real enough to expose business shape:
+
+- One time window, region, customer group, product line, or workflow state.
+- Enough rows to include normal cases and known edge cases.
+- The columns needed for IDs, joins, filters, text fields, labels, amounts, dates, and status values.
+- Stable source identifiers that can be carried through later transformations.
+
+If the full dataset is remote or large, either export a small Parquet or CSV sample first, or apply a narrow filter in the initial scan.
+
+## Load local Parquet
+
+Use `read_parquet(...)` for Parquet files and Parquet part directories. A directory is usually read through a glob that points at files inside it.
+
+```python
+import vane
+
+con = vane.connect()
+
+orders = con.sql("""
+    select *
+    from read_parquet('data/orders/*.parquet', union_by_name=true)
+    where order_date >= date '2026-01-01'
+    limit 10000
+""")
+
+orders.to_table("raw_orders")
+```
+
+For nested directories, use a recursive glob:
+
+```python
+events = con.sql("""
+    select *
+    from read_parquet('data/events/**/*.parquet', union_by_name=true)
+    limit 10000
+""")
+```
+
+Use `union_by_name=true` when multiple files may have columns in different orders or when a small amount of schema drift is expected. If the schemas differ in meaning, stop and reconcile them before continuing.
+
+## Load local CSV
+
+Use CSV for small or exported slices. Prefer Parquet once you control the export format, because it carries column types more reliably.
+
+```python
+claims = con.sql("""
+    select *
+    from read_csv_auto('data/claims/*.csv', header=true)
+    limit 10000
+""")
+
+claims.to_table("raw_claims")
+```
+
+If type inference is wrong, keep the load simple, inspect the inferred schema, then cast important columns explicitly in the source relation.
+
+## Load from S3 or MinIO
+
+Keep object storage configuration minimal for a POC. The scan should prove that Vane can read the files and that every later executor can reach the same URI; it should not become a lakehouse or catalog setup.
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+
+# Prefer environment variables for credentials:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN when needed.
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+source = con.sql("""
+    select *
+    from read_parquet('s3://my-bucket/poc/orders/*.parquet')
+    limit 10000
+""")
+```
+
+For MinIO or another S3-compatible endpoint, add the endpoint settings:
+
+```python
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+```
+
+Do not put long-lived secrets in checked-in scripts or documentation snippets. If Ray will run the query, the same credentials and endpoint settings must be available to the workers.
+
+## Inspect the schema and sample
+
+Materialize the raw scan as a temporary table when you want to run several checks against the same slice.
+
+```python
+orders.to_table("raw_orders")
+
+con.sql("describe raw_orders").show()
+
+con.sql("""
+    select *
+    from raw_orders
+    limit 10
+""").show()
+```
+
+Before adding transformation, UDF, or AI work, confirm that column names, types, sample values, encodings, and date/time assumptions match the business data you expected.
+
+## Run basic POC checks
+
+Start with row count, key uniqueness, null checks, and a few distributions that would catch a bad slice.
+
+```python
+con.sql("""
+    select
+        count(*) as rows,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) - count(distinct order_id) as duplicate_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        count(*) filter (where amount is null) as null_amounts
+    from raw_orders
+""").show()
+```
+
+Check important categorical or time distributions:
+
+```python
+con.sql("""
+    select status, count(*) as rows
+    from raw_orders
+    group by status
+    order by rows desc
+    limit 20
+""").show()
+```
+
+```python
+con.sql("""
+    select date_trunc('month', order_date) as month, count(*) as rows
+    from raw_orders
+    group by month
+    order by month
+""").show()
+```
+
+Replace `order_id`, `customer_id`, `amount`, `status`, and `order_date` with fields that matter for your POC. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them.
+
+## Produce the source relation
+
+Create a narrow relation with the columns downstream stages need. Keep IDs and source metadata, cast important fields deliberately, and filter out rows that cannot be traced.
+
+```python
+source_orders = con.sql("""
+    select
+        cast(order_id as varchar) as order_id,
+        cast(customer_id as varchar) as customer_id,
+        cast(order_date as date) as order_date,
+        cast(status as varchar) as status,
+        cast(amount as double) as amount,
+        notes
+    from raw_orders
+    where order_id is not null
+""")
+
+source_orders.to_table("source_orders_poc")
+```
+
+Use this relation as the input for the next guide:
+
+- Structured Transformation for filtering, joins, derived columns, and validation summaries.
+- Custom Python UDFs when business logic needs Python libraries or external services.
+- AI Functions when a text column should be embedded, classified, or prompted.
+
+Keep the source relation small while the POC logic is changing. Increase the slice only after row counts, schemas, and sample outputs are explainable.
+
+## Local vs Ray accessibility
+
+Local execution can read files visible to the Python process. This is the simplest path for the first slice.
+
+Ray execution may schedule scans, writes, or UDFs on workers. Every worker must be able to:
+
+- See the same local path, mounted filesystem, or object storage URI.
+- Load the same DuckDB extensions required by the scan.
+- Access the same credentials and endpoint settings.
+- Import the same Python packages used by later UDF stages.
+- Write to an output path that is visible outside the worker.
+
+Configure Ray before creating the connection:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+```
+
+Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the POC needs distributed scan, UDF, or write behavior.
+
+## Common failures and feedback
+
+When a structured load fails, classify the failure before changing the pipeline:
+
+| Category | What to check |
+| --- | --- |
+| Path not found | Current working directory, absolute path, glob pattern, file permissions, mounted paths on Ray workers |
+| Empty or wrong slice | Filters, date ranges, partition paths, `limit`, recursive glob depth |
+| Schema mismatch | CSV inference, Parquet schema drift, `union_by_name`, explicit casts, unexpected nullable fields |
+| Bad identifiers | Null keys, duplicate keys, keys that are only unique within a partition |
+| Object storage auth | Region, endpoint, SSL setting, path-style setting, credential availability |
+| Ray access | Worker environment variables, mounted filesystems, package availability, output path visibility |
+
+Useful feedback includes:
+
+- Vane version, Python version, operating system, and whether `VANE_RUNNER` or `vane.configure(runner="ray")` was used.
+- The file format, path style, and redacted scan query.
+- Whether the same scan works locally without Ray.
+- Schema output and row-count/null/key-check output from the small slice.
+- Redacted S3 or MinIO endpoint settings, without secrets.
+- The shortest error traceback and, when possible, a tiny sample file that reproduces the issue.

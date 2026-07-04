@@ -35,21 +35,12 @@
       }
     },
     {
-      "slug": "quickstart/quickstart-sql",
-      "title": "Quickstart: SQL",
-      "source": "docs/quickstart/quickstart-sql.mdx",
-      "route": "/docs/data/quickstart/quickstart-sql",
+      "slug": "quickstart/quickstart",
+      "title": "Quickstart",
+      "source": "docs/quickstart/quickstart.mdx",
+      "route": "/docs/data/quickstart/quickstart",
       "frontmatter": {
-        "title": "Quickstart: SQL"
-      }
-    },
-    {
-      "slug": "quickstart/quickstart-python",
-      "title": "Quickstart: Python",
-      "source": "docs/quickstart/quickstart-python.mdx",
-      "route": "/docs/data/quickstart/quickstart-python",
-      "frontmatter": {
-        "title": "Quickstart: Python"
+        "title": "Quickstart"
       }
     },
     {
@@ -107,57 +98,66 @@
       }
     },
     {
+      "slug": "guides/structured-data-load",
+      "title": "Structured Data Load",
+      "source": "docs/guides/structured-data-load.mdx",
+      "route": "/docs/data/guides/structured-data-load",
+      "frontmatter": {
+        "title": "Structured Data Load"
+      }
+    },
+    {
+      "slug": "guides/custom-python-udfs",
+      "title": "Custom Python UDFs",
+      "source": "docs/guides/custom-python-udfs.mdx",
+      "route": "/docs/data/guides/custom-python-udfs",
+      "frontmatter": {
+        "title": "Custom Python UDFs"
+      }
+    },
+    {
+      "slug": "guides/multimodal-pipeline",
+      "title": "Multimodal Pipeline",
+      "source": "docs/guides/multimodal-pipeline.mdx",
+      "route": "/docs/data/guides/multimodal-pipeline",
+      "frontmatter": {
+        "title": "Multimodal Pipeline"
+      }
+    },
+    {
+      "slug": "guides/structured-transformation",
+      "title": "Structured Transformation",
+      "source": "docs/guides/structured-transformation.mdx",
+      "route": "/docs/data/guides/structured-transformation",
+      "frontmatter": {
+        "title": "Structured Transformation"
+      }
+    },
+    {
+      "slug": "guides/ai-functions",
+      "title": "AI Functions",
+      "source": "docs/guides/ai-functions.mdx",
+      "route": "/docs/data/guides/ai-functions",
+      "frontmatter": {
+        "title": "AI Functions"
+      }
+    },
+    {
+      "slug": "guides/gpu-inference",
+      "title": "GPU Inference",
+      "source": "docs/guides/gpu-inference.mdx",
+      "route": "/docs/data/guides/gpu-inference",
+      "frontmatter": {
+        "title": "GPU Inference"
+      }
+    },
+    {
       "slug": "guides/embeddings-at-scale",
       "title": "Embeddings at Scale",
       "source": "docs/guides/embeddings-at-scale.mdx",
       "route": "/docs/data/guides/embeddings-at-scale",
       "frontmatter": {
         "title": "Embeddings at Scale"
-      }
-    },
-    {
-      "slug": "guides/dedup-and-clean",
-      "title": "Dedup and Clean",
-      "source": "docs/guides/dedup-and-clean.mdx",
-      "route": "/docs/data/guides/dedup-and-clean",
-      "frontmatter": {
-        "title": "Dedup and Clean"
-      }
-    },
-    {
-      "slug": "guides/sql-multimodal-pipeline",
-      "title": "SQL Multimodal Pipeline",
-      "source": "docs/guides/sql-multimodal-pipeline.mdx",
-      "route": "/docs/data/guides/sql-multimodal-pipeline",
-      "frontmatter": {
-        "title": "SQL Multimodal Pipeline"
-      }
-    },
-    {
-      "slug": "guides/doris-integration",
-      "title": "Doris Integration",
-      "source": "docs/guides/doris-integration.mdx",
-      "route": "/docs/data/guides/doris-integration",
-      "frontmatter": {
-        "title": "Doris Integration"
-      }
-    },
-    {
-      "slug": "guides/iceberg-lakehouse",
-      "title": "Iceberg Lakehouse",
-      "source": "docs/guides/iceberg-lakehouse.mdx",
-      "route": "/docs/data/guides/iceberg-lakehouse",
-      "frontmatter": {
-        "title": "Iceberg Lakehouse"
-      }
-    },
-    {
-      "slug": "guides/gpu-inference-udf",
-      "title": "GPU Inference UDF",
-      "source": "docs/guides/gpu-inference-udf.mdx",
-      "route": "/docs/data/guides/gpu-inference-udf",
-      "frontmatter": {
-        "title": "GPU Inference UDF"
       }
     },
     {
@@ -276,14 +276,9 @@
           "route": "/docs/data/quickstart/installation"
         },
         {
-          "slug": "quickstart/quickstart-sql",
-          "label": "Quickstart: SQL",
-          "route": "/docs/data/quickstart/quickstart-sql"
-        },
-        {
-          "slug": "quickstart/quickstart-python",
-          "label": "Quickstart: Python",
-          "route": "/docs/data/quickstart/quickstart-python"
+          "slug": "quickstart/quickstart",
+          "label": "Quickstart",
+          "route": "/docs/data/quickstart/quickstart"
         }
       ]
     },
@@ -318,7 +313,7 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "Guides / Data Ingestion",
       "items": [
         {
           "slug": "guides/multimodal-ingest",
@@ -326,35 +321,55 @@
           "route": "/docs/data/guides/multimodal-ingest"
         },
         {
+          "slug": "guides/structured-data-load",
+          "label": "Structured Data Load",
+          "route": "/docs/data/guides/structured-data-load"
+        }
+      ]
+    },
+    {
+      "group": "Guides / Data Transformation",
+      "items": [
+        {
+          "slug": "guides/custom-python-udfs",
+          "label": "Custom Python UDFs",
+          "route": "/docs/data/guides/custom-python-udfs"
+        },
+        {
+          "slug": "guides/multimodal-pipeline",
+          "label": "Multimodal Pipeline",
+          "route": "/docs/data/guides/multimodal-pipeline"
+        },
+        {
+          "slug": "guides/structured-transformation",
+          "label": "Structured Transformation",
+          "route": "/docs/data/guides/structured-transformation"
+        }
+      ]
+    },
+    {
+      "group": "Guides / AI & Inference",
+      "items": [
+        {
+          "slug": "guides/ai-functions",
+          "label": "AI Functions",
+          "route": "/docs/data/guides/ai-functions"
+        },
+        {
+          "slug": "guides/gpu-inference",
+          "label": "GPU Inference",
+          "route": "/docs/data/guides/gpu-inference"
+        },
+        {
           "slug": "guides/embeddings-at-scale",
           "label": "Embeddings at Scale",
           "route": "/docs/data/guides/embeddings-at-scale"
-        },
-        {
-          "slug": "guides/dedup-and-clean",
-          "label": "Dedup and Clean",
-          "route": "/docs/data/guides/dedup-and-clean"
-        },
-        {
-          "slug": "guides/sql-multimodal-pipeline",
-          "label": "SQL Multimodal Pipeline",
-          "route": "/docs/data/guides/sql-multimodal-pipeline"
-        },
-        {
-          "slug": "guides/doris-integration",
-          "label": "Doris Integration",
-          "route": "/docs/data/guides/doris-integration"
-        },
-        {
-          "slug": "guides/iceberg-lakehouse",
-          "label": "Iceberg Lakehouse",
-          "route": "/docs/data/guides/iceberg-lakehouse"
-        },
-        {
-          "slug": "guides/gpu-inference-udf",
-          "label": "GPU Inference UDF",
-          "route": "/docs/data/guides/gpu-inference-udf"
-        },
+        }
+      ]
+    },
+    {
+      "group": "Guides / Optimization",
+      "items": [
         {
           "slug": "guides/performance-tuning",
           "label": "Performance Tuning",

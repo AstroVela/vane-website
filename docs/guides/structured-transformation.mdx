@@ -1,0 +1,290 @@
+---
+title: Structured Transformation
+---
+
+Use Structured Transformation after Structured Data Load when you already have a relation for raw tabular data and need to turn it into a curated table for a POC.
+
+The usual path is SQL-first: profile the input, reduce it to the rows and columns you need, normalize types, derive business columns, join reference data, deduplicate where needed, validate the result, and write a stable output. Add Python UDFs only for rules that are hard to express clearly in SQL.
+
+## Starting relation
+
+This guide assumes Structured Data Load has produced one or more relations from files, object storage, or another DuckDB-supported source.
+
+```python
+import vane
+
+con = vane.connect()
+
+raw_orders = con.sql("""
+    select *
+    from read_parquet('data/raw/orders/*.parquet')
+""")
+raw_orders.to_table("raw_orders")
+
+customer_reference = con.sql("""
+    select *
+    from read_parquet('data/reference/customers.parquet')
+""")
+customer_reference.to_table("customer_reference")
+```
+
+Keep the raw relation registered until validation is complete. It is the easiest way to compare raw and curated values when a business rule needs adjustment.
+
+## Transformation flow
+
+A practical structured transformation flow is:
+
+1. Profile the raw relation.
+2. Filter unusable or out-of-scope rows.
+3. Project only the columns the POC needs.
+4. Normalize types and categorical values.
+5. Derive business columns.
+6. Join reference data.
+7. Deduplicate rows when the business key requires it.
+8. Validate row counts, keys, nulls, domains, and sample diffs.
+9. Write the curated relation with stable schema and traceability columns.
+
+Start with a small, real slice of data. The goal is to confirm the rules and output contract before spending time on a full run.
+
+## Profile first
+
+Profile with SQL before writing transformation logic:
+
+```python
+con.sql("""
+    select
+        count(*) as row_count,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        min(order_timestamp) as min_order_timestamp,
+        max(order_timestamp) as max_order_timestamp
+    from raw_orders
+""").show()
+```
+
+For a POC, add checks for the columns that affect the business decision: entity IDs, timestamps, amount fields, status fields, and the fields used for joins.
+
+## SQL-first transform
+
+Use SQL for relational work: filtering, projection, type normalization, derived columns, joins, aggregation, deduplication, and validation queries.
+
+```python
+curated_orders = con.sql("""
+    with typed as (
+        select
+            cast(order_id as varchar) as order_id,
+            cast(customer_id as varchar) as customer_id,
+            try_cast(order_timestamp as timestamp) as order_ts,
+            upper(trim(status)) as status,
+            try_cast(amount as decimal(18, 2)) as order_amount,
+            source_file,
+            source_row_number
+        from raw_orders
+        where order_id is not null
+    ),
+    projected as (
+        select
+            order_id,
+            customer_id,
+            order_ts,
+            date_trunc('day', order_ts) as order_date,
+            case
+                when order_amount < 0 then true
+                else false
+            end as refund_flag,
+            status,
+            order_amount,
+            source_file,
+            source_row_number
+        from typed
+        where order_ts is not null
+    )
+    select
+        p.order_id,
+        p.customer_id,
+        coalesce(r.customer_segment, 'UNKNOWN') as customer_segment,
+        p.order_ts,
+        p.order_date,
+        p.refund_flag,
+        p.status,
+        p.order_amount,
+        p.source_file,
+        p.source_row_number
+    from projected p
+    left join customer_reference r using (customer_id)
+""")
+
+curated_orders.to_table("curated_orders")
+```
+
+Prefer deterministic rules in the SQL itself. That makes the transformation easier to review, rerun, and compare against raw data.
+
+## When to use Python UDFs
+
+Use a Python UDF when the transformation needs logic that SQL would make unclear or brittle:
+
+- complex text cleanup or parsing
+- fuzzy matching and custom scoring
+- external libraries
+- domain rules that are easier to test in Python
+- model or API calls that enrich structured rows
+
+Keep the UDF boundary narrow. Filter and project with SQL first, return explicit columns, and carry the stable ID back to SQL for validation.
+
+```python
+import pyarrow as pa
+
+def normalize_customer_name(batch: pa.Table) -> pa.Table:
+    customer_ids = batch.column("customer_id").to_pylist()
+    names = batch.column("customer_name").to_pylist()
+    normalized = [
+        " ".join(str(name or "").strip().lower().split())
+        for name in names
+    ]
+    return pa.table({
+        "customer_id": customer_ids,
+        "normalized_customer_name": normalized,
+    })
+
+customer_names = con.sql("""
+    select customer_id, customer_name
+    from customer_reference
+    where customer_name is not null
+""").map_batches(
+    normalize_customer_name,
+    schema={
+        "customer_id": "VARCHAR",
+        "normalized_customer_name": "VARCHAR",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+
+customer_names.to_table("customer_names")
+```
+
+After the UDF, join the result back with SQL and run the same validation checks as any other derived column.
+
+## Dedup and clean pattern
+
+Deduplication is one structured transformation pattern. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
+
+```python
+deduped_customers = con.sql("""
+    with keyed as (
+        select
+            customer_id,
+            customer_name,
+            email,
+            updated_at,
+            source_file,
+            source_row_number,
+            lower(regexp_replace(trim(coalesce(email, '')), '\\s+', '', 'g')) as normalized_key
+        from customer_reference
+    ),
+    ranked as (
+        select
+            *,
+            count(*) over (partition by normalized_key) as duplicate_count,
+            row_number() over (
+                partition by normalized_key
+                order by updated_at desc nulls last, source_file, source_row_number
+            ) as representative_rank
+        from keyed
+        where normalized_key <> ''
+    )
+    select
+        customer_id,
+        customer_name,
+        email,
+        normalized_key,
+        duplicate_count,
+        true as is_representative,
+        source_file,
+        source_row_number
+    from ranked
+    where representative_rank = 1
+""")
+
+deduped_customers.to_table("deduped_customers")
+```
+
+The `normalized_key` should match your business definition of a duplicate. The representative row order should be stable and explainable, such as latest update timestamp followed by source metadata.
+
+For near-duplicate matching, compute signatures or scores in a Python UDF, then use SQL to group, rank, and validate the retained rows.
+
+## Validation checklist
+
+Run validation before writing the curated output.
+
+```python
+con.sql("""
+    select
+        count(*) as curated_rows,
+        count(distinct order_id) as distinct_order_ids,
+        count(*) filter (where order_id is null) as null_order_ids,
+        count(*) filter (where customer_id is null) as null_customer_ids,
+        count(*) filter (
+            where status not in ('OPEN', 'PAID', 'CANCELLED', 'REFUNDED')
+        ) as invalid_status_rows,
+        count(*) filter (where order_amount is null) as null_amount_rows
+    from curated_orders
+""").show()
+```
+
+Check at least:
+
+- row count before and after each major filter
+- key uniqueness for the curated entity
+- nulls in required fields
+- value domains for status, category, currency, region, or other controlled fields
+- sample diff between raw and curated values
+
+Use a sample diff for rules that change values:
+
+```python
+con.sql("""
+    select
+        r.order_id,
+        r.status as raw_status,
+        c.status as curated_status,
+        r.order_timestamp as raw_order_timestamp,
+        c.order_ts as curated_order_ts
+    from raw_orders r
+    join curated_orders c using (order_id)
+    where r.status <> c.status
+       or try_cast(r.order_timestamp as timestamp) <> c.order_ts
+    limit 20
+""").show()
+```
+
+For a POC, the validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to downstream analysis, UDFs, AI functions, or examples.
+
+## Write the curated output
+
+Write outputs with a stable contract:
+
+- stable schema with explicit column names and types
+- stable IDs for the entity or event represented by each row
+- traceability columns such as `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
+- enough run metadata to compare one POC run with another
+
+```python
+curated_orders.write_parquet("output/curated/orders/")
+
+con.sql("""
+    copy (
+        select
+            'orders' as dataset,
+            count(*) as row_count,
+            min(order_date) as min_order_date,
+            max(order_date) as max_order_date
+        from curated_orders
+    )
+    to 'output/curated/orders_validation.parquet'
+    (format parquet)
+""")
+```
+
+Keep the raw-to-curated traceability until the POC questions are answered. It is often the fastest way to explain surprising results and turn feedback into a reproducible issue.

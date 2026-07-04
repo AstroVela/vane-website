@@ -2,99 +2,147 @@
 title: Embeddings at Scale
 ---
 
-Use Vane Data for embedding pipelines when you want SQL filtering, batch model execution, and table outputs in one workflow.
+Use this guide when your POC needs to turn many documents or text records into a table of embeddings that can be inspected, rerun, and handed to a downstream search or retrieval system.
 
-The usual shape is:
+The embedding model call is only one stage. A useful POC path is:
 
-1. Read and filter source rows with SQL.
-2. Chunk long text into stable units.
-3. Embed chunks with `rel.embed_text(...)` or a custom UDF.
-4. Write embeddings with stable document and chunk IDs.
+```text
+read and filter source rows -> chunk documents -> embed chunks -> validate output -> write an embedding table
+```
 
-## Basic text embedding
+This guide stops at the embedding table. It is not a vector database, retrieval-ranking, or production RAG guide.
+
+## Start with a small source relation
+
+Begin with real business rows, but keep the first run small. Select stable identifiers and source metadata before any AI call.
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select id, text
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        document_type,
+        text
     from read_parquet('data/documents/*.parquet')
     where text is not null
+      and length(text) > 0
+    order by document_id
+    limit 100
 """)
-
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
 ```
 
-`embed_text` returns a relation with the configured embedding output column. The high-level helper writes embeddings as `FLOAT[]`; it does not automatically include source columns such as `id` or `text`.
+Keep the first relation ordered and limited so you can compare source rows, chunks, and embedding output deterministically. Remove the `limit` only after the chunking and validation checks are correct.
 
-## Chunk long text first
+## Chunk with stable IDs
 
-Do not send whole documents to an embedding model unless that is intentional. Create bounded chunks with stable IDs.
+Chunking is a one-to-many transform: one document can produce zero, one, or many chunks. Use `flat_map(...)` for this stage and return all columns needed later.
 
 ```python
-import pyarrow as pa
+CHUNK_SIZE = 1200
+OVERLAP = 150
+CHUNKER_VERSION = "fixed-char-v1"
 
-def chunk_rows(batch: pa.Table) -> pa.Table:
-    doc_ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    out_doc_id = []
-    out_chunk_id = []
-    out_text = []
+def chunk_document(row: dict) -> list[dict]:
+    document_id = str(row["document_id"])
+    text = str(row["text"] or "")
+    source_uri = row.get("source_uri")
+    document_type = row.get("document_type")
 
-    for doc_id, text in zip(doc_ids, texts):
-        parts = [part.strip() for part in str(text).split(".") if part.strip()]
-        for idx, part in enumerate(parts):
-            out_doc_id.append(doc_id)
-            out_chunk_id.append(idx)
-            out_text.append(part)
+    chunks = []
+    start = 0
+    chunk_index = 0
 
-    return pa.table({
-        "id": out_doc_id,
-        "chunk_id": out_chunk_id,
-        "chunk_text": out_text,
-    })
+    while start < len(text):
+        end = min(start + CHUNK_SIZE, len(text))
+        chunk_text = text[start:end].strip()
 
-chunks = rel.map_batches(
-    chunk_rows,
+        if chunk_text:
+            chunks.append({
+                "document_id": document_id,
+                "chunk_id": f"{document_id}:{CHUNKER_VERSION}:{chunk_index:06d}",
+                "chunk_index": chunk_index,
+                "chunk_text": chunk_text,
+                "source_uri": source_uri,
+                "document_type": document_type,
+                "chunker_version": CHUNKER_VERSION,
+            })
+
+        if end == len(text):
+            break
+        start = max(end - OVERLAP, 0)
+        chunk_index += 1
+
+    return chunks
+
+chunks = documents.flat_map(
+    chunk_document,
     schema={
-        "id": "BIGINT",
-        "chunk_id": "BIGINT",
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_index": "BIGINT",
         "chunk_text": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "document_type": "VARCHAR",
+        "chunker_version": "VARCHAR",
     },
-    batch_size=512,
     execution_backend="subprocess_task",
 )
 ```
 
-For production systems, use a tokenizer-aware chunker that matches the model context window and preserves enough overlap for retrieval quality.
+For a real POC, make the chunking rule deterministic and versioned. If you change tokenization, overlap, cleaning, or page extraction rules, update the chunker version and rerun from the source rows. For model-quality checks, use a tokenizer-aware chunker that matches the embedding model context window; the fixed-character chunker above is only a compact structure example.
 
-## Use a local embedding model
+Chunk output should preserve:
 
-Local models are usually best with an actor backend, because model initialization is expensive:
+- `document_id`: the stable source or business document ID.
+- `chunk_id`: deterministic from document ID, chunking version, and chunk index or offset.
+- `chunk_text`: the exact text sent to the embedding model.
+- `source_uri`: the file, object, or source record used for traceability.
+- business metadata such as type, tenant, language, date, or case ID when it helps review failures.
+
+## Validate chunks before embedding
+
+Do cheap checks before sending data to a model or hosted API.
 
 ```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
-)
+chunk_table = chunks.to_arrow_table()
+
+if chunk_table.num_rows == 0:
+    raise ValueError("chunking produced no rows")
+
+chunk_ids = chunk_table["chunk_id"].to_pylist()
+if len(chunk_ids) != len(set(chunk_ids)):
+    raise ValueError("chunk_id values must be unique")
+
+empty_chunks = [
+    chunk_id
+    for chunk_id, text in zip(chunk_ids, chunk_table["chunk_text"].to_pylist(), strict=False)
+    if not text
+]
+if empty_chunks:
+    raise ValueError(f"empty chunks: {empty_chunks[:5]}")
 ```
 
-When the provider detects usable GPU resources, it may pass a GPU resource request to the UDF execution layer. For strict device control or complete output rows with IDs, use a custom `map_batches` callable class that returns identifiers, text, and embeddings.
+Also inspect a few chunks manually. Check that boundaries, overlap, metadata, and language handling match the POC question before increasing the sample size.
 
-## Use hosted embedding APIs
+## Choose a provider
 
-Hosted providers are useful when you want managed models and can tolerate API latency and rate limits:
+Choose the smallest provider setup that answers the POC question.
+
+| Choice | Use it when | Watch for |
+| --- | --- | --- |
+| Hosted API | You want managed models and can use external calls. | Credentials, cost, latency, rate limits, retries, and provider-specific dimensions. |
+| Local model | You want local execution or private data handling with installed model libraries. | Dependency versions, model download, CPU/GPU memory, and model initialization time. |
+| Custom UDF | You need full control over IDs, retries, status columns, or embedding schema in one step. | More code to maintain; validate schema and errors carefully. |
+
+AI helper methods such as `embed_text(...)` are convenient, but their output relation contains the configured embedding column. If your final table needs IDs and metadata, explicitly combine helper output with the chunk rows after validating row counts and ordering, or use a custom UDF that returns the full schema.
+
+## Embed with a hosted API
+
+Hosted APIs are useful for quick model access, but tune concurrency against your account limits.
 
 ```python
 embedding_only = chunks.embed_text(
@@ -102,21 +150,99 @@ embedding_only = chunks.embed_text(
     provider="openai",
     model="text-embedding-3-small",
     output_column="embedding",
-    execution_backend="subprocess_actor",
     batch_size=64,
-    concurrency=8,
+    concurrency=4,
+    execution_backend="subprocess_actor",
 )
 ```
 
-Tune `batch_size` and `concurrency` carefully. Higher concurrency can improve throughput, but it can also hit provider rate limits or amplify retries. If you combine provider output with source columns after the helper call, validate row counts and preserve stable ordering in that step.
+Start with conservative `batch_size` and `concurrency`. Increase one setting at a time and record provider errors, timeouts, and rate-limit responses.
 
-## Use Ray for larger jobs
+## Embed with a local model
 
-Move to Ray after the local path is correct:
+Local models avoid hosted API calls but add local dependencies and model-loading cost. Actor backends are usually the right first choice because the model can be initialized once per actor and reused across batches.
 
 ```python
-import vane
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    batch_size=64,
+    execution_backend="subprocess_actor",
+)
+```
 
+For strict GPU placement, custom retry behavior, or a single UDF that returns identifiers, text, status, errors, and embeddings together, use a callable class with `map_batches(...)` instead of the high-level helper.
+
+## Combine and validate output
+
+When you use `embed_text(...)`, combine the embedding column with the source chunk rows only after validation.
+
+```python
+import pyarrow as pa
+
+PROVIDER = "openai"
+MODEL = "text-embedding-3-small"
+RUN_ID = "embedding-poc-run-001"
+
+chunk_table = chunks.to_arrow_table()
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != chunk_table.num_rows:
+    raise ValueError("embedding row count does not match chunk row count")
+
+embeddings = embedding_table["embedding"]
+if chunk_table.num_rows and not embeddings[0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded_table = (
+    chunk_table
+    .append_column("embedding", embeddings)
+    .append_column("embedding_provider", pa.array([PROVIDER] * chunk_table.num_rows))
+    .append_column("embedding_model", pa.array([MODEL] * chunk_table.num_rows))
+    .append_column("embedding_run_id", pa.array([RUN_ID] * chunk_table.num_rows))
+)
+
+embedded = con.from_arrow(embedded_table)
+```
+
+If you cannot make row order stable, do not rely on positional recombination. Write a custom embedding UDF that returns the full output schema, including IDs and error/status columns, in one relation.
+
+## Output schema
+
+Write an embedding table that a downstream system and a reviewer can understand without re-reading the whole pipeline.
+
+| Column | Purpose |
+| --- | --- |
+| `document_id` | Stable source or business document ID. |
+| `chunk_id` | Stable, deterministic chunk ID. |
+| `chunk_index` | Numeric order of the chunk within the document. |
+| `chunk_text` | Text sent to the embedding model. |
+| `embedding` | Vector returned by the provider or local model. |
+| `source_uri` | Original file, object, or source record. |
+| `chunker_version` | Reproducibility metadata for the chunking rule. |
+| `embedding_provider` | Provider name, such as `openai` or `transformers`. |
+| `embedding_model` | Exact model identifier used for the run. |
+| `embedding_run_id` | Run identifier for repeatability and review. |
+
+Add business metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
+
+## Write a reviewable result
+
+Write to a run-specific path so you can compare runs without overwriting earlier POC output.
+
+```python
+embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
+```
+
+For distributed writes, make sure every worker can access the output filesystem or object store.
+
+## Scale after the sample is correct
+
+Move from local sample to Ray or larger batches only after chunk and embedding validation is passing on a small representative slice.
+
+```python
 vane.configure(runner="ray")
 
 embedding_only = chunks.embed_text(
@@ -124,40 +250,26 @@ embedding_only = chunks.embed_text(
     provider="transformers",
     model="sentence-transformers/all-MiniLM-L6-v2",
     output_column="embedding",
+    batch_size=128,
+    concurrency=8,
     execution_backend="ray_actor",
 )
 ```
 
-Every Ray worker must be able to import the provider libraries and access model files or provider credentials.
-
-## Output shape
-
-Write a complete relation that makes downstream retrieval and auditing straightforward:
-
-- `document_id`
-- `chunk_id`
-- `chunk_text`
-- `embedding`
-- `source_uri`
-- model name and provider
-- creation timestamp or run ID when needed
-
-Write results with a relation writer:
-
-```python
-embedded_with_ids.write_parquet("output/embeddings/")
-```
-
-`embedded_with_ids` should include the identifier and metadata columns listed above. Build it either with a custom embedding UDF that returns the full schema, or by explicitly combining AI helper output with source rows after validating row counts and ordering.
-
-For distributed writes, ensure every worker can access the output filesystem.
+Every Ray worker needs access to the provider libraries, local model files or hosted API credentials, source data, and output path. Keep the same chunking configuration when you scale; otherwise you are measuring a different pipeline.
 
 ## Tuning checklist
 
-- Filter and project before embedding.
-- Keep chunks bounded and deterministic.
-- Use actor backends for local models.
-- Increase `batch_size` until latency or memory becomes the bottleneck.
-- Increase `concurrency` only when workers or API quota have headroom.
-- Use Ray when scan, inference, or write throughput exceeds one process.
-- Keep output rows deterministic with stable document and chunk IDs.
+- Filter and project before chunking so you do not embed irrelevant rows.
+- Keep chunk IDs deterministic and preserve `document_id`, `chunk_text`, `source_uri`, provider, model, and run metadata.
+- Validate 10-100 representative rows before increasing data size, `batch_size`, `concurrency`, or Ray resources.
+- Increase `batch_size` until memory, provider payload size, or latency becomes the bottleneck.
+- Increase `concurrency` only when local workers, GPU capacity, or hosted provider quota have headroom.
+- Use actor backends for local models so model initialization is reused across batches.
+- Use Ray when one process is no longer enough for scan, embedding, or write throughput.
+- Estimate output size early: vector dimension times chunk count can dominate storage and write time.
+- Keep run-specific output paths and record chunker version, provider, model, batch size, concurrency, backend, input row count, chunk count, and failures.
+
+## Boundary
+
+This guide produces a reproducible embedding dataset for a POC. It does not cover vector database schema design, approximate nearest-neighbor indexing, retrieval evaluation, online serving, access control, or production RAG operations. Use the embedding table as the handoff point to those downstream systems.
