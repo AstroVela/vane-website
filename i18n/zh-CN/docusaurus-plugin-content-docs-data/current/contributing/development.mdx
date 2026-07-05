@@ -1,0 +1,94 @@
+---
+title: 开发
+---
+
+本页概述项目开发流程。
+
+## 仓库设置
+
+```bash
+git clone --recursive https://github.com/AstroVela/vane.git
+cd vane
+```
+
+如有需要：
+
+```bash
+git submodule update --init --recursive
+```
+
+## 构建依赖
+
+项目使用 scikit-build-core 和 CMake。
+
+Python 构建依赖包括：
+
+- `scikit-build-core>=0.11.4`
+- `pybind11[global]>=2.6.0`
+- `cmake>=3.29.0`
+- `ninja>=1.10`
+
+在 Debian/Ubuntu 上：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+```
+
+## 可编辑构建
+
+```bash
+python -m pip install -e . --no-build-isolation -v
+```
+
+使用 vcpkg：
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ../vcpkg
+../vcpkg/bootstrap-vcpkg.sh
+
+python -m pip install -e . --no-build-isolation -v \
+  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$(pwd)/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+```
+
+## 格式化
+
+源码仓库的 `CONTRIBUTING.md` 描述了如何通过 `scripts/format` 格式化代码。
+
+示例：
+
+```bash
+scripts/format root --changed
+scripts/format submodule --changed
+scripts/format workspace --changed
+```
+
+根目录格式化器默认避免扫描 `external/duckdb`。修改 DuckDB 内部实现时，请使用子模块命令。
+
+## 测试
+
+CI 会在 Ubuntu 24.04 和 Python 3.12 上构建并安装 Vane Data，然后运行：
+
+```bash
+python -m pytest tests/fast
+```
+
+本地聚焦测试：
+
+```bash
+python -m pytest tests/fast/test_udf_process.py
+```
+
+## 源码区域
+
+- `vane/`：Vane Data 公开 Python API 和 AI 辅助函数。
+- `duckdb/execution/`：Python UDF 执行器路由和运行时。
+- `duckdb/runners/`：原生与 Ray runner 代码。
+- `src/duckdb_py/`：C++ Python 绑定。
+- `external/duckdb/`：DuckDB 子模块。
+- `examples/`：可运行脚本示例。
+- benchmark 工作负载：性能和容错实验。
+
+## 贡献经验法则
+
+保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。

@@ -1,0 +1,104 @@
+---
+title: 保险文档审计
+---
+
+本示例展示保险文档审查的 SQL 优先模式。
+
+Vane Data 不内置面向保险的专用 workflow。确定性检查使用 SQL，抽取或规范化使用 `map_batches(...)`，当文档需要模型辅助的结构化审查时使用 `prompt(...)`。
+
+## 目标
+
+通过抽取相关文本、应用确定性 SQL 规则，并可选使用 LLM 进行结构化审查，完成保险文档审计。
+
+## 输入形态
+
+推荐输入列：
+
+- `document_id`
+- `policy_id`
+- `claim_id`
+- `document_type`
+- `text`
+- `source_uri`
+
+OCR、文档解析和保单系统抽取应在上游或显式 UDF 阶段中完成。
+
+## SQL 规则阶段
+
+```python
+import vane
+
+con = vane.connect()
+
+docs = con.sql("""
+    select *
+    from read_parquet('data/insurance_documents/*.parquet')
+    where text is not null
+""")
+
+docs.to_table("docs")
+
+rule_hits = con.sql("""
+    select
+        document_id,
+        claim_id,
+        case
+            when lower(text) like '%missing signature%' then 'missing_signature'
+            when lower(text) like '%expired%' then 'expired_reference'
+            else null
+        end as rule_hit
+    from docs
+    where lower(text) like '%missing signature%'
+       or lower(text) like '%expired%'
+""")
+```
+
+## 模型辅助结构化审查阶段
+
+`prompt(...)` 返回已配置的输出列。当最终输出需要标识符和文档属性时，请显式地将该输出列与源元数据组合，并在写出结果前校验行数。
+
+```python
+from pydantic import BaseModel
+
+class AuditResult(BaseModel):
+    status: str
+    reason: str
+
+audit_only = docs.prompt(
+    "text",
+    provider="openai",
+    system_message="Audit the insurance document for missing evidence. Return JSON.",
+    return_format=AuditResult,
+    output_column="audit_json",
+    execution_backend="subprocess_actor",
+)
+
+docs_table = docs.to_arrow_table()
+audit_table = audit_only.to_arrow_table()
+audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
+```
+
+## 输出形态
+
+推荐输出列：
+
+- `document_id`
+- `claim_id`
+- `document_type`
+- `rule_hit`
+- `audit_json`
+- `source_uri`
+
+## 校验
+
+在生产环境中使用该 workflow 前：
+
+- 保持确定性规则命中可审计。
+- 对 `prompt(...)` 和模型选择进行版本化。
+- 存储源文档引用。
+- 抽样检查误报和漏报。
+- 在使用模型输出驱动业务决策前，先进行审查。
+
+## 范围说明
+
+本页不定义法律建议、理赔政策、OCR、保险本体或保单系统集成。这些能力应在上游或显式 UDF 阶段中添加。

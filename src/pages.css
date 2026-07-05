@@ -130,13 +130,18 @@
 .side .gt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); background: none; border: 0; border-radius: var(--r); padding: 8px; margin: 0; cursor: pointer; }
 .side .gt:hover { background: var(--paper-2); }
 .side .gt .gcaret { flex: none; font-size: 9px; color: var(--ink-3); transition: transform 0.15s ease; }
-.side .grp.open .gt .gcaret { transform: rotate(90deg); color: var(--ink); }
+.side .grp.open > .gt .gcaret { transform: rotate(90deg); color: var(--ink); }
+.side .grp.subgrp { margin-bottom: 1px; }
+.side .grp.subgrp > .gt { font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--ink-2); padding: 6px 8px; }
+.side .grp.subgrp.open > .gt { color: var(--ink); }
+.side .grp.subgrp > .gt .gcaret { font-size: 8px; }
 /* Single-item group rendered as a direct section link: parent styling, no caret,
    active box reuses `.side a.on`. */
 .side a.gt-link { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); padding: 8px; margin-bottom: 4px; }
 .side a.gt-link:hover { background: var(--paper-2); color: var(--ink); }
 /* Child items: indented under a left guide line so the hierarchy reads. */
 .side .grp-items { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 10px 15px; padding-left: 9px; border-left: 1.5px solid var(--line-2); }
+.side .grp.subgrp > .grp-items { margin: 0 0 7px 13px; padding-left: 8px; }
 .side a { display: block; font-size: 13px; color: var(--ink-2); text-decoration: none; padding: 6px 9px; border-radius: var(--r); border: 1.5px solid transparent; }
 .side a:hover { background: var(--paper-2); color: var(--ink); }
 .side a.on { border-color: var(--line); background: var(--paper-2); color: var(--ink); font-weight: 700; }

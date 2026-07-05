@@ -2,6 +2,7 @@ import {useCallback, type MouseEvent} from 'react'
 import DocusaurusLink from '@docusaurus/Link'
 import type {Props as DocusaurusLinkProps} from '@docusaurus/Link'
 import { useHistory, useLocation } from '@docusaurus/router'
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
 
 /* ------------------------------------------------------------------
@@ -21,6 +22,16 @@ type LinkProps = Omit<DocusaurusLinkProps, 'href' | 'to'> & {
   to: string
 }
 
+function isLocalizedDocsRoute(to: string) {
+  return to === '/docs/data' || to.startsWith('/docs/data/')
+}
+
+function shouldAutoAddBaseUrl(to: string, currentLocale: string, defaultLocale: string) {
+  if (currentLocale === defaultLocale) return true
+  if (!to.startsWith('/')) return true
+  return isLocalizedDocsRoute(to)
+}
+
 function useNavigate(): Navigate {
   const history = useHistory()
 
@@ -37,14 +48,20 @@ export function useRouter(): RouterState {
 }
 
 /* Internal link — intercepts left-clicks, lets modified clicks behave normally. */
-export function Link({ to, className, children, ...rest }: LinkProps) {
+export function Link({ to, className, children, autoAddBaseUrl, ...rest }: LinkProps) {
+  const {
+    i18n: { currentLocale, defaultLocale },
+  } = useDocusaurusContext()
   const navigate = useNavigate()
+  const addBaseUrl =
+    autoAddBaseUrl ?? shouldAutoAddBaseUrl(to, currentLocale, defaultLocale)
 
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented) return
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
 
-    const url = new URL(to, window.location.origin)
+    const href = e.currentTarget.getAttribute('href') ?? to
+    const url = new URL(href, window.location.origin)
     const samePageHash =
       url.hash &&
       url.pathname === window.location.pathname &&
@@ -60,11 +77,17 @@ export function Link({ to, className, children, ...rest }: LinkProps) {
     }
 
     e.preventDefault()
-    navigate(to)
+    navigate(url.pathname + url.search + url.hash)
   }
 
   return (
-    <DocusaurusLink to={to} className={className} onClick={onClick} {...rest}>
+    <DocusaurusLink
+      to={to}
+      className={className}
+      autoAddBaseUrl={addBaseUrl}
+      onClick={onClick}
+      {...rest}
+    >
       {children}
     </DocusaurusLink>
   )

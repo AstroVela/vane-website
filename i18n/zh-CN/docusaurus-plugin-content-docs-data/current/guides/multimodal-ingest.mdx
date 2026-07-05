@@ -1,0 +1,170 @@
+---
+title: 多模态数据加载
+---
+
+Vane Data 将多模态记录视为表行。路径、字节、元数据、解码后的特征、标签、embedding 和模型输出，都可以作为显式列在同一个 relation（关系对象）中流转。
+
+当你需要 SQL 过滤和表输出，但 pipeline 的某个环节必须调用 Python 库进行解码、特征提取或模型推理时，可以使用这种模式。
+
+## 加载模式
+
+1. 构建包含稳定 ID、来源位置、元数据和可选字节的 relation。
+2. 在成本高的 Python 处理前使用 SQL 过滤和投影。
+3. 使用 `map_batches` 进行解码、特征提取或模型推理。
+4. 明确声明 UDF 输出 schema。
+5. 将整理后的输出写到 Parquet 或其他 DuckDB 支持的目标。
+
+Vane Data 不定义通用的多模态文件格式。请根据下游系统选择列名和输出格式。
+
+## 图像
+
+对于本地图像文件，先从元数据和字节开始：
+
+```python
+from pathlib import Path
+
+import pyarrow as pa
+import vane
+
+rows = []
+for idx, path in enumerate(Path("images").glob("*.png")):
+    rows.append({
+        "id": idx,
+        "source_uri": str(path),
+        "image_bytes": path.read_bytes(),
+    })
+
+con = vane.connect()
+rel = con.from_arrow(pa.table({
+    "id": [row["id"] for row in rows],
+    "source_uri": [row["source_uri"] for row in rows],
+    "image_bytes": [row["image_bytes"] for row in rows],
+}))
+```
+
+使用 batch UDF 解码或检查图像：
+
+```python
+import io
+
+import pyarrow as pa
+from PIL import Image
+
+def inspect_images(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    sizes = []
+    modes = []
+    for data in batch.column("image_bytes").to_pylist():
+        image = Image.open(io.BytesIO(data))
+        sizes.append(f"{image.width}x{image.height}")
+        modes.append(image.mode)
+    return pa.table({
+        "id": ids,
+        "source_uri": source_uris,
+        "image_size": sizes,
+        "image_mode": modes,
+    })
+
+out = rel.map_batches(
+    inspect_images,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "image_size": "VARCHAR",
+        "image_mode": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_task",
+)
+
+out.show()
+```
+
+对于模型推理，尽可能把解码和推理放在不同的 UDF 阶段中。这样更容易隔离故障，也能独立调节 batch 大小。
+
+## 音频
+
+将音频表示为源 URI 加字节，或源 URI 加已解析的本地路径。使用 UDF 做转写或声学特征提取。
+
+推荐输出列：
+
+- `audio_id`
+- `source_uri`
+- `transcript`
+- `language`
+- `segment_json`，或每个分段一行
+- 使用分段行时记录 `start_time` 和 `end_time`
+
+将 provider 专用转写代码放在 UDF 内。Vane Data 管理 relation、batch 处理、schema 和执行 backend；它不提供内置转写引擎。
+
+## 文档
+
+对于 PDF、Office 文档、HTML 或长文本文件，将抽取、分块和 embedding 保持为独立阶段：
+
+1. 抽取文本和文档元数据。
+2. 将文本切成带稳定 ID 的分块。
+3. 对分块做 embedding 或分类。
+4. 写出文档级和分块级输出。
+
+推荐列：
+
+- `document_id`
+- `source_uri`
+- `page_number`
+- `chunk_id`
+- `text`
+- `embedding`
+- 存储模型输出时记录模型和 provider 元数据
+
+## 视频
+
+将视频加载视为更重的 pipeline：
+
+1. 读取元数据和文件路径。
+2. 在受控 batch 中解码帧或片段。
+3. 对帧或片段运行模型 UDF。
+4. 带时间戳存储帧级或片段级输出。
+
+避免从 UDF 返回大型 Python 对象。请将输出转成 Arrow 兼容值，例如字符串、数字、列表、bytes 或结构化 JSON 字符串。
+
+## 本地与 Ray
+
+先从本地开始：
+
+```python
+out = rel.map_batches(
+    decode_batch,
+    schema={"id": "BIGINT", "feature": "VARCHAR"},
+    batch_size=32,
+    execution_backend="subprocess_task",
+)
+```
+
+当输入规模、解码成本、模型吞吐量或 GPU 放置需求不再适合本地执行时，再迁移到 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+out = rel.map_batches(
+    ModelBatch,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+将 `decode_batch` 和 `ModelBatch` 替换为你自己的函数或可调用类。当后续阶段需要把模型输出关联回源记录时，请从每个 UDF 返回稳定 ID。每个 Ray worker 都必须能够导入可调用对象，并访问相同的存储、模型文件和凭证。
+
+## 实用检查
+
+- 在解码或模型推理前保留稳定 ID。
+- 存储源 URI 和足够的元数据，以便复现一行数据。
+- 可能时，在加载字节前先过滤和投影。
+- 保持 UDF 输出小且类型明确。
+- 运行大型媒体任务前先校验小样本。
+- 使用 Ray 时，将输出写到所有 worker 都能访问的文件系统。

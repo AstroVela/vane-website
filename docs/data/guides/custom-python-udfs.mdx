@@ -1,0 +1,432 @@
+---
+title: Custom Python UDFs
+---
+
+Use Custom Python UDFs when a Vane Data pipeline needs Python logic that does not fit cleanly in SQL or a built-in AI Function: external libraries, custom rules, media processing, model preprocessing, custom inference, private clients, or a fully controlled output schema.
+
+This guide focuses on the UDF types you can use and how to choose between them.
+
+## Choose a UDF Type
+
+Start by choosing the callable shape. The execution backend is a separate choice that controls where the callable runs.
+
+| UDF type | API | Callable shape | Local backend | Ray backend | Use when |
+| --- | --- | --- | --- | --- | --- |
+| Stateless batch UDF | `map_batches` | Python function | `subprocess_task` | `ray_task` | The logic has no reusable model, client, cache, or other state. |
+| Stateful batch UDF | `map_batches` | Callable class | `subprocess_actor` | `ray_actor` | Setup is expensive and should be reused across batches. |
+| Row-expanding UDF | `flat_map` | Row function | `subprocess_task` | `ray_task` | One input row can produce zero, one, or many output rows. |
+| Scalar UDF | `map` | Scalar function | `subprocess_task` | `ray_task` | You only need a small row-wise scalar transformation. |
+
+Most production UDFs should start as either a stateless batch UDF or a stateful batch UDF. Use `flat_map` for expansion such as chunking, and use `map` only for simple scalar enrichment.
+
+## Stateless Batch UDFs
+
+Use a stateless batch UDF when each batch can be processed independently:
+
+- text cleanup
+- rule-based labeling
+- metadata checks
+- lightweight parsing
+- deterministic feature extraction
+- Python library calls that do not need reusable state
+
+A stateless batch UDF is a Python function that receives a `pyarrow.Table` and returns a `pyarrow.Table`.
+
+```python
+import re
+
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    normalized_text = []
+    text_length = []
+    needs_review = []
+    review_reason = []
+    status = []
+    error = []
+
+    for media_type, text in zip(media_types, texts, strict=False):
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
+
+            normalized_text.append(clean)
+            text_length.append(len(clean))
+
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
+            needs_review.append(True)
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "document_type": document_types,
+        "normalized_text": normalized_text,
+        "text_length": text_length,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+        "status": status,
+        "error": error,
+    })
+
+
+prepared_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "media_type": "VARCHAR",
+    "document_type": "VARCHAR",
+    "normalized_text": "VARCHAR",
+    "text_length": "BIGINT",
+    "needs_review": "BOOLEAN",
+    "review_reason": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=64,
+    execution_backend="subprocess_task",
+)
+
+prepared.show()
+```
+
+The returned table contains both new fields and the source fields needed by later stages. `map_batches` returns the columns produced by the UDF; it does not automatically preserve upstream columns.
+
+Validate the stateless UDF before increasing the batch size or moving to Ray:
+
+```python
+prepared.to_table("prepared_documents")
+
+summary = con.sql("""
+    select
+        document_type,
+        media_type,
+        needs_review,
+        review_reason,
+        count(*) as rows
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
+""")
+
+summary.show()
+```
+
+After the local output is correct, the same function can run with `ray_task`:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+ray_prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
+
+Use `ray_task` only after the local contract is correct. Ray adds worker import, dependency, storage, and resource variables that can hide ordinary UDF bugs.
+
+## Stateful Batch UDFs
+
+Use a stateful batch UDF when setup should be reused across batches:
+
+- model or tokenizer loading
+- API client setup
+- database or object-store client setup
+- lookup tables or caches
+- GPU model state
+
+A stateful UDF is a callable class. Pass the class itself to `map_batches`, not an already-created instance. Actor backends construct the class inside the worker and reuse the same object for multiple batches.
+
+Actor classes should have no required constructor arguments. Put configuration in environment variables, class-level defaults, optional arguments with defaults, or a no-argument wrapper class.
+
+```python
+import pyarrow as pa
+
+
+class PromptBuilder:
+    def __init__(self) -> None:
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
+
+        prompts = []
+        prompt_template = []
+        status = []
+        error = []
+
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
+
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
+
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
+            "status": status,
+            "error": error,
+        })
+
+
+prompt_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "prompt_template": "VARCHAR",
+    "prompt": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+In a real model UDF, load the model, tokenizer, or client in `__init__` or lazily on first call, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+
+For distributed actor reuse, switch the backend to `ray_actor`:
+
+```python
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+For GPU-backed state, request GPU resources per actor:
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # Load the tokenizer/model here so each actor owns its GPU state.
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` is per actor. With `concurrency=2`, Ray needs two available GPU slots for full parallelism. For more GPU execution patterns, see [GPU Inference](/docs/data/guides/gpu-inference).
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+
+## Row-Expanding UDFs
+
+Use `flat_map` when one input row can produce zero, one, or many output rows. Typical uses include document chunking, frame extraction summaries, nested record normalization, URL expansion, and filtering by returning no rows.
+
+The callable receives one row as a Python `dict`. It may return `None`, one output `dict`, or an iterable of output dicts.
+
+```python
+def chunk_document(row: dict) -> list[dict]:
+    text = str(row.get("normalized_text") or "")
+    chunks = [text[index:index + 1000] for index in range(0, len(text), 1000)]
+
+    return [
+        {
+            "document_id": row["document_id"],
+            "chunk_id": f"{row['document_id']}:{position}",
+            "chunk_text": chunk,
+        }
+        for position, chunk in enumerate(chunks)
+        if chunk
+    ]
+
+
+chunks = prepared.flat_map(
+    chunk_document,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_text": "VARCHAR",
+    },
+    execution_backend="subprocess_task",
+)
+```
+
+The declared schema selects keys from each output dict. Missing keys become null, and extra keys are ignored.
+
+## Scalar UDFs
+
+Use `map` for small row-wise scalar transformations where a batch UDF would be unnecessary.
+
+```python
+def normalize_document_type(document_type: str) -> str:
+    return str(document_type or "unknown").strip().lower()
+
+
+normalized_types = documents.project("document_type").map(
+    normalize_document_type,
+    return_type="VARCHAR",
+    execution_backend="subprocess_task",
+)
+```
+
+For model calls, media decoding, embeddings, LLM calls, or any operation that benefits from batching, prefer `map_batches`.
+
+## Shared Output Contract
+
+Treat the UDF output as a table contract.
+
+| Topic | Guidance |
+| --- | --- |
+| Returned columns | Return exactly the columns declared in `schema` for `map_batches` and `flat_map`. |
+| Source fields | Return stable IDs, source URI/path, media type, business keys, text, or metadata needed later. |
+| Row diagnostics | Return explicit `status` and `error` columns when failed rows should remain reviewable. |
+| Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
+| Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
+| Row count | A `map_batches` UDF usually returns one output row per input row. Use `flat_map` for zero-or-many outputs. |
+
+If Arrow cannot infer the type you want, build an explicit array:
+
+```python
+return pa.table({
+    "document_id": pa.array(document_ids, type=pa.string()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, structs, JSON strings, or explicit Arrow arrays before returning.
+
+## Backend and Scaling
+
+Backend choice should follow the UDF type:
+
+| Backend | Callable shape | Use it for |
+| --- | --- | --- |
+| `subprocess_task` | Function | First stateless UDFs, local isolation, CPU transforms. |
+| `subprocess_actor` | Callable class | Local model or client reuse without Ray. |
+| `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
+| `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
+
+The only valid backend names are `subprocess_task`, `subprocess_actor`, `ray_task`, and `ray_actor`. Older or shorthand options such as `local`, `subprocess`, `ray=True`, `use_process`, `actor_count`, and `prefer_actor` are not the current API.
+
+Use this progression:
+
+1. Build the UDF locally with `subprocess_task` or `subprocess_actor`.
+2. Validate schema, row counts, IDs, source columns, and error behavior on a small real sample.
+3. Increase `batch_size` locally after the output is correct.
+4. Move stateless functions to `ray_task` only when distribution helps.
+5. Move stateful classes to `ray_actor` only when actor reuse, GPU placement, or cluster scheduling is required.
+
+`batch_size` controls how many input rows Vane passes to one `map_batches` call. Batch size should not change result semantics. If output changes when `batch_size` changes, the UDF is probably relying on hidden batch state.
+
+`concurrency` is supported for `subprocess_task`, `subprocess_actor`, and `ray_actor`; do not pass it with `ray_task`.
+
+## Related Guides
+
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is table-shaped cleanup, joins, deduplication, validation, or output shaping.
+- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
+- Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Use Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
+- Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind `map_batches`, callable classes, and execution backends.

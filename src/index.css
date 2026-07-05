@@ -128,6 +128,7 @@ u, .ul { text-decoration: underline; text-underline-offset: 3px; text-decoration
 
 /* ---- nav ---- */
 header.nav { position: sticky; top: 0; z-index: 50; background: rgba(244,243,237,0.86); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1.5px solid var(--line); }
+header.nav.navbar { display: block; height: auto; padding: 0; box-shadow: none; }
 .nav-in { display: flex; align-items: center; gap: 34px; height: 60px; }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; }
 .brand .wm { font-weight: 700; font-size: 18px; letter-spacing: -0.04em; }
@@ -175,8 +176,8 @@ header.nav { position: sticky; top: 0; z-index: 50; background: rgba(244,243,237
 .ddrop a:hover { background: var(--paper-3); }
 .ddrop a .ar { color: #9BA0AB; }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.nav-contact { display: inline-flex; align-items: center; height: 34px; padding: 0 11px; font-size: 12.5px; color: var(--ink); text-decoration: none; white-space: nowrap; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); }
-.nav-contact:hover { background: var(--ink); color: var(--paper); }
+.nav-contact, .nav-locale { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 11px; font: inherit; font-size: 12.5px; color: var(--ink); text-decoration: none; white-space: nowrap; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--paper-2); cursor: pointer; }
+.nav-contact:hover, .nav-locale:hover { background: var(--ink); color: var(--paper); }
 .nav-discord { display: inline-flex; align-items: center; justify-content: center; height: 34px; width: 34px; padding: 0; color: var(--ink); border: 1.5px solid var(--line); border-radius: var(--r); }
 .nav-discord:hover { background: var(--ink); color: var(--paper); }
 /* Docs search trigger — a compact field-like button (docs pages only). */
@@ -283,12 +284,14 @@ header.nav { position: sticky; top: 0; z-index: 50; background: rgba(244,243,237
     text-decoration: none;
     padding: 9px 0 9px 14px;
   }
+  .mob-sub-button { width: 100%; border: 0; background: transparent; font-family: inherit; cursor: pointer; text-align: left; }
   .mob-head + .mob-sub { padding-top: 6px; }
   .mob-sub:active { color: var(--ink); }
 }
 
 /* ---- hero ---- */
 .hero { padding: 70px 0 64px; }
+section.hero { background: transparent; color: inherit; }
 .hero-grid { display: grid; grid-template-columns: 1.618fr 1fr; gap: 40px; align-items: center; }
 .home-hero-grid { gap: 48px; align-items: start; }
 /* Offset the code window so its top lines up with the H1, not the small eyebrow above it. */
@@ -3091,7 +3094,14 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
     justify-self: center;
     transform: rotate(90deg);
   }
-  .nav-links, .nav-contact { display: none; }
+  .enterprise-vane-pipeline {
+    grid-template-columns: 1fr;
+  }
+  .enterprise-vane-pipeline b {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+  .nav-links, .nav-contact, .nav-locale { display: none; }
   .ft-top { grid-template-columns: 1fr 1fr; }
   /* platform diagram: stack pillars, drop the absolute-positioned connectors */
   .pa-arcs, .pa-return-path { display: none; }

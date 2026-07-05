@@ -1,0 +1,127 @@
+---
+title: 多模态数据湖
+---
+
+本示例展示 Vane Data 如何在湖仓或数仓交接之前准备多模态记录。
+
+当源行包含媒体路径、媒体字节或抽取文本，并且 pipeline 需要通过 Python UDF 或 AI 辅助逻辑添加标签、文本、embedding、评分或结构化模型输出时，可使用该模式。
+
+相关源脚本：
+
+- `examples/querying_images.py`
+- `examples/voice_ai_analytics.py`
+- `examples/multimodal_structured_outputs.py`
+
+## 目标
+
+读取多模态记录，通过显式的 Python 或 AI 阶段进行增强，并为下游系统写出整理后的表输出。
+
+## 数据分区
+
+原始分区：
+
+- 原始字节或路径。
+- 源元数据。
+- 写入时间戳。
+
+处理后分区：
+
+- 解码文本或抽取特征。
+- 标签。
+- embedding。
+- 模型输出。
+
+整理后分区：
+
+- 稳定 ID。
+- 规范化元数据。
+- 质量标记。
+- 下游可用列。
+
+## Vane Data pipeline
+
+UDF 返回源标识符和派生列。除非下游系统明确需要，否则不要将媒体字节放入最终输出。
+
+```python
+import pyarrow as pa
+import vane
+
+con = vane.connect()
+
+raw = con.sql("""
+    select id, media_type, uri, payload
+    from read_parquet('s3://bucket/raw_media/*.parquet')
+    where uri is not null
+""")
+
+def enrich_batch(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    uris = batch.column("uri").to_pylist()
+
+    return pa.table({
+        "id": ids,
+        "media_type": media_types,
+        "uri": uris,
+        "label": ["unclassified"] * batch.num_rows,
+        "text": [""] * batch.num_rows,
+    })
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_actor",
+)
+
+features.write_parquet("s3://bucket/processed/media_features/")
+```
+
+在生产 pipeline 中，将解码器、模型、OCR、转写或 provider 逻辑放入 UDF，同时保持返回 schema 显式。
+
+## Doris 与 Iceberg 交接
+
+Vane Data 不包含原生 Doris 连接器。使用 Vane Data 写出干净的 Parquet，然后用 Doris 工具加载到 Doris。
+
+Vane Data 不定义 Vane 专用 Iceberg catalog API。使用 Vane Data 完成准备和 Parquet 输出，再由湖仓 catalog 或表管理工具负责 Iceberg 提交和快照语义。
+
+## 扩展
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+features = raw.map_batches(
+    enrich_batch,
+    schema={
+        "id": "BIGINT",
+        "media_type": "VARCHAR",
+        "uri": "VARCHAR",
+        "label": "VARCHAR",
+        "text": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+每个 Ray worker 都必须能够访问与 driver 相同的存储、凭证、模型文件和 Python 依赖。
+
+## 校验
+
+发布多模态数据集前：
+
+- 检查原始、处理后和整理后分区之间的行数。
+- 验证每个输出行都有稳定 ID。
+- 只有下游确实需要时，才保留媒体字节。
+- 确认 schema 与将消费输出的数仓、湖仓或 catalog 兼容。
+- 扩展规模前，测试模型和 provider 故障处理。

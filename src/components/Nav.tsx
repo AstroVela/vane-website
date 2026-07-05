@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
+import { useLocation } from '@docusaurus/router'
 import { Link } from '../router'
 import { cx } from './cx'
 import Mark from './Mark'
@@ -72,6 +74,18 @@ export default function Nav({
   withSearch = false,
   withCta = true,
 }: NavProps) {
+  const {
+    i18n: { currentLocale },
+  } = useDocusaurusContext()
+  const { pathname } = useLocation()
+  const localePath =
+    currentLocale === 'zh-CN'
+      ? pathname.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
+      : `/zh-CN${pathname === '/' ? '' : pathname}`
+  const localeLabel = currentLocale === 'zh-CN' ? 'EN' : '中文'
+  const switchLocale = () => {
+    window.location.assign(localePath)
+  }
   const [show, setShow] = useState(false)
   const [mmOpen, setMmOpen] = useState(false) // Use Cases mega-menu
   const [dOpen, setDOpen] = useState(false) // Docs product mega-menu
@@ -137,7 +151,7 @@ export default function Nav({
 
   return (
     <>
-    <header className="nav" ref={navRef}>
+    <header className="nav navbar" ref={navRef}>
       <div className="wrap nav-in">
         <Link className="brand" to="/">
           <Mark size={24} />
@@ -297,6 +311,7 @@ export default function Nav({
             {stars && <b>{stars}</b>}
           </a>
           <Link className="nav-contact" to="/contact">Contact us</Link>
+          <button type="button" className="nav-locale" onClick={switchLocale}>{localeLabel}</button>
           {withCta &&
             (ctaHref ? (
               <a className={ctaClass} href={ctaHref}>
@@ -378,6 +393,18 @@ export default function Nav({
               >
                 Release Notes
               </a>
+            </div>
+            <div className="mob-sec">
+              <button
+                type="button"
+                className="mob-sub mob-sub-button"
+                onClick={() => {
+                  setMobOpen(false)
+                  switchLocale()
+                }}
+              >
+                {localeLabel}
+              </button>
             </div>
           </div>
         </div>

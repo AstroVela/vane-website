@@ -5,20 +5,20 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data: Vane Data Docs.
 - /docs/data/quickstart/what-is-vane-data: What Is Vane Data?
 - /docs/data/quickstart/installation: Installation.
-- /docs/data/quickstart/quickstart-sql: Quickstart: SQL.
-- /docs/data/quickstart/quickstart-python: Quickstart: Python.
+- /docs/data/quickstart/quickstart: Quickstart.
 - /docs/data/concepts/architecture: Architecture.
 - /docs/data/concepts/execution-model: Execution Model.
 - /docs/data/concepts/sql-vs-python: SQL vs Python.
 - /docs/data/concepts/udfs: UDFs.
 - /docs/data/concepts/ai-functions: AI Functions.
 - /docs/data/guides/multimodal-ingest: Multimodal Ingest.
+- /docs/data/guides/structured-data-load: Structured Data Load.
+- /docs/data/guides/custom-python-udfs: Custom Python UDFs.
+- /docs/data/guides/multimodal-pipeline: Multimodal Pipeline.
+- /docs/data/guides/structured-transformation: Structured Transformation.
+- /docs/data/guides/ai-functions: AI Functions.
+- /docs/data/guides/gpu-inference: GPU Inference.
 - /docs/data/guides/embeddings-at-scale: Embeddings at Scale.
-- /docs/data/guides/dedup-and-clean: Dedup and Clean.
-- /docs/data/guides/sql-multimodal-pipeline: SQL Multimodal Pipeline.
-- /docs/data/guides/doris-integration: Doris Integration.
-- /docs/data/guides/iceberg-lakehouse: Iceberg Lakehouse.
-- /docs/data/guides/gpu-inference-udf: GPU Inference UDF.
 - /docs/data/guides/performance-tuning: Performance Tuning.
 - /docs/data/examples: Examples.
 - /docs/data/examples/training-data-pipeline: Training Data Pipeline.

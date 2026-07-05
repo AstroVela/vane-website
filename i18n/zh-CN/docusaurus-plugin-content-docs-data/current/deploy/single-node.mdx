@@ -1,0 +1,83 @@
+---
+title: 单节点
+---
+
+单节点模式适用于开发、轻量级 SQL 工作，以及中小规模的 UDF 作业。
+
+## 默认模式
+
+为了让单节点脚本的行为可预测，请在创建连接前选择本地执行：
+
+```python
+import vane
+
+vane.configure(runner="native")
+
+con = vane.connect()
+con.sql("select 42").show()
+```
+
+## 本地 UDF backend
+
+使用：
+
+- `subprocess_task` 运行无状态 batch 函数。
+- `subprocess_actor` 运行有状态可调用类。
+
+```python
+out = rel.map_batches(
+    MyBatchFn,
+    schema={"id": "BIGINT", "out": "VARCHAR"},
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+## 本地 actor 模型
+
+```python
+out = rel.map_batches(
+    MyModelClass,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=32,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+当下游阶段需要将输出关联回源行时，请从 UDF 返回标识符或元数据。
+
+## native runner batch size
+
+当你需要测量或约束 native runner 使用的 batch size 时，使用 `VANE_NATIVE_RUNNER_BATCH_SIZE`：
+
+```bash
+export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
+```
+
+## 文件系统
+
+对于本地文件，使用普通 DuckDB SQL function：
+
+```python
+con.sql("select * from read_parquet('data/*.parquet')").show()
+```
+
+对于兼容 S3 的存储，加载并配置 `httpfs`：
+
+```python
+con.execute("LOAD httpfs")
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+```
+
+## 何时保持单节点
+
+在以下场景中保持单节点：
+
+- 数据集可以放入本地内存和磁盘。
+- 需要快速迭代。
+- 一个 GPU 足够。
+- 瓶颈是 API 速率限制，而不是本地计算。
+
+当单个进程无法足够快地完成扫描、解码或模型运行时，再迁移到 Ray。

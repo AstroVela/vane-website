@@ -1,0 +1,217 @@
+---
+title: AI Functions
+---
+
+Vane Data is built for multimodal AI workloads. AI Functions let you run models over data: generating embeddings, classifying text, or calling large language and multimodal models.
+
+AI Functions are a good starting point for common tasks such as embeddings, text classification, and prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, preprocessing, or per-row error columns.
+
+## Input Relation
+
+Start with a relation that contains:
+
+- A stable business ID, such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
+- The text column or fields needed by the model.
+- Source metadata that helps review unusual outputs later, such as `source_uri`, `media_type`, `document_type`, or `created_at`.
+
+```python
+import vane
+
+con = vane.connect()
+
+source = con.sql("""
+    select
+        document_id,
+        document_type,
+        text,
+        source_uri
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+source.to_table("source_sample")
+```
+
+Keep the first sample small and ordered. Stable ordering lets you validate AI Function output deterministically and combine it with source rows.
+
+## Preserve IDs
+
+`embed_text(...)`, `classify_text(...)`, and `prompt(...)` return the configured output column. If the final result also needs IDs and source columns, validate row counts and ordering first, then explicitly combine the output column with source rows.
+
+```python
+source_table = source.to_arrow_table()
+```
+
+For each task below, compare row counts and append the new column to `source_table` only after the check passes:
+
+```python
+output_table = output_only.to_arrow_table()
+
+if output_table.num_rows != source_table.num_rows:
+    raise ValueError("AI output row count does not match source row count")
+
+with_output = con.from_arrow(
+    source_table.append_column("ai_output", output_table["ai_output"])
+)
+```
+
+Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns stable IDs, source fields, status, error columns, and model output in one schema.
+
+## Embed Text
+
+Use `embed_text` when each input row should get one vector. For long documents, chunk first and use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale).
+
+```python
+embedding_only = source.embed_text(
+    "text",
+    provider="openai",
+    model="text-embedding-3-small",
+    output_column="embedding",
+    batch_size=64,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: filtered `text` should be non-null.
+- Output column: `embedding` should exist, and vector length should match the model expectation.
+- ID preservation: combine the embedding column with `document_id` only after row-count validation passes.
+- Result review: inspect a few rows to confirm empty or very short text was not embedded accidentally.
+
+```python
+embedding_table = embedding_only.to_arrow_table()
+
+if embedding_table.num_rows != source_table.num_rows:
+    raise ValueError("embedding row count mismatch")
+
+if embedding_table.num_rows == 0:
+    raise ValueError("empty embedding sample")
+
+if not embedding_table["embedding"][0].as_py():
+    raise ValueError("first embedding is empty")
+
+embedded = con.from_arrow(
+    source_table.append_column("embedding", embedding_table["embedding"])
+)
+```
+
+## Classify Text
+
+Use `classify_text` when the label set is small and each input row should get one label.
+
+```python
+label_only = source.classify_text(
+    "text",
+    labels=["invoice", "claim", "memo", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="ai_label",
+    batch_size=16,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should contain the text you want the classifier to see.
+- Output column: `ai_label` should contain only one of the labels you provided.
+- ID preservation: append `ai_label` to the source table after row-count validation.
+- Result review: sample by label and check whether the label set is too broad, too narrow, or missing business categories.
+
+```python
+label_table = label_only.to_arrow_table()
+
+if label_table.num_rows != source_table.num_rows:
+    raise ValueError("classification row count mismatch")
+
+labels = set(label_table["ai_label"].to_pylist())
+allowed = {"invoice", "claim", "memo", "other"}
+unexpected = labels - allowed
+if unexpected:
+    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
+
+classified = con.from_arrow(
+    source_table.append_column("ai_label", label_table["ai_label"])
+)
+```
+
+## Prompt
+
+Use `prompt` when output is generated from a row-level prompt. Keep the first prompt narrow and easy to review.
+
+```python
+prompts = con.sql("""
+    select
+        document_id,
+        document_type,
+        source_uri,
+        'Summarize this document in one sentence: ' || text as review_prompt
+    from source_sample
+""")
+
+response_only = prompts.prompt(
+    "review_prompt",
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Return concise business review notes.",
+    output_column="review_note",
+    batch_size=8,
+    concurrency=4,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `review_prompt` should contain only fields the model should see.
+- Output column: `review_note` should be non-empty and short enough to review.
+- ID preservation: combine output with `document_id`, `document_type`, and `source_uri`.
+- Result review: manually inspect a small sample before increasing `limit`, `batch_size`, or `concurrency`.
+
+```python
+prompt_table = prompts.to_arrow_table()
+response_table = response_only.to_arrow_table()
+
+if response_table.num_rows != prompt_table.num_rows:
+    raise ValueError("prompt row count mismatch")
+
+empty = [x for x in response_table["review_note"].to_pylist() if not x]
+if empty:
+    raise ValueError("prompt returned empty responses")
+
+reviewed = con.from_arrow(
+    prompt_table.append_column("review_note", response_table["review_note"])
+)
+```
+
+For structured output, use `return_format` with a Pydantic model and validate the JSON string before writing the final relation.
+
+## Provider and Execution Choices
+
+Choose the smallest provider setup that answers the current task.
+
+| Choice | Use when | Watch |
+| --- | --- | --- |
+| Hosted provider | You need a managed model and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
+| Local model | You need local execution through installed model libraries. | Model download, dependency versions, memory use, and actor initialization time. |
+| vLLM or GPU model | You need GPU-backed prompt throughput or private LLM inference. | vLLM paths and GPU-specific tuning are covered in [GPU Inference](/docs/data/guides/gpu-inference). |
+
+Minimum settings to make explicit:
+
+- `provider`: for example `openai`, `transformers`, or `vllm`.
+- `model`: the exact hosted or local model identifier.
+- `batch_size`: rows per model call or batch processing step.
+- `concurrency`: worker or actor calls running in parallel when supported.
+- `execution_backend`: start with `subprocess_actor`; use `ray_actor` only after the local sample is correct.
+
+Change one setting at a time. Higher `batch_size` or `concurrency` can improve throughput, but it can also increase memory use, hit provider rate limits, or make failures harder to isolate.
+
+## Next Steps
+
+- Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) for document chunking, stable chunk IDs, embedding output schema, and larger embedding jobs.
+- Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM-backed prompt batches, GPU actor reuse, and Ray GPU execution.
+- Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when AI Functions are too narrow or when the output must include IDs, source fields, status, errors, and model output from a single batch function.

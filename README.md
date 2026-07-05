@@ -6,7 +6,7 @@ documentation authored in MDX and rendered through the site's existing UI.
 
 ## Tech stack
 
-- **React 19** + **Docusaurus 3** (custom routes registered by `src/plugins/vaneRoutes.ts`)
+- **React 19** + **Docusaurus 3** (Docusaurus docs plugin plus custom marketing routes)
 - **MDX** for documentation content, rendered with the site's custom MDX components
 - **ESLint** (flat config in `eslint.config.ts`)
 
@@ -17,6 +17,7 @@ Prerequisites: **Node 20.19+** (or 22.12+) and npm.
 ```bash
 npm install        # install dependencies
 npm run dev        # start the dev server (http://localhost:3000)
+npm run dev:zh-CN  # start the Chinese locale dev server
 npm run build      # production build to build/
 npm run preview    # serve the production build locally
 npm run lint       # run ESLint
@@ -43,33 +44,40 @@ src/
   index.css, pages.css global styles and design tokens
 
 docs/
-  index.mdx            docs home and audience-based entry points
-  quickstart/          product intro, installation, SQL and Python quickstarts
-  concepts/            architecture and mental models
-  guides/              task-oriented how-to guides
-  examples/            example catalog and reusable example template
-  deploy/              single-node, Ray cluster, and sizing material
-  contributing/        development and contribution workflow
+  data/
+    index.mdx          docs home and audience-based entry points
+    quickstart/        product intro, installation, SQL and Python quickstarts
+    concepts/          architecture and mental models
+    guides/            task-oriented how-to guides
+    examples/          example catalog and reusable example template
+    deploy/            single-node, Ray cluster, and sizing material
+    contributing/      development and contribution workflow
   manifest.json        generated docs metadata manifest
   llms.txt             machine-readable docs index
   llms-full.txt        concatenated docs corpus for agent ingestion
+
+i18n/
+  zh-CN/
+    docusaurus-plugin-content-docs-data/
+      current/         Chinese docs mirror using the same English slugs
 ```
 
 ## Authoring documentation
 
 The docs follow the same broad management pattern as larger Docusaurus sites
-such as Apache Doris: MDX content lives in the repository-level `docs/`
-directory, while sidebar order and route registration live in a small docs
-module under `src/docs/`. The current site still renders docs through the
-existing custom UI so the public routes and visual styling remain unchanged.
+such as Apache Doris: MDX content lives under `docs/data/`, Docusaurus scans the
+folder for public `/docs/data/...` routes, and sidebar order is generated from
+`src/docs/sidebar.data.json`. Chinese docs live under
+`i18n/zh-CN/docusaurus-plugin-content-docs-data/current/` with matching English
+slugs, so `guides/my-guide.mdx` becomes `/zh-CN/docs/data/guides/my-guide`.
 
 ### Add a new page
 
-1. Create `docs/<section>/<slug>.mdx`. Add a `title` frontmatter field, then
+1. Create `docs/data/<section>/<slug>.mdx`. Add a `title` frontmatter field, then
    write the body in Markdown or MDX. Do not add a top-level `#` heading; the
    rendered page `<h1>` still comes from `DOCS_PAGES` during the current
    registry transition. The public Vane Data route mirrors the docs folder, for example
-   `docs/guides/my-guide.mdx` becomes `/docs/data/guides/my-guide`.
+   `docs/data/guides/my-guide.mdx` becomes `/docs/data/guides/my-guide`.
 
    ```mdx
    ---
@@ -98,6 +106,10 @@ existing custom UI so the public routes and visual styling remain unchanged.
    ```json
    { "group": "Guides", "items": [{ "slug": "guides/my-guide" }] }
    ```
+
+4. Add or update the Chinese page at
+   `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/<section>/<slug>.mdx`.
+   Keep the same file name and slug; translate the frontmatter title and body.
 
 That's it — the page `<h1>`, the sidebar label, and the prev/next pager all come
 from `DOCS_PAGES`; the in-page TOC is built from the page's `##` headings.

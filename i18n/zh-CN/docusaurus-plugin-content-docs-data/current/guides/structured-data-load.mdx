@@ -1,0 +1,81 @@
+---
+title: 结构化数据加载
+---
+
+当你的 AI 或多模态 workflow 从表格形态输入开始时，请参考本指南：媒体清单、文档元数据、文本记录、标签、提示词表、模型输出、评估样本，或需要与源对象关联的业务 ID。
+
+## 加载本地 Parquet
+
+对 Parquet 文件和 Parquet 分片目录使用 `read_parquet(...)`。通常用指向目录内文件的通配路径（glob）读取目录。
+
+```python
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select *
+    from read_parquet('data/document_manifest/*.parquet', union_by_name=true)
+    where text is not null
+    order by document_id
+    limit 10000
+""")
+
+documents.to_table("raw_documents")
+```
+
+对于嵌套目录，使用递归通配路径（recursive glob）：
+
+```python
+media_events = con.sql("""
+    select *
+    from read_parquet('data/media_events/**/*.parquet', union_by_name=true)
+    limit 10000
+""")
+```
+
+当多个文件的列顺序可能不同，或预期存在轻微 schema 漂移时，使用 `union_by_name=true`。如果 schema 的含义不同，请先停下来完成对齐，再继续。
+
+## 加载本地 CSV
+
+CSV 适合标签、审查样本、提示词表或问题列表等小型导出。一旦你能控制导出格式，优先使用 Parquet，因为它能更可靠地携带列类型。
+
+```python
+labels = con.sql("""
+    select *
+    from read_csv_auto('data/labels/*.csv', header=true)
+    limit 10000
+""")
+
+labels.to_table("raw_labels")
+```
+
+如果类型推断错误，保持加载逻辑简单：先检查推断 schema，再在源 relation 中对重要列显式 cast。
+
+## 从 S3 或 MinIO 加载
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+
+# Prefer environment variables for credentials:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN when needed.
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+source = con.sql("""
+    select *
+    from read_parquet('s3://my-bucket/sample/document_manifest/*.parquet')
+    limit 10000
+""")
+```
+
+对于 MinIO 或其他兼容 S3 的端点，添加端点设置：
+
+```python
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+```

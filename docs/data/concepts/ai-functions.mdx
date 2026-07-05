@@ -1,0 +1,166 @@
+---
+title: AI Functions
+---
+
+Vane Data AI Functions turn common model operations into relation methods. They produce embeddings, labels, prompts, and structured responses as table columns while keeping the same execution controls used by UDFs.
+
+Use AI Functions when the operation matches a built-in provider pattern. Use custom UDFs when you need full control over model loading, batching, retries, output shape, or provider behavior.
+
+## Relation methods
+
+The relation methods are:
+
+- `rel.embed_text(...)`
+- `rel.classify_text(...)`
+- `rel.prompt(...)`
+
+The functional API is also available from `vane.ai` and `vane.ai.functions`.
+
+AI Functions return the configured output column. If downstream stages also need source columns such as IDs or text, use a custom UDF that returns the complete schema, or explicitly combine the AI Function output with source rows in a validated step that preserves row counts and ordering.
+
+## Provider support
+
+| Method | Default provider | Supported providers |
+| --- | --- | --- |
+| `embed_text` | `transformers` | `transformers`, `openai`, `google` |
+| `classify_text` | `transformers` | `transformers` |
+| `prompt` | `openai` | `openai`, `vllm`, `anthropic`, `google` |
+
+Provider libraries are loaded lazily. Install the libraries for the providers you use.
+
+## Text embeddings
+
+Use `embed_text` to produce a vector column from a text column.
+
+```python
+embedding_only = rel.embed_text(
+    "text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+)
+```
+
+The AI Function writes embeddings as a `FLOAT[]` output column.
+
+Optional text chunking parameters are available for long inputs:
+
+- `max_chunk_chars`
+- `chunk_overlap_chars`
+
+## Text classification
+
+Use `classify_text` for zero-shot text labels.
+
+```python
+label_only = rel.classify_text(
+    "text",
+    labels=["invoice", "claim", "other"],
+    provider="transformers",
+    output_column="label",
+)
+```
+
+The output column is `VARCHAR`.
+
+## Prompting
+
+Use `prompt` to generate a response column from a text prompt column.
+
+```python
+response_only = rel.prompt(
+    "prompt",
+    provider="openai",
+    output_column="response",
+)
+```
+
+The output column is `VARCHAR`.
+
+## Multimodal prompts
+
+`prompt` accepts `image_columns` for rows that include image data, when the selected provider and model support multimodal input.
+
+```python
+answer_only = rel.prompt(
+    "question",
+    image_columns=["image"],
+    provider="anthropic",
+    output_column="answer",
+)
+```
+
+Provider and model capabilities differ. Validate the chosen provider and model with a small sample before running a large job.
+
+## Structured output
+
+`prompt` accepts `return_format` for providers that support structured output.
+
+```python
+from pydantic import BaseModel
+
+class Decision(BaseModel):
+    label: str
+    reason: str
+
+decision_only = rel.prompt(
+    "prompt",
+    provider="openai",
+    return_format=Decision,
+    output_column="decision_json",
+)
+```
+
+The relation output column is a JSON string. Treat it as a table column: validate it, parse it downstream if needed, and keep the raw prompt input available for audit.
+
+## Provider dependencies
+
+Install provider libraries directly:
+
+```bash
+# Local embedding and classification models
+python -m pip install sentence-transformers transformers torch
+
+# Hosted model providers
+python -m pip install openai numpy
+python -m pip install anthropic
+python -m pip install google-genai numpy
+
+# vLLM-backed prompting
+python -m pip install vllm
+```
+
+## Execution controls
+
+AI Functions accept `execution_backend`, and provider options can influence the UDF settings passed to `map_batches`.
+
+Common controls include:
+
+- `batch_size`
+- `concurrency`
+- `max_api_concurrency` for provider API calls where supported
+- provider-specific GPU options, such as `gpus_per_actor` for the vLLM provider
+- provider-specific retry and error behavior
+
+Example:
+
+```python
+embedding_only = rel.embed_text(
+    "text",
+    provider="openai",
+    execution_backend="subprocess_actor",
+    concurrency=8,
+)
+```
+
+Use provider API concurrency carefully. Increasing concurrency can improve throughput, but it can also hit rate limits or amplify failures.
+
+## Production guidance
+
+- Filter and project input columns before calling AI Functions.
+- Keep prompt input, model/provider name, and output column names explicit.
+- Start with a small sample and inspect outputs before scaling.
+- Use actor backends when model initialization is expensive.
+- Use Ray only after the local execution path is correct.
+- Store model outputs in typed columns and keep enough metadata for debugging.

@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "docusaurus start",
+    "dev:zh-CN": "docusaurus start --locale zh-CN",
     "build": "docusaurus build",
     "docs:lint": "node scripts/docs-lint.mjs",
     "docs:llms": "node scripts/docs-llms.mjs",
@@ -16,12 +17,15 @@
     "home:content:check": "node scripts/home-content-check.mjs",
     "training:content:check": "node scripts/training-use-case-check.mjs",
     "use-cases:content:check": "node scripts/use-cases-content-check.mjs",
+    "write-translations": "docusaurus write-translations --locale zh-CN",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "docusaurus serve"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",
+    "@docusaurus/plugin-content-docs": "^3.10.1",
+    "@docusaurus/theme-classic": "^3.10.1",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

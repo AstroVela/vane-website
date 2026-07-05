@@ -1,0 +1,152 @@
+---
+title: 结构化转换
+---
+
+当你希望在一个 pipeline 中完成 SQL 过滤、Python 文本处理和表输出时，使用 Vane Data 做去重和清洗。
+
+Vane Data 不提供内置 MinHash 或数据质量框架。它提供 relation 管理、SQL、UDF 执行和写出路径；清洗与去重逻辑仍然是显式 Python 或 SQL 代码。
+
+## Pipeline 形态
+
+典型文本清洗 pipeline 如下：
+
+1. 加载带稳定 ID 和来源元数据的文本行。
+2. 使用 SQL 或 Python UDF 规范化文本。
+3. 当规范化后的文本完全相同时，移除完全重复项。
+4. 只有当完全去重不够时，才使用 MinHash 等近似相似度逻辑。
+5. 每个重复项分组保留一个代表行。
+6. 写出保留行和审计列。
+
+## 最小清洗 UDF
+
+```python
+import re
+
+import pyarrow as pa
+
+def clean_text(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    text = batch.column("text").to_pylist()
+    cleaned = []
+
+    for value in text:
+        s = str(value or "")
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        cleaned.append(s)
+
+    return pa.table({
+        "id": ids,
+        "text": text,
+        "clean_text": cleaned,
+    })
+
+cleaned = rel.map_batches(
+    clean_text,
+    schema={
+        "id": "BIGINT",
+        "text": "VARCHAR",
+        "clean_text": "VARCHAR",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+在校验完成前保留原始文本列。清洗规则如果过于激进，可能会移除有用信息。
+
+## 使用 SQL 做完全去重
+
+对于小型或高度规范化的数据集，SQL 完全去重通常已经足够：
+
+```python
+cleaned.to_table("cleaned")
+
+deduped = con.sql("""
+    select
+        any_value(id) as id,
+        any_value(text) as text,
+        clean_text,
+        count(*) as duplicate_count
+    from cleaned
+    group by clean_text
+""")
+```
+
+这会为每个规范化文本值保留一个代表行，并记录每个分组折叠了多少行。
+
+## 近似重复项策略
+
+对于近似重复文本，使用 Python UDF 计算签名，再使用 SQL 做分组和评分。
+
+常见流程：
+
+1. 规范化文本。
+2. 在 `map_batches` 中计算签名，例如 MinHash。
+3. 用有界 LSH 桶生成候选对。
+4. 对候选项评分。
+5. 构建重复项连通分量。
+6. 每个连通分量保留一个代表行。
+
+保持候选项扩展有边界。当桶过大时，近似去重 pipeline 可能会变得昂贵。
+
+## 需要保留的列
+
+对于训练数据和检索数据集，保留便于审计的列：
+
+- 稳定的来源 ID
+- 原始 URI 或文件路径
+- 原始文本
+- 规范化文本
+- 重复项连通分量 ID
+- 代表行标记
+- 重复项计数或相似度评分
+- 过滤原因或质量评分
+
+这些列让你能解释一行为什么被保留或移除。
+
+## 扩展执行
+
+从本地执行开始：
+
+```python
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+当分布式执行有帮助时，将 CPU 密集的签名生成迁移到 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=2048,
+    execution_backend="ray_task",
+)
+```
+
+将 `signature_batch` 替换为你自己的确定性签名函数。请返回稳定 ID、规范化文本和签名，这样后续 SQL 阶段可以审计并对行分组。
+
+## 实用检查
+
+- 信任规则前，先抽样检查被移除的行。
+- 跟踪每个阶段的行数。
+- 保留原始文本，直到最终校验步骤。
+- 让规范化过程保持确定性。
+- 让代表行选择保持确定性。
+- 当审计很重要时，分别写出保留行和被拒绝行摘要。

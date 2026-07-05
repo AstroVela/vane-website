@@ -1,0 +1,141 @@
+---
+title: 安装
+---
+
+Vane Data 使用 `vane-ai` 作为发布包名，使用 `vane` 作为 Python 导入包。
+
+## 环境要求
+
+- Python 3.10 或更高版本。
+- 平台已有可用的 Vane Data wheel，或本地具备用于源码构建的 C++ 构建环境。
+- pipeline 使用的远程存储、模型 provider 或 Ray 集群所需的网络和凭证。
+
+包元数据会安装必要的运行时依赖，包括 `cloudpickle` 和 `ray`。
+
+## 安装发布包
+
+当你的 Python 版本和平台已有可用 wheel 时，优先安装发布包：
+
+```bash
+python -m pip install vane-ai
+```
+
+当你需要可选的数据帧、Arrow、文件系统或 ADBC 集成依赖时，安装通用数据科学 extras 分组：
+
+```bash
+python -m pip install "vane-ai[all]"
+```
+
+`all` extra 是一个便捷分组。AI provider 库会按需加载，因此应根据实际使用的 provider 单独安装：
+
+```bash
+# Local embedding and classification models
+python -m pip install sentence-transformers transformers torch
+
+# Hosted model providers
+python -m pip install openai numpy
+python -m pip install anthropic
+python -m pip install google-genai numpy
+
+# vLLM-backed prompting
+python -m pip install vllm
+```
+
+## 验证安装
+
+```bash
+python - <<'PY'
+import vane
+
+print("Vane:", vane.__version__)
+print("DuckDB:", vane.__duckdb_version__)
+
+con = vane.connect()
+con.sql("select 42 as answer").show()
+PY
+```
+
+## 启用基于 Ray 的执行
+
+只有当工作负载需要分布式扫描、分布式写入、分布式 UDF 或集群资源放置时才使用 Ray。为了获得可预测行为，请在创建连接之前配置目标 runner：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+con = vane.connect()
+con.sql("select 42 as answer").show()
+```
+
+同样的设置也可以通过环境变量应用：
+
+```bash
+export VANE_RUNNER=ray
+```
+
+每个 Ray worker 都必须能够导入相同的 Python 包、访问相同的存储系统，并能访问 pipeline 所需的模型文件或 provider 凭证。
+
+## 从源码构建
+
+当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。
+
+克隆代码库，并拉取子模块：
+
+```bash
+git clone --recursive https://github.com/AstroVela/vane.git
+cd vane
+```
+
+如果检出目录已存在但子模块缺失：
+
+```bash
+git submodule update --init --recursive
+```
+
+安装常见 Debian 或 Ubuntu 构建工具：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+```
+
+为 C++ 依赖准备 vcpkg：
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ../vcpkg
+../vcpkg/bootstrap-vcpkg.sh
+```
+
+安装 Python 构建工具，并以可编辑模式构建：
+
+```bash
+python -m pip install -U pip
+python -m pip install cmake ninja scikit-build-core "pybind11[global]"
+
+python -m pip install -e . --no-build-isolation -v \
+  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+```
+
+如果现有检出目录之前没有使用 vcpkg 工具链配置过，请在重新构建前删除旧的 CMake 构建目录，避免 CMake 复用不兼容的缓存。
+
+## 构建配置说明
+
+当前源码构建配置包含以下 DuckDB 扩展：
+
+```text
+core_functions;json;parquet;icu;jemalloc;httpfs
+```
+
+这意味着 JSON、Parquet、ICU、jemalloc，以及 HTTP/S3 文件系统支持都属于当前配置构建的一部分。其他 DuckDB 扩展取决于构建和运行环境。请在作业实际运行的环境中验证扩展可用性。
+
+项目包含面向 Linux manylinux 2.28（x86_64 和 aarch64）、macOS 以及 Windows 的 wheel 构建配置。实际包可用性取决于对应版本提供的发布产物。
+
+## 故障排查
+
+- `ModuleNotFoundError: No module named 'vane'`：确认 `vane-ai` 已安装到运行脚本的 Python 环境中。
+- 缺少 provider 库：直接安装对应 provider 包，例如 `openai`、`anthropic`、`google-genai`、`vllm` 或 `sentence-transformers`。
+- Ray worker 无法导入某个模块：在每个 worker 上安装相同依赖，或提供包含这些依赖的 Ray 运行时环境。
+- 远程文件读取失败：检查 DuckDB 扩展、存储凭证、端点设置，以及 worker 侧环境变量。
+
+下一步：[Quickstart](/zh-CN/docs/data/quickstart/quickstart)。

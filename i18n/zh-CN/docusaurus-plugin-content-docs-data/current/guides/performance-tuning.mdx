@@ -1,0 +1,123 @@
+---
+title: 性能调优
+---
+
+先确保本地 pipeline 正确运行，再尽量少改变量。
+
+## runner 选择
+
+本地：
+
+```python
+vane.configure(runner="native")
+```
+
+Ray：
+
+```python
+vane.configure(runner="ray")
+```
+
+native runner 会流式处理 Arrow 记录 batch。Ray runner 会在需要时初始化 Ray，并将逻辑计划发送给 Ray 查询 driver。
+
+## batch size
+
+对于 `map_batches`，`batch_size` 控制每次 UDF 调用传入多少行。
+
+小 batch：
+
+- 内存更低
+- 模型吞吐量更差
+- 调度开销更多
+
+大 batch：
+
+- 吞吐量更好
+- 内存更高
+- 重试更慢
+
+请使用有代表性的数据调优。
+
+## Actor 有状态复用
+
+模型推理使用 actor backend：
+
+- `subprocess_actor` 用于本地有状态复用。
+- `ray_actor` 用于分布式有状态复用。
+
+轻量无状态工作负载使用 task backend：
+
+- `subprocess_task`
+- `ray_task`
+
+## CPU 和 GPU 资源
+
+`map_batches` 接受：
+
+- `cpus`
+- `gpus`
+- `concurrency`
+
+Ray 使用资源请求进行放置。增大 `concurrency` 前，请确认 Ray 集群暴露了匹配的资源。
+
+## Ray 扫描任务分组
+
+公开配置：
+
+```python
+vane.configure(ray_scan_task_size_grouping=True)
+```
+
+环境变量：
+
+```bash
+export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
+```
+
+注册表将它描述为基于大小的扫描任务分组，适合将小文件合并成更大的扫描任务。
+
+相关公开配置：
+
+- `ray_max_task_backlog`
+- `ray_scan_task_open_cost_bytes`
+- `ray_scan_task_min_partition_num`
+- `ray_init_sql`
+
+## 背压
+
+当 `VANE_RAY_MAX_TASK_BACKLOG` 设置为正值时，它会限制待处理 Ray 任务的数量。公开注册表中 `0` 表示不限制。
+
+当 driver 提交速度快于 worker 消费速度时使用它。
+
+## native runner batch size
+
+当你需要为测量或内存控制指定明确值时，`VANE_NATIVE_RUNNER_BATCH_SIZE` 会覆盖 native runner batch size。
+
+```bash
+export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
+```
+
+## 避免常见瓶颈
+
+- 只投影 UDF 需要的列。
+- 在模型调用前过滤。
+- 调优时将图像/音频/视频解码与模型推理分离。
+- 写入所有 worker 都能访问的文件系统。
+- 避免模型工作负载每行执行一次 UDF 调用。
+- 使用结构化输出 schema，而不是 Python 对象列。
+
+## 测量
+
+保留简单的运行记录：
+
+- 输入行
+- 输入字节
+- batch size
+- backend
+- 并发度
+- 每个 actor 的 GPU 数
+- 耗时
+- 输出行
+- 失败次数
+
+benchmark 工作负载可以作为由环境变量驱动的性能实验参考，但 benchmark 专用文件位置、存储端点和模型默认值不是通用部署默认值。

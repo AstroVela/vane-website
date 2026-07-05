@@ -1,0 +1,81 @@
+---
+title: Structured Data Load
+---
+
+Use this guide when your AI or multimodal workflow starts from table-shaped input: media manifests, document metadata, text records, labels, prompt tables, model outputs, evaluation samples, or business IDs that need to join back to source objects.
+
+## Load Local Parquet
+
+Use `read_parquet(...)` for Parquet files and Parquet part directories. Directories are usually read through a glob that points to files inside the directory.
+
+```python
+import vane
+
+con = vane.connect()
+
+documents = con.sql("""
+    select *
+    from read_parquet('data/document_manifest/*.parquet', union_by_name=true)
+    where text is not null
+    order by document_id
+    limit 10000
+""")
+
+documents.to_table("raw_documents")
+```
+
+For nested directories, use a recursive glob:
+
+```python
+media_events = con.sql("""
+    select *
+    from read_parquet('data/media_events/**/*.parquet', union_by_name=true)
+    limit 10000
+""")
+```
+
+Use `union_by_name=true` when files may have different column orders or when you expect small schema drift. If schema meanings differ, stop and reconcile them before continuing.
+
+## Load Local CSV
+
+CSV is useful for small exports such as labels, review samples, prompt tables, or issue lists. Prefer Parquet once you control the export format because it carries column types more reliably.
+
+```python
+labels = con.sql("""
+    select *
+    from read_csv_auto('data/labels/*.csv', header=true)
+    limit 10000
+""")
+
+labels.to_table("raw_labels")
+```
+
+If type inference is wrong, keep the load step simple: inspect the inferred schema first, then explicitly cast important columns in the source relation.
+
+## Load from S3 or MinIO
+
+```python
+import vane
+
+con = vane.connect()
+con.execute("LOAD httpfs")
+
+# Prefer environment variables for credentials:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN when needed.
+con.execute("SET s3_region='us-east-1'")
+con.execute("SET s3_url_style='path'")
+
+source = con.sql("""
+    select *
+    from read_parquet('s3://my-bucket/sample/document_manifest/*.parquet')
+    limit 10000
+""")
+```
+
+For MinIO or another S3-compatible endpoint, add endpoint settings:
+
+```python
+con.execute("SET s3_endpoint='localhost:9000'")
+con.execute("SET s3_use_ssl=false")
+con.execute("SET s3_url_style='path'")
+```

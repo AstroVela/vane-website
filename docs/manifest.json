@@ -4,13 +4,13 @@
   "generatedFrom": [
     "src/docs/registry.ts",
     "src/docs/sidebar.data.json",
-    "docs/**/*.mdx"
+    "docs/data/**/*.mdx"
   ],
   "pages": [
     {
       "slug": "index",
       "title": "Vane Data Docs",
-      "source": "docs/index.mdx",
+      "source": "docs/data/index.mdx",
       "route": "/docs/data",
       "frontmatter": {
         "title": "Vane Data Docs"
@@ -19,7 +19,7 @@
     {
       "slug": "quickstart/what-is-vane-data",
       "title": "What Is Vane Data?",
-      "source": "docs/quickstart/what-is-vane-data.mdx",
+      "source": "docs/data/quickstart/what-is-vane-data.mdx",
       "route": "/docs/data/quickstart/what-is-vane-data",
       "frontmatter": {
         "title": "What Is Vane Data?"
@@ -28,34 +28,26 @@
     {
       "slug": "quickstart/installation",
       "title": "Installation",
-      "source": "docs/quickstart/installation.mdx",
+      "source": "docs/data/quickstart/installation.mdx",
       "route": "/docs/data/quickstart/installation",
       "frontmatter": {
         "title": "Installation"
       }
     },
     {
-      "slug": "quickstart/quickstart-sql",
-      "title": "Quickstart: SQL",
-      "source": "docs/quickstart/quickstart-sql.mdx",
-      "route": "/docs/data/quickstart/quickstart-sql",
+      "slug": "quickstart/quickstart",
+      "title": "Quickstart",
+      "source": "docs/data/quickstart/quickstart.mdx",
+      "route": "/docs/data/quickstart/quickstart",
       "frontmatter": {
-        "title": "Quickstart: SQL"
-      }
-    },
-    {
-      "slug": "quickstart/quickstart-python",
-      "title": "Quickstart: Python",
-      "source": "docs/quickstart/quickstart-python.mdx",
-      "route": "/docs/data/quickstart/quickstart-python",
-      "frontmatter": {
-        "title": "Quickstart: Python"
+        "title": "Quickstart",
+        "slug": "/quickstart/quickstart"
       }
     },
     {
       "slug": "concepts/architecture",
       "title": "Architecture",
-      "source": "docs/concepts/architecture.mdx",
+      "source": "docs/data/concepts/architecture.mdx",
       "route": "/docs/data/concepts/architecture",
       "frontmatter": {
         "title": "Architecture"
@@ -64,7 +56,7 @@
     {
       "slug": "concepts/execution-model",
       "title": "Execution Model",
-      "source": "docs/concepts/execution-model.mdx",
+      "source": "docs/data/concepts/execution-model.mdx",
       "route": "/docs/data/concepts/execution-model",
       "frontmatter": {
         "title": "Execution Model"
@@ -73,7 +65,7 @@
     {
       "slug": "concepts/sql-vs-python",
       "title": "SQL vs Python",
-      "source": "docs/concepts/sql-vs-python.mdx",
+      "source": "docs/data/concepts/sql-vs-python.mdx",
       "route": "/docs/data/concepts/sql-vs-python",
       "frontmatter": {
         "title": "SQL vs Python"
@@ -82,7 +74,7 @@
     {
       "slug": "concepts/udfs",
       "title": "UDFs",
-      "source": "docs/concepts/udfs.mdx",
+      "source": "docs/data/concepts/udfs.mdx",
       "route": "/docs/data/concepts/udfs",
       "frontmatter": {
         "title": "UDFs"
@@ -91,7 +83,7 @@
     {
       "slug": "concepts/ai-functions",
       "title": "AI Functions",
-      "source": "docs/concepts/ai-functions.mdx",
+      "source": "docs/data/concepts/ai-functions.mdx",
       "route": "/docs/data/concepts/ai-functions",
       "frontmatter": {
         "title": "AI Functions"
@@ -100,70 +92,79 @@
     {
       "slug": "guides/multimodal-ingest",
       "title": "Multimodal Ingest",
-      "source": "docs/guides/multimodal-ingest.mdx",
+      "source": "docs/data/guides/multimodal-ingest.mdx",
       "route": "/docs/data/guides/multimodal-ingest",
       "frontmatter": {
         "title": "Multimodal Ingest"
       }
     },
     {
+      "slug": "guides/structured-data-load",
+      "title": "Structured Data Load",
+      "source": "docs/data/guides/structured-data-load.mdx",
+      "route": "/docs/data/guides/structured-data-load",
+      "frontmatter": {
+        "title": "Structured Data Load"
+      }
+    },
+    {
+      "slug": "guides/custom-python-udfs",
+      "title": "Custom Python UDFs",
+      "source": "docs/data/guides/custom-python-udfs.mdx",
+      "route": "/docs/data/guides/custom-python-udfs",
+      "frontmatter": {
+        "title": "Custom Python UDFs"
+      }
+    },
+    {
+      "slug": "guides/multimodal-pipeline",
+      "title": "Multimodal Pipeline",
+      "source": "docs/data/guides/multimodal-pipeline.mdx",
+      "route": "/docs/data/guides/multimodal-pipeline",
+      "frontmatter": {
+        "title": "Multimodal Pipeline"
+      }
+    },
+    {
+      "slug": "guides/structured-transformation",
+      "title": "Structured Transformation",
+      "source": "docs/data/guides/structured-transformation.mdx",
+      "route": "/docs/data/guides/structured-transformation",
+      "frontmatter": {
+        "title": "Structured Transformation"
+      }
+    },
+    {
+      "slug": "guides/ai-functions",
+      "title": "AI Functions",
+      "source": "docs/data/guides/ai-functions.mdx",
+      "route": "/docs/data/guides/ai-functions",
+      "frontmatter": {
+        "title": "AI Functions"
+      }
+    },
+    {
+      "slug": "guides/gpu-inference",
+      "title": "GPU Inference",
+      "source": "docs/data/guides/gpu-inference.mdx",
+      "route": "/docs/data/guides/gpu-inference",
+      "frontmatter": {
+        "title": "GPU Inference"
+      }
+    },
+    {
       "slug": "guides/embeddings-at-scale",
       "title": "Embeddings at Scale",
-      "source": "docs/guides/embeddings-at-scale.mdx",
+      "source": "docs/data/guides/embeddings-at-scale.mdx",
       "route": "/docs/data/guides/embeddings-at-scale",
       "frontmatter": {
         "title": "Embeddings at Scale"
       }
     },
     {
-      "slug": "guides/dedup-and-clean",
-      "title": "Dedup and Clean",
-      "source": "docs/guides/dedup-and-clean.mdx",
-      "route": "/docs/data/guides/dedup-and-clean",
-      "frontmatter": {
-        "title": "Dedup and Clean"
-      }
-    },
-    {
-      "slug": "guides/sql-multimodal-pipeline",
-      "title": "SQL Multimodal Pipeline",
-      "source": "docs/guides/sql-multimodal-pipeline.mdx",
-      "route": "/docs/data/guides/sql-multimodal-pipeline",
-      "frontmatter": {
-        "title": "SQL Multimodal Pipeline"
-      }
-    },
-    {
-      "slug": "guides/doris-integration",
-      "title": "Doris Integration",
-      "source": "docs/guides/doris-integration.mdx",
-      "route": "/docs/data/guides/doris-integration",
-      "frontmatter": {
-        "title": "Doris Integration"
-      }
-    },
-    {
-      "slug": "guides/iceberg-lakehouse",
-      "title": "Iceberg Lakehouse",
-      "source": "docs/guides/iceberg-lakehouse.mdx",
-      "route": "/docs/data/guides/iceberg-lakehouse",
-      "frontmatter": {
-        "title": "Iceberg Lakehouse"
-      }
-    },
-    {
-      "slug": "guides/gpu-inference-udf",
-      "title": "GPU Inference UDF",
-      "source": "docs/guides/gpu-inference-udf.mdx",
-      "route": "/docs/data/guides/gpu-inference-udf",
-      "frontmatter": {
-        "title": "GPU Inference UDF"
-      }
-    },
-    {
       "slug": "guides/performance-tuning",
       "title": "Performance Tuning",
-      "source": "docs/guides/performance-tuning.mdx",
+      "source": "docs/data/guides/performance-tuning.mdx",
       "route": "/docs/data/guides/performance-tuning",
       "frontmatter": {
         "title": "Performance Tuning"
@@ -172,7 +173,7 @@
     {
       "slug": "examples",
       "title": "Examples",
-      "source": "docs/examples/index.mdx",
+      "source": "docs/data/examples/index.mdx",
       "route": "/docs/data/examples",
       "frontmatter": {
         "title": "Examples"
@@ -181,7 +182,7 @@
     {
       "slug": "examples/training-data-pipeline",
       "title": "Training Data Pipeline",
-      "source": "docs/examples/training-data-pipeline.mdx",
+      "source": "docs/data/examples/training-data-pipeline.mdx",
       "route": "/docs/data/examples/training-data-pipeline",
       "frontmatter": {
         "title": "Training Data Pipeline"
@@ -190,7 +191,7 @@
     {
       "slug": "examples/insurance-document-audit",
       "title": "Insurance Document Audit",
-      "source": "docs/examples/insurance-document-audit.mdx",
+      "source": "docs/data/examples/insurance-document-audit.mdx",
       "route": "/docs/data/examples/insurance-document-audit",
       "frontmatter": {
         "title": "Insurance Document Audit"
@@ -199,7 +200,7 @@
     {
       "slug": "examples/tender-compliance-check",
       "title": "Tender Compliance Check",
-      "source": "docs/examples/tender-compliance-check.mdx",
+      "source": "docs/data/examples/tender-compliance-check.mdx",
       "route": "/docs/data/examples/tender-compliance-check",
       "frontmatter": {
         "title": "Tender Compliance Check"
@@ -208,7 +209,7 @@
     {
       "slug": "examples/multimodal-data-lake",
       "title": "Multimodal Data Lake",
-      "source": "docs/examples/multimodal-data-lake.mdx",
+      "source": "docs/data/examples/multimodal-data-lake.mdx",
       "route": "/docs/data/examples/multimodal-data-lake",
       "frontmatter": {
         "title": "Multimodal Data Lake"
@@ -217,7 +218,7 @@
     {
       "slug": "deploy/single-node",
       "title": "Single Node",
-      "source": "docs/deploy/single-node.mdx",
+      "source": "docs/data/deploy/single-node.mdx",
       "route": "/docs/data/deploy/single-node",
       "frontmatter": {
         "title": "Single Node"
@@ -226,7 +227,7 @@
     {
       "slug": "deploy/ray-cluster",
       "title": "Ray Cluster",
-      "source": "docs/deploy/ray-cluster.mdx",
+      "source": "docs/data/deploy/ray-cluster.mdx",
       "route": "/docs/data/deploy/ray-cluster",
       "frontmatter": {
         "title": "Ray Cluster"
@@ -235,7 +236,7 @@
     {
       "slug": "deploy/sizing",
       "title": "Sizing",
-      "source": "docs/deploy/sizing.mdx",
+      "source": "docs/data/deploy/sizing.mdx",
       "route": "/docs/data/deploy/sizing",
       "frontmatter": {
         "title": "Sizing"
@@ -244,7 +245,7 @@
     {
       "slug": "contributing/development",
       "title": "Development",
-      "source": "docs/contributing/development.mdx",
+      "source": "docs/data/contributing/development.mdx",
       "route": "/docs/data/contributing/development",
       "frontmatter": {
         "title": "Development"
@@ -276,14 +277,9 @@
           "route": "/docs/data/quickstart/installation"
         },
         {
-          "slug": "quickstart/quickstart-sql",
-          "label": "Quickstart: SQL",
-          "route": "/docs/data/quickstart/quickstart-sql"
-        },
-        {
-          "slug": "quickstart/quickstart-python",
-          "label": "Quickstart: Python",
-          "route": "/docs/data/quickstart/quickstart-python"
+          "slug": "quickstart/quickstart",
+          "label": "Quickstart",
+          "route": "/docs/data/quickstart/quickstart"
         }
       ]
     },
@@ -321,44 +317,69 @@
       "group": "Guides",
       "items": [
         {
-          "slug": "guides/multimodal-ingest",
-          "label": "Multimodal Ingest",
-          "route": "/docs/data/guides/multimodal-ingest"
+          "group": "Data Ingestion",
+          "items": [
+            {
+              "slug": "guides/multimodal-ingest",
+              "label": "Multimodal Ingest",
+              "route": "/docs/data/guides/multimodal-ingest"
+            },
+            {
+              "slug": "guides/structured-data-load",
+              "label": "Structured Data Load",
+              "route": "/docs/data/guides/structured-data-load"
+            }
+          ]
         },
         {
-          "slug": "guides/embeddings-at-scale",
-          "label": "Embeddings at Scale",
-          "route": "/docs/data/guides/embeddings-at-scale"
+          "group": "Data Transformation",
+          "items": [
+            {
+              "slug": "guides/custom-python-udfs",
+              "label": "Custom Python UDFs",
+              "route": "/docs/data/guides/custom-python-udfs"
+            },
+            {
+              "slug": "guides/multimodal-pipeline",
+              "label": "Multimodal Pipeline",
+              "route": "/docs/data/guides/multimodal-pipeline"
+            },
+            {
+              "slug": "guides/structured-transformation",
+              "label": "Structured Transformation",
+              "route": "/docs/data/guides/structured-transformation"
+            }
+          ]
         },
         {
-          "slug": "guides/dedup-and-clean",
-          "label": "Dedup and Clean",
-          "route": "/docs/data/guides/dedup-and-clean"
+          "group": "AI & Inference",
+          "items": [
+            {
+              "slug": "guides/ai-functions",
+              "label": "AI Functions",
+              "route": "/docs/data/guides/ai-functions"
+            },
+            {
+              "slug": "guides/gpu-inference",
+              "label": "GPU Inference",
+              "route": "/docs/data/guides/gpu-inference"
+            },
+            {
+              "slug": "guides/embeddings-at-scale",
+              "label": "Embeddings at Scale",
+              "route": "/docs/data/guides/embeddings-at-scale"
+            }
+          ]
         },
         {
-          "slug": "guides/sql-multimodal-pipeline",
-          "label": "SQL Multimodal Pipeline",
-          "route": "/docs/data/guides/sql-multimodal-pipeline"
-        },
-        {
-          "slug": "guides/doris-integration",
-          "label": "Doris Integration",
-          "route": "/docs/data/guides/doris-integration"
-        },
-        {
-          "slug": "guides/iceberg-lakehouse",
-          "label": "Iceberg Lakehouse",
-          "route": "/docs/data/guides/iceberg-lakehouse"
-        },
-        {
-          "slug": "guides/gpu-inference-udf",
-          "label": "GPU Inference UDF",
-          "route": "/docs/data/guides/gpu-inference-udf"
-        },
-        {
-          "slug": "guides/performance-tuning",
-          "label": "Performance Tuning",
-          "route": "/docs/data/guides/performance-tuning"
+          "group": "Optimization",
+          "items": [
+            {
+              "slug": "guides/performance-tuning",
+              "label": "Performance Tuning",
+              "route": "/docs/data/guides/performance-tuning"
+            }
+          ]
         }
       ]
     },

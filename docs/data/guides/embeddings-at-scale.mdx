@@ -1,0 +1,160 @@
+
+Use Vane Data for embedding pipelines when you want SQL filtering, batch model execution, and table outputs in one workflow.
+
+The usual shape is:
+
+1. Read and filter source rows with SQL.
+2. Chunk long text into stable units.
+3. Embed chunks with `rel.embed_text(...)` or a custom UDF.
+4. Write embeddings with stable document and chunk IDs.
+
+## Basic text embedding
+
+```python
+import vane
+
+con = vane.connect()
+rel = con.sql("""
+    select id, text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+""")
+
+embedding_only = rel.embed_text(
+    "text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+)
+```
+
+`embed_text` returns a relation with the configured embedding output column. The high-level helper writes embeddings as `FLOAT[]`; it does not automatically include source columns such as `id` or `text`.
+
+## Chunk long text first
+
+Do not send whole documents to an embedding model unless that is intentional. Create bounded chunks with stable IDs.
+
+```python
+import pyarrow as pa
+
+def chunk_rows(batch: pa.Table) -> pa.Table:
+    doc_ids = batch.column("id").to_pylist()
+    texts = batch.column("text").to_pylist()
+    out_doc_id = []
+    out_chunk_id = []
+    out_text = []
+
+    for doc_id, text in zip(doc_ids, texts):
+        parts = [part.strip() for part in str(text).split(".") if part.strip()]
+        for idx, part in enumerate(parts):
+            out_doc_id.append(doc_id)
+            out_chunk_id.append(idx)
+            out_text.append(part)
+
+    return pa.table({
+        "id": out_doc_id,
+        "chunk_id": out_chunk_id,
+        "chunk_text": out_text,
+    })
+
+chunks = rel.map_batches(
+    chunk_rows,
+    schema={
+        "id": "BIGINT",
+        "chunk_id": "BIGINT",
+        "chunk_text": "VARCHAR",
+    },
+    batch_size=512,
+    execution_backend="subprocess_task",
+)
+```
+
+For production systems, use a tokenizer-aware chunker that matches the model context window and preserves enough overlap for retrieval quality.
+
+## Use a local embedding model
+
+Local models are usually best with an actor backend, because model initialization is expensive:
+
+```python
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+    batch_size=64,
+)
+```
+
+When the provider detects usable GPU resources, it may pass a GPU resource request to the UDF execution layer. For strict device control or complete output rows with IDs, use a custom `map_batches` callable class that returns identifiers, text, and embeddings.
+
+## Use hosted embedding APIs
+
+Hosted providers are useful when you want managed models and can tolerate API latency and rate limits:
+
+```python
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="openai",
+    model="text-embedding-3-small",
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+    batch_size=64,
+    concurrency=8,
+)
+```
+
+Tune `batch_size` and `concurrency` carefully. Higher concurrency can improve throughput, but it can also hit provider rate limits or amplify retries. If you combine provider output with source columns after the helper call, validate row counts and preserve stable ordering in that step.
+
+## Use Ray for larger jobs
+
+Move to Ray after the local path is correct:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+embedding_only = chunks.embed_text(
+    "chunk_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    output_column="embedding",
+    execution_backend="ray_actor",
+)
+```
+
+Every Ray worker must be able to import the provider libraries and access model files or provider credentials.
+
+## Output shape
+
+Write a complete relation that makes downstream retrieval and auditing straightforward:
+
+- `document_id`
+- `chunk_id`
+- `chunk_text`
+- `embedding`
+- `source_uri`
+- model name and provider
+- creation timestamp or run ID when needed
+
+Write results with a relation writer:
+
+```python
+embedded_with_ids.write_parquet("output/embeddings/")
+```
+
+`embedded_with_ids` should include the identifier and metadata columns listed above. Build it either with a custom embedding UDF that returns the full schema, or by explicitly combining AI helper output with source rows after validating row counts and ordering.
+
+For distributed writes, ensure every worker can access the output filesystem.
+
+## Tuning checklist
+
+- Filter and project before embedding.
+- Keep chunks bounded and deterministic.
+- Use actor backends for local models.
+- Increase `batch_size` until latency or memory becomes the bottleneck.
+- Increase `concurrency` only when workers or API quota have headroom.
+- Use Ray when scan, inference, or write throughput exceeds one process.
+- Keep output rows deterministic with stable document and chunk IDs.
