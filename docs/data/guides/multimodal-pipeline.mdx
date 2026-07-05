@@ -1,517 +1,195 @@
 ---
-title: Multimodal Pipeline
+title: SQL Multimodal Pipeline
 ---
 
-A multimodal pipeline starts after ingest. The input is a relation with stable IDs, source locations, metadata, and optional bytes; the output is a curated table that can be inspected, joined, written, and used to report failures.
+This guide shows a SQL-first pattern for multimodal data preparation. SQL owns metadata filtering and validation; Python UDFs handle the media-specific step; the result returns to SQL for inspection and output.
 
-Use this guide when you want to turn rows from [Multimodal Ingest](/docs/data/guides/multimodal-ingest) into a staged multimodal pipeline. SQL is useful for filtering and summaries, but it is only one stage in the workflow. Python UDFs, AI helpers, and model actors own the media-specific work.
+Use this style when most of the pipeline should remain readable to SQL users, but one stage needs Python libraries for decoding, feature extraction, or model inference.
 
-## Input relation
+## Pipeline shape
 
-Start from the relation created by multimodal ingest. At minimum, keep:
+The pattern has five stages:
 
-- `asset_id`: stable source identifier.
-- `source_uri`: local path, object storage URI, or another reproducible source reference.
-- `media_type`: content type or coarse type such as `image`, `pdf`, `audio`, or `video`.
-- Metadata columns that help filter or route rows before expensive work.
-- Optional bytes columns when ingest already loaded the media content.
+1. Select candidate rows with SQL.
+2. Load bytes or keep stable media references.
+3. Run a Python UDF for decoding or inference.
+4. Return to SQL for validation and summaries.
+5. Write a curated tabular output.
+
+Vane Data does not add image, audio, or video syntax to SQL. Multimodal work is represented as table columns and explicit Python UDF stages.
+
+## 1. Start with metadata in SQL
+
+Keep the first step relational. Filter rows, normalize metadata, and reduce the input before Python sees it.
 
 ```python
 import vane
 
 con = vane.connect()
 
-ingested = con.sql("""
+items = con.sql("""
     select
-        asset_id,
-        source_uri,
-        media_type,
-        customer_segment,
-        cast(captured_at as varchar) as captured_at
-    from read_parquet('output/media_ingest/')
-    where asset_id is not null
-      and source_uri is not null
-""")
-
-ingested.to_table("media_ingest")
-```
-
-If bytes are large or stored behind credentials, keep only `source_uri` during ingest and load bytes inside a preparation stage. That keeps early filtering cheap and makes worker storage access explicit.
-
-## Pipeline shape
-
-Build the workflow as separate stages:
-
-1. Metadata filtering and projection.
-2. URI or bytes preparation.
-3. Decode, OCR, transcript, frame, or text extraction.
-4. Model, AI helper, or business rule stage.
-5. Validation summary.
-6. Curated output and failure output.
-
-The important property is not the exact model. It is that every stage returns a typed relation with IDs, status, errors, and enough metadata to inspect what happened. `map_batches` does not automatically pass input columns through, so each UDF must return every source column or metadata field that later stages need.
-
-## 1. Filter before expensive work
-
-Use relational filtering to reduce the input before decoding files or calling models.
-
-```python
-candidates = con.sql("""
-    select
-        asset_id,
-        source_uri,
-        media_type,
-        customer_segment,
-        captured_at
-    from media_ingest
-    where media_type in ('image/png', 'image/jpeg', 'application/pdf')
-      and customer_segment is not null
-    limit 1000
+        id,
+        path,
+        media_type
+    from read_parquet('data/media_index/*.parquet')
+    where media_type in ('image/png', 'image/jpeg')
+      and path is not null
 """)
 ```
 
-For your own data, choose filters that match the business question: a date range, document family, customer segment, label backlog, or a small random sample with enough failures to inspect.
+## 2. Add bytes or references
 
-## 2. Prepare URIs or bytes
-
-Keep this stage separate from decoding and inference. It lets you tune I/O, credentials, and retry behavior without changing model code.
+If media bytes are already in Parquet, keep them in the relation and skip this step. If the table stores paths, use a UDF to load bytes and return the columns needed by later stages.
 
 ```python
 from pathlib import Path
 
 import pyarrow as pa
 
-
-def load_local_bytes(batch: pa.Table) -> pa.Table:
-    asset_ids = batch.column("asset_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
+def load_image_bytes(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    paths = batch.column("path").to_pylist()
     media_types = batch.column("media_type").to_pylist()
-    customer_segments = batch.column("customer_segment").to_pylist()
-    captured_at = batch.column("captured_at").to_pylist()
-
-    media_bytes = []
-    status = []
-    error_message = []
-
-    for uri in source_uris:
-        try:
-            media_bytes.append(Path(uri).read_bytes())
-            status.append("ok")
-            error_message.append("")
-        except Exception as exc:
-            media_bytes.append(None)
-            status.append("failed")
-            error_message.append(f"load_bytes: {type(exc).__name__}: {exc}")
 
     return pa.table({
-        "asset_id": asset_ids,
-        "source_uri": source_uris,
+        "id": ids,
+        "path": paths,
         "media_type": media_types,
-        "customer_segment": customer_segments,
-        "captured_at": captured_at,
-        "media_bytes": media_bytes,
-        "prepare_status": status,
-        "prepare_error": error_message,
+        "image_bytes": [Path(path).read_bytes() for path in paths],
     })
 
-
-prepared = candidates.map_batches(
-    load_local_bytes,
+with_bytes = items.map_batches(
+    load_image_bytes,
     schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
+        "id": "BIGINT",
+        "path": "VARCHAR",
         "media_type": "VARCHAR",
-        "customer_segment": "VARCHAR",
-        "captured_at": "VARCHAR",
-        "media_bytes": "BLOB",
-        "prepare_status": "VARCHAR",
-        "prepare_error": "VARCHAR",
-    },
-    batch_size=64,
-    execution_backend="subprocess_task",
-)
-```
-
-For object storage, replace `Path(uri).read_bytes()` with a storage client that is available wherever the UDF runs. Do not hide missing credentials or inaccessible paths by returning partial output without a failure column.
-
-## 3. Decode or extract
-
-Decode, OCR, transcript generation, PDF text extraction, and video frame extraction should be their own stages when they are expensive or failure-prone.
-
-```python
-import io
-
-import pyarrow as pa
-from PIL import Image
-
-
-def inspect_images(batch: pa.Table) -> pa.Table:
-    asset_ids = batch.column("asset_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-    customer_segments = batch.column("customer_segment").to_pylist()
-    captured_at = batch.column("captured_at").to_pylist()
-    media_bytes = batch.column("media_bytes").to_pylist()
-    prepare_status = batch.column("prepare_status").to_pylist()
-    prepare_error = batch.column("prepare_error").to_pylist()
-
-    width = []
-    height = []
-    status = []
-    error_message = []
-
-    for data, previous_status, previous_error in zip(media_bytes, prepare_status, prepare_error):
-        if previous_status != "ok":
-            width.append(None)
-            height.append(None)
-            status.append("skipped")
-            error_message.append(previous_error)
-            continue
-
-        try:
-            image = Image.open(io.BytesIO(data))
-            width.append(image.width)
-            height.append(image.height)
-            status.append("ok")
-            error_message.append("")
-        except Exception as exc:
-            width.append(None)
-            height.append(None)
-            status.append("failed")
-            error_message.append(f"decode_image: {type(exc).__name__}: {exc}")
-
-    return pa.table({
-        "asset_id": asset_ids,
-        "source_uri": source_uris,
-        "media_type": media_types,
-        "customer_segment": customer_segments,
-        "captured_at": captured_at,
-        "image_width": width,
-        "image_height": height,
-        "decode_status": status,
-        "decode_error": error_message,
-    })
-
-
-decoded = prepared.map_batches(
-    inspect_images,
-    schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
-        "media_type": "VARCHAR",
-        "customer_segment": "VARCHAR",
-        "captured_at": "VARCHAR",
-        "image_width": "BIGINT",
-        "image_height": "BIGINT",
-        "decode_status": "VARCHAR",
-        "decode_error": "VARCHAR",
+        "image_bytes": "BLOB",
     },
     batch_size=32,
     execution_backend="subprocess_task",
 )
 ```
 
-This example inspects images so the relation contract is visible. Use the same pattern for document text extraction, audio transcription, or video frame metadata.
+`map_batches` returns the columns produced by the UDF. Return input columns such as `id`, `path`, and `media_type` when downstream stages still need them.
 
-## 4. Add a model or rule stage
+## 3. Run the model step
 
-The next stage can be a Python UDF, an AI helper, or a GPU-backed actor. It should return a complete row-level contract instead of only a model output column.
+Use an actor backend when a model, tokenizer, image processor, or client should be initialized once and reused across batches.
 
 ```python
-import os
-import time
+class ImageClassifier:
+    def __init__(self) -> None:
+        # Initialize model state here in a real pipeline.
+        self.labels = ("invoice", "claim", "other")
 
-import pyarrow as pa
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch.column("id").to_pylist()
+        paths = batch.column("path").to_pylist()
+        media_types = batch.column("media_type").to_pylist()
+        image_bytes = batch.column("image_bytes").to_pylist()
 
+        labels = []
+        scores = []
+        for value in image_bytes:
+            labels.append(self.labels[0] if value else self.labels[2])
+            scores.append(1.0 if value else 0.0)
 
-RUN_ID = os.environ.get("VANE_RUN_ID", "local-run-001")
+        return pa.table({
+            "id": ids,
+            "path": paths,
+            "media_type": media_types,
+            "label": labels,
+            "score": scores,
+        })
 
-
-def classify_by_shape(batch: pa.Table) -> pa.Table:
-    asset_ids = batch.column("asset_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-    customer_segments = batch.column("customer_segment").to_pylist()
-    captured_at = batch.column("captured_at").to_pylist()
-    widths = batch.column("image_width").to_pylist()
-    heights = batch.column("image_height").to_pylist()
-    decode_status = batch.column("decode_status").to_pylist()
-    decode_error = batch.column("decode_error").to_pylist()
-
-    labels = []
-    scores = []
-    status = []
-    error_message = []
-
-    for width, height, previous_status, previous_error in zip(
-        widths,
-        heights,
-        decode_status,
-        decode_error,
-    ):
-        if previous_status != "ok":
-            labels.append("")
-            scores.append(0.0)
-            status.append(previous_status)
-            error_message.append(previous_error)
-        elif width and height and width >= height:
-            labels.append("landscape_or_document")
-            scores.append(0.8)
-            status.append("ok")
-            error_message.append("")
-        else:
-            labels.append("portrait_or_detail")
-            scores.append(0.7)
-            status.append("ok")
-            error_message.append("")
-
-    return pa.table({
-        "asset_id": asset_ids,
-        "source_uri": source_uris,
-        "media_type": media_types,
-        "customer_segment": customer_segments,
-        "captured_at": captured_at,
-        "image_width": widths,
-        "image_height": heights,
-        "label": labels,
-        "score": scores,
-        "status": status,
-        "error_message": error_message,
-        "run_id": [RUN_ID] * len(asset_ids),
-        "pipeline_version": ["shape-v1"] * len(asset_ids),
-        "processed_at_unix": [int(time.time())] * len(asset_ids),
-    })
-
-
-scored = decoded.map_batches(
-    classify_by_shape,
+classified = with_bytes.map_batches(
+    ImageClassifier,
     schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
+        "id": "BIGINT",
+        "path": "VARCHAR",
         "media_type": "VARCHAR",
-        "customer_segment": "VARCHAR",
-        "captured_at": "VARCHAR",
-        "image_width": "BIGINT",
-        "image_height": "BIGINT",
         "label": "VARCHAR",
         "score": "DOUBLE",
-        "status": "VARCHAR",
-        "error_message": "VARCHAR",
-        "run_id": "VARCHAR",
-        "pipeline_version": "VARCHAR",
-        "processed_at_unix": "BIGINT",
     },
-    batch_size=64,
-    execution_backend="subprocess_task",
+    batch_size=16,
+    execution_backend="subprocess_actor",
 )
 ```
 
-Replace the rule with a model when the stage is correct. Use an actor backend when the model, tokenizer, client, or GPU context should be initialized once and reused across batches.
+The example classifier is deliberately simple so the relation contract is visible. In production, put decoding, preprocessing, and inference inside the actor while keeping the returned schema stable.
 
-## Output contract
+## 4. Return to SQL
 
-Keep the curated output narrow enough for downstream systems, but complete enough to diagnose the run.
-
-| Column | Purpose |
-| --- | --- |
-| `asset_id` | Stable input identifier for joins and feedback. |
-| `source_uri` | Reproducible source reference. |
-| Stage outputs | Extracted text, frame metadata, labels, embeddings, OCR JSON, or other typed results. |
-| `score` | Confidence, rule score, similarity, or another comparable stage metric. |
-| `status` | `ok`, `failed`, `skipped`, or another explicit state. |
-| `error_message` | Empty on success; populated with the stage and exception class on failure. |
-| Run metadata | `run_id`, `pipeline_version`, model/provider name, and timestamp fields. |
-
-Prefer explicit columns over opaque nested objects until you know what the downstream consumer needs.
-
-## 5. Validate before writing
-
-Register the stage output and use SQL for summaries, checks, and failure review.
+Create a table from the relation when you want to use normal SQL for validation, summaries, or downstream joins.
 
 ```python
-scored.to_table("media_pipeline_scored")
+classified.to_table("classified_media")
 
 summary = con.sql("""
     select
-        media_type,
-        status,
+        label,
         count(*) as rows,
         avg(score) as avg_score
-    from media_pipeline_scored
-    group by media_type, status
-    order by media_type, status
+    from classified_media
+    group by label
+    order by rows desc
 """)
 
 summary.show()
-
-failures = con.sql("""
-    select asset_id, source_uri, media_type, error_message, run_id
-    from media_pipeline_scored
-    where status <> 'ok'
-    order by asset_id
-""")
 ```
 
-Do not rely only on exceptions or logs. Write failure rows so a teammate can inspect source records, reproduce the problem, and decide whether it is data quality, storage access, dependency setup, or model behavior.
+## 5. Write output
 
-## 6. Write curated outputs
-
-Write successes and failures deliberately. Large media bytes are usually intermediate data, not part of the curated output.
+Write only the columns that downstream systems need. Large media bytes are often useful during inference but unnecessary in curated outputs.
 
 ```python
 curated = con.sql("""
-    select
-        asset_id,
-        source_uri,
-        media_type,
-        customer_segment,
-        captured_at,
-        image_width,
-        image_height,
-        label,
-        score,
-        status,
-        error_message,
-        run_id,
-        pipeline_version,
-        processed_at_unix
-    from media_pipeline_scored
+    select id, path, media_type, label, score
+    from classified_media
 """)
 
-curated.write_parquet("output/media_pipeline/curated.parquet")
-failures.write_parquet("output/media_pipeline/failures.parquet")
+curated.write_parquet("output/classified_media/")
 ```
 
-Keeping failures in the same contract makes the run diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
+## Move to Ray
 
-## Split expensive stages
-
-Tune each expensive stage independently:
-
-| Stage | Typical backend | Tune first |
-| --- | --- | --- |
-| URI or bytes preparation | `subprocess_task`, then `ray_task` | Storage access, `batch_size`, path or credential failures. |
-| Decode or extract | `subprocess_task`, then `ray_task` | CPU, memory, media library behavior, output row size. |
-| Model inference | `subprocess_actor`, then `ray_actor` | Actor reuse, `batch_size`, `concurrency`, `gpus`. |
-| Embedding | AI helper or actor UDF | Chunking, model/provider choice, output dimensions, batch size. |
-
-For documents, keep extraction, chunking, embedding, and classification as separate relations. For video, keep frame sampling separate from frame inference. For audio, keep transcript extraction separate from downstream classification or summarization.
-
-## Local first, Ray later
-
-Start locally with a small representative sample. Move only the expensive stages to Ray after the local relation contract is correct.
+The SQL text and UDF contract do not need to change when the expensive stage moves to Ray. Configure the runner before creating and executing the pipeline:
 
 ```python
 import vane
 
 vane.configure(runner="ray")
-
-scored = decoded.map_batches(
-    classify_by_shape,
-    schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
-        "media_type": "VARCHAR",
-        "customer_segment": "VARCHAR",
-        "captured_at": "VARCHAR",
-        "image_width": "BIGINT",
-        "image_height": "BIGINT",
-        "label": "VARCHAR",
-        "score": "DOUBLE",
-        "status": "VARCHAR",
-        "error_message": "VARCHAR",
-        "run_id": "VARCHAR",
-        "pipeline_version": "VARCHAR",
-        "processed_at_unix": "BIGINT",
-    },
-    batch_size=64,
-    execution_backend="ray_task",
-)
 ```
 
-`ray_task` is a function/task backend. Do not pass `concurrency` with `ray_task`; Ray scheduling and Vane's pending-window settings control task fan-out.
-
-For model stages, use `ray_actor` when model state should be reused:
+Then select a Ray UDF backend for the expensive stage:
 
 ```python
-class ModelStage:
-    def __init__(self) -> None:
-        # Load model, tokenizer, client, or GPU state here.
-        self.pipeline_version = "model-v1"
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        asset_ids = batch.column("asset_id").to_pylist()
-        source_uris = batch.column("source_uri").to_pylist()
-        media_types = batch.column("media_type").to_pylist()
-        customer_segments = batch.column("customer_segment").to_pylist()
-        decode_status = batch.column("decode_status").to_pylist()
-        decode_error = batch.column("decode_error").to_pylist()
-
-        labels = []
-        scores = []
-        status = []
-        error_message = []
-
-        for previous_status, previous_error in zip(decode_status, decode_error, strict=False):
-            if previous_status != "ok":
-                labels.append("")
-                scores.append(0.0)
-                status.append(previous_status)
-                error_message.append(previous_error)
-            else:
-                labels.append("needs_review")
-                scores.append(0.5)
-                status.append("ok")
-                error_message.append("")
-
-        return pa.table({
-            "asset_id": asset_ids,
-            "source_uri": source_uris,
-            "media_type": media_types,
-            "customer_segment": customer_segments,
-            "label": labels,
-            "score": scores,
-            "status": status,
-            "error_message": error_message,
-            "run_id": [RUN_ID] * len(asset_ids),
-        })
-
-
-scored = decoded.map_batches(
-    ModelStage,
+classified = with_bytes.map_batches(
+    ImageClassifier,
     schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
+        "id": "BIGINT",
+        "path": "VARCHAR",
         "media_type": "VARCHAR",
-        "customer_segment": "VARCHAR",
         "label": "VARCHAR",
         "score": "DOUBLE",
-        "status": "VARCHAR",
-        "error_message": "VARCHAR",
-        "run_id": "VARCHAR",
     },
     batch_size=16,
     execution_backend="ray_actor",
-    gpus=1.0,
-    concurrency=2,
+    gpus=1,
+    concurrency=4,
 )
 ```
 
-Actor backends require a callable class with no required constructor arguments. `gpus=1.0` is per actor, so `concurrency=2` needs two available GPU slots for full parallelism. Every Ray worker must be able to import the UDF class or function and access the same storage, credentials, model files, provider keys, and Python dependencies. Validate that access before increasing concurrency.
-
-## Related guides
-
-- [AI Functions](/docs/data/guides/ai-functions): use relation helpers for common embedding, classification, and prompting stages.
-- [GPU Inference](/docs/data/guides/gpu-inference): use vLLM or GPU actor stages when batch inference is the bottleneck.
-- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale): split document extraction, chunking, embedding, and output validation.
-- [SQL vs Python](/docs/data/concepts/sql-vs-python): decide which pipeline stages should stay relational and which should use Python.
+Every Ray worker must be able to import the UDF class and access the same storage, credentials, model files, and Python dependencies.
 
 ## Practical checks
 
-- Preserve `asset_id` and `source_uri` through every stage.
-- Filter and project before byte loading, decoding, inference, or embedding.
-- Return `status` and `error_message` columns from failure-prone stages.
-- Keep media bytes out of curated outputs unless the downstream system needs them.
-- Use different batch sizes for I/O, decode, inference, and embedding stages.
-- Verify local output schema and failure behavior before switching stages to Ray.
-- Confirm worker access to storage, credentials, models, and dependencies before scaling a Ray run.
+Before promoting a multimodal pipeline:
+
+- Verify the UDF output schema with a small local run.
+- Keep filters and column projections before byte loading and inference.
+- Preserve stable identifiers so model outputs can be joined back to source records.
+- Decide whether media bytes belong in the final output or only in intermediate stages.
+- Test path, storage, and credential access from every Ray worker before scaling.

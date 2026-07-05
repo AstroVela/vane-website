@@ -2,196 +2,170 @@
 title: Multimodal Ingest
 ---
 
-Multimodal ingest turns images, documents, audio, video, and sensor objects into a stable relation that later pipeline stages can filter, decode, enrich, and validate. The goal is not to run the full multimodal pipeline in this guide. The goal is to create table-shaped source records that remain traceable when you move from a local sample to a larger run.
 
-## Why rows
+Vane Data treats multimodal records as table rows. Paths, bytes, metadata, decoded features, labels, embeddings, and model outputs can move through one relation as explicit columns.
 
-Vane works best when every source object has a row with explicit columns for identity, location, media type, and workflow context. That gives you a single relation that SQL can filter before Python, AI, or GPU work runs.
+Use this pattern when you need SQL filtering and table outputs, but part of the pipeline must call Python libraries for decoding, feature extraction, or model inference.
 
-Rows also make feedback easier to diagnose. When a decode step, model call, or worker read fails, you can point to the exact `asset_id`, `source_uri`, metadata values, and downstream status column instead of a loose file name or log line.
+## Ingest pattern
 
-## Input contract
+1. Build a relation with stable IDs, source locations, metadata, and optional bytes.
+2. Filter and project with SQL before expensive Python work.
+3. Use `map_batches` for decoding, feature extraction, or model inference.
+4. Keep UDF output schemas explicit.
+5. Write curated outputs to Parquet or another DuckDB-supported target.
 
-Start with a manifest relation. It can come from Parquet, CSV, object storage listings, an application export, or a small Arrow table for local validation.
+Vane Data does not define a universal multimodal file format. Choose column names and output formats based on the downstream system.
 
-This is an input contract, not a built-in connector contract. Vane does not enforce these column names, and creating a relation from this manifest does not fetch, decode, or validate every object behind `source_uri`. Treat `asset_id`, `source_uri`, `media_type`, metadata columns, and optional bytes columns as the stable table shape you pass to later SQL, UDF, AI, or GPU stages.
+## Images
 
-Use these columns as the minimum contract:
-
-| Column | Purpose |
-| --- | --- |
-| `asset_id` | Stable ID for the media object. Use a business key when one exists; otherwise create a deterministic ID from source metadata. |
-| `source_uri` | URI or path where the original object can be read. Use one canonical column name even when values mix local paths and object storage URIs. |
-| `media_type` | MIME-like type such as `image/jpeg`, `application/pdf`, `audio/wav`, or `video/mp4`. |
-| source metadata | Columns used to select and interpret records, such as `customer_id`, `case_id`, `capture_time`, `region`, `language`, or `document_type`. |
-| optional bytes | A `BLOB` column such as `payload_bytes` only when embedding bytes in the relation is the right tradeoff. |
-
-Useful optional columns include `content_sha256`, `source_size_bytes`, `ingested_at`, and `ingest_status`. Keep metadata as normal typed columns when you need SQL filters. Use JSON strings only for sparse or rarely queried metadata.
+For local image files, start with metadata and bytes:
 
 ```python
+from pathlib import Path
+
 import pyarrow as pa
 import vane
 
-manifest = pa.table({
-    "asset_id": ["img-001", "doc-042"],
-    "source_uri": ["s3://sample-media/images/img-001.jpg", "s3://sample-media/docs/doc-042.pdf"],
-    "media_type": ["image/jpeg", "application/pdf"],
-    "case_id": ["case-17", "case-17"],
-    "region": ["us-west", "us-west"],
-})
+rows = []
+for idx, path in enumerate(Path("images").glob("*.png")):
+    rows.append({
+        "id": idx,
+        "source_uri": str(path),
+        "image_bytes": path.read_bytes(),
+    })
 
 con = vane.connect()
-media = con.from_arrow(manifest)
-media.show()
+rel = con.from_arrow(pa.table({
+    "id": [row["id"] for row in rows],
+    "source_uri": [row["source_uri"] for row in rows],
+    "image_bytes": [row["image_bytes"] for row in rows],
+}))
 ```
 
-`con.from_arrow(manifest)` registers the rows you supplied. It does not turn `source_uri` into `payload_bytes`, inspect image dimensions, parse PDFs, transcribe audio, or extract video frames. Do that work in a later stage such as [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline), [Custom Python UDFs](/docs/data/guides/custom-python-udfs), [Embeddings at Scale](/docs/data/guides/embeddings-at-scale), or [GPU Inference](/docs/data/guides/gpu-inference).
+Decode or inspect the images with a batch UDF:
 
-## URI or bytes
+```python
+import io
 
-Prefer `source_uri` for the initial ingest relation. URI-first relations are smaller, easier to inspect, and easier to move between SQL filtering, Ray workers, and downstream processing.
+import pyarrow as pa
+from PIL import Image
 
-Use bytes when:
+def inspect_images(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    sizes = []
+    modes = []
+    for data in batch.column("image_bytes").to_pylist():
+        image = Image.open(io.BytesIO(data))
+        sizes.append(f"{image.width}x{image.height}")
+        modes.append(image.mode)
+    return pa.table({
+        "id": ids,
+        "source_uri": source_uris,
+        "image_size": sizes,
+        "image_mode": modes,
+    })
 
-- the sample is small enough to inspect locally;
-- the source system is difficult to access from workers but the bytes can be exported once;
-- the next stage requires exact byte snapshots for reproducibility;
-- you are intentionally writing a compact fixture for a bug report or example.
+out = rel.map_batches(
+    inspect_images,
+    schema={
+        "id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "image_size": "VARCHAR",
+        "image_mode": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_task",
+)
 
-Avoid bytes when:
-
-- objects are large, especially audio and video;
-- the same media will be processed by multiple stages and can be reread from shared storage;
-- Ray workers can access object storage directly;
-- the final output does not need to retain raw media.
-
-For many initial workflows, the best pattern is URI-first ingest, SQL metadata filtering, and byte loading only inside the first pipeline stage that truly needs it.
-
-## Recommended columns
-
-Use one common prefix-free contract across media types, then add media-specific metadata. Keep the first version small enough that you can fill every field reliably.
-
-| Media | Minimal recommended columns |
-| --- | --- |
-| Images | `asset_id`, `source_uri`, `media_type`, `capture_time`, `width`, `height`, `camera_id` or another business grouping key, optional `payload_bytes` |
-| Documents | `asset_id`, `source_uri`, `media_type`, `document_type`, `case_id` or `account_id`, `language`, optional `page_count`, optional `payload_bytes` |
-| Audio | `asset_id`, `source_uri`, `media_type`, `call_id` or session key, `language`, optional `duration_seconds`, optional `sample_rate`, optional `payload_bytes` |
-| Video | `asset_id`, `source_uri`, `media_type`, `event_id` or session key, `capture_time`, optional `duration_seconds`, optional `frame_rate`, optional `payload_bytes` |
-
-Do not invent decoded output columns during ingest. Columns such as `transcript`, `ocr_text`, `frame_label`, `embedding`, and `model_score` belong to Multimodal Pipeline, AI Functions, GPU Inference, or Embeddings at Scale after the source relation is stable.
-
-### Minimal table examples
-
-For images, keep the URI and any known metadata separate from bytes:
-
-```sql
-select *
-from (values
-    ('img-001', 's3://media/images/img-001.jpg', 'image/jpeg', 'cam-a', 1920, 1080),
-    ('img-002', '/mnt/media/images/img-002.png', 'image/png', 'cam-b', null, null)
-) as images(asset_id, source_uri, media_type, camera_id, width, height)
+out.show()
 ```
 
-If you already exported small image bytes for a fixture, use a `BLOB` column deliberately:
+For model inference, keep decoding and inference in separate UDF stages when possible. That makes failures easier to isolate and lets you tune batch sizes independently.
 
-```sql
-select
-    asset_id,
-    media_type,
-    payload_bytes,
-    'fixture-run-001' as ingest_run_id
-from image_fixture_bytes
-```
+## Audio
 
-For documents, preserve the source file and business key. PDF parsing or OCR should happen later.
+Represent audio as a source URI plus either bytes or a resolved local path. Use a UDF for transcription or acoustic feature extraction.
 
-```sql
-select *
-from (values
-    ('doc-042', 's3://cases/case-17/doc-042.pdf', 'application/pdf', 'case-17', 'claim', 'en'),
-    ('doc-043', 's3://cases/case-17/doc-043.html', 'text/html', 'case-17', 'policy', 'en')
-) as documents(asset_id, source_uri, media_type, case_id, document_type, language)
-```
+Recommended output columns:
 
-For audio and video, prefer URI-first manifests because raw bytes and decoded frames grow quickly.
-
-```sql
-select *
-from (values
-    ('aud-010', 's3://calls/2026/07/aud-010.wav', 'audio/wav', 'call-88', 'en', 185.4),
-    ('vid-020', 's3://events/vid-020.mp4', 'video/mp4', 'event-12', '2026-07-04T18:30:00Z', 42.0)
-) as media(asset_id, source_uri, media_type, session_id, capture_time_or_language, duration_seconds)
-```
-
-For video-specific frame extraction, the codebase also includes a `VideoFrameSource(paths)` datasource that emits `video_path`, `frame_index`, and `frame_blob`. That is a media-specific datasource, not a general `source_uri` ingest API for every multimodal format.
-
-## Filter before expensive work
-
-Use SQL to reduce the candidate set before loading bytes, decoding media, calling models, or scheduling GPU work. This is one of the main reasons to represent multimodal data as rows.
-
-```sql
-select
-  asset_id,
-  source_uri,
-  media_type,
-  case_id,
-  region
-from read_parquet('data/media_manifest/*.parquet')
-where media_type in ('image/jpeg', 'image/png')
-  and region = 'us-west'
-  and case_priority in ('high', 'review')
-  and source_size_bytes < 20000000
-```
-
-Typical prefilters include media type, business priority, date range, language, document type, source size, and known-bad ingest status. Keep rejected rows in a separate summary or count them so the run can explain what was excluded.
-
-## Worker access
-
-Local execution can read local files that only exist on the driver. Ray execution cannot assume that. Before moving a multimodal ingest relation to Ray-backed stages, confirm worker access for every external dependency.
-
-Check these items early:
-
-- `source_uri` values are absolute paths, mounted paths, or object storage URIs that workers can resolve.
-- Object storage credentials, endpoints, and required environment variables are visible to workers.
-- Workers have network access to the storage system.
-- Any Python package used later for decoding or extraction is installed on workers.
-- Model files or provider credentials needed by later stages are available where those stages run.
-- Output paths are writable from the workers that will materialize results.
-
-If a workflow must use local paths, keep the path layout identical on every worker or convert the source data to shared object storage before scaling.
-
-## Output relation
-
-The ingest output should still look like a source manifest, not a completed model result. A good handoff relation contains:
-
-- `asset_id`
+- `audio_id`
 - `source_uri`
-- `media_type`
-- source metadata needed for routing, filtering, or joins
-- optional `payload_bytes` when the next stage intentionally consumes embedded bytes
-- `ingest_status`
-- `ingest_error` or `error_message`
-- optional run metadata such as `ingest_run_id` and `ingested_at`
+- `transcript`
+- `language`
+- `segment_json` or one row per segment
+- `start_time` and `end_time` when segment rows are used
 
-This shape feeds:
+Keep provider-specific transcription code inside the UDF. Vane Data manages the relation, batching, schema, and execution backend; it does not provide a built-in transcription engine.
 
-- [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline), which can decode, extract, chunk, label, and record per-stage status.
-- [Custom Python UDFs](/docs/data/guides/custom-python-udfs), when loading bytes, parsing media, calling private clients, or returning a full row-level schema requires custom code.
-- [AI Functions](/docs/data/guides/ai-functions), when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
-- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale), when text records or extracted chunks need vector output with stable IDs.
-- [GPU Inference](/docs/data/guides/gpu-inference), when later transformation stages construct prompt rows or model inputs from this stable source relation.
+## Documents
 
-## Practical ingest checks
+For PDFs, office documents, HTML, or long text files, keep extraction, chunking, and embedding as separate stages:
 
-Before expanding the ingest job, verify a small but real slice:
+1. Extract text and document metadata.
+2. Split text into chunks with stable IDs.
+3. Embed or classify chunks.
+4. Write document-level and chunk-level outputs.
 
-- `asset_id` is unique and stable across reruns.
-- `source_uri` resolves from the environment that will run the next stage.
-- `media_type` values are populated and match the actual files for a sample.
-- source metadata is sufficient to filter the target population with SQL.
-- optional bytes columns are only present when they are intentionally needed.
-- row counts by media type and business segment match expectations.
-- failed or skipped records have explicit status and error columns.
-- the relation can be written to and read back from the chosen handoff format.
+Recommended columns:
 
-When reporting feedback, include the input shape, a few representative media types, whether the relation used URIs or bytes, the local or Ray execution path, and the first failing `asset_id` with its status or error.
+- `document_id`
+- `source_uri`
+- `page_number`
+- `chunk_id`
+- `text`
+- `embedding`
+- model/provider metadata when model outputs are stored
+
+## Video
+
+Treat video ingest as a heavier pipeline:
+
+1. Read metadata and file paths.
+2. Decode frames or clips in controlled batches.
+3. Run model UDFs over frames or clips.
+4. Store frame-level or clip-level outputs with timestamps.
+
+Avoid returning large Python objects from UDFs. Convert outputs to Arrow-compatible values such as strings, numbers, lists, bytes, or structured JSON strings.
+
+## Local vs Ray
+
+Start locally:
+
+```python
+out = rel.map_batches(
+    decode_batch,
+    schema={"id": "BIGINT", "feature": "VARCHAR"},
+    batch_size=32,
+    execution_backend="subprocess_task",
+)
+```
+
+Move to Ray when input size, decoding cost, model throughput, or GPU placement requires it:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+out = rel.map_batches(
+    ModelBatch,
+    schema={"id": "BIGINT", "label": "VARCHAR"},
+    batch_size=64,
+    execution_backend="ray_actor",
+    gpus=1,
+    concurrency=4,
+)
+```
+
+Replace `decode_batch` and `ModelBatch` with your own function or callable class. Return stable IDs from each UDF when later stages need to join model outputs back to source records. Every Ray worker must be able to import the callable and access the same storage, model files, and credentials.
+
+## Practical checks
+
+- Keep stable IDs before decoding or model inference.
+- Store source URI and enough metadata to reproduce a row.
+- Filter and project before loading bytes when possible.
+- Keep UDF outputs small and typed.
+- Validate a small sample before running a large media job.
+- Write outputs to a filesystem that all workers can access when using Ray.

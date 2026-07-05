@@ -2,7 +2,7 @@
 title: GPU 推理
 ---
 
-当你希望将来自 SQL 或 relation data 的大量 prompt 交给本地或私有 LLM 执行，并将 response 写回为可审查 table 时，使用 GPU Inference。典型输入包括抽取后的文档、caption、transcript、label，或前序 Vane stage 准备好的 prompt row。
+当你希望批量的将多模态或文本数据交给本地或私有 LLM 进行推理，使用 GPU Inference。典型输入包括抽取后的文档、caption、transcript、label，或前序 Vane stage 准备好的 prompt row。
 
 本指南聚焦 Vane 中面向 batch prompt inference 的 vLLM 路径。对于非 vLLM-backed 的通用 GPU model code，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。
 
@@ -22,156 +22,9 @@ load source rows -> build prompt column -> keep IDs and source metadata -> run v
 - 你需要验证 GPU actor 复用、multi-GPU scheduling，或 Ray-backed vLLM actor pool。
 - 相似 prompt 共享 system prefix 或 template，cache locality 可能影响 throughput。
 
-对于轻量文本清理、简单 SQL transform、受 rate limit 约束的 hosted API call，或非 vLLM 的 custom GPU model，不要从这里开始。
+## Vane 中的 vLLM
 
-## 三条 GPU 路径
-
-Vane 中有三种不同的 GPU inference 形态。选择示例或 tuning knob 时，请把它们分开。
-
-| 路径 | 适用场景 | 主要控制项 |
-| --- | --- | --- |
-| Custom GPU UDF | 非 vLLM model、自定义 preprocessing，或需要带 per-row error 的完整 output schema。 | `map_batches`、`execution_backend="ray_actor"`、`gpus`、`concurrency`、UDF `batch_size`。 |
-| SQL `vllm()` | 对 SQL/relation row 做 native vLLM projection，并使用 prefix routing、buffering、backpressure 和 Ray actor-pool 支持。 | SQL `vllm(prompt, model, options)`、`engine_args`、`generate_args`、`do_prefix_routing`、`max_buffer_size`、`inflight_limit`、`ray_actor_pool_name`。 |
-| `prompt(provider="vllm")` | 当你只需要从 prompt relation 得到一个 generated text column 时的便捷 AI helper 路径。 | Relation `prompt(...)`、`engine_args`、`generate_args`、`use_ray`、`concurrency`、`gpus_per_actor`、`execution_backend`。 |
-
-不要把某一路径的 tuning option 复制到另一路径，除非目标路径确实使用该 option。例如 prefix routing 和 `max_buffer_size` 是 native SQL `vllm()` operator behavior，不是通用 UDF routing behavior。
-
-## Custom GPU UDF
-
-当 model 不是 vLLM-backed，或 output 必须在同一个 schema 中包含 ID、source metadata、`status`、`error` 和 model output 时，使用 custom UDF。
-
-```python
-import os
-
-import pyarrow as pa
-import vane
-
-
-RUN_ID = os.environ.get("VANE_RUN_ID", "claims-gpu-001")
-
-
-class ClaimScorer:
-    def __init__(self) -> None:
-        # 在这里加载 tokenizer/model/client。Actor class 不能有必填
-        # constructor argument，因为 worker 会自行实例化它们。
-        self.model_name = "local-claim-model"
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        document_ids = batch.column("document_id").to_pylist()
-        source_uris = batch.column("source_uri").to_pylist()
-        prompts = batch.column("prompt").to_pylist()
-
-        outputs = []
-        status = []
-        error = []
-
-        for prompt in prompts:
-            try:
-                outputs.append(f"scored: {str(prompt)[:80]}")
-                status.append("ok")
-                error.append("")
-            except Exception as exc:
-                outputs.append("")
-                status.append("failed")
-                error.append(f"gpu_model: {type(exc).__name__}: {exc}")
-
-        return pa.table({
-            "document_id": document_ids,
-            "source_uri": source_uris,
-            "response_text": outputs,
-            "status": status,
-            "error": error,
-            "model": [self.model_name] * len(document_ids),
-            "run_id": [RUN_ID] * len(document_ids),
-        })
-
-
-vane.configure(runner="ray")
-con = vane.connect()
-
-prompts = con.sql("""
-    select
-        document_id,
-        source_uri,
-        prompt
-    from read_parquet('data/claims/prompts/*.parquet')
-    where prompt is not null
-    order by document_id
-    limit 100
-""")
-
-results = prompts.map_batches(
-    ClaimScorer,
-    schema={
-        "document_id": "VARCHAR",
-        "source_uri": "VARCHAR",
-        "response_text": "VARCHAR",
-        "status": "VARCHAR",
-        "error": "VARCHAR",
-        "model": "VARCHAR",
-        "run_id": "VARCHAR",
-    },
-    batch_size=16,
-    execution_backend="ray_actor",
-    concurrency=2,
-    cpus=0.0,
-    gpus=1.0,
-)
-```
-
-`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU slot 才能满并行运行。
-
-## SQL vLLM
-
-SQL `vllm()` 路径是 native vLLM operator。它会保留 input row，追加 generated column；prefix routing、buffering、inflight backpressure 和 native Ray actor-pool behavior 都属于这条路径。
-
-```python
-import json
-
-import vane
-
-con = vane.connect()
-
-model = "Qwen/Qwen3-1.7B"
-options = {
-    "use_ray": True,
-    "concurrency": 2,
-    "gpus_per_actor": 1,
-    "do_prefix_routing": True,
-    "min_bucket_size": 16,
-    "prefix_match_threshold": 0.33,
-    "engine_args": {
-        "trust_remote_code": True,
-        "max_model_len": 2048,
-    },
-    "generate_args": {
-        "sampling_params": {
-            "temperature": 0.0,
-            "max_tokens": 128,
-        }
-    },
-}
-
-sql_options = json.dumps(options).replace("'", "''")
-sql_model = model.replace("'", "''")
-
-results = con.sql(f"""
-    select
-        case_id,
-        document_id,
-        source_uri,
-        prompt,
-        vllm(prompt, '{sql_model}', '{sql_options}') as response_text
-    from prompt_rows
-    where prompt is not null
-""")
-```
-
-当你需要对 SQL row 使用 native vLLM batching behavior 时，使用这条路径。如果 `use_ray=true`，所需 GPU 大约是 `concurrency * gpus_per_actor`，还未计入 tensor parallel 或其他 vLLM engine-level GPU setting。
-
-## Relation vLLM Prompt
-
-Vane 通过 AI prompt workflow 暴露 vLLM：
+Vane 通过 AI Function `prompt(...)` 暴露 vLLM：
 
 ```python
 response_only = prompts.prompt(
@@ -180,14 +33,9 @@ response_only = prompts.prompt(
     model="Qwen/Qwen3-1.7B",
     output_column="response_text",
     batch_size=8,
+    execution_backend="subprocess_actor",
 )
 ```
-
-输入仍然是 Vane relation。使用 SQL 构建 prompt，保留 review 所需的业务列，并在 prompt 列上运行 vLLM provider。
-
-High-level `prompt(...)` helper 会返回已配置的输出列。如果最终 table 还需要 ID、source field、status 或 run metadata，请在检查 row count 和顺序后显式组合这些列。当你需要 source column 和 output 保持在同一个 relation contract 中时，使用 custom UDF 或 SQL `vllm()`。
-
-Relation helper 会将 Vane UDF batch 提交给 vLLM provider。扩展规模或覆盖 backend 前，请先在已安装 package 上用极小样本验证这条 helper 路径。它不会使用 native SQL operator 的 prefix-bucketing stage；调优 cache locality 时，请把 SQL `vllm()` 示例与 relation `prompt(provider="vllm")` 示例分开。
 
 ## 构建 prompt relation
 
@@ -239,6 +87,7 @@ response_only = prompts.prompt(
     system_message="Return concise JSON-like business notes.",
     output_column="response_text",
     batch_size=8,
+    execution_backend="subprocess_actor",
     engine_args={
         "trust_remote_code": True,
         "max_model_len": 2048,
@@ -253,7 +102,7 @@ response_only = prompts.prompt(
 )
 ```
 
-第一次正确性检查不需要 Ray。如果你需要确定的 reusable actor contract，而不是 helper default，请使用 SQL `vllm()` 或自定义 callable-class UDF。
+`execution_backend="subprocess_actor"` 会将 vLLM prompter state 保留在 actor process 中，使 engine 可以在本次运行的多个 batch 间复用。第一次正确性检查不需要 Ray。
 
 ## 保留 ID 并写出结果
 
@@ -296,7 +145,7 @@ result_table = result_table.append_column(
 )
 
 results = con.from_arrow(result_table)
-results.write_parquet("output/claims-vllm-validation-001.parquet")
+results.write_parquet("output/claims-vllm-validation-001/")
 ```
 
 建议的输出列：
@@ -355,26 +204,22 @@ ray_response_only = prompts.prompt(
 )
 ```
 
-只有在本地 helper 路径已在 installed package 上通过后，再使用这个 relation-helper Ray 形态。对于 native Ray actor-pool behavior，SQL `vllm()` 是更底层的路径。
-
 需要区分两层配置：
 
 - `execution_backend` 控制 Vane 在哪里运行 prompt UDF stage。
 - `use_ray`、`concurrency`、`gpus_per_actor` 和 `ray_actor_pool_name` 等 vLLM option 控制 vLLM executor 和 actor pool 行为。
 
-如果将 `execution_backend="ray_actor"` 与 `use_ray=True` 组合使用，请同时核算两层资源。外层 Vane UDF actor 和内层 vLLM actor pool 都可能预留 Ray resource，所以先验证一层，再同时扩展两层。
-
 开始时一次只改变一层。如果本地 sample 还不正确，Ray 会让失败更难诊断。
 
-## SQL vLLM cache 和 batch 优化
+## Batch cache 优化
 
-vLLM throughput 不只取决于 GPU 数量。对于 native SQL `vllm()` run，需要围绕 engine reuse、bounded batch、inflight backpressure 和 prompt locality 调优。
+vLLM throughput 不只取决于 GPU 数量。对于 batch inference run，需要围绕 engine reuse、bounded batch 和 prompt locality 调优。
 
 ### 复用 actor 和 engine
 
 避免每行或每个很小的 batch 都重新加载 model 的模式。对 vLLM prompt 使用 actor-style execution，并在一次运行中保持 `model`、`engine_args` 和 dependency version 稳定。
 
-对于 SQL `vllm()` 的 Ray-backed execution，当多个 distributed task 应共享同一组 vLLM actor 时，使用具名 actor pool：
+对于 Ray-backed vLLM，当多个 distributed task 应共享同一组 vLLM actor 时，使用具名 actor pool：
 
 ```python
 ray_actor_pool_name="claims-vllm-validation"
@@ -384,7 +229,7 @@ ray_actor_pool_name="claims-vllm-validation"
 
 ### 对相似 prefix 分组
 
-当大量 prompt 共享同一个 system message、task template 或长 prefix，并且分组不会改变本次运行的业务语义时，可以在 native SQL `vllm()` inference 前分组。
+当大量 prompt 共享同一个 system message、task template 或长 prefix，并且分组不会改变本次运行的业务语义时，可以在 inference 前分组。
 
 ```python
 prompts = con.sql("""
@@ -407,23 +252,21 @@ prompts = con.sql("""
 """)
 ```
 
-当一个 prefix 适用于所有行时，在 relation helper 中使用 `system_message`。如果 prefix 按行变化，请将 prefix 放入 prompt text，或按 task type 拆分 relation。最终输出仍应以 business ID 为 key，避免 grouped execution 让 review 变得含糊。
+当一个 prefix 适用于所有行时，使用 `system_message`。如果 prefix 按行变化，请将 prefix 放入 prompt text，或按 task type 拆分 relation。最终输出仍应以 business ID 为 key，避免 grouped execution 让 review 变得含糊。
 
-Native SQL vLLM executor 包含 `do_prefix_routing`、`max_buffer_size`、`min_bucket_size`、`prefix_match_threshold` 和 `inflight_limit` 等 prefix-routing 与 backpressure control。请在已有 baseline 后再把它们作为 tuning control 使用。它们不是通用 UDF routing option，也不是普通 custom GPU UDF 使用的机制。不要把 `load_balance_threshold` 当成主要 tuning knob，除非你已经在当前 execution path 中验证了它的效果。
+Native vLLM executor 包含 `do_prefix_routing`、`min_bucket_size`、`prefix_match_threshold` 和 `load_balance_threshold` 等 prefix-routing control。请在已有 baseline 后再把它们作为 tuning control 使用。它们不是通用 UDF routing option。
 
 ### 联合调优 batch 和 concurrency
 
 为 vLLM relation prompt 显式设置 `batch_size`。更大的 batch 可以改善 GPU utilization 和 vLLM continuous batching，但也可能增加延迟、内存压力和 failure blast radius。
 
-只有在 GPU 和 actor memory 足够时，才增加 `concurrency`。对于单个 native vLLM actor pool，一个简单的 capacity check 是：
+只有在 GPU 和 actor memory 足够时，才增加 `concurrency`。一个简单的 capacity check 是：
 
 ```text
 required GPUs = concurrency * gpus_per_actor
 ```
 
 如果 `concurrency=2` 且 `gpus_per_actor=1`，Ray environment 至少需要两个可用 GPU 才能实现完整并行。如果 model 使用 tensor parallelism 或其他 vLLM engine-level GPU 设置，请把它们纳入自己的 capacity estimate。
-
-如果 relation helper 也使用 Ray UDF actor，请把任何外层 actor GPU request 纳入估算，而不是只计算 vLLM pool。
 
 ## 关键配置概念
 
@@ -439,21 +282,6 @@ required GPUs = concurrency * gpus_per_actor
 | `on_error` | vLLM executor error behavior | 调试时使用 `raise`；对于需要保留失败行以便 review 的 validation run，使用 `log`。 |
 
 Vane 为 native vLLM engine scheduler 应用面向 throughput 的默认值，你可以通过 `engine_args` 覆盖 engine-level setting。除非明确知道自己在测试哪个设置，否则不要把完整的 vLLM serving configuration 复制到 validation run 中。
-
-## 验证清单
-
-增大 sample 前：
-
-1. 运行 10-100 行有代表性的数据。
-2. 确认 ID、source metadata、prompt text 和 output row count 匹配。
-3. 针对每个重要业务类别人工检查输出质量。
-4. 检查 null、空字符串、非法 JSON，以及异常过长的输出。
-5. 在运行过程中观察 GPU utilization 和 memory。
-6. 记录 processed rows、`batch_size`、`concurrency`、`gpus_per_actor`、elapsed time、throughput 和 error。
-7. 比较 prompt grouping 或 prefix-routing 变更前后的 latency 和 throughput。
-8. 验证 Ray worker 能 import vLLM，并能访问 model file、input data 和 output path。
-
-对于 cache locality 实验，保持 model 和 sampling setting 固定。只比较 prompt ordering、grouping 或 prefix-routing setting；否则结果无法说明到底是什么发生了变化。
 
 ## 边界
 

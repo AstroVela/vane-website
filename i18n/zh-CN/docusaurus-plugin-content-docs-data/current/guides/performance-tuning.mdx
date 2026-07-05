@@ -2,201 +2,122 @@
 title: 性能调优
 ---
 
-当你的 multimodal、AI 或 inference pipeline 已经能在自有数据的小型代表性切片上产出正确结果后，再使用本指南。Performance tuning 应回答两个问题：哪个 stage 慢，以及下一步最值得改变的单一变量是什么。
+先让本地 pipeline 正确，再调节最少数量的变量。
 
-这不是 production benchmark、SLA 指南或高级 cluster tuning 手册。真正有用的结果是清晰的 bottleneck diagnosis，以及能让性能反馈可执行的 run record。
+## Runner
 
-## 从正确性开始
+Local：
 
-不要调优仍在变化形态的 pipeline。先确保运行规模小、可重复、可检查。
-
-- 从输入到输出保留稳定 ID。
-- 在每个昂贵 stage 前后检查 row count。
-- 人工验证 output schema 和少量 sample row。
-- 对失败行保留显式 `status` 和 `error_message` 列。
-- 使用有代表性的 sample，而不只选最容易的 record。
-- 在修改任何 tuning knob 前记录 baseline。
-
-然后一次只调优一个变量。比较不同运行时，保持 dataset slice、code、model、provider 和 output path 固定。如果某个变更没有改善你测量到的 bottleneck，请先撤销它，再尝试下一个 knob。
-
-## Performance 与 Sizing
-
-Performance Tuning 用于诊断一次具体运行中的耗时或失败来自哪里。Sizing 用于估算下一次更大规模运行所需的资源。
-
-| 问题 | 使用 Performance Tuning | 使用 Sizing |
-| --- | --- | --- |
-| "这次运行为什么慢？" | 是 | 否 |
-| "哪个 stage 是 bottleneck？" | 是 | 否 |
-| "我应该修改 batch size 还是 concurrency？" | 是 | 可能 |
-| "更大切片可能需要多少 CPU、GPU 或 worker？" | 否 | 是 |
-| "我能承诺 production throughput 吗？" | 否 | 否 |
-
-后续在 Sizing 中估算资源时，可以将本指南中的 performance record 作为输入。
-
-## 调优顺序
-
-按 pipeline 顺序推进。如果前序 stage 发送了过多数据、使用了不可访问路径，或写出了过大的输出，后续 tuning knob 不会真正解决问题。
-
-| 顺序 | Stage | 检查内容 | 最小有效变更 |
-| --- | --- | --- | --- |
-| 1 | Data read | Input rows、input bytes、file count、object store latency、worker 对路径的访问能力 | 从更小的真实切片开始；使用 worker-visible path；避免读取未使用文件 |
-| 2 | SQL filter/project | 进入昂贵 stage 的行和列 | 尽早过滤；只投影 UDF、AI function 或 model 需要的列 |
-| 3 | UDF batch | Per-batch time、memory、long-tail batch、retry cost | 只有在减少输入列和行后，再调整 `batch_size` |
-| 4 | Actor reuse | Model、tokenizer、media decoder 或 client initialization log、重复 setup、低 throughput | 对 stateful model/client/GPU 复用使用 actor backend |
-| 5 | Provider rate limit | HTTP 429、timeout、retry wait、provider-side quota error | 降低 concurrency；只在 provider 支持时 batch；减少不必要调用 |
-| 6 | GPU utilization | GPU memory、utilization、model load time、CPU preprocessing time | 复用 model actor；调优 batch size；只有理解单 GPU 后再增加 GPU |
-| 7 | Output write | Output rows、output bytes、wide columns、过多 small files、worker 对 output path 的访问能力 | 只写必要列；除非需要，否则避免携带 raw bytes 或大型 intermediate object |
-
-## 核心 knob
-
-这些是初始 workflow 的主要 knob。一次只改变一个，并持续更新 run record。
-
-| Knob | 改变什么 | 起点 | 关注点 |
-| --- | --- | --- | --- |
-| `batch_size` | 每次 UDF、AI 或 inference call 处理的行数 | 当 per-call overhead 主导时增大；当内存或 retry 主导时减小 | Out-of-memory error、缓慢的 long-tail batch、更差的 provider latency |
-| UDF `concurrency` | 当所选 backend 支持时，同时 in flight 的 UDF batch 或 actor 数 | 只有在每个 batch 已经足够高效后才增加；不要传给 `ray_task` | Provider rate limit、memory pressure、output write contention |
-| Provider API concurrency | 当 provider 暴露 `max_api_concurrency` 这类独立选项时，hosted-provider async request concurrency | 按 provider limit 调优，不按 Ray worker 数调优 | 429、retry storm、quota error、更高成本 |
-| vLLM actor-pool concurrency | 启用 Ray vLLM 时，由 native vLLM executor 或 provider 创建的 vLLM actor 数 | 只有 GPU slot 和 model memory 充足时才增加 | Ray pending actor、GPU OOM、per-actor utilization 低 |
-| Task vs actor | 工作是 stateless，还是复用 state | 轻量 stateless CPU work 使用 task；model、client、GPU 或 connection 复用使用 actor | 每个 batch 重载 model、actor memory 无界增长、worker startup failure |
-| Local vs Ray | Pipeline 留在本地还是使用 Ray worker | 正确性和小 sample 留在本地；当 parallelism、worker placement 或 GPU 重要时迁移到 Ray | path、dependency、credential 和 output location 只在 driver 可见 |
-| GPU count | inference actor 可用的 GPU resource | 先调优一个 GPU；确认 GPU stage 是 bottleneck 后再增加 GPU | CPU preprocessing bottleneck、output bottleneck、大量 actor 的低 utilization |
-
-Runner 和 backend 相关但不同。Runner 控制整体 execution path，例如 local execution 还是 Ray execution。UDF 或 AI execution backend 控制某个 stage 如何运行，例如 task 还是 actor。
-
-## Hosted API 与 GPU bottleneck
-
-Hosted API 和本地 GPU inference 的失败方式不同。修改 knob 前先把它们区分开。
-
-| Workload type | 常见 bottleneck | 现象 | 有效修复 |
-| --- | --- | --- | --- |
-| Hosted API | Provider quota、request latency、retry、成本 | 429 或 quota error、长时间 retry wait、本地 CPU/GPU 空闲、失败与 credential 或 provider limit 相关 | 降低 `concurrency`；call 前减少行数；使用 provider-supported batch request；记录 provider/model/error 细节 |
-| GPU inference | Model load、GPU memory、GPU utilization、CPU preprocessing、media decode、output write | GPU out-of-memory、GPU 大部分时间空闲、每个 batch 初始化 model、GPU work 前 decode/tokenization 缓慢 | 使用 actor reuse；调优 `batch_size`；分离 preprocessing 和 inference；增加 GPU count 前先验证单 GPU |
-
-不要把 hosted API rate limit 当作 Ray scheduling 问题。不要把低 GPU utilization 当作需要更多 GPU 的证据。先确认哪个 stage 在等待，以及为什么等待。
-
-## vLLM 和 Ray-backed inference
-
-Vane 中 vLLM tuning 有两个不同入口：
-
-| 路径 | 调优内容 |
-| --- | --- |
-| SQL `vllm(prompt, model, options)` | Native vLLM operator setting：`engine_args`、`generate_args`、`batch_size`、`do_prefix_routing`、`max_buffer_size`、`min_bucket_size`、`prefix_match_threshold`、`inflight_limit`、`use_ray`、`concurrency`、`gpus_per_actor` 和 `ray_actor_pool_name`。 |
-| Relation `prompt(provider="vllm")` | AI helper 和 vLLM provider setting：prompt relation shape、helper output validation、`engine_args`、`generate_args`、`use_ray`、`concurrency`、`gpus_per_actor`、UDF `execution_backend`，以及 row-count/order recombination。 |
-
-如果你没有覆盖 engine args，native vLLM executor 会应用面向 throughput 的 engine 默认值：`max_num_batched_tokens=8192` 和 `max_num_seqs=256`。Vane-side 默认值包括 `concurrency=1`、`gpus_per_actor=1`、`batch_size=128`、`max_buffer_size=5000`、`min_bucket_size=16`、`inflight_limit=128`，并默认启用 prefix routing。请在 run log 中记录所有 override，因为 context length、sampling、tensor parallelism 或 batching 的变化都可能主导 throughput 比较。
-
-对于 Ray-backed native vLLM，请分开两层 resource：
-
-- UDF 或 relation backend concurrency 控制有多少 Vane task 或 actor 提交工作。
-- vLLM actor-pool `concurrency` 控制创建多少个 vLLM actor。
-- `gpus_per_actor` 是每个 vLLM actor 的资源请求，所以所需 GPU slot 大约是 `concurrency * gpus_per_actor`。
-- 通过 `ray_actor_pool_name` 使用具名 pool，可以在 distributed task 之间复用 actor，并共享 inflight tracking。
-
-对于 prefix-heavy prompt set，请先用同一 model、data slice 和 sampling setting 建立 baseline。然后只测试 prompt ordering 或 native prefix routing（`do_prefix_routing`、`min_bucket_size`、`prefix_match_threshold`），不要同时修改 model setting。如果 prompt 不共享长 prefix，prefix routing 通常不是 bottleneck 的解释。不要把 `load_balance_threshold` 当成主要 tuning knob，除非你已经在当前 execution path 中验证了它的效果。
-
-当 prompt submission 快于 GPU completion 时，backpressure 很重要。在 native SQL `vllm()` 中，`inflight_limit` 会限制已提交 prompt 数；较低的值可以保护内存并改善 load awareness，但太低会让 GPU 饥饿。请把它作为被测 tuning variable，而不是通用加速旋钮。
-
-## 现象与修复
-
-| 现象 | 可能原因 | 优先尝试的修复 |
-| --- | --- | --- |
-| 大量很小的 UDF 或 AI call、调度开销高、model throughput 低 | Batch 太小 | 逐步增大 `batch_size`，同时观察内存和 error rate |
-| Out-of-memory error、retry 非常慢，或单个大 batch 主导 elapsed time | Batch 太大 | 降低 `batch_size`；投影更少列；将 decode、transform 和 inference 拆成独立 stage |
-| 日志显示每个 batch 都在加载 model 或设置 API client | Stateless task 正在重复创建昂贵 state | 将 model 或 client initialization 移入 callable class，并使用 actor backend 运行 |
-| Hosted API 返回 429、timeout、quota 或 authentication error | Provider rate limit 或 credential 问题 | 降低 `concurrency`；用 SQL filter 减少调用；在与 worker 相同的 environment 中验证 credential |
-| 本地运行正常，Ray 运行出现 file not found、import error 或 missing credential | Worker path、dependency 或 credential 可见性问题 | 将 data、model 和 output 放到 worker-visible storage；在 worker 上安装 dependency；通过 Ray environment 传递 credential |
-| GPU memory 已满但 throughput 不稳定 | Batch 太大、output 太宽，或 actor memory 增长 | 降低 `batch_size`；避免携带未使用列；从干净的小型运行重新开始并比较 |
-| GPU utilization 低而 CPU 很忙 | CPU preprocessing 或 data read 是 bottleneck | 分别计时 decode/tokenization；inference 前过滤/投影；cache 或 stage 昂贵的 preprocessing output |
-| Output write 占据大部分运行时间 | Output 太大或太宽 | 只写下一步 workflow 需要的列；最终输出中避免 raw bytes 和大型 Python object column |
-
-## 最小测量循环
-
-使用同一个小型代表性切片进行短周期 tuning loop。
-
-1. 运行 baseline，并记录 elapsed time、error 和 stage-level observation。
-2. 按调优顺序选择第一个 bottleneck。
-3. 修改一个 knob。
-4. 再次运行同一个切片。
-5. 只有当变更改善已测量 bottleneck 且不破坏正确性时，才保留该变更。
-
-对于 AI 和 inference workload，至少测量：
-
-- 进入 AI 或 model stage 的行数
-- 发送的 call 或 batch 数
-- 成功行和失败行
-- 当 runtime counter 可用时，记录 UDF accepted、submitted、completed、produced 和 emitted row count
-- 如果使用 hosted provider，记录 provider retry 或 rate-limit count
-- 如果使用 hosted provider，记录 provider API concurrency limit
-- 如果使用本地 GPU，记录 GPU memory 和 utilization
-- 如果使用 vLLM，记录 vLLM actor count、batch size、inflight limit、prefix routing setting 和 engine args
-- output rows 和 bytes
-
-## Performance record
-
-报告性能问题或比较 tuning run 时，请包含类似记录。
-
-```markdown
-## Performance Record
-
-- Goal:
-- Dataset:
-  - input rows:
-  - input bytes:
-  - file count:
-  - sample method:
-- Pipeline stage being measured:
-- Runner:
-- UDF/AI execution backend:
-- Batch size:
-- UDF concurrency:
-- Provider max_api_concurrency:
-- vLLM actor-pool concurrency:
-- Task or actor:
-- UDF runtime counters:
-  - accepted input rows/bytes:
-  - submitted input rows/bytes:
-  - completed input rows:
-  - produced output rows/bytes:
-  - emitted output rows:
-- Provider/model:
-- Provider API limits:
-- vLLM:
-  - path: SQL vllm() / relation prompt(provider="vllm") / custom UDF
-  - engine_args:
-  - generate_args:
-  - batch_size:
-  - do_prefix_routing:
-  - min_bucket_size:
-  - prefix_match_threshold:
-  - load_balance_threshold:
-  - max_buffer_size:
-  - inflight_limit:
-  - ray_actor_pool_name:
-- GPU:
-  - GPU count:
-  - GPUs per actor:
-  - observed utilization:
-  - observed memory:
-- Ray:
-  - cluster resources:
-  - actor count:
-  - task pending/window settings:
-- Output:
-  - output rows:
-  - output bytes:
-  - output path type:
-- Timing:
-  - data read:
-  - SQL filter/project:
-  - UDF/AI/inference:
-  - output write:
-  - total elapsed:
-- Errors:
-  - failed rows:
-  - retry count:
-  - error messages:
-- Change tested:
-- Result:
+```python
+vane.configure(runner="native")
 ```
 
-如果问题只在 Ray 上出现，请说明 worker 是否能访问与 driver 相同的数据路径、model file、Python dependency、credential 和 output location。
+Ray：
+
+```python
+vane.configure(runner="ray")
+```
+
+Native runner 会流式处理 Arrow record batch。Ray runner 会在需要时初始化 Ray，并将 logical plan 发送给 Ray query driver。
+
+## Batch Size
+
+对于 `map_batches`，`batch_size` 控制每次 UDF call 传入多少行。
+
+小 batch：
+
+- memory 更低
+- model throughput 更差
+- scheduling overhead 更多
+
+大 batch：
+
+- throughput 更好
+- memory 更高
+- retry 更慢
+
+请使用 representative data 调优。
+
+## Actor Reuse
+
+model inference 使用 actor backend：
+
+- `subprocess_actor` 用于本地 stateful reuse。
+- `ray_actor` 用于 distributed stateful reuse。
+
+轻量 stateless work 使用 task backend：
+
+- `subprocess_task`
+- `ray_task`
+
+## CPU 和 GPU Resource
+
+`map_batches` 接受：
+
+- `cpus`
+- `gpus`
+- `concurrency`
+
+Ray 使用 resource request 做 placement。增大 `concurrency` 前，请确认 Ray cluster 暴露了匹配的 resource。
+
+## Ray Scan Task Grouping
+
+Public config：
+
+```python
+vane.configure(ray_scan_task_size_grouping=True)
+```
+
+环境变量：
+
+```bash
+export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
+```
+
+Registry 将它描述为基于 size 的 scan task grouping，适合将小文件合并成更大的 scan task。
+
+相关 public config：
+
+- `ray_max_task_backlog`
+- `ray_scan_task_open_cost_bytes`
+- `ray_scan_task_min_partition_num`
+- `ray_init_sql`
+
+## Backpressure
+
+当 `VANE_RAY_MAX_TASK_BACKLOG` 设置为正值时，它会限制 pending Ray task 数量。Public registry 中 `0` 表示 unlimited。
+
+当 driver 提交速度快于 worker 消费速度时使用它。
+
+## Native Runner Batch Size
+
+当你需要为 measurement 或 memory control 指定明确值时，`VANE_NATIVE_RUNNER_BATCH_SIZE` 会覆盖 native runner batch size。
+
+```bash
+export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
+```
+
+## 避免常见瓶颈
+
+- 只 project UDF 需要的 column。
+- 在 model call 前 filter。
+- 调优时将 image/audio/video decoding 与 model inference 分离。
+- 写入所有 worker 都能访问的 filesystem。
+- 避免 model workload 每行一次 UDF call。
+- 使用 structured output schema，而不是 Python object column。
+
+## Measure
+
+保留简单的运行记录：
+
+- input rows
+- input bytes
+- batch size
+- backend
+- concurrency
+- GPUs per actor
+- elapsed time
+- output rows
+- failure count
+
+Benchmark workload 可以作为 environment-driven performance experiment 的参考，但 benchmark-specific file location、storage endpoint 和 model default 不是通用 deployment default。

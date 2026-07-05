@@ -2,389 +2,151 @@
 title: Structured Transformation
 ---
 
-Use Structured Transformation after Structured Data Load when you already have table-shaped inputs for an AI or multimodal workflow and need to turn them into a stable relation for UDFs, AI functions, GPU inference, embeddings, review, or downstream handoff.
+Use Vane Data for deduplication and cleaning when you want SQL filtering, Python text processing, and table outputs in one pipeline.
 
-This guide is not a warehouse ETL tutorial. The goal is to keep metadata, labels, prompt inputs, model outputs, and validation summaries explicit and traceable while the workflow stays table-shaped.
+Vane Data does not provide a built-in MinHash or data-quality framework. It gives you relation management, SQL, UDF execution, and write paths; the cleaning and deduplication logic remains explicit Python or SQL code.
 
-## Starting relation
+## Pipeline shape
 
-This guide assumes Structured Data Load has produced one or more relations from manifests, text records, labels, prompt tables, model outputs, or another DuckDB-supported source.
+A typical text-cleaning pipeline follows this shape:
 
-```python
-import vane
+1. Load text rows with stable IDs and source metadata.
+2. Normalize text with SQL or a Python UDF.
+3. Remove exact duplicates when normalized text is identical.
+4. Use approximate similarity logic, such as MinHash, only when exact dedup is not enough.
+5. Keep one representative per duplicate group.
+6. Write retained rows and audit columns.
 
-con = vane.connect()
-
-source_documents = con.sql("""
-    select
-        *,
-        filename as source_file,
-        file_row_number as source_row_number
-    from read_parquet(
-        'data/source_documents/*.parquet',
-        filename=true,
-        file_row_number=true
-    )
-""")
-source_documents.to_table("source_documents")
-
-review_labels = con.sql("""
-    select *
-    from read_parquet('data/review_labels/*.parquet')
-""")
-review_labels.to_table("review_labels")
-```
-
-Keep the raw source relation registered until validation is complete. It is the easiest way to compare source values, prompt inputs, labels, and model outputs when a rule needs adjustment.
-
-## Transformation flow
-
-A practical table-shaped transformation flow is:
-
-1. Profile the source relation.
-2. Filter unusable or out-of-scope rows.
-3. Project only the columns the workflow needs.
-4. Normalize IDs, media types, labels, timestamps, and categorical values.
-5. Derive prompt inputs, review fields, routing flags, or evaluation columns.
-6. Join label, metadata, rule, or model-output tables.
-7. Deduplicate rows when the source key or chunk key requires it.
-8. Validate row counts, keys, nulls, domains, and sample diffs.
-9. Write the curated relation with stable schema, source traceability, and run metadata.
-
-Start with a small, real slice of data. The goal is to confirm the rules and output contract before spending time on a full run.
-
-## Profile first
-
-Profile with SQL before writing transformation logic:
+## Minimal cleaning UDF
 
 ```python
-con.sql("""
-    select
-        count(*) as row_count,
-        count(distinct document_id) as distinct_document_ids,
-        count(*) filter (where document_id is null) as null_document_ids,
-        count(*) filter (where source_uri is null) as null_source_uris,
-        count(*) filter (where text is null or length(text) = 0) as empty_text_rows,
-        min(created_at) as min_created_at,
-        max(created_at) as max_created_at
-    from source_documents
-""").show()
-```
+import re
 
-For the first validation run, add checks for the columns that affect the AI or multimodal workflow: source IDs, source URIs, media types, language, labels, prompt text, model output status, timestamps, and join keys.
-
-## SQL-first transform
-
-Use SQL for relational work: filtering, projection, type normalization, derived columns, joins, aggregation, deduplication, and validation queries.
-
-```python
-curated_documents = con.sql("""
-    with typed as (
-        select
-            cast(document_id as varchar) as document_id,
-            cast(source_uri as varchar) as source_uri,
-            lower(trim(cast(media_type as varchar))) as media_type,
-            lower(trim(cast(document_type as varchar))) as document_type,
-            lower(trim(cast(language as varchar))) as language,
-            cast(case_id as varchar) as case_id,
-            try_cast(created_at as timestamp) as created_at,
-            regexp_replace(trim(coalesce(text, '')), '\\s+', ' ', 'g') as normalized_text,
-            source_file,
-            source_row_number
-        from source_documents
-        where document_id is not null
-          and source_uri is not null
-    ),
-    projected as (
-        select
-            document_id,
-            source_uri,
-            media_type,
-            document_type,
-            language,
-            case_id,
-            created_at,
-            normalized_text,
-            length(normalized_text) as text_length,
-            case
-                when length(normalized_text) >= 80 then true
-                else false
-            end as ready_for_ai,
-            source_file,
-            source_row_number
-        from typed
-    )
-    select
-        p.document_id,
-        p.source_uri,
-        p.media_type,
-        p.document_type,
-        p.language,
-        p.case_id,
-        p.created_at,
-        p.normalized_text as text,
-        p.text_length,
-        p.ready_for_ai,
-        coalesce(l.review_label, 'unlabeled') as review_label,
-        p.source_file,
-        p.source_row_number
-    from projected p
-    left join review_labels l using (document_id)
-""")
-
-curated_documents.to_table("curated_documents")
-```
-
-Prefer deterministic rules in SQL when the logic is relational. That makes the transformation easier to review, rerun, and compare against source data.
-
-## Build prompt or model-input columns
-
-Prompt construction is often a structured transformation step before AI Functions or GPU Inference. Keep prompt text deterministic and keep the IDs and metadata needed to review model outputs later.
-
-```python
-prompt_rows = con.sql("""
-    select
-        document_id,
-        source_uri,
-        document_type,
-        language,
-        review_label,
-        'Review this '
-            || document_type
-            || ' document and return one short quality note: '
-            || text as prompt
-    from curated_documents
-    where ready_for_ai
-    order by document_id
-    limit 100
-""")
-
-prompt_rows.to_table("prompt_rows")
-```
-
-For GPU Inference or AI Functions, validate the prompt relation before sending it to a model:
-
-- `document_id` is present and stable.
-- `source_uri` is present for review and reproduction.
-- `prompt` contains only the fields the model should see.
-- The sample is small enough to inspect manually before increasing `limit`, `batch_size`, or `concurrency`.
-
-## When to use Python UDFs
-
-Use a Python UDF when the transformation needs logic that SQL would make unclear or brittle:
-
-- tokenizer-aware chunking
-- fuzzy matching and custom scoring
-- media or document library calls
-- domain rules that are easier to test in Python
-- model preprocessing or postprocessing that returns custom columns
-
-Keep the UDF boundary narrow. Filter and project with SQL first, return explicit columns, and carry the stable ID back to SQL for validation.
-
-```python
 import pyarrow as pa
 
-def score_text_quality(batch: pa.Table) -> pa.Table:
-    document_ids = batch.column("document_id").to_pylist()
-    texts = batch.column("text").to_pylist()
+def clean_text(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    text = batch.column("text").to_pylist()
+    cleaned = []
 
-    scores = []
-    reasons = []
-    for text in texts:
-        value = str(text or "")
-        score = min(len(value) / 1000.0, 1.0)
-        scores.append(score)
-        if not value:
-            reasons.append("empty")
-        elif len(value) < 80:
-            reasons.append("too_short")
-        else:
-            reasons.append("ok")
+    for value in text:
+        s = str(value or "")
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        cleaned.append(s)
 
     return pa.table({
-        "document_id": document_ids,
-        "quality_score": scores,
-        "quality_reason": reasons,
+        "id": ids,
+        "text": text,
+        "clean_text": cleaned,
     })
 
-quality = con.sql("""
-    select document_id, text
-    from curated_documents
-""").map_batches(
-    score_text_quality,
+cleaned = rel.map_batches(
+    clean_text,
     schema={
-        "document_id": vane.sqltypes.VARCHAR,
-        "quality_score": vane.sqltypes.DOUBLE,
-        "quality_reason": vane.sqltypes.VARCHAR,
+        "id": "BIGINT",
+        "text": "VARCHAR",
+        "clean_text": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
 )
-
-quality.to_table("document_quality")
 ```
 
-`map_batches` returns only the columns declared in its schema. Join the result back with SQL when downstream stages need the curated source fields:
+Keep the original text column available until validation is complete. Cleaning rules can remove useful information if they are too aggressive.
+
+## Exact dedup with SQL
+
+For small or highly normalized datasets, SQL exact dedup is often enough:
 
 ```python
-scored_documents = con.sql("""
+cleaned.to_table("cleaned")
+
+deduped = con.sql("""
     select
-        c.*,
-        q.quality_score,
-        q.quality_reason
-    from curated_documents c
-    left join document_quality q using (document_id)
-""")
-
-scored_documents.to_table("scored_documents")
-```
-
-After the UDF, run the same validation checks as any other derived column.
-
-## Deduplicate Traceable Rows
-
-Deduplication is common for document manifests, extracted text, labels, and model outputs. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
-
-```python
-deduped_documents = con.sql("""
-    with keyed as (
-        select
-            document_id,
-            source_uri,
-            media_type,
-            document_type,
-            text,
-            created_at,
-            source_file,
-            source_row_number,
-            lower(regexp_replace(trim(coalesce(source_uri, '')), '\\s+', '', 'g')) as normalized_source_uri
-        from curated_documents
-    ),
-    ranked as (
-        select
-            *,
-            count(*) over (partition by normalized_source_uri) as duplicate_count,
-            row_number() over (
-                partition by normalized_source_uri
-                order by created_at desc nulls last, source_file, source_row_number
-            ) as representative_rank
-        from keyed
-        where normalized_source_uri <> ''
-    )
-    select
-        document_id,
-        source_uri,
-        media_type,
-        document_type,
-        text,
-        duplicate_count,
-        true as is_representative,
-        source_file,
-        source_row_number
-    from ranked
-    where representative_rank = 1
-""")
-
-deduped_documents.to_table("deduped_documents")
-```
-
-The normalized key should match your definition of a duplicate. The representative row order should be stable and explainable, such as latest timestamp followed by source metadata.
-
-For near-duplicate text or image matching, compute signatures or scores in a Python UDF or embedding stage, then use SQL to group, rank, and validate the retained rows.
-
-## Validation checklist
-
-Run validation before writing the curated output.
-
-```python
-con.sql("""
-    select
-        count(*) as curated_rows,
-        count(distinct document_id) as distinct_document_ids,
-        count(*) filter (where document_id is null) as null_document_ids,
-        count(*) - count(distinct document_id) as duplicate_document_ids,
-        count(*) filter (where source_uri is null) as null_source_uris,
-        count(*) filter (where source_file is null) as missing_source_file,
-        count(*) filter (where source_row_number is null) as missing_source_row_number,
-        count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
-        count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
-    from curated_documents
-""").show()
-```
-
-Check at least:
-
-- row count before and after each major filter
-- ID uniqueness for the source object or model-input row
-- nulls in required fields
-- value domains for media type, language, label, status, or task type
-- prompt text samples before model calls
-- model-output or quality-score distributions after enrichment
-- `status`, `error`, and run metadata fields before handoff
-- sample diff between source and curated values
-
-Use a sample diff for rules that change values:
-
-```python
-con.sql("""
-    select
-        s.document_id,
-        left(s.text, 120) as raw_text_preview,
-        left(c.text, 120) as curated_text_preview,
-        c.ready_for_ai,
-        c.review_label
-    from source_documents s
-    join curated_documents c using (document_id)
-    where coalesce(s.text, '') <> coalesce(c.text, '')
-    limit 20
-""").show()
-```
-
-Validation output does not need to be a full quality platform. It should make incorrect assumptions visible before you hand the curated table to UDFs, AI functions, GPU inference, embedding jobs, examples, or downstream systems.
-
-## Write the curated output
-
-Write outputs with a stable contract:
-
-- stable schema with explicit column names and types
-- stable IDs for every source object, prompt, chunk, label, or model-output row
-- traceability columns such as `source_uri`, `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
-- explicit `status` and `error` columns for rows that are skipped or cannot be used by later stages
-- enough run metadata to compare one run with another
-
-```python
-final_documents = con.sql("""
-    select
-        *,
-        case
-            when ready_for_ai then 'ready'
-            else 'skipped'
-        end as status,
-        case
-            when ready_for_ai then null
-            else coalesce(quality_reason, 'not_ready_for_ai')
-        end as error,
-        'structured_transform_v1' as transform_run_id,
-        current_timestamp as transformed_at
-    from scored_documents
-""")
-
-final_documents.write_parquet("output/curated/documents.parquet")
-
-con.sql("""
-    copy (
-        select
-            'documents' as dataset,
-            count(*) as row_count,
-            count(*) filter (where ready_for_ai) as ready_for_ai_rows,
-            count(*) filter (where status <> 'ready') as skipped_rows,
-            min(created_at) as min_created_at,
-            max(created_at) as max_created_at
-        from final_documents
-    )
-    to 'output/curated/documents_validation.parquet'
-    (format parquet)
+        any_value(id) as id,
+        any_value(text) as text,
+        clean_text,
+        count(*) as duplicate_count
+    from cleaned
+    group by clean_text
 """)
 ```
 
-Keep raw-to-curated traceability until the business questions are answered. It is often the fastest way to explain surprising model outputs and turn feedback into a reproducible issue.
+This keeps one representative per normalized text value and records how many rows collapsed into each group.
+
+## Near-duplicate strategy
+
+For near-duplicate text, use a Python UDF to compute signatures, then use SQL for grouping and scoring.
+
+Common approach:
+
+1. Normalize text.
+2. Compute a signature, such as MinHash, in `map_batches`.
+3. Generate candidate pairs with bounded LSH buckets.
+4. Score candidates.
+5. Build duplicate components.
+6. Keep one representative per component.
+
+Keep candidate expansion bounded. Approximate dedup pipelines can become expensive when a bucket grows too large.
+
+## Columns to keep
+
+For training data and retrieval datasets, keep audit-friendly columns:
+
+- stable source ID
+- original URI or file path
+- raw text
+- normalized text
+- duplicate component ID
+- representative flag
+- duplicate count or similarity score
+- filter reason or quality score
+
+These columns make it possible to explain why a row was retained or removed.
+
+## Scaling
+
+Start with local execution:
+
+```python
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+Move CPU-heavy signature generation to Ray when distribution helps:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=2048,
+    execution_backend="ray_task",
+)
+```
+
+Replace `signature_batch` with your own deterministic signature function. Return stable IDs and normalized text along with the signature so later SQL stages can audit and group rows.
+
+## Practical checks
+
+- Sample removed rows before trusting a rule.
+- Track row counts at each stage.
+- Keep raw text until the final validation step.
+- Make normalization deterministic.
+- Keep representative selection deterministic.
+- Write retained rows and rejected-row summaries separately when auditing matters.

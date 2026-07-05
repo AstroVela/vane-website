@@ -2,389 +2,151 @@
 title: 结构化转换
 ---
 
-当你已经通过 Structured Data Load 获得 AI 或 multimodal workflow 的 table-shaped input，并需要将其转换为稳定 relation，供 UDF、AI function、GPU inference、embedding、review 或 downstream handoff 使用时，使用 Structured Transformation。
+当你希望在一个 pipeline 中完成 SQL filtering、Python text processing 和 table output 时，使用 Vane Data 做 deduplication 和 cleaning。
 
-本指南不是 warehouse ETL 教程。目标是在 workflow 保持 table-shaped 的同时，让 metadata、label、prompt input、model output 和 validation summary 保持显式且可追溯。
+Vane Data 不提供内置 MinHash 或 data-quality framework。它提供 relation management、SQL、UDF execution 和 write path；cleaning 与 deduplication logic 仍然是显式 Python 或 SQL code。
 
-## 起始 relation
+## Pipeline Shape
 
-本指南假设 Structured Data Load 已经从 manifest、text record、label、prompt table、model output 或其他 DuckDB-supported source 中产出一个或多个 relation。
+典型 text-cleaning pipeline 如下：
 
-```python
-import vane
+1. 加载带稳定 ID 和 source metadata 的 text row。
+2. 使用 SQL 或 Python UDF normalize text。
+3. 当 normalized text 完全相同时，移除 exact duplicate。
+4. 只有当 exact dedup 不够时，才使用 MinHash 等 approximate similarity logic。
+5. 每个 duplicate group 保留一个 representative。
+6. 写出 retained row 和 audit column。
 
-con = vane.connect()
-
-source_documents = con.sql("""
-    select
-        *,
-        filename as source_file,
-        file_row_number as source_row_number
-    from read_parquet(
-        'data/source_documents/*.parquet',
-        filename=true,
-        file_row_number=true
-    )
-""")
-source_documents.to_table("source_documents")
-
-review_labels = con.sql("""
-    select *
-    from read_parquet('data/review_labels/*.parquet')
-""")
-review_labels.to_table("review_labels")
-```
-
-在 validation 完成前，保持 raw source relation 已注册。需要调整规则时，这是比较 source value、prompt input、label 和 model output 的最简单方式。
-
-## Transformation flow
-
-一条实用的 table-shaped transformation flow 是：
-
-1. Profile source relation。
-2. 过滤不可用或超出范围的行。
-3. 只投影 workflow 需要的列。
-4. 规范化 ID、media type、label、timestamp 和 categorical value。
-5. 派生 prompt input、review field、routing flag 或 evaluation column。
-6. Join label、metadata、rule 或 model-output table。
-7. 当 source key 或 chunk key 需要时执行 deduplication。
-8. 校验 row count、key、null、domain 和 sample diff。
-9. 写出带有稳定 schema、source traceability 和 run metadata 的 curated relation。
-
-从小型真实数据切片开始。目标是在投入完整运行前，先确认规则和 output contract。
-
-## 先 profile
-
-编写 transformation logic 前，先用 SQL profile：
+## Minimal Cleaning UDF
 
 ```python
-con.sql("""
-    select
-        count(*) as row_count,
-        count(distinct document_id) as distinct_document_ids,
-        count(*) filter (where document_id is null) as null_document_ids,
-        count(*) filter (where source_uri is null) as null_source_uris,
-        count(*) filter (where text is null or length(text) = 0) as empty_text_rows,
-        min(created_at) as min_created_at,
-        max(created_at) as max_created_at
-    from source_documents
-""").show()
-```
+import re
 
-第一次 validation run 中，请为影响 AI 或 multimodal workflow 的列添加检查：source ID、source URI、media type、language、label、prompt text、model output status、timestamp 和 join key。
-
-## SQL-first transform
-
-关系型工作使用 SQL：filtering、projection、type normalization、derived column、join、aggregation、deduplication 和 validation query。
-
-```python
-curated_documents = con.sql("""
-    with typed as (
-        select
-            cast(document_id as varchar) as document_id,
-            cast(source_uri as varchar) as source_uri,
-            lower(trim(cast(media_type as varchar))) as media_type,
-            lower(trim(cast(document_type as varchar))) as document_type,
-            lower(trim(cast(language as varchar))) as language,
-            cast(case_id as varchar) as case_id,
-            try_cast(created_at as timestamp) as created_at,
-            regexp_replace(trim(coalesce(text, '')), '\\s+', ' ', 'g') as normalized_text,
-            source_file,
-            source_row_number
-        from source_documents
-        where document_id is not null
-          and source_uri is not null
-    ),
-    projected as (
-        select
-            document_id,
-            source_uri,
-            media_type,
-            document_type,
-            language,
-            case_id,
-            created_at,
-            normalized_text,
-            length(normalized_text) as text_length,
-            case
-                when length(normalized_text) >= 80 then true
-                else false
-            end as ready_for_ai,
-            source_file,
-            source_row_number
-        from typed
-    )
-    select
-        p.document_id,
-        p.source_uri,
-        p.media_type,
-        p.document_type,
-        p.language,
-        p.case_id,
-        p.created_at,
-        p.normalized_text as text,
-        p.text_length,
-        p.ready_for_ai,
-        coalesce(l.review_label, 'unlabeled') as review_label,
-        p.source_file,
-        p.source_row_number
-    from projected p
-    left join review_labels l using (document_id)
-""")
-
-curated_documents.to_table("curated_documents")
-```
-
-当逻辑属于关系型处理时，优先在 SQL 中使用确定性规则。这样 transformation 更容易 review、rerun，并与 source data 比较。
-
-## 构建 prompt 或 model-input column
-
-Prompt construction 通常是 AI Functions 或 GPU Inference 前的 structured transformation step。保持 prompt text 确定性，并保留后续 review model output 所需的 ID 和 metadata。
-
-```python
-prompt_rows = con.sql("""
-    select
-        document_id,
-        source_uri,
-        document_type,
-        language,
-        review_label,
-        'Review this '
-            || document_type
-            || ' document and return one short quality note: '
-            || text as prompt
-    from curated_documents
-    where ready_for_ai
-    order by document_id
-    limit 100
-""")
-
-prompt_rows.to_table("prompt_rows")
-```
-
-对于 GPU Inference 或 AI Functions，在发送给 model 前先校验 prompt relation：
-
-- `document_id` 存在且稳定。
-- `source_uri` 存在，可用于 review 和 reproduction。
-- `prompt` 只包含 model 应该看到的字段。
-- 在增加 `limit`、`batch_size` 或 `concurrency` 前，sample 足够小，可以人工检查。
-
-## 何时使用 Python UDF
-
-当 transformation 需要 SQL 表达会变得不清晰或脆弱的逻辑时，使用 Python UDF：
-
-- tokenizer-aware chunking
-- fuzzy matching 和 custom scoring
-- media 或 document library call
-- 更容易用 Python 测试的 domain rule
-- 返回 custom column 的 model preprocessing 或 postprocessing
-
-保持 UDF boundary 狭窄。先用 SQL filter 和 project，返回显式列，并将稳定 ID 带回 SQL 做 validation。
-
-```python
 import pyarrow as pa
 
-def score_text_quality(batch: pa.Table) -> pa.Table:
-    document_ids = batch.column("document_id").to_pylist()
-    texts = batch.column("text").to_pylist()
+def clean_text(batch: pa.Table) -> pa.Table:
+    ids = batch.column("id").to_pylist()
+    text = batch.column("text").to_pylist()
+    cleaned = []
 
-    scores = []
-    reasons = []
-    for text in texts:
-        value = str(text or "")
-        score = min(len(value) / 1000.0, 1.0)
-        scores.append(score)
-        if not value:
-            reasons.append("empty")
-        elif len(value) < 80:
-            reasons.append("too_short")
-        else:
-            reasons.append("ok")
+    for value in text:
+        s = str(value or "")
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        cleaned.append(s)
 
     return pa.table({
-        "document_id": document_ids,
-        "quality_score": scores,
-        "quality_reason": reasons,
+        "id": ids,
+        "text": text,
+        "clean_text": cleaned,
     })
 
-quality = con.sql("""
-    select document_id, text
-    from curated_documents
-""").map_batches(
-    score_text_quality,
+cleaned = rel.map_batches(
+    clean_text,
     schema={
-        "document_id": vane.sqltypes.VARCHAR,
-        "quality_score": vane.sqltypes.DOUBLE,
-        "quality_reason": vane.sqltypes.VARCHAR,
+        "id": "BIGINT",
+        "text": "VARCHAR",
+        "clean_text": "VARCHAR",
     },
     batch_size=1024,
     execution_backend="subprocess_task",
 )
-
-quality.to_table("document_quality")
 ```
 
-`map_batches` 只返回 schema 中声明的列。当 downstream stage 仍需要 curated source field 时，请用 SQL 将结果 join 回来：
+在 validation 完成前保留 original text column。Cleaning rule 如果过于激进，可能会移除有用信息。
+
+## 使用 SQL 做 Exact Dedup
+
+对于小型或高度 normalized 的 dataset，SQL exact dedup 通常已经足够：
 
 ```python
-scored_documents = con.sql("""
+cleaned.to_table("cleaned")
+
+deduped = con.sql("""
     select
-        c.*,
-        q.quality_score,
-        q.quality_reason
-    from curated_documents c
-    left join document_quality q using (document_id)
-""")
-
-scored_documents.to_table("scored_documents")
-```
-
-UDF 之后，像对待其他 derived column 一样运行相同的 validation check。
-
-## 去重可追溯行
-
-Document manifest、extracted text、label 和 model output 中经常需要 deduplication。定义 business key，确定性地规范化它，统计 duplicate，并通过显式排序规则保留 representative row。
-
-```python
-deduped_documents = con.sql("""
-    with keyed as (
-        select
-            document_id,
-            source_uri,
-            media_type,
-            document_type,
-            text,
-            created_at,
-            source_file,
-            source_row_number,
-            lower(regexp_replace(trim(coalesce(source_uri, '')), '\\s+', '', 'g')) as normalized_source_uri
-        from curated_documents
-    ),
-    ranked as (
-        select
-            *,
-            count(*) over (partition by normalized_source_uri) as duplicate_count,
-            row_number() over (
-                partition by normalized_source_uri
-                order by created_at desc nulls last, source_file, source_row_number
-            ) as representative_rank
-        from keyed
-        where normalized_source_uri <> ''
-    )
-    select
-        document_id,
-        source_uri,
-        media_type,
-        document_type,
-        text,
-        duplicate_count,
-        true as is_representative,
-        source_file,
-        source_row_number
-    from ranked
-    where representative_rank = 1
-""")
-
-deduped_documents.to_table("deduped_documents")
-```
-
-Normalized key 应匹配你对 duplicate 的定义。Representative row 的排序应稳定且可解释，例如先按最新 timestamp，再按 source metadata。
-
-对于 near-duplicate text 或 image matching，请在 Python UDF 或 embedding stage 中计算 signature 或 score，然后使用 SQL 对保留行进行 group、rank 和 validation。
-
-## 校验清单
-
-写出 curated output 前运行 validation。
-
-```python
-con.sql("""
-    select
-        count(*) as curated_rows,
-        count(distinct document_id) as distinct_document_ids,
-        count(*) filter (where document_id is null) as null_document_ids,
-        count(*) - count(distinct document_id) as duplicate_document_ids,
-        count(*) filter (where source_uri is null) as null_source_uris,
-        count(*) filter (where source_file is null) as missing_source_file,
-        count(*) filter (where source_row_number is null) as missing_source_row_number,
-        count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
-        count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
-    from curated_documents
-""").show()
-```
-
-至少检查：
-
-- 每个主要 filter 前后的 row count
-- source object 或 model-input row 的 ID uniqueness
-- required field 中的 null
-- media type、language、label、status 或 task type 的 value domain
-- model call 前的 prompt text sample
-- enrichment 后的 model-output 或 quality-score distribution
-- handoff 前的 `status`、`error` 和 run metadata field
-- source value 与 curated value 的 sample diff
-
-对于会改变值的规则，使用 sample diff：
-
-```python
-con.sql("""
-    select
-        s.document_id,
-        left(s.text, 120) as raw_text_preview,
-        left(c.text, 120) as curated_text_preview,
-        c.ready_for_ai,
-        c.review_label
-    from source_documents s
-    join curated_documents c using (document_id)
-    where coalesce(s.text, '') <> coalesce(c.text, '')
-    limit 20
-""").show()
-```
-
-校验输出不需要成为完整 quality platform。它应该在你将 curated table 交给 UDF、AI function、GPU inference、embedding job、example 或 downstream system 前，让错误假设暴露出来。
-
-## 写出 curated output
-
-使用稳定 contract 写出输出：
-
-- 带有显式 column name 和 type 的稳定 schema
-- 每个 source object、prompt、chunk、label 或 model-output row 的稳定 ID
-- `source_uri`、`source_file`、`source_row_number`、`raw_id` 或 `ingest_run_id` 等 traceability column
-- 对 skipped row 或无法被后续 stage 使用的行，保留显式 `status` 和 `error` column
-- 足以比较不同运行的 run metadata
-
-```python
-final_documents = con.sql("""
-    select
-        *,
-        case
-            when ready_for_ai then 'ready'
-            else 'skipped'
-        end as status,
-        case
-            when ready_for_ai then null
-            else coalesce(quality_reason, 'not_ready_for_ai')
-        end as error,
-        'structured_transform_v1' as transform_run_id,
-        current_timestamp as transformed_at
-    from scored_documents
-""")
-
-final_documents.write_parquet("output/curated/documents.parquet")
-
-con.sql("""
-    copy (
-        select
-            'documents' as dataset,
-            count(*) as row_count,
-            count(*) filter (where ready_for_ai) as ready_for_ai_rows,
-            count(*) filter (where status <> 'ready') as skipped_rows,
-            min(created_at) as min_created_at,
-            max(created_at) as max_created_at
-        from final_documents
-    )
-    to 'output/curated/documents_validation.parquet'
-    (format parquet)
+        any_value(id) as id,
+        any_value(text) as text,
+        clean_text,
+        count(*) as duplicate_count
+    from cleaned
+    group by clean_text
 """)
 ```
 
-在业务问题得到回答前，保留 raw-to-curated traceability。这通常是解释异常 model output、并将反馈转化为可复现 issue 的最快方式。
+这会为每个 normalized text value 保留一个 representative，并记录每个 group 折叠了多少行。
+
+## Near-Duplicate Strategy
+
+对于 near-duplicate text，使用 Python UDF 计算 signature，再使用 SQL 做 grouping 和 scoring。
+
+常见流程：
+
+1. Normalize text。
+2. 在 `map_batches` 中计算 signature，例如 MinHash。
+3. 用 bounded LSH bucket 生成 candidate pair。
+4. Score candidate。
+5. 构建 duplicate component。
+6. 每个 component 保留一个 representative。
+
+保持 candidate expansion 有边界。当 bucket 过大时，approximate dedup pipeline 可能会变得昂贵。
+
+## 需要保留的 Column
+
+对于 training data 和 retrieval dataset，保留 audit-friendly column：
+
+- stable source ID
+- original URI 或 file path
+- raw text
+- normalized text
+- duplicate component ID
+- representative flag
+- duplicate count 或 similarity score
+- filter reason 或 quality score
+
+这些 column 让你能解释一行为什么被保留或移除。
+
+## Scaling
+
+从本地 execution 开始：
+
+```python
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=1024,
+    execution_backend="subprocess_task",
+)
+```
+
+当 distribution 有帮助时，将 CPU-heavy signature generation 迁移到 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+
+signatures = cleaned.map_batches(
+    signature_batch,
+    schema={
+        "id": "BIGINT",
+        "clean_text": "VARCHAR",
+        "signature": "UBIGINT[]",
+    },
+    batch_size=2048,
+    execution_backend="ray_task",
+)
+```
+
+将 `signature_batch` 替换为你自己的 deterministic signature function。请返回 stable ID 和 normalized text，以及 signature，这样后续 SQL stage 可以 audit 和 group row。
+
+## Practical Checks
+
+- 信任规则前，先抽样检查 removed row。
+- 跟踪每个 stage 的 row count。
+- 保留 raw text，直到 final validation step。
+- 让 normalization deterministic。
+- 让 representative selection deterministic。
+- 当 audit 很重要时，分别写出 retained row 和 rejected-row summary。
