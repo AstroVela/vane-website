@@ -2,25 +2,25 @@
 title: SQL 多模态 Pipeline
 ---
 
-本指南展示一个 SQL-first 的 multimodal data preparation pattern。SQL 负责 metadata filtering 和 validation；Python UDF 处理 media-specific step；结果再回到 SQL 中做 inspection 和 output。
+本指南展示一种 SQL 优先的多模态数据准备模式。SQL 负责元数据过滤和校验；Python UDF 处理媒体专用步骤；结果再回到 SQL 中进行检查并生成输出。
 
-当 pipeline 的大部分逻辑都应该让 SQL 用户可读，但其中一个 stage 需要 Python library 做 decoding、feature extraction 或 model inference 时，使用这种方式。
+当 pipeline 的大部分逻辑都需要让 SQL 用户读懂，但其中某个阶段需要 Python 库完成解码、特征提取或模型推理时，可以使用这种模式。
 
-## Pipeline Shape
+## Pipeline 结构
 
-这个 pattern 有五个 stage：
+这个模式包含五个阶段：
 
-1. 使用 SQL 选择 candidate row。
-2. 加载 bytes，或保留稳定 media reference。
-3. 运行 Python UDF 做 decoding 或 inference。
-4. 回到 SQL 做 validation 和 summary。
-5. 写出 curated tabular output。
+1. 使用 SQL 选择候选行。
+2. 加载字节，或保留稳定的媒体引用路径。
+3. 运行 Python UDF 做解码或推理。
+4. 回到 SQL 做校验和汇总。
+5. 写出整理后的表格输出。
 
-Vane Data 不会给 SQL 增加 image、audio 或 video syntax。Multimodal work 会被表示为 table column 和显式 Python UDF stage。
+Vane Data 不会为 SQL 增加图像、音频或视频语法。多模态处理会表示为表中的列和显式 Python UDF 阶段。
 
-## 1. 从 SQL Metadata 开始
+## 1. 从 SQL 元数据开始
 
-第一步保持 relational。先 filter row、normalize metadata，并在 Python 看到数据前减少 input。
+第一步保持关系型处理。先过滤行、规范化元数据，并在数据进入 Python 前减少输入量。
 
 ```python
 import vane
@@ -38,9 +38,9 @@ items = con.sql("""
 """)
 ```
 
-## 2. 添加 Bytes 或 Reference
+## 2. 添加字节或引用路径
 
-如果 media bytes 已经在 Parquet 中，保留在 relation 里并跳过这一步。如果 table 存储的是 path，使用 UDF 加载 bytes，并返回后续 stage 需要的 column。
+如果媒体字节已经在 Parquet 中，就保留在 relation 里并跳过这一步。如果表中存储的是路径，使用 UDF 加载字节，并返回后续阶段需要的列。
 
 ```python
 from pathlib import Path
@@ -72,11 +72,11 @@ with_bytes = items.map_batches(
 )
 ```
 
-`map_batches` 返回 UDF 产出的列。当 downstream stage 仍然需要 `id`、`path` 和 `media_type` 等 input column 时，请从 UDF 中返回它们。
+`map_batches` 返回 UDF 产出的列。当下游阶段仍然需要 `id`、`path` 和 `media_type` 等输入列时，请从 UDF 中返回它们。
 
-## 3. 运行 Model Step
+## 3. 运行模型阶段
 
-当 model、tokenizer、image processor 或 client 应该初始化一次并跨 batch 复用时，使用 actor backend。
+当模型、分词器、图像处理器或客户端需要只初始化一次并跨 batch 复用时，使用 actor backend。
 
 ```python
 class ImageClassifier:
@@ -118,11 +118,11 @@ classified = with_bytes.map_batches(
 )
 ```
 
-这个示例 classifier 有意保持简单，方便看清 relation contract。在生产中，把 decoding、preprocessing 和 inference 放进 actor，同时保持返回 schema 稳定。
+这个示例分类器有意保持简单，方便看清 relation 契约。在生产中，把解码、预处理和推理放进 actor，同时保持返回 schema 稳定。
 
 ## 4. 回到 SQL
 
-当你想用普通 SQL 做 validation、summary 或 downstream join 时，从 relation 创建 table。
+当你想用普通 SQL 做校验、汇总或下游 join 时，从 relation 创建表。
 
 ```python
 classified.to_table("classified_media")
@@ -140,9 +140,9 @@ summary = con.sql("""
 summary.show()
 ```
 
-## 5. 写出 Output
+## 5. 写出输出
 
-只写出 downstream system 需要的 column。Large media bytes 在 inference 期间通常有用，但在 curated output 中往往不需要。
+只写出下游系统需要的列。大块媒体字节在推理期间通常有用，但在整理后的输出里往往不需要。
 
 ```python
 curated = con.sql("""
@@ -155,7 +155,7 @@ curated.write_parquet("output/classified_media/")
 
 ## 迁移到 Ray
 
-当 expensive stage 迁移到 Ray 时，SQL text 和 UDF contract 不需要变化。请在创建并执行 pipeline 前配置 runner：
+将开销较高的阶段迁移到 Ray 时，SQL 文本和 UDF 契约不需要变化。请在创建并执行 pipeline 前配置 runner：
 
 ```python
 import vane
@@ -163,7 +163,7 @@ import vane
 vane.configure(runner="ray")
 ```
 
-然后为 expensive stage 选择 Ray UDF backend：
+然后为这个开销较高的阶段选择 Ray UDF backend：
 
 ```python
 classified = with_bytes.map_batches(
@@ -182,14 +182,14 @@ classified = with_bytes.map_batches(
 )
 ```
 
-每个 Ray worker 都必须能够 import UDF class，并访问相同 storage、credential、model file 和 Python dependency。
+每个 Ray worker 都必须能够导入 UDF 类，并访问相同的存储、凭证、模型文件和 Python 依赖。
 
-## Practical Checks
+## 实用检查
 
-在推广 multimodal pipeline 前：
+在推广多模态 pipeline 前：
 
-- 使用小型本地 run 验证 UDF output schema。
-- 将 filter 和 column projection 放在 byte loading 和 inference 之前。
-- 保留稳定 identifier，使 model output 可以 join 回 source record。
-- 决定 media bytes 属于 final output，还是只属于 intermediate stage。
-- 扩展规模前，先从每个 Ray worker 测试 path、storage 和 credential access。
+- 使用小型本地运行验证 UDF 输出 schema。
+- 将过滤和列投影放在字节加载和推理之前。
+- 保留稳定的标识符，使模型输出可以关联回源记录。
+- 决定媒体字节属于最终输出，还是只属于中间阶段。
+- 扩展规模前，先从每个 Ray worker 测试路径、存储和凭证访问。

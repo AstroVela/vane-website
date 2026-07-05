@@ -3,9 +3,9 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇 Quickstart 通过一个小型多模态 AI data pipeline 展示 Vane Data：把文档、图像和音频表示为行，使用 SQL 选择有代表性的切片，为审核字段添加 Python 逻辑，可选调用 AI function，然后校验并写出 tabular result。
+这篇 Quickstart 通过一个小型多模态 AI data pipeline 展示 Vane Data：把文档、图像和音频表示为行，使用 SQL 选择有代表性的切片，为审核字段添加 Python 逻辑，可选调用 AI Function，然后校验并写出表格结果。
 
-必需路径使用 inline data 在本地运行。完成必需步骤不需要 Ray、GPU、remote storage、真实媒体文件或 model provider credential。AI 调用是可选步骤，并已明确标注。
+必需路径使用内联数据在本地运行。完成必需步骤不需要 Ray、GPU、远程存储、真实媒体文件或模型 provider 凭证。AI 调用是可选步骤，并已明确标注。
 
 ## 开始之前
 
@@ -21,13 +21,13 @@ python -m pip install vane-ai
 python -m pip install pyarrow
 ```
 
-如果你想运行可选的 hosted AI 步骤，请安装对应 provider package，并设置该 provider 所需的 credential：
+如果你想运行可选的托管 AI 步骤，请安装对应的 provider 包，并设置该 provider 所需的凭证：
 
 ```bash
 python -m pip install openai
 ```
 
-## 1. 创建 connection
+## 1. 创建连接
 
 ```python
 import pyarrow as pa
@@ -36,15 +36,15 @@ import vane
 con = vane.connect()
 ```
 
-运行一个最小 SQL query，确认 connection 可用：
+运行一个最小 SQL 查询，确认连接可用：
 
 ```python
 con.sql("select 42 as answer").show()
 ```
 
-## 2. 创建多模态 relation
+## 2. 创建多模态 relation（关系对象）
 
-第一次运行时使用 inline manifest。它具备真实多模态 workflow 的基本形态：稳定 ID、source location、media type、文本或抽取文本，以及业务 metadata。
+第一次运行时使用内联清单。它具备真实多模态 workflow 的基本形态：稳定 ID、来源位置、媒体类型、文本或抽取文本，以及业务元数据。
 
 ```python
 assets = con.sql("""
@@ -89,11 +89,11 @@ assets = con.sql("""
 assets.show()
 ```
 
-relation 表示表格形态的工作单元。在你的数据中，`source_uri` 可能指向 PDF、图像、音频、视频或抽取文本。关键是每个 asset 都有稳定的行，可以被 filter、enrich、validate，并最终写回输出。
+relation 表示表格形态的工作单元。在你的数据中，`source_uri` 可能指向 PDF、图像、音频、视频或抽取文本。关键是每个资产都有稳定的行，可以被过滤、丰富、校验，并最终写回输出。
 
-## 3. 使用 SQL 选择 candidate slice
+## 3. 使用 SQL 选择候选切片
 
-在进入 Python、AI 或模型处理之前，先使用 SQL。可以按 media type、business priority、document type、date range 或任何 metadata 过滤，让第一次运行保持小而有意义。
+在进入 Python、AI 或模型处理之前，先使用 SQL。可以按媒体类型、业务优先级、文档类型、日期范围或任何元数据过滤，让第一次运行保持小而有意义。
 
 ```python
 assets.to_table("assets")
@@ -116,11 +116,11 @@ candidates = con.sql("""
 candidates.show()
 ```
 
-这个阶段体现了 Vane 面向表的多模态模型：媒体类型可以不同，但 candidate slice 仍然是带显式 column 的 relation。
+这个阶段体现了 Vane 面向表的多模态模型：媒体类型可以不同，但候选切片仍然是带显式列的 relation。
 
-## 4. 为 AI-ready 字段添加 Python 逻辑
+## 4. 为可供 AI 使用的字段添加 Python 逻辑
 
-当自定义 Python 代码需要处理 Arrow batch 并返回显式 output column 时，使用 `map_batches(...)`。这个示例会准备 review metadata，以及可发送给 AI function 的 prompt column。
+当自定义 Python 代码需要处理 Arrow batch 并返回显式输出列时，使用 `map_batches(...)`。这个示例会准备审核元数据，以及可发送给 AI Function 的提示词列。
 
 ```python
 def prepare_review_rows(batch: pa.Table) -> pa.Table:
@@ -199,11 +199,11 @@ review_rows = candidates.map_batches(
 review_rows.show()
 ```
 
-`map_batches` 返回 UDF 的 output column。因此如果后续阶段仍然需要 `asset_id`、`source_uri`、`media_type` 等 identifier 和 source metadata，需要把它们一起返回。
+`map_batches` 返回 UDF 的输出列。因此如果后续阶段仍然需要 `asset_id`、`source_uri`、`media_type` 等标识符和来源元数据，需要把它们一起返回。
 
-## 5. 可选：调用 AI function
+## 5. 可选：调用 AI Function
 
-必需的 Quickstart 路径已经展示了多模态 relation 形态和 AI-ready prompt column。如果你已经配置 provider credential，可以使用 `prompt(...)` 运行一个小规模 hosted AI 调用。
+必需的 Quickstart 路径已经展示了多模态 relation 形态和可供 AI 使用的提示词列。如果你已经配置 provider 凭证，可以使用 `prompt(...)` 运行一个小规模托管 AI 调用。
 
 ```python
 ai_only = review_rows.prompt(
@@ -217,7 +217,7 @@ ai_only = review_rows.prompt(
 )
 ```
 
-AI helper 会返回配置好的 output column。如果最终输出需要 ID 和 source field，请先检查 row count，再把 helper output 与 source row 合并：
+AI 辅助方法会返回配置好的输出列。如果最终输出需要 ID 和源字段，请先检查行数，再把辅助方法输出与源行合并：
 
 ```python
 review_table = review_rows.to_arrow_table()
@@ -231,9 +231,9 @@ reviewed_with_ai = con.from_arrow(
 )
 ```
 
-第一次在自己的数据上运行时，先处理 10-100 行，再增加 `batch_size`、`concurrency`，或把 AI stage 迁移到 Ray。
+第一次在自己的数据上运行时，先处理 10-100 行，再增加 `batch_size`、`concurrency`，或把 AI 阶段迁移到 Ray。
 
-## 6. 校验 tabular result
+## 6. 校验表格结果
 
 写出之前，再次使用 SQL 检查输出。
 
@@ -257,16 +257,16 @@ summary.show()
 
 迁移到自己的数据之前，检查你在真实 workflow 中同样会检查的事项：
 
-- row count 符合预期。
+- 行数符合预期。
 - 稳定 ID 仍然存在。
-- source URI 和 media type 仍然存在。
+- 来源 URI 和媒体类型仍然存在。
 - 应该跳过的行具有显式 `status`。
-- prompt text 只包含模型应该看到的字段。
-- 若干 sample row 在业务上说得通。
+- 提示词文本只包含模型应该看到的字段。
+- 若干样本行在业务上说得通。
 
 ## 7. 写出结果
 
-当结果可以进入 review 或 handoff 时，写出 tabular output。
+当结果可以进入审核或交接时，写出表格输出。
 
 ```python
 review_rows.write_parquet("quickstart-multimodal-review/")
@@ -278,17 +278,17 @@ review_rows.write_parquet("quickstart-multimodal-review/")
 reviewed_with_ai.write_parquet("quickstart-multimodal-ai-review/")
 ```
 
-处理自己的数据时，写到按 run 区分的路径，并保留足够的 source metadata，以便复现或解释每一行输出。
+处理自己的数据时，写到按运行区分的路径，并保留足够的来源元数据，以便复现或解释每一行输出。
 
 ## 在你的数据上复用相同形态
 
-本页使用 inline manifest 是为了去掉 setup 噪音。你应该带入自己 workflow 的是以下形态：
+本页使用内联清单是为了去掉准备工作的干扰。你应该带入自己 workflow 的是以下形态：
 
 ```text
 load a small multimodal slice -> SQL select candidates -> prepare AI-ready fields -> optional AI function -> SQL validation -> write tabular output
 ```
 
-先从本地开始。只有在 local data contract、ID、prompt、output schema 和 validation check 都正确之后，再迁移到 Ray、vLLM、GPU inference 或更大规模的 media decoding。
+先从本地开始。只有在本地数据契约、ID、提示词、输出 schema 和校验检查都正确之后，再迁移到 Ray、vLLM、GPU 推理或更大规模的媒体解码。
 
 ## 下一步
 

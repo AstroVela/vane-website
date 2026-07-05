@@ -2,24 +2,24 @@
 title: 招标合规检查
 ---
 
-本示例描述 tender 或 procurement compliance check 的 Vane Data 模式。
+本示例描述使用 Vane Data 进行招标或采购合规检查的模式。
 
-Vane Data 不内置专用 tender parser 或 compliance engine。它提供 SQL、relation API 和 AI helper，可组合成 review workflow。
+Vane Data 不内置招标专用解析器或合规引擎。它提供 SQL、relation API 和 AI helper，可组合成审查 workflow。
 
 ## 目标
 
-将 tender document 与 checklist 对比，并产出可 review、sample 和 audit 的 structured compliance result。
+将招标文件与检查清单对比，并产出可审查、抽样和审计的结构化合规结果。
 
 ## 输入表
 
-Documents：
+文档：
 
 - `document_id`
 - `section`
 - `text`
 - `source_uri`
 
-Checklist：
+检查清单：
 
 - `rule_id`
 - `requirement`
@@ -44,9 +44,9 @@ rules = con.sql("""
 """)
 ```
 
-## 构建 check
+## 构建检查项
 
-使用 SQL 让 model workload 显式化。在将 prompt 发送给 provider 前，先检查 cross join size。
+使用 SQL 让模型工作负载显式化。在将提示词发送给 provider 前，先检查交叉连接规模。
 
 ```python
 docs.to_table("docs")
@@ -65,9 +65,9 @@ checks = con.sql("""
 """)
 ```
 
-## Structured model check
+## 结构化模型检查
 
-`prompt(...)` 返回已配置的输出列。汇总前，请显式地将结果与 check row 组合，并在写出结果前校验 row count。
+`prompt(...)` 返回已配置的输出列。汇总前，请显式地将结果与检查行组合，并在写出结果前校验行数。
 
 ```python
 from pydantic import BaseModel
@@ -109,7 +109,7 @@ summary.show()
 
 ## 扩展
 
-当 SQL 准备、UDF stage 或 model call 需要 distributed worker 时，使用 Ray：
+当 SQL 准备、UDF 阶段或模型调用需要分布式 worker 时，使用 Ray：
 
 ```python
 import vane
@@ -117,18 +117,18 @@ import vane
 vane.configure(runner="ray")
 ```
 
-根据 API limit、rate limit 和 model-serving capacity 设置 provider concurrency。
+根据 API 限制、速率限制和模型服务容量设置 provider 并发度。
 
 ## 校验
 
-在 compliance workflow 中使用结果前：
+在合规 workflow 中使用结果前：
 
-- 对 checklist 和 prompt 进行版本化。
-- 保留 source document reference。
-- 人工 review high-severity failure。
-- 抽样检查 compliant 和 non-compliant output。
-- 将 model output 视为 review evidence，而不是 legal advice。
+- 对检查清单和提示词进行版本化。
+- 保留源文档引用。
+- 人工审查高严重级别失败项。
+- 抽样检查合规和不合规输出。
+- 将模型输出视为审查证据，而不是法律建议。
 
 ## 范围说明
 
-本页不定义 legal advice、procurement policy、document parsing 或 tender-specific connector。它记录如何使用 Vane Data SQL 和 AI helper 表达该 workflow。
+本页不定义法律建议、采购政策、文档解析或招标专用连接器。它记录如何使用 Vane Data SQL 和 AI helper 表达该 workflow。

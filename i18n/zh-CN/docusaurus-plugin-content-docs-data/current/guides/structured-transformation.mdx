@@ -2,22 +2,22 @@
 title: 结构化转换
 ---
 
-当你希望在一个 pipeline 中完成 SQL filtering、Python text processing 和 table output 时，使用 Vane Data 做 deduplication 和 cleaning。
+当你希望在一个 pipeline 中完成 SQL 过滤、Python 文本处理和表输出时，使用 Vane Data 做去重和清洗。
 
-Vane Data 不提供内置 MinHash 或 data-quality framework。它提供 relation management、SQL、UDF execution 和 write path；cleaning 与 deduplication logic 仍然是显式 Python 或 SQL code。
+Vane Data 不提供内置 MinHash 或数据质量框架。它提供 relation 管理、SQL、UDF 执行和写出路径；清洗与去重逻辑仍然是显式 Python 或 SQL 代码。
 
-## Pipeline Shape
+## Pipeline 形态
 
-典型 text-cleaning pipeline 如下：
+典型文本清洗 pipeline 如下：
 
-1. 加载带稳定 ID 和 source metadata 的 text row。
-2. 使用 SQL 或 Python UDF normalize text。
-3. 当 normalized text 完全相同时，移除 exact duplicate。
-4. 只有当 exact dedup 不够时，才使用 MinHash 等 approximate similarity logic。
-5. 每个 duplicate group 保留一个 representative。
-6. 写出 retained row 和 audit column。
+1. 加载带稳定 ID 和来源元数据的文本行。
+2. 使用 SQL 或 Python UDF 规范化文本。
+3. 当规范化后的文本完全相同时，移除完全重复项。
+4. 只有当完全去重不够时，才使用 MinHash 等近似相似度逻辑。
+5. 每个重复项分组保留一个代表行。
+6. 写出保留行和审计列。
 
-## Minimal Cleaning UDF
+## 最小清洗 UDF
 
 ```python
 import re
@@ -52,11 +52,11 @@ cleaned = rel.map_batches(
 )
 ```
 
-在 validation 完成前保留 original text column。Cleaning rule 如果过于激进，可能会移除有用信息。
+在校验完成前保留原始文本列。清洗规则如果过于激进，可能会移除有用信息。
 
-## 使用 SQL 做 Exact Dedup
+## 使用 SQL 做完全去重
 
-对于小型或高度 normalized 的 dataset，SQL exact dedup 通常已经足够：
+对于小型或高度规范化的数据集，SQL 完全去重通常已经足够：
 
 ```python
 cleaned.to_table("cleaned")
@@ -72,41 +72,41 @@ deduped = con.sql("""
 """)
 ```
 
-这会为每个 normalized text value 保留一个 representative，并记录每个 group 折叠了多少行。
+这会为每个规范化文本值保留一个代表行，并记录每个分组折叠了多少行。
 
-## Near-Duplicate Strategy
+## 近似重复项策略
 
-对于 near-duplicate text，使用 Python UDF 计算 signature，再使用 SQL 做 grouping 和 scoring。
+对于近似重复文本，使用 Python UDF 计算签名，再使用 SQL 做分组和评分。
 
 常见流程：
 
-1. Normalize text。
-2. 在 `map_batches` 中计算 signature，例如 MinHash。
-3. 用 bounded LSH bucket 生成 candidate pair。
-4. Score candidate。
-5. 构建 duplicate component。
-6. 每个 component 保留一个 representative。
+1. 规范化文本。
+2. 在 `map_batches` 中计算签名，例如 MinHash。
+3. 用有界 LSH 桶生成候选对。
+4. 对候选项评分。
+5. 构建重复项连通分量。
+6. 每个连通分量保留一个代表行。
 
-保持 candidate expansion 有边界。当 bucket 过大时，approximate dedup pipeline 可能会变得昂贵。
+保持候选项扩展有边界。当桶过大时，近似去重 pipeline 可能会变得昂贵。
 
-## 需要保留的 Column
+## 需要保留的列
 
-对于 training data 和 retrieval dataset，保留 audit-friendly column：
+对于训练数据和检索数据集，保留便于审计的列：
 
-- stable source ID
-- original URI 或 file path
-- raw text
-- normalized text
-- duplicate component ID
-- representative flag
-- duplicate count 或 similarity score
-- filter reason 或 quality score
+- 稳定的来源 ID
+- 原始 URI 或文件路径
+- 原始文本
+- 规范化文本
+- 重复项连通分量 ID
+- 代表行标记
+- 重复项计数或相似度评分
+- 过滤原因或质量评分
 
-这些 column 让你能解释一行为什么被保留或移除。
+这些列让你能解释一行为什么被保留或移除。
 
-## Scaling
+## 扩展执行
 
-从本地 execution 开始：
+从本地执行开始：
 
 ```python
 signatures = cleaned.map_batches(
@@ -121,7 +121,7 @@ signatures = cleaned.map_batches(
 )
 ```
 
-当 distribution 有帮助时，将 CPU-heavy signature generation 迁移到 Ray：
+当分布式执行有帮助时，将 CPU 密集的签名生成迁移到 Ray：
 
 ```python
 import vane
@@ -140,13 +140,13 @@ signatures = cleaned.map_batches(
 )
 ```
 
-将 `signature_batch` 替换为你自己的 deterministic signature function。请返回 stable ID 和 normalized text，以及 signature，这样后续 SQL stage 可以 audit 和 group row。
+将 `signature_batch` 替换为你自己的确定性签名函数。请返回稳定 ID、规范化文本和签名，这样后续 SQL 阶段可以审计并对行分组。
 
-## Practical Checks
+## 实用检查
 
-- 信任规则前，先抽样检查 removed row。
-- 跟踪每个 stage 的 row count。
-- 保留 raw text，直到 final validation step。
-- 让 normalization deterministic。
-- 让 representative selection deterministic。
-- 当 audit 很重要时，分别写出 retained row 和 rejected-row summary。
+- 信任规则前，先抽样检查被移除的行。
+- 跟踪每个阶段的行数。
+- 保留原始文本，直到最终校验步骤。
+- 让规范化过程保持确定性。
+- 让代表行选择保持确定性。
+- 当审计很重要时，分别写出保留行和被拒绝行摘要。

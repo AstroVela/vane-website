@@ -2,35 +2,35 @@
 title: 自定义 Python UDF
 ---
 
-当 Vane Data pipeline 需要 SQL 或内置 AI Function 不适合承载的 Python 逻辑时，使用 Custom Python UDF：外部 library、自定义 rule、media processing、model preprocessing、自定义 inference、private client，或完全可控的 output schema。
+当 Vane Data pipeline 中的 Python 逻辑不适合用 SQL 或内置 AI Function 表达时，可以使用 Custom Python UDF：外部库、自定义规则、媒体处理、模型预处理、自定义推理、私有客户端，或完全可控的 output schema。
 
-这篇文档聚焦 UDF 有哪些类型，以及应该如何选择。
+本文聚焦 UDF 的类型，以及不同场景下的选择方式。
 
 ## 选择 UDF 类型
 
-先选择 callable 形态。Execution backend 是另一层选择，它决定 callable 在哪里运行。
+先确定可调用对象形态；backend 是另一层选择，它决定可调用对象在哪里执行。
 
-| UDF 类型 | API | Callable 形态 | 本地 backend | Ray backend | 适用场景 |
+| UDF 类型 | API | 可调用对象形态 | 本地 backend | Ray backend | 适用场景 |
 | --- | --- | --- | --- | --- | --- |
-| 无状态 batch UDF | `map_batches` | Python function | `subprocess_task` | `ray_task` | 逻辑不需要可复用 model、client、cache 或其他状态。 |
-| 有状态 batch UDF | `map_batches` | Callable class | `subprocess_actor` | `ray_actor` | setup 成本高，需要跨 batch 复用。 |
-| 行扩展 UDF | `flat_map` | Row function | `subprocess_task` | `ray_task` | 一个输入行可能产生零行、一行或多行输出。 |
-| 标量 UDF | `map` | Scalar function | `subprocess_task` | `ray_task` | 只需要简单的逐行标量转换。 |
+| 无状态 batch UDF | `map_batches` | Python 函数 | `subprocess_task` | `ray_task` | 逻辑不需要可复用模型、客户端、缓存或其他状态。 |
+| 有状态 batch UDF | `map_batches` | 可调用类 | `subprocess_actor` | `ray_actor` | 初始化成本高，需要跨 batch 复用。 |
+| 行扩展 UDF | `flat_map` | 行函数 | `subprocess_task` | `ray_task` | 一个输入行可能产生零行、一行或多行输出。 |
+| 标量 UDF | `map` | 标量函数 | `subprocess_task` | `ray_task` | 只需要简单的逐行标量转换。 |
 
-大多数生产 UDF 应该先判断是无状态 batch UDF 还是有状态 batch UDF。需要 chunking 这类行扩展时使用 `flat_map`，只有简单标量 enrichment 才使用 `map`。
+大多数生产 UDF 应该先判断是无状态 batch UDF 还是有状态 batch UDF。需要分块这类行扩展时使用 `flat_map`，只有简单的标量补充才使用 `map`。
 
 ## 无状态 Batch UDF
 
 当每个 batch 都可以独立处理时，使用无状态 batch UDF：
 
-- text cleanup
-- rule-based labeling
-- metadata check
-- lightweight parsing
-- deterministic feature extraction
-- 不需要可复用状态的 Python library call
+- 文本清理
+- 基于规则的标注
+- 元数据检查
+- 轻量解析
+- 确定性特征提取
+- 不需要可复用状态的 Python 库调用
 
-无状态 batch UDF 是一个 Python function，接收 `pyarrow.Table`，返回 `pyarrow.Table`。
+无状态 batch UDF 是一个 Python 函数，接收 `pyarrow.Table`，返回 `pyarrow.Table`。
 
 ```python
 import re
@@ -138,7 +138,7 @@ prepared = documents.map_batches(
 prepared.show()
 ```
 
-返回的 table 同时包含新字段和后续阶段需要的 source field。`map_batches` 返回 UDF 产出的列，不会自动保留 upstream column。
+返回的表同时包含新字段和后续阶段需要的源字段。`map_batches` 返回 UDF 产出的列，不会自动保留上游列。
 
 增大 batch size 或迁移到 Ray 之前，先校验这个无状态 UDF：
 
@@ -160,7 +160,7 @@ summary = con.sql("""
 summary.show()
 ```
 
-本地输出正确后，同一个 function 可以用 `ray_task` 运行：
+本地输出正确后，同一个函数可以用 `ray_task` 运行：
 
 ```python
 import vane
@@ -175,21 +175,21 @@ ray_prepared = documents.map_batches(
 )
 ```
 
-只有在本地 contract 正确后才使用 `ray_task`。Ray 会额外引入 worker import、dependency、storage 和 resource 等变量，可能掩盖普通 UDF bug。
+只有在本地契约正确后才使用 `ray_task`。Ray 会额外引入 worker 导入、依赖、存储和资源等变量，可能掩盖普通的 UDF 问题。
 
 ## 有状态 Batch UDF
 
-当 setup 需要跨 batch 复用时，使用有状态 batch UDF：
+当初始化结果需要跨 batch 复用时，使用有状态 batch UDF：
 
-- model 或 tokenizer loading
-- API client setup
-- database 或 object-store client setup
-- lookup table 或 cache
-- GPU model state
+- 模型或 tokenizer 加载
+- API 客户端初始化
+- 数据库或对象存储客户端初始化
+- 查找表或缓存
+- GPU 模型状态
 
-有状态 UDF 是 callable class。传给 `map_batches` 的应该是 class 本身，而不是已经创建好的 instance。Actor backend 会在 worker 内构造 class，并在多个 batch 间复用同一个 object。
+有状态 UDF 是可调用类。传给 `map_batches` 的应该是类本身，而不是已经创建好的实例。Actor backend 会在 worker 内构造这个类，并在多个 batch 间复用同一个对象。
 
-Actor class 不应有必填 constructor argument。可以把配置放在环境变量、class-level default、带默认值的 optional argument，或 no-argument wrapper class 中。
+Actor 类不应有必填构造参数。可以把配置放在环境变量、类级默认值、带默认值的可选参数，或无参数包装类中。
 
 ```python
 import pyarrow as pa
@@ -264,7 +264,7 @@ prompts = prepared.map_batches(
 )
 ```
 
-在真实 model UDF 中，请在 `__init__` 中或第一次调用时 lazy load model、tokenizer 或 client，而不是在 module import 时加载。这样可以保持 import 轻量，并让每个 subprocess 或 Ray actor 拥有自己的状态。
+在真实的模型 UDF 中，请在 `__init__` 中或第一次调用时延迟加载模型、tokenizer 或客户端，而不是在模块导入时加载。这样可以保持导入轻量，并让每个 subprocess 或 Ray actor 拥有自己的状态。
 
 如果需要分布式 actor 复用，把 backend 切换到 `ray_actor`：
 
@@ -278,7 +278,7 @@ ray_prompts = prepared.map_batches(
 )
 ```
 
-对于 GPU-backed state，请按 actor 请求 GPU resource：
+对于依赖 GPU 的状态，请按 actor 请求 GPU 资源：
 
 ```python
 class GpuEmbedder:
@@ -318,15 +318,15 @@ embedded = prepared.map_batches(
 )
 ```
 
-`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU slot 才能满并行运行。更多 GPU execution pattern，请参考 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。
+`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。
 
-每个 Ray worker 都必须能够 import 该 callable，并访问相同的数据路径、model file、credential 和 Python dependency。
+每个 Ray worker 都必须能够导入该可调用对象，并访问相同的数据路径、模型文件、凭据和 Python 依赖。
 
 ## 行扩展 UDF
 
-当一个输入行可能产生零行、一行或多行输出时，使用 `flat_map`。典型场景包括 document chunking、frame extraction summary、nested record normalization、URL expansion，以及通过返回空结果来过滤行。
+当一个输入行可能产生零行、一行或多行输出时，使用 `flat_map`。典型场景包括文档分块、帧提取摘要、嵌套记录规范化、URL 展开，以及通过返回空结果来过滤行。
 
-Callable 接收一行 Python `dict`。它可以返回 `None`、一个 output `dict`，或 output dict 的 iterable。
+可调用对象接收一行 Python `dict`。它可以返回 `None`、一个输出 `dict`，或多个输出 `dict` 组成的可迭代对象。
 
 ```python
 def chunk_document(row: dict) -> list[dict]:
@@ -355,7 +355,7 @@ chunks = prepared.flat_map(
 )
 ```
 
-声明的 schema 会从每个 output dict 中选择 key。缺失的 key 会变成 null，额外 key 会被忽略。
+声明的 schema 会从每个输出 `dict` 中选择键。缺失的键会变成 null，额外键会被忽略。
 
 ## 标量 UDF
 
@@ -373,20 +373,20 @@ normalized_types = documents.project("document_type").map(
 )
 ```
 
-对于 model call、media decoding、embedding、LLM call，或任何可以从 batching 获益的操作，优先使用 `map_batches`。
+对于模型调用、媒体解码、embedding、LLM 调用，或任何可以从 batch 处理中获益的操作，优先使用 `map_batches`。
 
-## 共同 Output Contract
+## 共同输出契约
 
-请把 UDF output 视为 table contract。
+请把 UDF 输出视为表契约。
 
 | 主题 | 建议 |
 | --- | --- |
-| Returned columns | 对 `map_batches` 和 `flat_map`，精确返回 `schema` 中声明的列。 |
-| Source fields | 返回后续所需的稳定 ID、source URI/path、media type、business key、文本或 metadata。 |
-| Row diagnostics | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
-| Types | 使用 Arrow-compatible value：string、number、boolean、bytes、list、struct 或 Arrow array。 |
-| Nulls | 保持 null 行为显式，尤其是 numeric、bytes、list 和 model-output 列。 |
-| Row count | `map_batches` UDF 通常每个输入行返回一个输出行。当输出可能为零行或多行时，使用 `flat_map`。 |
+| 返回列 | 对 `map_batches` 和 `flat_map`，精确返回 `schema` 中声明的列。 |
+| 源字段 | 返回下游所需的稳定 ID、源 URI/path、媒体类型、业务键、文本或元数据。 |
+| 行诊断 | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
+| 类型 | 使用 Arrow 兼容值：字符串、数字、布尔值、bytes、list、struct 或 Arrow array。 |
+| Null | 保持 null 行为显式，尤其是数值型、bytes、list 和模型输出列。 |
+| 行数 | `map_batches` UDF 通常每个输入行返回一个输出行。当输出可能为零行或多行时，使用 `flat_map`。 |
 
 如果 Arrow 无法推断你需要的类型，请构造显式 array：
 
@@ -397,91 +397,36 @@ return pa.table({
 })
 ```
 
-避免返回 model class、file handle、自定义 dataclass 或 raw exception 等 Python object。返回前请将它们转换为 string、number、bytes、list、struct、JSON string 或显式 Arrow array。
+避免返回模型类、文件句柄、自定义 dataclass 或原始异常等 Python 对象。返回前请将它们转换为字符串、数字、bytes、list、struct、JSON 字符串或显式 Arrow array。
 
 ## Backend 与扩展
 
 Backend 选择应该跟随 UDF 类型：
 
-| Backend | Callable 形态 | 适用场景 |
+| Backend | 可调用对象形态 | 适用场景 |
 | --- | --- | --- |
-| `subprocess_task` | Function | 第一个 stateless UDF、本地隔离、CPU transform。 |
-| `subprocess_actor` | Callable class | 不使用 Ray 的本地 model 或 client 复用。 |
-| `ray_task` | Function | 本地正确性验证后，再执行 distributed stateless batch work。 |
-| `ray_actor` | Callable class | Distributed model/client 复用、GPU placement，或更大的 actor pool。 |
+| `subprocess_task` | 函数 | 首个无状态 UDF、本地隔离、CPU 转换。 |
+| `subprocess_actor` | 可调用类 | 不使用 Ray 的本地模型或客户端复用。 |
+| `ray_task` | 函数 | 本地正确性校验后，再执行分布式无状态 batch 工作。 |
+| `ray_actor` | 可调用类 | 分布式模型/客户端复用、GPU 资源放置，或更大的 actor 池。 |
 
-唯一有效的 backend name 是 `subprocess_task`、`subprocess_actor`、`ray_task` 和 `ray_actor`。`local`、`subprocess`、`ray=True`、`use_process`、`actor_count`、`prefer_actor` 等旧写法或 shorthand 不是当前 API。
+唯一有效的 backend 名称是 `subprocess_task`、`subprocess_actor`、`ray_task` 和 `ray_actor`。`local`、`subprocess`、`ray=True`、`use_process`、`actor_count`、`prefer_actor` 等旧写法或缩写写法不是当前 API。
 
 建议按这个顺序推进：
 
 1. 使用 `subprocess_task` 或 `subprocess_actor` 在本地构建 UDF。
-2. 在小型真实 sample 上校验 schema、row count、ID、source column 和 error behavior。
+2. 在小型真实样本上校验 schema、行数、ID、源列和错误行为。
 3. 输出正确后，在本地增大 `batch_size`。
-4. 只有当 distribution 有帮助时，才把无状态 function 迁移到 `ray_task`。
-5. 只有当 actor 复用、GPU placement 或 cluster scheduling 是必要条件时，才把有状态 class 迁移到 `ray_actor`。
+4. 只有当分布式执行有帮助时，才把无状态函数迁移到 `ray_task`。
+5. 只有当 actor 复用、GPU 资源放置或集群调度是必要条件时，才把有状态类迁移到 `ray_actor`。
 
-`batch_size` 控制 Vane 每次 `map_batches` 调用传入多少输入行。Batch size 不应改变结果语义。如果调整 `batch_size` 后输出发生变化，UDF 很可能依赖了隐藏的 batch state。
+`batch_size` 控制 Vane 每次 `map_batches` 调用传入多少输入行。batch size 不应改变结果语义。如果调整 `batch_size` 后输出发生变化，UDF 很可能依赖了隐藏的 batch 状态。
 
 `concurrency` 支持 `subprocess_task`、`subprocess_actor` 和 `ray_actor`；不要将它与 `ray_task` 一起使用。
 
-## 调试
-
-在将 UDF 放入更大的 pipeline 之前，按以下顺序调试：
-
-1. 选择带有稳定 ID 的小型真实 sample。
-2. 直接在 Arrow table 上调用 Python function 或 callable class。
-3. 使用较小的 `batch_size`，通过 Vane 运行同一个 callable。
-4. 使用 SQL 校验 row count、ID、source column、output type 和 status/error behavior。
-5. 在本地增大 `batch_size`。
-6. 只有在本地 contract 正确后，才迁移到 Ray。
-
-```python
-sample = con.sql("""
-    select document_id, source_uri, media_type, document_type, text
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
-    order by document_id
-    limit 20
-""")
-
-sample_arrow = sample.to_arrow_table()
-debug_arrow = prepare_document_text(sample_arrow)
-
-assert len(debug_arrow) == len(sample_arrow)
-print(debug_arrow.schema)
-print(debug_arrow.to_pydict())
-```
-
-然后通过 Vane 运行：
-
-```python
-debug_relation = sample.map_batches(
-    prepare_document_text,
-    schema=prepared_schema,
-    batch_size=4,
-    execution_backend="subprocess_task",
-)
-
-debug_relation.show()
-```
-
-## 常见失败
-
-| 失败 | 通常意味着 | 修复方式 |
-| --- | --- | --- |
-| Schema mismatch | 返回的列或类型与 `schema` 不匹配。 | 打印返回的 Arrow schema，然后对齐 column name 和 Arrow-compatible type。 |
-| Missing ID or source columns | UDF 只返回了 derived column。 | 返回 downstream SQL、join 和 review 所需的稳定 ID 与 source field。 |
-| Missing status or error fields | UDF 依赖 exception 或 log 作为 row-level diagnostics。 | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
-| Arrow type incompatibility | UDF 返回了 Arrow 无法序列化的 Python object。 | 将输出转换为 primitive、bytes、list、struct、JSON string 或显式 `pa.array` value。 |
-| Wrong callable shape | task backend 收到了 class/instance，或 actor backend 收到了 function/instance。 | 对 `subprocess_task`/`ray_task` 使用 function；对 `subprocess_actor`/`ray_actor` 使用无必填构造参数的 callable class。 |
-| Worker import failure | subprocess 或 Ray worker 无法 import 定义 UDF 的 module。 | 将被引用的代码放入可 import 的 module，并在每个 worker 上安装相同 Python dependency。 |
-| Model loads at import time | 每次 worker import 都触发重型 setup，或在 actor 启动前失败。 | 将 model、tokenizer 和 client setup 移到 callable class 的 `__init__` 或首次调用中。 |
-| Batch works locally but fails on Ray | Worker 无法访问数据、credential、model file 或兼容的 package version。 | 增大数据规模前，先用极小 Ray sample 验证 worker path 和 environment。 |
-| Memory spikes | Batch size、media bytes 或 model output 过大。 | 投影更少列，降低 `batch_size`，拆分 stage，或使用 actor 复用 model state。 |
-
 ## 相关文档
 
-- 当主要任务是 table-shaped cleanup、join、deduplication、validation 或 output shaping 时，使用 [Structured Transformation](/zh-CN/docs/data/guides/structured-transformation)。
-- 当 UDF 需要读取 bytes、解码文件、提取 media feature，或记录 per-stage status 和 error 时，使用 [Multimodal Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
-- 对于标准 embedding、classification 或 prompt enrichment，使用 [AI Functions](/zh-CN/docs/data/guides/ai-functions)。当你需要 custom model、custom output schema、external client behavior，或完全控制 preprocessing 与 postprocessing 时，使用 Custom Python UDFs。
-- 阅读 [UDFs](/zh-CN/docs/data/concepts/udfs)，了解 `map_batches`、callable class 和 execution backend 背后的概念模型。
+- 当主要任务是表形态清理、join、去重、校验或输出整理时，使用 [Structured Transformation](/zh-CN/docs/data/guides/structured-transformation)。
+- 当 UDF 需要读取 bytes、解码文件、提取媒体特征，或记录逐阶段状态和错误时，使用 [Multimodal Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
+- 对于标准 embedding、文本分类或提示词增强，使用 [AI Functions](/zh-CN/docs/data/guides/ai-functions)。当你需要自定义模型、自定义 output schema、外部客户端行为，或完全控制预处理与后处理时，使用 Custom Python UDFs。
+- 阅读 [UDFs](/zh-CN/docs/data/concepts/udfs)，了解 `map_batches`、可调用类和执行 backend 背后的概念模型。

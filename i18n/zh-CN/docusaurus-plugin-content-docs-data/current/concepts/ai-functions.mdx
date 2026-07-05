@@ -2,35 +2,35 @@
 title: AI Function
 ---
 
-Vane Data AI Function 将常见 model operation 封装为 relation method。它们把 embeddings、label、prompt response 和 structured response 作为 table column 产出，同时保留与 UDF 相同的 execution controls。
+Vane Data AI Function 将常见模型操作封装为 relation 方法。它们把 embedding、标签、提示词响应和结构化响应输出为表列，同时保留与 UDF 相同的执行控制。
 
-当操作匹配内置 provider pattern 时，使用 AI Function。当你需要完全控制 model loading、batching、retry、output shape 或 provider behavior 时，使用自定义 UDF。
+当所需操作符合内置 provider 模式时，使用 AI Function。当你需要完全控制模型加载、batch 处理、重试、输出形态或 provider 行为时，使用自定义 UDF。
 
-## Relation method
+## Relation 方法
 
-relation method 包括：
+relation 方法包括：
 
 - `rel.embed_text(...)`
 - `rel.classify_text(...)`
 - `rel.prompt(...)`
 
-也可以通过 `vane.ai` 和 `vane.ai.functions` 使用 functional API。
+也可以通过 `vane.ai` 和 `vane.ai.functions` 使用函数式 API。
 
-AI Function 会返回已配置的输出列。如果 downstream stage 还需要 ID、文本等 source column，请使用返回完整 schema 的自定义 UDF，或者在一个经过校验的步骤中显式地将 AI Function output 与 source row 组合起来，并确保 row count 和顺序保持一致。
+AI Function 会返回已配置的输出列。如果下游阶段还需要 ID、文本等源列，请使用返回完整 schema 的自定义 UDF，或者在一个经过校验的步骤中显式地将 AI Function 输出与源行组合起来，并确保行数和顺序保持一致。
 
-## Provider 支持
+## provider 支持
 
-| Method | 默认 provider | 支持的 provider |
+| 方法 | 默认 provider | 支持的 provider |
 | --- | --- | --- |
 | `embed_text` | `transformers` | `transformers`, `openai`, `google` |
 | `classify_text` | `transformers` | `transformers` |
 | `prompt` | `openai` | `openai`, `vllm`, `anthropic`, `google` |
 
-Provider library 会按需懒加载。请为你实际使用的 provider 安装对应 library。
+provider 库会按需懒加载。请为你实际使用的 provider 安装对应库。
 
-## Text embedding
+## 文本 embedding
 
-使用 `embed_text` 从文本列生成 vector column。
+使用 `embed_text` 从文本列生成向量列。
 
 ```python
 embedding_only = rel.embed_text(
@@ -42,16 +42,16 @@ embedding_only = rel.embed_text(
 )
 ```
 
-AI Function 会将 embeddings 写入一个 `FLOAT[]` 输出列。
+AI Function 会将 embedding 结果写入一个 `FLOAT[]` 输出列。
 
-对于长文本输入，可以使用可选的 text chunking 参数：
+对于长文本输入，可以使用可选的文本分块参数：
 
 - `max_chunk_chars`
 - `chunk_overlap_chars`
 
-## Text classification
+## 文本分类
 
-使用 `classify_text` 生成 zero-shot text label。
+使用 `classify_text` 生成 zero-shot 文本标签。
 
 ```python
 label_only = rel.classify_text(
@@ -64,9 +64,9 @@ label_only = rel.classify_text(
 
 输出列类型为 `VARCHAR`。
 
-## Prompting
+## 提示词调用
 
-使用 `prompt` 从文本 prompt 列生成 response 列。
+使用 `prompt` 从文本提示词列生成响应列。
 
 ```python
 response_only = rel.prompt(
@@ -78,9 +78,9 @@ response_only = rel.prompt(
 
 输出列类型为 `VARCHAR`。
 
-## Multimodal prompt
+## 多模态提示词调用
 
-当选择的 provider 和 model 支持 multimodal input 时，`prompt` 可以通过 `image_columns` 接收包含 image data 的行。
+当选择的 provider 和模型支持多模态输入时，`prompt` 可以通过 `image_columns` 接收包含图像数据的行。
 
 ```python
 answer_only = rel.prompt(
@@ -91,11 +91,11 @@ answer_only = rel.prompt(
 )
 ```
 
-不同 provider 和 model 的能力边界不同。在运行大规模 job 之前，请先用小 sample 验证所选 provider 和 model。
+不同 provider 和模型的能力边界不同。在运行大规模任务之前，请先用小样本验证所选 provider 和模型。
 
-## Structured output
+## 结构化输出
 
-对于支持 structured output 的 provider，`prompt` 接受 `return_format`。
+对于支持结构化输出的 provider，`prompt` 接受 `return_format`。
 
 ```python
 from pydantic import BaseModel
@@ -112,11 +112,11 @@ decision_only = rel.prompt(
 )
 ```
 
-relation 输出列是 JSON string。把它当作普通 table column 处理：先进行校验；如有需要，在 downstream 解析；同时保留原始 prompt input 以便审计。
+relation 输出列是 JSON 字符串。把它当作普通表列处理：先进行校验；如有需要，在下游解析；同时保留原始提示词输入以便审计。
 
-## Provider dependency
+## provider 依赖
 
-直接安装 provider library：
+直接安装 provider 库：
 
 ```bash
 # Local embedding and classification models
@@ -131,17 +131,17 @@ python -m pip install google-genai numpy
 python -m pip install vllm
 ```
 
-## Execution controls
+## 执行控制
 
-AI Function 接受 `execution_backend`，provider option 也可能影响传给 `map_batches` 的 UDF setting。
+AI Function 接受 `execution_backend`，provider 选项也可能影响传给 `map_batches` 的 UDF 设置。
 
 常见控制项包括：
 
 - `batch_size`
 - `concurrency`
-- 在支持的 provider API call 中使用 `max_api_concurrency`
-- provider-specific GPU option，例如 vLLM provider 的 `gpus_per_actor`
-- provider-specific retry 和错误行为
+- 在支持的 provider API 调用中使用 `max_api_concurrency`
+- 特定 provider 的 GPU 选项，例如 vLLM provider 的 `gpus_per_actor`
+- 特定 provider 的重试和错误行为
 
 示例：
 
@@ -154,13 +154,13 @@ embedding_only = rel.embed_text(
 )
 ```
 
-谨慎使用 provider API concurrency。提高 concurrency 可以改善 throughput，但也可能触发 rate limit 或放大失败影响。
+谨慎使用 provider API 并发度。提高并发度可以改善吞吐量，但也可能触发速率限制或放大失败影响。
 
 ## 生产建议
 
 - 调用 AI Function 前，先过滤并投影输入列。
-- 保持 prompt input、model/provider 名称和输出列名显式。
-- 从小 sample 开始，并在扩展前检查输出。
-- 当 model initialization 成本较高时，使用 actor backend。
+- 保持提示词输入、模型和 provider 名称以及输出列名显式。
+- 从小样本开始，并在扩展前检查输出。
+- 当模型初始化成本较高时，使用 actor backend。
 - 只有在本地执行路径正确后，才使用 Ray。
-- 将 model output 存储在 typed column 中，并保留足够的 metadata 便于调试。
+- 将模型输出存储在带类型的列中，并保留足够的元数据便于调试。

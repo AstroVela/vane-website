@@ -2,11 +2,11 @@
 title: 结构化数据加载
 ---
 
-当你的 AI 或 multimodal workflow 从 table-shaped input 开始时，使用本指南：media manifest、document metadata、text record、label、prompt table、model output、evaluation sample，或需要与 source object join 的 business ID。
+当你的 AI 或多模态 workflow 从表格形态输入开始时，请参考本指南：媒体清单、文档元数据、文本记录、标签、提示词表、模型输出、评估样本，或需要与源对象关联的业务 ID。
 
 ## 加载本地 Parquet
 
-对 Parquet 文件和 Parquet part 目录使用 `read_parquet(...)`。目录通常通过指向其内部文件的 glob 读取。
+对 Parquet 文件和 Parquet 分片目录使用 `read_parquet(...)`。通常用指向目录内文件的通配路径（glob）读取目录。
 
 ```python
 import vane
@@ -24,7 +24,7 @@ documents = con.sql("""
 documents.to_table("raw_documents")
 ```
 
-对于嵌套目录，使用 recursive glob：
+对于嵌套目录，使用递归通配路径（recursive glob）：
 
 ```python
 media_events = con.sql("""
@@ -34,11 +34,11 @@ media_events = con.sql("""
 """)
 ```
 
-当多个文件的列顺序可能不同，或预期存在少量 schema drift 时，使用 `union_by_name=true`。如果 schema 的含义不同，请先停止并完成 reconcile，再继续。
+当多个文件的列顺序可能不同，或预期存在轻微 schema 漂移时，使用 `union_by_name=true`。如果 schema 的含义不同，请先停下来完成对齐，再继续。
 
 ## 加载本地 CSV
 
-CSV 适合 label、review sample、prompt table 或 issue list 等小型导出。一旦你能控制导出格式，优先使用 Parquet，因为它能更可靠地携带 column type。
+CSV 适合标签、审查样本、提示词表或问题列表等小型导出。一旦你能控制导出格式，优先使用 Parquet，因为它能更可靠地携带列类型。
 
 ```python
 labels = con.sql("""
@@ -50,7 +50,7 @@ labels = con.sql("""
 labels.to_table("raw_labels")
 ```
 
-如果类型推断错误，保持加载逻辑简单，先检查 inferred schema，再在 source relation 中显式 cast 重要列。
+如果类型推断错误，保持加载逻辑简单：先检查推断 schema，再在源 relation 中对重要列显式 cast。
 
 ## 从 S3 或 MinIO 加载
 
@@ -73,7 +73,7 @@ source = con.sql("""
 """)
 ```
 
-对于 MinIO 或其他 S3-compatible endpoint，添加 endpoint setting：
+对于 MinIO 或其他兼容 S3 的端点，添加端点设置：
 
 ```python
 con.execute("SET s3_endpoint='localhost:9000'")

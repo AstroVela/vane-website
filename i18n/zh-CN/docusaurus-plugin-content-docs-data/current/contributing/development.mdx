@@ -35,7 +35,7 @@ sudo apt-get update
 sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
 ```
 
-## Editable build
+## 可编辑构建
 
 ```bash
 python -m pip install -e . --no-build-isolation -v
@@ -63,7 +63,7 @@ scripts/format submodule --changed
 scripts/format workspace --changed
 ```
 
-Root formatter 默认避免扫描 `external/duckdb`。修改 DuckDB 内部实现时，请使用 submodule command。
+根目录格式化器默认避免扫描 `external/duckdb`。修改 DuckDB 内部实现时，请使用子模块命令。
 
 ## 测试
 
@@ -79,16 +79,16 @@ python -m pytest tests/fast
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-## Source area
+## 源码区域
 
-- `vane/`：Vane Data public Python API 和 AI helper。
-- `duckdb/execution/`：Python UDF executor routing 和 runtime。
-- `duckdb/runners/`：native 与 Ray runner code。
-- `src/duckdb_py/`：C++ Python binding。
-- `external/duckdb/`：DuckDB submodule。
-- `examples/`：可运行 script example。
-- Benchmark workload：performance 和 fault-tolerance experiment。
+- `vane/`：Vane Data 公开 Python API 和 AI 辅助函数。
+- `duckdb/execution/`：Python UDF 执行器路由和运行时。
+- `duckdb/runners/`：原生与 Ray runner 代码。
+- `src/duckdb_py/`：C++ Python 绑定。
+- `external/duckdb/`：DuckDB 子模块。
+- `examples/`：可运行脚本示例。
+- benchmark 工作负载：性能和容错实验。
 
 ## 贡献经验法则
 
-保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.configure` 或 AI helper 等 public API，请在同一变更中更新文档和测试。
+保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。

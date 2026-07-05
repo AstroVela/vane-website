@@ -2,32 +2,32 @@
 title: 架构
 ---
 
-Vane Data 是一个 layered data engine。它暴露 DuckDB-compatible SQL 与 Python 使用界面，增加 relation-level 的 Python 和 AI operation，并且可以在本地或通过 Ray 执行选定工作。
+Vane Data 是一个多模态原生数据引擎。它提供兼容 DuckDB 的 SQL 与 Python 接口，在 relation 层支持 Python 和 AI 操作，并且可以在本地或通过 Ray 执行选定工作。
 
-设计目标很简单：让 pipeline 保持 table-shaped，同时让 SQL、Python library、model inference 和 distributed execution 能处在同一个 workflow 中。
+设计目标很简单：让 pipeline 保持表格形态，同时让 SQL、Python 库、模型推理和分布式执行处在同一个 workflow 中。
 
-## System view
+## 系统视图
 
 一个 Vane Data pipeline 有四个用户可见层：
 
-1. API surface：`import vane`、`vane.connect()`、DuckDB-compatible SQL、relation method、UDF 和 AI Function。
-2. Relation pipeline：SQL operation、projection、filter、join、UDF stage 和 write 都组合为 relation step。
-3. Execution runner：local execution 处理开发和 single-node job；Ray runner 分发适合的 scan、write 和 UDF work。
-4. UDF runtime：Python function 和 callable class 通过 task 或 actor backend 运行。
+1. API 层：`import vane`、`vane.connect()`、兼容 DuckDB 的 SQL、relation 方法、UDF 和 AI Function。
+2. relation pipeline：SQL 操作、投影、过滤、连接、UDF 阶段和写出都组合为 relation 步骤。
+3. 执行 runner：本地执行用于开发和单节点任务；Ray runner 负责分发适合的扫描、写出和 UDF 工作。
+4. UDF 运行时：Python 函数和可调用类通过任务或 actor backend 运行。
 
-这种分层让 pipeline 可以先从本地开始；当数据量、模型吞吐或 resource placement 需要时，再把选定工作迁移到 Ray。
+这种分层让 pipeline 可以先从本地开始；当数据量、模型吞吐量或资源放置需要时，再把选定工作迁移到 Ray。
 
-## Public user surface
+## 公开用户接口
 
-主要 public entry point 如下：
+主要公开入口如下：
 
 - `import vane`
 - `vane.connect()`
 - `vane.configure(...)`
 - `vane.current_config()`
 - `vane.env`
-- 通过 `con.sql(...)` 和 `con.execute(...)` 使用 DuckDB-compatible SQL
-- DuckDB-compatible relation APIs
+- 通过 `con.sql(...)` 和 `con.execute(...)` 使用兼容 DuckDB 的 SQL
+- 兼容 DuckDB 的 relation API
 - `rel.map_batches(...)`
 - `rel.flat_map(...)`
 - `rel.map(...)`
@@ -35,54 +35,54 @@ Vane Data 是一个 layered data engine。它暴露 DuckDB-compatible SQL 与 Py
 - `rel.classify_text(...)`
 - `rel.prompt(...)`
 
-为了兼容已有代码，DuckDB-style import 仍然可用；但新的 Vane Data 项目应优先使用 `import vane`。
+为了兼容已有代码，DuckDB 风格的 import 仍然可用；但新的 Vane Data 项目应优先使用 `import vane`。
 
-## Runner mode
+## runner 模式
 
-Vane Data 有两种主要 execution mode。
+Vane Data 有两种主要执行模式。
 
-Local mode：
+本地模式：
 
-- 在本地 process 和本地机器上运行。
-- 适合作为开发、测试、轻量 SQL 和 single-node UDF job 的起点。
-- 支持 SQL、relation operation 和 local UDF backend。
+- 在本地进程和本机上运行。
+- 适合作为开发、测试、轻量 SQL 和单节点 UDF 任务的起点。
+- 支持 SQL、relation 操作和本地 UDF backend。
 
-Ray mode：
+Ray 模式：
 
 - 通过 `vane.configure(runner="ray")` 或 `VANE_RUNNER=ray` 选择。
-- 使用 Ray 执行 distributed scan、distributed write、distributed UDF，以及基于 actor 的 model worker。
-- 要求每个 worker 都能访问 pipeline 所需的相同 Python dependency、storage system、model file 和 credential。
+- 使用 Ray 执行分布式扫描、分布式写出、分布式 UDF，以及基于 actor 的模型 worker。
+- 要求每个 worker 都能访问 pipeline 所需的相同 Python 依赖、存储系统、模型文件和凭证。
 
-如果当前 process 已经初始化 Ray，runner selection 可能会与该环境交互。为了让 production script 行为可预测，请在创建 connection 和运行 pipeline 前显式配置目标 runner。
+如果当前进程已经初始化 Ray，runner 选择可能会与该环境相互影响。为了让生产脚本行为可预测，请在创建连接和运行 pipeline 前显式配置目标 runner。
 
-## UDF execution layer
+## UDF 执行层
 
-Python UDF 是 relation operation。它们接收 table-shaped input，运行用户代码，并返回声明好的 output column。
+Python UDF 是 relation 操作。它们接收表格形态的输入，运行用户代码，并返回声明好的输出列。
 
-根据 callable 形态和 resource 需求选择 backend：
+根据可调用对象形态和资源需求选择 backend：
 
-| Backend | Callable 形态 | 适用场景 |
+| Backend | 可调用对象形态 | 适用场景 |
 | --- | --- | --- |
-| `subprocess_task` | Python function | 本地 stateless batch transform |
-| `subprocess_actor` | Callable class | 本地 model 或 client 复用 |
-| `ray_task` | Python function | Distributed stateless transform |
-| `ray_actor` | Callable class | Distributed model 复用或 GPU-backed inference |
+| `subprocess_task` | Python 函数 | 本地无状态 batch 转换 |
+| `subprocess_actor` | 可调用类 | 本地模型或客户端复用 |
+| `ray_task` | Python 函数 | 分布式无状态转换 |
+| `ray_actor` | 可调用类 | 分布式模型复用或 GPU 支持的推理 |
 
-Task backend 适用于没有 long-lived state 的 function。Actor backend 适用于需要构造一次并跨 batch 复用的 class。
+任务 backend 适用于没有长期状态的函数。actor backend 适用于需要构造一次并跨 batch 复用的类。
 
 ## AI Function 层
 
-AI Function 是构建在同一 UDF execution model 上的 relation method：
+AI Function 是基于同一 UDF 执行模型构建的 relation 方法：
 
-- `embed_text` 生成 embedding output column。
-- `classify_text` 生成 label output column。
-- `prompt` 从文本或多模态 prompt 生成 response output column。
+- `embed_text` 生成 embedding 输出列。
+- `classify_text` 生成标签输出列。
+- `prompt` 从文本或多模态提示词生成响应输出列。
 
-常见 provider-backed operation 可以使用 AI Function。当你需要完全控制 model loading、batching、output schema 或 provider behavior 时，使用 custom UDF。
+由 provider 支持的常见操作可以使用 AI Function。当你需要完全控制模型加载、batch 处理、输出 schema 或 provider 行为时，使用自定义 UDF。
 
-## Configuration model
+## 配置模型
 
-Programmatic configuration：
+代码配置：
 
 ```python
 import vane
@@ -90,39 +90,33 @@ import vane
 vane.configure(runner="ray")
 ```
 
-Environment configuration：
+环境配置：
 
 ```bash
 export VANE_RUNNER=ray
 ```
 
-`vane.configure(...)` 会通过 process environment 应用已注册的 `VANE_*` setting。使用 `vane.current_config()` 或 `vane.env.as_dict()` 查看 public configuration snapshot。
+`vane.configure(...)` 会通过进程环境应用已注册的 `VANE_*` 设置。使用 `vane.current_config()` 或 `vane.env.as_dict()` 查看公开配置快照。
 
-## Worker environment
+## worker 环境
 
-Ray worker 执行任何工作时，都需要与 driver 一致的 runtime context。实践中，请确认 worker 可以访问：
+Ray worker 执行任何工作时，都需要与 driver 保持一致的运行时上下文。实践中，请确认 worker 可以访问：
 
-- UDF 和 AI provider 使用的 Python module。
-- object storage credential 和 endpoint setting。
-- model file 或 model download location。
-- 相关 `VANE_*`、`AWS_*`、`S3FS_*`、`DUCKDB_*`、`PYTHONPATH` 和 `RAY_ADDRESS` environment value。
+- UDF 和 AI provider 使用的 Python 模块。
+- 对象存储凭证和端点设置。
+- 模型文件或模型下载位置。
+- 相关 `VANE_*`、`AWS_*`、`S3FS_*`、`DUCKDB_*`、`PYTHONPATH` 和 `RAY_ADDRESS` 环境变量值。
 
-在创建 connection 或运行 pipeline 之前设置所需环境。
+在创建连接或运行 pipeline 之前设置所需环境。
 
-## Data movement
+## 数据流动
 
-常见 data path：
+常见数据路径：
 
-- SQL 将本地或远程数据读取为 DuckDB-compatible relation。
+- SQL 将本地或远程数据读取为兼容 DuckDB 的 relation。
 - relation 将 Arrow batch 流式传入 Python UDF。
-- `map_batches` 处理 Arrow table，并返回声明好的 output column。当下游 stage 仍然需要 input column 时，也要从 UDF 中返回这些 input column。
-- Ray mode 可以通过 Ray worker materialize partition。
-- write 会根据 runner 和 target 使用 DuckDB-compatible 或 Vane Data relation write path。
+- `map_batches` 处理 Arrow 表，并返回声明好的输出列。当下游阶段仍然需要输入列时，也要从 UDF 中返回这些输入列。
+- Ray 模式可以通过 Ray worker 物化分区。
+- 写出会根据 runner 和目标，选择兼容 DuckDB 的 relation 写出路径或 Vane Data 的 relation 写出路径。
 
-把 filter 和 column projection 放在昂贵的 Python 或 model stage 之前。这样可以减少进入 Python 的数据量；在 Ray mode 下，也可以减少 cluster data movement。
-
-## Extension boundary
-
-当前配置的 source build 包含 `core_functions`、`json`、`parquet`、`icu`、`jemalloc` 和 `httpfs`。
-
-其他 DuckDB extension 取决于 build 和 runtime environment。请把 extension availability 视为 deployment property：在 job 运行位置验证 extension 是否已打包、可安装或可加载。
+把过滤和列投影放在昂贵的 Python 或模型阶段之前。这样可以减少进入 Python 的数据量；在 Ray 模式下，也可以减少集群内的数据移动。

@@ -1,24 +1,24 @@
 ---
-title: 多模态数据摄取
+title: 多模态数据加载
 ---
 
-Vane Data 将 multimodal record 视为 table row。Path、bytes、metadata、decoded feature、label、embedding 和 model output 都可以作为显式 column 在同一个 relation 中流转。
+Vane Data 将多模态记录视为表行。路径、字节、元数据、解码后的特征、标签、embedding 和模型输出，都可以作为显式列在同一个 relation（关系对象）中流转。
 
-当你需要 SQL filtering 和 table output，但 pipeline 的一部分必须调用 Python library 做 decoding、feature extraction 或 model inference 时，使用这个 pattern。
+当你需要 SQL 过滤和表输出，但 pipeline 的某个环节必须调用 Python 库进行解码、特征提取或模型推理时，可以使用这种模式。
 
-## Ingest Pattern
+## 加载模式
 
-1. 构建包含稳定 ID、source location、metadata 和可选 bytes 的 relation。
-2. 在昂贵的 Python work 前使用 SQL filter 和 project。
-3. 使用 `map_batches` 做 decoding、feature extraction 或 model inference。
-4. 保持 UDF output schema 显式。
-5. 将 curated output 写到 Parquet 或其他 DuckDB-supported target。
+1. 构建包含稳定 ID、来源位置、元数据和可选字节的 relation。
+2. 在成本高的 Python 处理前使用 SQL 过滤和投影。
+3. 使用 `map_batches` 进行解码、特征提取或模型推理。
+4. 明确声明 UDF 输出 schema。
+5. 将整理后的输出写到 Parquet 或其他 DuckDB 支持的目标。
 
-Vane Data 不定义通用 multimodal file format。请根据下游系统选择 column name 和 output format。
+Vane Data 不定义通用的多模态文件格式。请根据下游系统选择列名和输出格式。
 
-## Images
+## 图像
 
-对于本地 image file，先从 metadata 和 bytes 开始：
+对于本地图像文件，先从元数据和字节开始：
 
 ```python
 from pathlib import Path
@@ -42,7 +42,7 @@ rel = con.from_arrow(pa.table({
 }))
 ```
 
-使用 batch UDF decode 或 inspect image：
+使用 batch UDF 解码或检查图像：
 
 ```python
 import io
@@ -81,33 +81,33 @@ out = rel.map_batches(
 out.show()
 ```
 
-对于 model inference，尽可能把 decoding 和 inference 放在不同 UDF stage 中。这样更容易隔离 failure，也能独立调节 batch size。
+对于模型推理，尽可能把解码和推理放在不同的 UDF 阶段中。这样更容易隔离故障，也能独立调节 batch 大小。
 
-## Audio
+## 音频
 
-将 audio 表示为 source URI 加 bytes，或 source URI 加已解析的本地 path。使用 UDF 做 transcription 或 acoustic feature extraction。
+将音频表示为源 URI 加字节，或源 URI 加已解析的本地路径。使用 UDF 做转写或声学特征提取。
 
-推荐 output column：
+推荐输出列：
 
 - `audio_id`
 - `source_uri`
 - `transcript`
 - `language`
-- `segment_json`，或每个 segment 一行
-- 使用 segment row 时记录 `start_time` 和 `end_time`
+- `segment_json`，或每个分段一行
+- 使用分段行时记录 `start_time` 和 `end_time`
 
-将 provider-specific transcription code 放在 UDF 内。Vane Data 管理 relation、batching、schema 和 execution backend；它不提供内置 transcription engine。
+将 provider 专用转写代码放在 UDF 内。Vane Data 管理 relation、batch 处理、schema 和执行 backend；它不提供内置转写引擎。
 
-## Documents
+## 文档
 
-对于 PDF、office document、HTML 或长文本文件，将 extraction、chunking 和 embedding 保持为独立 stage：
+对于 PDF、Office 文档、HTML 或长文本文件，将抽取、分块和 embedding 保持为独立阶段：
 
-1. Extract text 和 document metadata。
-2. 将 text 切成带稳定 ID 的 chunk。
-3. 对 chunk 做 embedding 或 classification。
-4. 写出 document-level 和 chunk-level output。
+1. 抽取文本和文档元数据。
+2. 将文本切成带稳定 ID 的分块。
+3. 对分块做 embedding 或分类。
+4. 写出文档级和分块级输出。
 
-推荐 column：
+推荐列：
 
 - `document_id`
 - `source_uri`
@@ -115,20 +115,20 @@ out.show()
 - `chunk_id`
 - `text`
 - `embedding`
-- 存储 model output 时记录 model/provider metadata
+- 存储模型输出时记录模型和 provider 元数据
 
-## Video
+## 视频
 
-将 video ingest 视为更重的 pipeline：
+将视频加载视为更重的 pipeline：
 
-1. 读取 metadata 和 file path。
-2. 在受控 batch 中 decode frame 或 clip。
-3. 对 frame 或 clip 运行 model UDF。
-4. 带 timestamp 存储 frame-level 或 clip-level output。
+1. 读取元数据和文件路径。
+2. 在受控 batch 中解码帧或片段。
+3. 对帧或片段运行模型 UDF。
+4. 带时间戳存储帧级或片段级输出。
 
-避免从 UDF 返回大型 Python object。请将 output 转成 Arrow-compatible value，例如 string、number、list、bytes 或 structured JSON string。
+避免从 UDF 返回大型 Python 对象。请将输出转成 Arrow 兼容值，例如字符串、数字、列表、bytes 或结构化 JSON 字符串。
 
-## Local vs Ray
+## 本地与 Ray
 
 先从本地开始：
 
@@ -141,7 +141,7 @@ out = rel.map_batches(
 )
 ```
 
-当 input size、decoding cost、model throughput 或 GPU placement 需要时，再迁移到 Ray：
+当输入规模、解码成本、模型吞吐量或 GPU 放置需求不再适合本地执行时，再迁移到 Ray：
 
 ```python
 import vane
@@ -158,13 +158,13 @@ out = rel.map_batches(
 )
 ```
 
-将 `decode_batch` 和 `ModelBatch` 替换为你自己的 function 或 callable class。当后续 stage 需要把 model output join 回 source record 时，请从每个 UDF 返回稳定 ID。每个 Ray worker 都必须能够 import callable，并访问相同 storage、model file 和 credential。
+将 `decode_batch` 和 `ModelBatch` 替换为你自己的函数或可调用类。当后续阶段需要把模型输出关联回源记录时，请从每个 UDF 返回稳定 ID。每个 Ray worker 都必须能够导入可调用对象，并访问相同的存储、模型文件和凭证。
 
-## Practical Checks
+## 实用检查
 
-- 在 decoding 或 model inference 前保留稳定 ID。
-- 存储 source URI 和足够 metadata，以便复现一行数据。
-- 可能时，在加载 bytes 前先 filter 和 project。
-- 保持 UDF output 小且类型明确。
-- 运行大型 media job 前先校验小 sample。
-- 使用 Ray 时，将 output 写到所有 worker 都能访问的 filesystem。
+- 在解码或模型推理前保留稳定 ID。
+- 存储源 URI 和足够的元数据，以便复现一行数据。
+- 可能时，在加载字节前先过滤和投影。
+- 保持 UDF 输出小且类型明确。
+- 运行大型媒体任务前先校验小样本。
+- 使用 Ray 时，将输出写到所有 worker 都能访问的文件系统。

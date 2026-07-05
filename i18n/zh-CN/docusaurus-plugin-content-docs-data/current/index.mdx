@@ -2,21 +2,21 @@
 title: Vane Data 文档
 ---
 
-Vane Data 帮助团队构建面向多模态数据准备、AI-ready 数据集和批量推理的处理流水线。它提供 DuckDB 兼容 SQL、Python/Arrow UDF、Ray 支撑的分布式执行，以及面向 AI 工作负载的辅助函数。
+Vane Data 帮助团队构建面向多模态数据准备、适合 AI 的数据集和 batch 推理的处理 pipeline。它提供兼容 DuckDB 的 SQL、Python/Arrow UDF、基于 Ray 的分布式执行，以及面向 AI 工作负载的辅助函数。
 
-当文档、图像、音频、视频、文本记录或模型输出在进入训练、搜索、分析或下游应用之前，需要 SQL 过滤、Python 库处理、向量嵌入、提示词调用、模型推理、GPU 执行或分布式重处理时，可以使用 Vane Data。
+当文档、图像、音频、视频、文本记录或模型输出在进入训练、搜索、分析或下游应用之前，需要 SQL 过滤、Python 库处理、embedding 生成、提示词调用、模型推理、GPU 工作或分布式重处理时，可以使用 Vane Data。
 
-SQL 通过 `con.sql(...)` 和 `con.execute(...)` 作为一等接口提供；当流水线需要自定义逻辑时，可以通过 UDF 和 AI helpers 使用 Python。
+SQL 通过 `con.sql(...)` 和 `con.execute(...)` 作为一等接口提供；当 pipeline 需要自定义逻辑时，可以通过 UDF 和 AI 辅助函数接入 Python。
 
 安装 `vane-ai` 并导入 `vane`。
 
-Vane Data 是面向 AI 和多模态工作流的数据处理层，不是模型服务器、向量数据库、工作流调度器、事务数据库，也不是传统结构化 ETL 的替代品。
+Vane Data 是面向 AI 和多模态 workflow 的数据处理层，不是模型服务器、向量数据库、workflow 调度器、事务数据库，也不是传统结构化 ETL 的替代品。
 
 ## 选择起点
 
-### A. 多模态与 AI 性能工作流
+### A. 多模态与 AI 性能 workflow
 
-适用于媒体处理、Python 代码、模型推理、GPU 工作、托管 AI 调用或历史数据重处理占据主要成本和运行时间的流水线。
+适用于媒体处理、Python 代码、模型推理、GPU 工作、托管 AI 调用或历史数据重处理占据主要成本和运行时间的 pipeline。
 
 1. [Quickstart](/zh-CN/docs/data/quickstart/quickstart)
 2. [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)
@@ -25,7 +25,7 @@ Vane Data 是面向 AI 和多模态工作流的数据处理层，不是模型服
 5. [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)
 6. [Performance Tuning](/zh-CN/docs/data/guides/performance-tuning)
 
-### B. 表格形态的工作流准备
+### B. 表格形态的 workflow 准备
 
 适用于早期运行阶段：在进入 Python、AI 或 GPU 阶段之前，需要完成源数据加载、SQL 过滤、结构化元数据处理和校验。
 
@@ -47,9 +47,9 @@ Vane Data 是面向 AI 和多模态工作流的数据处理层，不是模型服
 ## 文档地图
 
 - 快速开始：[什么是 Vane Data？](/zh-CN/docs/data/quickstart/what-is-vane-data)、[安装](/zh-CN/docs/data/quickstart/installation)、[Quickstart](/zh-CN/docs/data/quickstart/quickstart)
-- 核心概念：[架构](/zh-CN/docs/data/concepts/architecture)、[执行模型](/zh-CN/docs/data/concepts/execution-model)、[SQL vs Python](/zh-CN/docs/data/concepts/sql-vs-python)、[UDF](/zh-CN/docs/data/concepts/udfs)、[AI 函数](/zh-CN/docs/data/concepts/ai-functions)
-- 任务指南：[多模态摄取](/zh-CN/docs/data/guides/multimodal-ingest)、[结构化数据加载](/zh-CN/docs/data/guides/structured-data-load)、[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)、[多模态流水线](/zh-CN/docs/data/guides/multimodal-pipeline)、[结构化转换](/zh-CN/docs/data/guides/structured-transformation)、[AI 函数](/zh-CN/docs/data/guides/ai-functions)、[GPU 推理](/zh-CN/docs/data/guides/gpu-inference)、[大规模嵌入](/zh-CN/docs/data/guides/embeddings-at-scale)、[性能调优](/zh-CN/docs/data/guides/performance-tuning)
-- 示例：[示例索引](/zh-CN/docs/data/examples)、[训练数据流水线](/zh-CN/docs/data/examples/training-data-pipeline)、[保险文档审计](/zh-CN/docs/data/examples/insurance-document-audit)、[招标合规检查](/zh-CN/docs/data/examples/tender-compliance-check)、[多模态数据湖](/zh-CN/docs/data/examples/multimodal-data-lake)
+- 核心概念：[架构](/zh-CN/docs/data/concepts/architecture)、[执行模型](/zh-CN/docs/data/concepts/execution-model)、[SQL vs Python](/zh-CN/docs/data/concepts/sql-vs-python)、[UDF](/zh-CN/docs/data/concepts/udfs)、[AI Functions](/zh-CN/docs/data/concepts/ai-functions)
+- 任务指南：[多模态数据加载](/zh-CN/docs/data/guides/multimodal-ingest)、[结构化数据加载](/zh-CN/docs/data/guides/structured-data-load)、[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)、[多模态 pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)、[结构化转换](/zh-CN/docs/data/guides/structured-transformation)、[AI Functions](/zh-CN/docs/data/guides/ai-functions)、[GPU 推理](/zh-CN/docs/data/guides/gpu-inference)、[大规模 embedding](/zh-CN/docs/data/guides/embeddings-at-scale)、[性能调优](/zh-CN/docs/data/guides/performance-tuning)
+- 示例：[示例索引](/zh-CN/docs/data/examples)、[训练数据 pipeline](/zh-CN/docs/data/examples/training-data-pipeline)、[保险文档审计](/zh-CN/docs/data/examples/insurance-document-audit)、[招标合规检查](/zh-CN/docs/data/examples/tender-compliance-check)、[多模态数据湖](/zh-CN/docs/data/examples/multimodal-data-lake)
 - 部署：[单节点](/zh-CN/docs/data/deploy/single-node)、[Ray 集群](/zh-CN/docs/data/deploy/ray-cluster)、[规格估算](/zh-CN/docs/data/deploy/sizing)
 - 贡献：[开发](/zh-CN/docs/data/contributing/development)
 - 机器可读入口：`docs/llms.txt`、`docs/llms-full.txt`

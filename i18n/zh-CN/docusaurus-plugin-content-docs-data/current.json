@@ -20,7 +20,7 @@
     "description": "The label for category Guides in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Data Ingestion": {
-    "message": "数据摄取",
+    "message": "数据加载",
     "description": "The label for category Data Ingestion in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Data Transformation": {

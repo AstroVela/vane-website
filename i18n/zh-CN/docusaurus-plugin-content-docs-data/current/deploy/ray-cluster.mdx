@@ -2,7 +2,7 @@
 title: Ray 集群
 ---
 
-当你需要 distributed scan、distributed UDF 或多个 GPU actor 时，使用 Ray runner。
+当你需要分布式扫描、分布式 UDF 或多个 GPU Ray actor 时，使用 Ray runner。
 
 ## 选择 Ray runner
 
@@ -12,21 +12,21 @@ import vane
 vane.configure(runner="ray")
 ```
 
-or:
+或：
 
 ```bash
 export VANE_RUNNER=ray
 ```
 
-## Ray initialization
+## Ray 初始化
 
 当 Ray 尚未初始化时，Ray runner 会初始化 Ray。
 
-在用户 workflow 中，如果需要指定 cluster address，请使用标准 Ray environment variable 配置 Ray，或在执行 Vane Data 前先初始化 Ray。
+在用户 workflow 中，如果需要指定集群地址，请使用标准 Ray 环境变量配置 Ray，或在执行 Vane Data 前先初始化 Ray。
 
-## Worker environment
+## worker 环境
 
-Vane Data 会将相关 environment variable 传播到 worker，包括：
+Vane Data 会将相关环境变量传播到 worker，包括：
 
 - `VANE_*`
 - `PYTHONPATH`
@@ -36,11 +36,11 @@ Vane Data 会将相关 environment variable 传播到 worker，包括：
 - `DUCKDB_*`
 - `RAY_ADDRESS`
 
-请在创建 connection 或运行 pipeline 前设置这些变量。
+请在创建连接或运行 pipeline 前设置这些变量。
 
-## Distributed UDF
+## 分布式 UDF
 
-Stateless：
+无状态：
 
 ```python
 out = rel.map_batches(
@@ -51,7 +51,7 @@ out = rel.map_batches(
 )
 ```
 
-Stateful/GPU：
+有状态/GPU：
 
 ```python
 out = rel.map_batches(
@@ -64,11 +64,11 @@ out = rel.map_batches(
 )
 ```
 
-当 downstream stage 需要将输出 join 回 source row 时，请从 distributed UDF 返回 identifier 或 metadata。
+当下游阶段需要将输出关联回源行时，请从分布式 UDF 返回标识符或元数据。
 
-## S3-compatible storage
+## 兼容 S3 的存储
 
-设置 credential 和 DuckDB S3 setting，使 driver 和 worker 都能访问相同数据。
+设置凭证和 DuckDB S3 设置，使 driver 和 worker 都能访问相同数据。
 
 ```bash
 export AWS_ACCESS_KEY_ID=...
@@ -76,18 +76,18 @@ export AWS_SECRET_ACCESS_KEY=...
 export AWS_REGION=us-east-1
 ```
 
-对于 MinIO 或其他 S3-compatible service，请通过 DuckDB setting 或 job 使用的 environment 配置 endpoint 和 path style。
+对于 MinIO 或其他兼容 S3 的服务，请通过 DuckDB 设置或作业使用的环境配置端点和路径风格。
 
 ## 实用检查
 
 扩展规模前：
 
 - 使用 `subprocess_task` 或 `subprocess_actor` 在本地运行同一个 UDF。
-- 确认包含 UDF 的 module 可以在 worker 上 import。
-- 确认 model file 在每个 worker 上可用，或可以下载。
-- 确认 output path 是共享路径或远端路径。
-- 检查 Ray 报告的 CPU/GPU resource 足以支撑你的 `concurrency` 和 `gpus` 选择。
+- 确认包含 UDF 的模块可以在 worker 上导入。
+- 确认模型文件在每个 worker 上可用，或可以下载。
+- 确认输出路径是共享路径或远端路径。
+- 检查 Ray 报告的 CPU/GPU 资源足以支撑你的 `concurrency` 和 `gpus` 选择。
 
 ## 关闭
 
-Ray runner 拥有 actor pool，并暴露内部 shutdown method。在普通 script 中，关闭 connection，并让 process 干净退出即可。对于 long-running process，请显式关闭你创建的 resource。
+Ray runner 拥有 actor 池，并暴露内部关闭方法。在普通脚本中，关闭连接，并让进程干净退出即可。对于长时间运行的进程，请显式关闭你创建的资源。

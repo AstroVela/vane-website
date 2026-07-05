@@ -2,7 +2,7 @@
 title: Architecture
 ---
 
-Vane Data is a layered data engine. It exposes a DuckDB-compatible SQL and Python surface, adds relation-level Python and AI operations, and can execute selected work locally or through Ray.
+Vane Data is a multimodal-native data engine. It exposes a DuckDB-compatible SQL and Python surface, adds relation-level Python and AI operations, and can execute selected work locally or through Ray.
 
 The design goal is simple: keep pipelines table-shaped while allowing SQL, Python libraries, model inference, and distributed execution to live in one workflow.
 
@@ -120,9 +120,3 @@ Common data paths:
 - Writes use DuckDB-compatible and Vane Data relation write paths, depending on runner and target.
 
 Place filters and column projections before expensive Python or model stages. This reduces the amount of data crossing into Python and, in Ray mode, reduces cluster data movement.
-
-## Extension boundary
-
-The configured source build includes `core_functions`, `json`, `parquet`, `icu`, `jemalloc`, and `httpfs`.
-
-Other DuckDB extensions depend on the build and runtime environment. Treat extension availability as a deployment property: verify that the extension is bundled, installable, or loadable where the job runs.

@@ -2,46 +2,46 @@
 title: UDF
 ---
 
-Vane Data UDF 允许你在 relation pipeline 内运行 Python，同时保留显式 schema、batch 控制，以及迁移到 distributed execution 的路径。
+Vane Data UDF 允许你在 relation pipeline 中运行 Python，同时保留显式 schema、batch 控制，并为后续迁移到分布式执行留出路径。
 
-当某个步骤需要 Python library、model state、自定义解码、外部 client 或 row expansion 时，使用 UDF。关系型工作继续交给 SQL，只把 SQL 不适合承担的部分放到 UDF 中。
+当某个阶段需要 Python 库、模型状态、自定义解码、外部客户端或行展开时，就使用 UDF。关系型处理继续交给 SQL，只把 SQL 不适合处理的部分放进 UDF。
 
 ## 公共 API
 
-Vane Data 暴露了三个 relation-level UDF API：
+Vane Data 暴露了三个 relation 级别的 UDF API：
 
 | API | 形态 | 典型用途 |
 | --- | --- | --- |
-| `map_batches(function, schema=..., ...)` | Arrow batch 到 Arrow batch | Vectorized transform、model inference、解码 |
-| `flat_map(function, schema=..., ...)` | 一行输入到零行、一行或多行输出 | Chunking、splitting、展开 nested record |
-| `map(map_function, return_type=..., ...)` | Row-wise scalar value | 小型 scalar enrichment |
+| `map_batches(function, schema=..., ...)` | Arrow batch 到 Arrow batch | 向量化转换、模型推理、解码 |
+| `flat_map(function, schema=..., ...)` | 一行输入到零行、一行或多行输出 | 分块、切分、展开嵌套记录 |
+| `map(map_function, return_type=..., ...)` | 逐行标量值 | 小型标量补充 |
 
 核心参数：
 
-- `schema`：relation-producing UDF 的输出列和类型。
-- `return_type`：`map` 的 scalar output type。
+- `schema`：会生成 relation 的 UDF 的输出列和类型。
+- `return_type`：`map` 的标量输出类型。
 - `batch_size`：每次 `map_batches` 调用处理的行数。
-- `execution_backend`：callable 运行的位置。
-- `cpus` 和 `gpus`：在支持的 backend 上声明 resource request。
-- `concurrency`：在支持的 backend 上声明 executor 或 actor 数量。
-- `streaming_breaker`：高级的 `map_batches` execution-boundary 控制。
+- `execution_backend`：可调用对象运行的位置。
+- `cpus` 和 `gpus`：在支持的 backend 上声明资源请求。
+- `concurrency`：在支持的 backend 上声明执行器或 actor 数量。
+- `streaming_breaker`：高级的 `map_batches` 执行边界控制。
 
-不支持的 keyword argument 会在 relation render 之前被提前拒绝。
+不支持的关键字参数会在 relation 渲染之前被提前拒绝。
 
-## Execution backend
+## 执行 backend
 
-| Backend | Callable 形态 | 适用场景 |
+| Backend | 可调用对象形态 | 适用场景 |
 | --- | --- | --- |
-| `subprocess_task` | Python function | 本地无状态 batch transform |
-| `subprocess_actor` | Callable class | 本地 model 或 client 复用 |
-| `ray_task` | Python function | Distributed stateless transform |
-| `ray_actor` | Callable class | Distributed stateful inference、GPU-backed model |
+| `subprocess_task` | Python 函数 | 本地无状态 batch 转换 |
+| `subprocess_actor` | 可调用类 | 本地模型或客户端复用 |
+| `ray_task` | Python 函数 | 分布式无状态转换 |
+| `ray_actor` | 可调用类 | 分布式有状态推理、GPU 支持的模型 |
 
-向 task backend 传入 function。向 actor backend 传入 class，而不是已经创建好的 instance，这样 Vane Data 才能在 executor 内构造并复用该对象。
+向 task backend 传入函数。向 actor backend 传入类，而不是已经创建好的实例，这样 Vane Data 才能在执行器内构造并复用该对象。
 
-## Batch UDF contract
+## Batch UDF 契约
 
-`map_batches` 接收 Arrow data，并返回 Arrow data。返回的 table 必须匹配声明的 output schema。
+`map_batches` 接收 Arrow 数据，并返回 Arrow 数据。返回的 table 必须与声明的输出 schema 匹配。
 
 ```python
 import pyarrow as pa
@@ -77,11 +77,11 @@ features = rel.map_batches(
 features.show()
 ```
 
-Batch UDF 是 model 和 media workload 的默认选择，因为它可以摊薄 Python 开销，并让 model library 一次处理多行数据。
+Batch UDF 通常适合模型和媒体工作负载，因为它可以摊薄 Python 开销，并让模型库一次处理多行数据。
 
-## Stateful class UDF
+## 有状态类 UDF
 
-当 setup 成本较高且需要跨 batch 复用时，使用 actor backend。
+当初始化成本较高且需要跨 batch 复用时，使用 actor backend。
 
 ```python
 import pyarrow as pa
@@ -106,9 +106,9 @@ embedded = rel.map_batches(
 )
 ```
 
-这个 relation 包含声明的 `embedding` 列。如果后续阶段需要将 embeddings join 回输入行，也要从 UDF 返回 source identifier。
+这个 relation 会包含声明的 `embedding` 列。如果下游阶段需要把 embedding 结果 join 回输入行，也要让 UDF 返回源标识符。
 
-对于 distributed GPU inference，使用相同的 callable class 形态，并切换到 `ray_actor`：
+对于分布式 GPU 推理，使用相同的可调用类形态，并切换到 `ray_actor`：
 
 ```python
 embedded = rel.map_batches(
@@ -121,9 +121,9 @@ embedded = rel.map_batches(
 )
 ```
 
-每个 Ray worker 都必须能够 import 这个 class，并访问所需的 model file 或 credential。
+每个 Ray worker 都必须能够导入这个类，并访问所需的模型文件或凭据。
 
-## One-to-many transform
+## 一对多转换
 
 当一行输入可能产生零行、一行或多行输出时，使用 `flat_map`。
 
@@ -138,11 +138,11 @@ terms = rel.flat_map(
 )
 ```
 
-典型用途包括 document chunking、URL expansion、nested record normalization，以及通过返回空 list 完成过滤。
+典型用途包括文档切分、URL 展开、嵌套记录规范化，以及通过返回空 list 完成过滤。
 
-## Scalar transform
+## 标量转换
 
-对于不需要 batch UDF 的小型 row-wise scalar enrichment，使用 `map`。
+对于不需要 batch UDF 的小型逐行标量补充，使用 `map`。
 
 ```python
 def normalize_text(text: str) -> str:
@@ -155,31 +155,31 @@ normalized = rel.project("text").map(
 )
 ```
 
-对于 model call、media decoding，或任何可以受益于 vectorization 的操作，优先使用 `map_batches`。
+对于模型调用、媒体解码，或任何能从向量化中受益的操作，优先使用 `map_batches`。
 
-## Resource 与 concurrency
+## 资源与并发度
 
 请区分以下控制项：
 
 - `batch_size`：传给 `map_batches` 的每个 batch 的行数。
-- `gpus`：在支持的 backend 上，每次 callable execution 的 GPU resource request。
-- `cpus`：在支持的 backend 上，每次 callable execution 的 CPU resource request。
-- `concurrency`：在支持的 backend 上，executor 或 actor 的数量。
+- `gpus`：在支持的 backend 上，每次可调用对象执行的 GPU 资源请求。
+- `cpus`：在支持的 backend 上，每次可调用对象执行的 CPU 资源请求。
+- `concurrency`：在支持的 backend 上，执行器或 actor 的数量。
 
-如果瓶颈是 model throughput，先增大 `batch_size`，再提高 concurrency。当 worker 利用率不足且仍有 memory headroom 时，再增加 concurrency。
+如果瓶颈是模型吞吐量，先增大 `batch_size`，再提高并发度。当 worker 利用率不足且内存仍有余量时，再增加并发度。
 
-部分 backend 不接受所有 resource 或 concurrency 选项。扩展规模前，请先在有代表性的 sample 上验证配置。
+部分 backend 不支持所有资源或并发度选项。扩展规模前，请先用有代表性的样本验证配置。
 
-## Streaming behavior
+## 流式行为
 
-`map_batches` 暴露 `streaming_breaker`，用于高级 execution-boundary 控制。除非你正在测量某个具体的 pipeline 行为或调试边界，否则保持未设置。
+`map_batches` 暴露 `streaming_breaker`，用于高级执行边界控制。除非你正在测量某个具体的 pipeline 行为或调试边界，否则保持未设置。
 
 ## Backend 选择
 
 按以下顺序推进：
 
 1. 先用 `subprocess_task` 或 `subprocess_actor` 在本地构建 UDF。
-2. 在有代表性的 sample 上验证 schema、row count 和错误行为。
-3. 只有在 distribution 确实有帮助时，才把 stateless function 切换到 `ray_task`。
-4. 只有在需要 actor 复用、GPU 或 cluster placement 时，才把 stateful model class 切换到 `ray_actor`。
-5. 使用接近生产的数据调优 batch size、resource request 和 concurrency。
+2. 在有代表性的样本上验证 schema、行数和错误行为。
+3. 只有在分布式执行确实有帮助时，才把无状态函数切换到 `ray_task`。
+4. 只有在需要 actor 复用、GPU 或集群资源调度时，才把有状态模型类切换到 `ray_actor`。
+5. 使用接近生产的数据调优 batch size、资源请求和并发度。

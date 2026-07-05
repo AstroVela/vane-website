@@ -1,13 +1,13 @@
-使用 Vane Data 构建 embedding pipeline，可以在一个 workflow 中完成 SQL 过滤、batch model execution 和 table output。
+使用 Vane Data 构建 embedding pipeline，可以在一个 workflow 中完成 SQL 过滤、batch 模型执行和表输出。
 
-通常形态是：
+常见形态如下：
 
-1. 用 SQL 读取并过滤 source row。
-2. 将长文本切成稳定 chunk。
-3. 用 `rel.embed_text(...)` 或自定义 UDF 对 chunk 做 embedding。
-4. 带着稳定的 document ID 和 chunk ID 写出 embedding。
+1. 用 SQL 读取并过滤源行。
+2. 将长文本切成稳定的分块。
+3. 用 `rel.embed_text(...)` 或自定义 UDF 对分块做 embedding。
+4. 带着稳定的文档 ID 和分块 ID 写出 embedding。
 
-## 基本文本 Embedding
+## 基本文本 embedding
 
 ```python
 import vane
@@ -28,11 +28,11 @@ embedding_only = rel.embed_text(
 )
 ```
 
-`embed_text` 返回包含所配置 embedding output column 的 relation。这个 high-level helper 会把 embedding 写成 `FLOAT[]`；它不会自动包含 `id` 或 `text` 等 source column。
+`embed_text` 返回一个 relation，其中包含已配置的 embedding 输出列。这个高层辅助函数会把 embedding 写成 `FLOAT[]`；它不会自动带上 `id` 或 `text` 等源列。
 
 ## 先切分长文本
 
-除非你明确希望把整篇文档送进 embedding model，否则应创建有边界且 ID 稳定的 chunk。
+除非你明确希望把整篇文档送入 embedding 模型，否则应创建边界清晰、ID 稳定的分块。
 
 ```python
 import pyarrow as pa
@@ -69,11 +69,11 @@ chunks = rel.map_batches(
 )
 ```
 
-生产系统中，应使用 tokenizer-aware chunker，使其匹配 model context window，并保留足够 overlap 以保证 retrieval quality。
+生产系统中，应使用能感知 tokenizer 的分块器，使其匹配模型上下文窗口，并保留足够的重叠区间以保证检索质量。
 
-## 使用本地 Embedding Model
+## 使用本地 embedding 模型
 
-本地 model 通常最适合 actor backend，因为 model initialization 成本较高：
+本地模型通常最适合 actor backend，因为模型初始化成本较高：
 
 ```python
 embedding_only = chunks.embed_text(
@@ -86,11 +86,11 @@ embedding_only = chunks.embed_text(
 )
 ```
 
-当 provider 检测到可用 GPU resource 时，可能会向 UDF execution layer 传递 GPU resource request。如果需要严格控制 device，或需要包含 ID 的完整 output row，请使用自定义 `map_batches` callable class 返回 identifier、text 和 embedding。
+当 provider 检测到可用 GPU 资源时，可能会向 UDF 执行层传递 GPU 资源请求。如果需要严格控制设备，或需要包含 ID 的完整输出行，请使用自定义 `map_batches` 可调用类返回标识符、文本和 embedding。
 
-## 使用 Hosted Embedding API
+## 使用托管 embedding API
 
-当你希望使用 managed model，并且可以接受 API latency 和 rate limit 时，hosted provider 很有用：
+当你希望使用托管模型，并且可以接受 API 延迟和速率限制时，托管 provider 很有用：
 
 ```python
 embedding_only = chunks.embed_text(
@@ -104,7 +104,7 @@ embedding_only = chunks.embed_text(
 )
 ```
 
-请谨慎调节 `batch_size` 和 `concurrency`。更高的 concurrency 可以提升 throughput，但也可能触发 provider rate limit 或放大 retry。如果在 helper call 之后把 provider output 与 source column 组合，请在该步骤中校验 row count 并保持稳定顺序。
+请谨慎调节 `batch_size` 和 `concurrency`。更高的并发度可以提升吞吐量，但也可能触发 `provider` 速率限制或放大重试。如果在辅助函数调用之后把 provider 输出与源列组合，请在该步骤中校验行数并保持稳定顺序。
 
 ## 使用 Ray 处理更大任务
 
@@ -124,19 +124,19 @@ embedding_only = chunks.embed_text(
 )
 ```
 
-每个 Ray worker 都必须能够 import provider library，并访问 model file 或 provider credential。
+每个 Ray worker 都必须能够 import provider 库，并访问模型文件或 provider 凭证。
 
 ## 输出形态
 
-写出完整 relation，让下游 retrieval 和 audit 更直接：
+写出完整 relation，让下游检索和审计更直接：
 
 - `document_id`
 - `chunk_id`
 - `chunk_text`
 - `embedding`
 - `source_uri`
-- model name 和 provider
-- 需要时记录 creation timestamp 或 run ID
+- 模型名和 provider
+- 需要时记录创建时间戳或 run ID
 
 使用 relation writer 写出结果：
 
@@ -144,16 +144,16 @@ embedding_only = chunks.embed_text(
 embedded_with_ids.write_parquet("output/embeddings/")
 ```
 
-`embedded_with_ids` 应包含上面列出的 identifier 和 metadata column。它可以来自返回完整 schema 的自定义 embedding UDF，也可以来自 AI helper output 与 source row 的显式组合；组合前需要校验 row count 和 ordering。
+`embedded_with_ids` 应包含上面列出的标识符和元数据列。它可以来自返回完整 schema 的自定义 embedding UDF，也可以来自 AI 辅助函数输出与源行的显式组合；组合前需要校验行数和顺序。
 
-对于 distributed write，请确保每个 worker 都能访问 output filesystem。
+对于分布式写出，请确保每个 worker 都能访问输出文件系统。
 
-## Tuning Checklist
+## 调优清单
 
-- 在 embedding 前先 filter 和 project。
-- 保持 chunk 有边界且 deterministic。
-- 本地 model 使用 actor backend。
-- 增大 `batch_size`，直到 latency 或 memory 成为瓶颈。
+- 在 embedding 前先过滤并投影。
+- 保持分块边界清晰且结果具有确定性。
+- 本地模型使用 actor backend。
+- 增大 `batch_size`，直到延迟或内存成为瓶颈。
 - 只有 worker 或 API quota 仍有余量时，才增大 `concurrency`。
-- 当 scan、inference 或 write throughput 超出单进程能力时使用 Ray。
-- 使用稳定 document ID 和 chunk ID 保持 output row deterministic。
+- 当扫描、推理或写入吞吐量超出单进程能力时使用 Ray。
+- 使用稳定的文档 ID 和分块 ID，使输出行保持确定性。
