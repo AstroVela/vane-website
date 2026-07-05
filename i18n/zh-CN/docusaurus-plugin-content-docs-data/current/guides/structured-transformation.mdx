@@ -16,8 +16,15 @@ import vane
 con = vane.connect()
 
 source_documents = con.sql("""
-    select *
-    from read_parquet('data/source_documents/*.parquet')
+    select
+        *,
+        filename as source_file,
+        file_row_number as source_row_number
+    from read_parquet(
+        'data/source_documents/*.parquet',
+        filename=true,
+        file_row_number=true
+    )
 """)
 source_documents.to_table("source_documents")
 
@@ -206,9 +213,9 @@ quality = con.sql("""
 """).map_batches(
     score_text_quality,
     schema={
-        "document_id": "VARCHAR",
-        "quality_score": "DOUBLE",
-        "quality_reason": "VARCHAR",
+        "document_id": vane.sqltypes.VARCHAR,
+        "quality_score": vane.sqltypes.DOUBLE,
+        "quality_reason": vane.sqltypes.VARCHAR,
     },
     batch_size=1024,
     execution_backend="subprocess_task",
@@ -217,9 +224,24 @@ quality = con.sql("""
 quality.to_table("document_quality")
 ```
 
-UDF 之后，使用 SQL 将结果 join 回来，并像对待其他 derived column 一样运行相同的 validation check。
+`map_batches` 只返回 schema 中声明的列。当 downstream stage 仍需要 curated source field 时，请用 SQL 将结果 join 回来：
 
-## Dedup 与 clean pattern
+```python
+scored_documents = con.sql("""
+    select
+        c.*,
+        q.quality_score,
+        q.quality_reason
+    from curated_documents c
+    left join document_quality q using (document_id)
+""")
+
+scored_documents.to_table("scored_documents")
+```
+
+UDF 之后，像对待其他 derived column 一样运行相同的 validation check。
+
+## 去重可追溯行
 
 Document manifest、extracted text、label 和 model output 中经常需要 deduplication。定义 business key，确定性地规范化它，统计 duplicate，并通过显式排序规则保留 representative row。
 
@@ -280,7 +302,10 @@ con.sql("""
         count(*) as curated_rows,
         count(distinct document_id) as distinct_document_ids,
         count(*) filter (where document_id is null) as null_document_ids,
+        count(*) - count(distinct document_id) as duplicate_document_ids,
         count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where source_file is null) as missing_source_file,
+        count(*) filter (where source_row_number is null) as missing_source_row_number,
         count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
         count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
     from curated_documents
@@ -295,6 +320,7 @@ con.sql("""
 - media type、language、label、status 或 task type 的 value domain
 - model call 前的 prompt text sample
 - enrichment 后的 model-output 或 quality-score distribution
+- handoff 前的 `status`、`error` 和 run metadata field
 - source value 与 curated value 的 sample diff
 
 对于会改变值的规则，使用 sample diff：
@@ -323,10 +349,27 @@ con.sql("""
 - 带有显式 column name 和 type 的稳定 schema
 - 每个 source object、prompt、chunk、label 或 model-output row 的稳定 ID
 - `source_uri`、`source_file`、`source_row_number`、`raw_id` 或 `ingest_run_id` 等 traceability column
+- 对 skipped row 或无法被后续 stage 使用的行，保留显式 `status` 和 `error` column
 - 足以比较不同运行的 run metadata
 
 ```python
-curated_documents.write_parquet("output/curated/documents/")
+final_documents = con.sql("""
+    select
+        *,
+        case
+            when ready_for_ai then 'ready'
+            else 'skipped'
+        end as status,
+        case
+            when ready_for_ai then null
+            else coalesce(quality_reason, 'not_ready_for_ai')
+        end as error,
+        'structured_transform_v1' as transform_run_id,
+        current_timestamp as transformed_at
+    from scored_documents
+""")
+
+final_documents.write_parquet("output/curated/documents.parquet")
 
 con.sql("""
     copy (
@@ -334,9 +377,10 @@ con.sql("""
             'documents' as dataset,
             count(*) as row_count,
             count(*) filter (where ready_for_ai) as ready_for_ai_rows,
+            count(*) filter (where status <> 'ready') as skipped_rows,
             min(created_at) as min_created_at,
             max(created_at) as max_created_at
-        from curated_documents
+        from final_documents
     )
     to 'output/curated/documents_validation.parquet'
     (format parquet)

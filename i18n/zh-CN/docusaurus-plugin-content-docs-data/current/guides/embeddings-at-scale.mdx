@@ -138,7 +138,9 @@ if empty_chunks:
 | Local model | 需要本地执行，或基于已安装 model library 处理私有数据。 | Dependency version、model download、CPU/GPU 内存，以及 model initialization time。 |
 | Custom UDF | 需要在一个步骤中完全控制 ID、retry、status column 或 embedding schema。 | 需要维护更多代码；请仔细校验 schema 和错误。 |
 
-`embed_text(...)` 等 AI helper method 使用方便，但其 output relation 只包含已配置的 embedding 列。如果最终 table 需要 ID 和 metadata，请在验证 row count 和顺序后，显式地将 helper output 与 chunk row 组合；或者使用返回完整 schema 的自定义 UDF。
+`embed_text(...)` 等 AI helper method 使用方便，但其 output relation 只包含已配置的 embedding 列。如果最终 table 需要 ID、text、metadata、status、error、provider、model 或 run field，请在验证 row count 和确定性顺序后，显式地将 helper output 与 chunk row 组合。对于 Ray 或任何无法把顺序作为硬性不变量的路径，请使用返回完整 schema 的自定义 UDF。
+
+使用 backend override 前，请先在已安装 package 上用极小样本验证 helper。对于 actor reuse、严格 GPU placement、retry 或 row-level diagnostics，优先使用下方 custom callable-class UDF 模式。
 
 ## 使用 hosted API 生成 embedding
 
@@ -151,16 +153,14 @@ embedding_only = chunks.embed_text(
     model="text-embedding-3-small",
     output_column="embedding",
     batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
 )
 ```
 
-从保守的 `batch_size` 和 `concurrency` 开始。一次只增大一个设置，并记录 provider error、timeout 和 rate-limit response。
+从保守的 `batch_size` 开始。如果添加 UDF `concurrency`，请把它视为 helper-batch concurrency，它可能增加同时 provider call 数量；这并不等同于 provider-side token batching。一次只增大一个设置，并记录 provider error、timeout 和 rate-limit response。
 
 ## 使用 local model 生成 embedding
 
-Local model 可以避免 hosted API call，但会引入本地 dependency 和 model-loading 成本。Actor backend 通常是合适的起点，因为 model 可以在每个 actor 中初始化一次，并跨 batch 复用。
+Local model 可以避免 hosted API call，但会引入本地 dependency 和 model-loading 成本。使用 high-level helper 做正确性 sample；当你需要已验证的 actor reuse、GPU placement、retry 或完整 output schema 时，使用 custom callable class。
 
 ```python
 embedding_only = chunks.embed_text(
@@ -169,11 +169,10 @@ embedding_only = chunks.embed_text(
     model="sentence-transformers/all-MiniLM-L6-v2",
     output_column="embedding",
     batch_size=64,
-    execution_backend="subprocess_actor",
 )
 ```
 
-如果需要严格的 GPU placement、自定义 retry behavior，或需要单个 UDF 同时返回 identifier、text、status、error 和 embedding，请使用基于 callable class 的 `map_batches(...)`，而不是 high-level helper。
+对于 `provider="transformers"`，descriptor 主要使用 `batch_size` 和本地 GPU detection。UDF `concurrency` 不是 model-internal batching 或 GPU capacity planning 的替代品。如果需要严格的 GPU placement、自定义 retry behavior，或需要单个 UDF 同时返回 identifier、text、status、error 和 embedding，请使用基于 callable class 的 `map_batches(...)`，而不是 high-level helper。
 
 ## 组合并校验输出
 
@@ -202,12 +201,79 @@ embedded_table = (
     .append_column("embedding_provider", pa.array([PROVIDER] * chunk_table.num_rows))
     .append_column("embedding_model", pa.array([MODEL] * chunk_table.num_rows))
     .append_column("embedding_run_id", pa.array([RUN_ID] * chunk_table.num_rows))
+    .append_column("status", pa.array(["ok"] * chunk_table.num_rows))
+    .append_column("error", pa.array([""] * chunk_table.num_rows))
 )
 
 embedded = con.from_arrow(embedded_table)
 ```
 
 如果无法保证 row order 稳定，不要依赖按位置 recombination。请编写自定义 embedding UDF，在一个 relation 中返回完整 output schema，包括 ID 和 error/status column。
+
+```python
+import pyarrow as pa
+
+
+class LocalEmbeddingUDF:
+    def __init__(self) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self.model = SentenceTransformer(self.model_name)
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        chunk_ids = batch.column("chunk_id").to_pylist()
+        document_ids = batch.column("document_id").to_pylist()
+        chunk_texts = batch.column("chunk_text").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+
+        embeddings = []
+        status = []
+        error = []
+
+        for text in chunk_texts:
+            try:
+                vector = self.model.encode([str(text or "")], convert_to_numpy=True)[0]
+                embeddings.append(vector.tolist())
+                status.append("ok")
+                error.append("")
+            except Exception as exc:
+                embeddings.append(None)
+                status.append("failed")
+                error.append(f"embed: {type(exc).__name__}: {exc}")
+
+        return pa.table({
+            "chunk_id": chunk_ids,
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "chunk_text": chunk_texts,
+            "embedding": embeddings,
+            "embedding_provider": ["transformers"] * len(chunk_ids),
+            "embedding_model": [self.model_name] * len(chunk_ids),
+            "embedding_run_id": [RUN_ID] * len(chunk_ids),
+            "status": status,
+            "error": error,
+        })
+
+
+embedded = chunks.map_batches(
+    LocalEmbeddingUDF,
+    schema={
+        "chunk_id": "VARCHAR",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "chunk_text": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "embedding_provider": "VARCHAR",
+        "embedding_model": "VARCHAR",
+        "embedding_run_id": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_actor",
+)
+```
 
 ## 输出 schema
 
@@ -225,6 +291,8 @@ embedded = con.from_arrow(embedded_table)
 | `embedding_provider` | Provider 名称，例如 `openai` 或 `transformers`。 |
 | `embedding_model` | 本次运行使用的准确 model identifier。 |
 | `embedding_run_id` | 用于 repeatability 和 review 的 run identifier。 |
+| `status` | Embedding stage 的 `ok`、`failed` 或 `skipped`。 |
+| `error` | 成功时为空；失败或 skipped row 的 diagnostic text。 |
 
 添加有助于调试异常 chunk 或向 domain reviewer 解释 sample 的 source metadata column。即使 downstream vector store 不需要，也不要静默丢弃 identifier。
 
@@ -233,7 +301,7 @@ embedded = con.from_arrow(embedded_table)
 写入 run-specific path，这样可以比较不同运行结果，而不会覆盖早期输出。
 
 ```python
-embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
+embedded.write_parquet(f"output/embeddings/{RUN_ID}.parquet")
 ```
 
 对于 distributed write，请确保每个 worker 都能访问输出 filesystem 或 object store。
@@ -245,18 +313,29 @@ embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
 ```python
 vane.configure(runner="ray")
 
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
+embedded = chunks.map_batches(
+    LocalEmbeddingUDF,
+    schema={
+        "chunk_id": "VARCHAR",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "chunk_text": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "embedding_provider": "VARCHAR",
+        "embedding_model": "VARCHAR",
+        "embedding_run_id": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
     batch_size=128,
-    concurrency=8,
     execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
 )
 ```
 
-每个 Ray worker 都需要访问 provider library、local model file 或 hosted API credential、source data 和 output path。扩展规模时保持相同的 chunking configuration；否则你测量的是另一条 pipeline。
+每个 Ray worker 都需要访问 provider library、local model file 或 hosted API credential、source data 和 output path。使用 `ray_actor` 时，callable class 不能有必填 constructor argument。`gpus=1.0` 是每个 actor 的资源请求，所以 `concurrency=N` 需要 N 个 GPU slot。扩展规模时保持相同的 chunking configuration；否则你测量的是另一条 pipeline。
 
 ## 调优清单
 

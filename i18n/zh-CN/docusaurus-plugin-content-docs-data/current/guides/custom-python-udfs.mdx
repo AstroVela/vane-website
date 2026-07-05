@@ -62,26 +62,38 @@ def prepare_document_text(batch: pa.Table) -> pa.Table:
     text_length = []
     needs_review = []
     review_reason = []
+    status = []
+    error = []
 
     for media_type, text in zip(media_types, texts, strict=False):
-        clean = re.sub(r"\s+", " ", str(text or "")).strip()
-        lower = clean.lower()
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
 
-        normalized_text.append(clean)
-        text_length.append(len(clean))
+            normalized_text.append(clean)
+            text_length.append(len(clean))
 
-        if media_type not in SUPPORTED_MEDIA_TYPES:
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
             needs_review.append(True)
-            review_reason.append("unsupported_media_type")
-        elif not clean:
-            needs_review.append(True)
-            review_reason.append("empty_text")
-        elif any(term in lower for term in RISK_TERMS):
-            needs_review.append(True)
-            review_reason.append("risk_term")
-        else:
-            needs_review.append(False)
-            review_reason.append("none")
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
 
     return pa.table({
         "document_id": document_ids,
@@ -92,6 +104,8 @@ def prepare_document_text(batch: pa.Table) -> pa.Table:
         "text_length": text_length,
         "needs_review": needs_review,
         "review_reason": review_reason,
+        "status": status,
+        "error": error,
     })
 
 
@@ -106,6 +120,8 @@ prepared = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_task",
@@ -114,7 +130,7 @@ prepared = documents.map_batches(
 prepared.show()
 ```
 
-这个示例会在返回新字段的同时返回 source `document_id`、`source_uri`、`media_type` 和 `document_type` 列。这是有意为之。没有这些列，downstream SQL validation 就无法解释某个结果来自哪一条 source row。
+这个示例会在返回新字段的同时返回 source `document_id`、`source_uri`、`media_type` 和 `document_type` 列，以及显式的 `status`/`error` 列。这是有意为之。Vane 不会自动创建 row-level diagnostics。未捕获的 exception 会让 batch 或 query 失败；如果你希望失败行可检查，请在 UDF 内捕获 per-row failure。
 
 ## 使用 SQL 校验
 
@@ -152,6 +168,8 @@ summary.show()
 | Null | 保持 null 行为显式，尤其是 numeric、bytes、list 和 model-output 列。 |
 | Row count | `map_batches` UDF 通常每个输入行返回一个输出行。当一个输入可能生成零行或多行时，使用 `flat_map`。 |
 
+对于 `flat_map`，callable 会接收一行 Python `dict`。它可以返回 `None`、一个 output `dict`，或 output dict 的 iterable/generator。声明的 schema 会从这些 dict 中选择 key；缺失的 key 会变成 null，额外 key 会被忽略。对于 chunking、frame extraction summary、split record，或任何一个 input row 可能产生零行、一行或多行 output 的 stage，请使用 `flat_map`。
+
 如果 Arrow 无法推断你需要的类型，请构造显式 array：
 
 ```python
@@ -181,6 +199,8 @@ debugged = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=8,
     execution_backend="subprocess_task",
@@ -201,7 +221,7 @@ Batch size 不应改变结果语义。如果调整 batch size 后输出发生变
 - lookup table 或 cache
 - GPU model state
 
-Actor backend 会在 worker 内构造 class，并在多个 batch 间复用它。请传入 class 本身，而不是已经创建好的 instance。
+Actor backend 会在 worker 内构造 class，并在多个 batch 间复用它。请传入 class 本身，而不是已经创建好的 instance 或普通 function。Actor class 不能有必填 constructor argument。请把配置放在环境变量、class-level default、带默认值的 optional argument，或 no-argument wrapper class 中。
 
 ```python
 import pyarrow as pa
@@ -217,21 +237,43 @@ class PromptBuilder:
 
     def __call__(self, batch: pa.Table) -> pa.Table:
         document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
         document_types = batch.column("document_type").to_pylist()
         texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
 
         prompts = []
         prompt_template = []
+        status = []
+        error = []
 
-        for document_type, text in zip(document_types, texts, strict=False):
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
             template = self.template_by_type.get(document_type, "Summarize this document:")
             prompt_template.append(template)
             prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
 
         return pa.table({
             "document_id": document_ids,
+            "source_uri": source_uris,
             "prompt_template": prompt_template,
             "prompt": prompts,
+            "status": status,
+            "error": error,
         })
 
 
@@ -239,8 +281,11 @@ prompts = prepared.map_batches(
     PromptBuilder,
     schema={
         "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
         "prompt_template": "VARCHAR",
         "prompt": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_actor",
@@ -248,7 +293,7 @@ prompts = prepared.map_batches(
 )
 ```
 
-在真实 model UDF 中，请在 `__init__` 中加载 model、tokenizer 或 client，而不是在 module import 时加载。这样可以保持 import 轻量，并让每个 subprocess 或 Ray actor 拥有自己的状态。
+在真实 model UDF 中，请在 `__init__` 中或第一次调用时 lazy load model、tokenizer 或 client，而不是在 module import 时加载。这样可以保持 import 轻量，并让每个 subprocess 或 Ray actor 拥有自己的状态。
 
 ## Backend 选择
 
@@ -261,7 +306,9 @@ prompts = prepared.map_batches(
 | `ray_task` | Function | 本地正确性验证后，再执行 distributed stateless batch work。 |
 | `ray_actor` | Callable class | Distributed model/client 复用、GPU placement，或更大的 actor pool。 |
 
-使用 Ray backend 时，需要在创建并运行 distributed pipeline 前配置 Ray execution。
+唯一有效的 backend name 是 `subprocess_task`、`subprocess_actor`、`ray_task` 和 `ray_actor`。`local`、`subprocess`、`ray=True`、`use_process`、`actor_count`、`prefer_actor` 等旧写法或 shorthand 不是当前 API。`concurrency` 支持 `subprocess_task`、`subprocess_actor` 和 `ray_actor`；不要将它与 `ray_task` 一起使用。
+
+对于 distributed execution 和 `ray_actor` pool，请在创建并运行 plan 前配置 Ray/Vane runner。部分直接 Ray task path 可以为小型运行初始化 Ray，但示例应显式配置 Ray，让 worker environment、path 和 resource 更可控。
 
 ```python
 import vane
@@ -279,6 +326,8 @@ ray_prepared = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=256,
     execution_backend="ray_task",
@@ -292,8 +341,11 @@ ray_prompts = prepared.map_batches(
     PromptBuilder,
     schema={
         "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
         "prompt_template": "VARCHAR",
         "prompt": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=128,
     execution_backend="ray_actor",
@@ -301,7 +353,49 @@ ray_prompts = prepared.map_batches(
 )
 ```
 
-每个 Ray worker 都必须能够 import 该 callable，并访问相同的数据路径、model file、credential 和 Python dependency。
+对于 GPU placement，请按 actor 请求 GPU resource：
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # 在这里加载 tokenizer/model，使每个 actor 拥有自己的 GPU state。
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU slot 才能满并行运行。
+
+每个 Ray worker 都必须能够 import 该 callable，并访问相同的数据路径、model file、credential 和 Python dependency。Callable 会被序列化进 plan，但被引用的 module 和 runtime dependency 仍需要存在于 worker environment 中。
 
 ## 本地调试顺序
 
@@ -345,6 +439,8 @@ debug_relation = sample.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=4,
     execution_backend="subprocess_task",
@@ -361,9 +457,11 @@ debug_relation.show()
 | --- | --- | --- |
 | Schema mismatch | 返回的列或类型与 `schema` 不匹配。 | 打印返回的 Arrow schema，然后对齐 column name 和 Arrow-compatible type。 |
 | Missing ID or source columns | UDF 只返回了 derived column。 | 返回 downstream SQL、join 和 review 所需的稳定 ID 与 source field。 |
+| Missing status or error fields | UDF 依赖 exception 或 log 作为 row-level diagnostics。 | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
 | Arrow type incompatibility | UDF 返回了 Arrow 无法序列化的 Python object。 | 将输出转换为 primitive、bytes、list、struct、JSON string 或显式 `pa.array` value。 |
-| Worker import failure | subprocess 或 Ray worker 无法 import 定义 UDF 的 module。 | 将 callable 放入可 import 的 module，并在每个 worker 上安装相同 package/dependency。 |
-| Model loads at import time | 每次 worker import 都触发重型 setup，或在 actor 启动前失败。 | 将 model、tokenizer 和 client setup 移到 callable class 的 `__init__` 中。 |
+| Wrong callable shape | task backend 收到了 class/instance，或 actor backend 收到了 function/instance。 | 对 `subprocess_task`/`ray_task` 使用 function；对 `subprocess_actor`/`ray_actor` 使用无必填构造参数的 callable class。 |
+| Worker import failure | subprocess 或 Ray worker 无法 import 定义 UDF 的 module。 | 将被引用的代码放入可 import 的 module，并在每个 worker 上安装相同 Python dependency。 |
+| Model loads at import time | 每次 worker import 都触发重型 setup，或在 actor 启动前失败。 | 将 model、tokenizer 和 client setup 移到 callable class 的 `__init__` 或首次调用中。 |
 | Batch works locally but fails on Ray | Worker 无法访问数据、credential、model file 或兼容的 package version。 | 增大数据规模前，先用极小 Ray sample 验证 worker path 和 environment。 |
 | Memory spikes | Batch size、media bytes 或 model output 过大。 | 投影更少列，降低 `batch_size`，拆分 stage，或使用 actor 复用 model state。 |
 

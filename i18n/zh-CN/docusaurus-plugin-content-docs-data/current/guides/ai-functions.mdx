@@ -65,6 +65,8 @@ with_output = con.from_arrow(
 
 将 `ai_output` 替换为该任务实际使用的输出列名。如果不希望单独执行 recombination step，可以编写自定义 `map_batches(...)` UDF，在一个 schema 中同时返回稳定 ID、source field、status、error column 和 model output。
 
+扩展规模前，请先在已安装 package 上运行一个极小 helper sample。Helper API 是围绕 `map_batches` 的 relation convenience，而 backend validation 会严格检查 callable shape。当你需要确定的 function/task 或 class/actor 控制时，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)，不要依赖 helper backend override。
+
 ## Embed Text
 
 当每个输入行都应该获得一个 vector 时，使用 `embed_text`。对于长文档，先做 chunking，并使用 [Embeddings at Scale](/zh-CN/docs/data/guides/embeddings-at-scale)。
@@ -76,8 +78,6 @@ embedding_only = source.embed_text(
     model="text-embedding-3-small",
     output_column="embedding",
     batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -117,7 +117,6 @@ label_only = source.classify_text(
     model="facebook/bart-large-mnli",
     output_column="ai_label",
     batch_size=16,
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -165,9 +164,7 @@ response_only = prompts.prompt(
     model="gpt-4o-mini",
     system_message="Return concise business review notes.",
     output_column="review_note",
-    batch_size=8,
-    concurrency=4,
-    execution_backend="subprocess_actor",
+    max_api_concurrency=4,
 )
 ```
 
@@ -200,6 +197,16 @@ reviewed = con.from_arrow(
 
 选择能够完成当前任务的最小 provider setup。
 
+不同 helper method 支持的 provider name 不能互换：
+
+| Helper | 当前代码库支持的 provider |
+| --- | --- |
+| `embed_text` | `transformers`, `openai`, `google` |
+| `classify_text` | `transformers` |
+| `prompt` | `openai`, `vllm`, `anthropic`, `google` |
+
+默认值因 method 而异。`embed_text` 和 `classify_text` 默认使用 `provider="transformers"`。`prompt` 默认使用 `provider="openai"`。Relation method 当前在代码中默认使用 `execution_backend="subprocess_actor"`，但请把 backend override 视为需要在小型 installed-package sample 上先验证后再扩展的设置。
+
 | 选择 | 适用场景 | 需要关注 |
 | --- | --- | --- |
 | Hosted provider | 需要 managed model，并且可以使用外部 API call。 | Credential、成本、延迟、rate limit，以及 provider-specific output behavior。 |
@@ -210,11 +217,14 @@ reviewed = con.from_arrow(
 
 - `provider`：例如 `openai`、`transformers` 或 `vllm`。
 - `model`：准确的 hosted 或 local model identifier。
-- `batch_size`：每次 model call 或 batch 处理的行数。
-- `concurrency`：在支持时，并行运行的 worker 或 actor call 数量。
-- `execution_backend`：从 `subprocess_actor` 开始；只有在本地 sample 正确后，再使用 `ray_actor`。
+- `batch_size`：Vane 传给一次 `map_batches` UDF call 的 input row 数。对于逐行调用的 prompt provider，这不等同于 provider API batch request。
+- `concurrency`：当所选 backend 支持时，并行运行的 UDF worker 或 actor 数。不要将 `concurrency` 与 `ray_task` 一起使用。
+- `max_api_concurrency`：对于 async prompt provider，它是在 actor 内限制同时 provider API call 的 semaphore。
+- `execution_backend`：UDF backend override。只有在 tiny helper sample 在当前 installed package 上通过后再使用；如果 backend/resource behavior 是 contract 的一部分，请使用 custom UDF。
 
-一次只调整一个设置。更高的 `batch_size` 或 `concurrency` 可以提升 throughput，但也可能增加内存使用、触发 provider rate limit，或让失败更难隔离。
+一次只调整一个设置。更高的 `batch_size`、UDF `concurrency` 或 provider `max_api_concurrency` 可能提升 throughput，但它们影响的是不同层，也可能增加内存使用、触发 provider rate limit，或让失败更难隔离。
+
+AI Functions 不会自动创建 per-row `status` 或 `error` column。使用 `on_error="raise"` 时，失败会在 retry 后抛出。使用非 raise 行为时，embedding 可能变成 zero vector，classification 可能变成 null label，prompt response 可能变成 null。如果最终 relation 必须由一个函数同时包含 stable ID、source field、model output、`status`、`error` 和 run metadata，请使用自定义 `map_batches(...)` UDF。
 
 ## 先用小 sample
 
@@ -236,7 +246,7 @@ reviewed = con.from_arrow(
 | 现象 | 可能原因 | 检查项 |
 | --- | --- | --- |
 | Authentication error | 缺少 hosted provider credential，或 credential 在 worker 中不可用。 | API key 环境变量、worker environment、provider account access。 |
-| Rate limit 或 timeout | provider concurrency 过高，或 batch 过大。 | 降低 `concurrency`、降低 `batch_size`，检查 provider quota 和 retry behavior。 |
+| Rate limit 或 timeout | provider API concurrency 过高、UDF worker 太多，或 provider 支持的 batch 过大。 | 对 prompt call 降低 `max_api_concurrency`，在支持处降低 UDF `concurrency`，在调用前减少行数，并检查 provider quota/retry behavior。 |
 | 非法 label 或 JSON | Prompt、label set、model 或 structured schema 约束过松。 | 缩小任务范围，检查 raw output，收紧 label 或 `return_format`。 |
 | Output row count mismatch | Input relation 发生变化、排序不稳定，或失败路径丢弃了行。 | 在小型有序 sample 上重跑，并在组合列之前比较 source/output count。 |
 | Missing source column | 选中的 relation 不包含 helper 使用的列。 | 检查 input relation schema，并在 AI call 前投影所需字段。 |
