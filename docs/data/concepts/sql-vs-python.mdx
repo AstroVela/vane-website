@@ -4,7 +4,7 @@ title: SQL vs Python
 
 Vane Data is designed for pipelines where SQL and Python both belong in the same relation workflow.
 
-Use SQL for relational work. Use Python UDFs when an operation needs Python libraries, custom state, model calls, or row expansion. Use AI helpers when the operation matches a built-in embedding, classification, or prompting pattern.
+Use SQL for relational work. Use Python UDFs when an operation needs Python libraries, custom state, model calls, or row expansion. Use AI Functions when the operation matches a built-in embedding, classification, or prompting pattern.
 
 ## Decision guide
 
@@ -12,7 +12,7 @@ Use SQL for relational work. Use Python UDFs when an operation needs Python libr
 | --- | --- | --- |
 | Filter rows, project columns, join tables, aggregate metrics | SQL | Declarative, inspectable, and optimized |
 | Decode media, call Python libraries, run custom models | Python UDF | Keeps non-SQL logic explicit and testable |
-| Generate embeddings, classify text, prompt a model | AI helper | Provides provider-specific wrappers with Vane Data execution controls |
+| Generate embeddings, classify text, prompt a model | AI Function | Provides provider-specific wrappers with Vane Data execution controls |
 | Reuse an expensive model or client | Actor UDF backend | Initializes once and processes many batches |
 | Scale stateless transforms | `ray_task` | Distributes function calls across Ray workers |
 | Scale model inference or GPU work | `ray_actor` | Combines actor reuse with Ray resource placement |
@@ -74,9 +74,9 @@ sentences = raw.map_batches(
 )
 ```
 
-## Use AI helpers for common AI tasks
+## Use AI Functions for common AI tasks
 
-AI helpers are best when the operation matches a built-in provider pattern:
+AI Functions are best when the operation matches a built-in provider pattern:
 
 ```python
 embedded = raw.embed_text(
@@ -87,7 +87,7 @@ embedded = raw.embed_text(
 )
 ```
 
-The helper returns a relation containing the configured output column. If downstream stages also need source IDs, text, or metadata, use a custom UDF that returns the full schema you need, or explicitly combine helper output with source rows in a validated step.
+The AI Function returns a relation containing the configured output column. If downstream stages also need source IDs, text, or metadata, use a custom UDF that returns the full schema you need, or explicitly combine AI Function output with source rows in a validated step.
 
 ## Recommended pipeline shape
 
@@ -156,4 +156,4 @@ Recommended path:
 
 ## Rule of thumb
 
-If the operation can be expressed clearly in SQL, keep it in SQL. If it needs Python state, external libraries, model execution, or provider calls, put it in a UDF or AI helper and keep the input and output schema explicit.
+If the operation can be expressed clearly in SQL, keep it in SQL. If it needs Python state, external libraries, model execution, or provider calls, put it in a UDF or AI Function and keep the input and output schema explicit.

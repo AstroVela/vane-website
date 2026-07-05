@@ -2,9 +2,9 @@
 title: AI Functions
 ---
 
-Vane Data AI functions turn common model operations into relation methods. They produce embeddings, labels, prompts, and structured responses as table columns while keeping the same execution controls used by UDFs.
+Vane Data AI Functions turn common model operations into relation methods. They produce embeddings, labels, prompts, and structured responses as table columns while keeping the same execution controls used by UDFs.
 
-Use AI helpers when the operation matches a built-in provider pattern. Use custom UDFs when you need full control over model loading, batching, retries, output shape, or provider behavior.
+Use AI Functions when the operation matches a built-in provider pattern. Use custom UDFs when you need full control over model loading, batching, retries, output shape, or provider behavior.
 
 ## Relation methods
 
@@ -16,7 +16,7 @@ The relation methods are:
 
 The functional API is also available from `vane.ai` and `vane.ai.functions`.
 
-AI helpers return the configured output column. If downstream stages also need source columns such as IDs or text, use a custom UDF that returns the complete schema, or explicitly combine the helper output with source rows in a validated step that preserves row counts and ordering.
+AI Functions return the configured output column. If downstream stages also need source columns such as IDs or text, use a custom UDF that returns the complete schema, or explicitly combine the AI Function output with source rows in a validated step that preserves row counts and ordering.
 
 ## Provider support
 
@@ -42,7 +42,7 @@ embedding_only = rel.embed_text(
 )
 ```
 
-The helper writes embeddings as a `FLOAT[]` output column.
+The AI Function writes embeddings as a `FLOAT[]` output column.
 
 Optional text chunking parameters are available for long inputs:
 
@@ -133,7 +133,7 @@ python -m pip install vllm
 
 ## Execution controls
 
-AI helpers accept `execution_backend`, and provider options can influence the UDF settings passed to `map_batches`.
+AI Functions accept `execution_backend`, and provider options can influence the UDF settings passed to `map_batches`.
 
 Common controls include:
 
@@ -158,7 +158,7 @@ Use provider API concurrency carefully. Increasing concurrency can improve throu
 
 ## Production guidance
 
-- Filter and project input columns before calling AI helpers.
+- Filter and project input columns before calling AI Functions.
 - Keep prompt input, model/provider name, and output column names explicit.
 - Start with a small sample and inspect outputs before scaling.
 - Use actor backends when model initialization is expensive.

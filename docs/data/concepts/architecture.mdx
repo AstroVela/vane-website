@@ -10,7 +10,7 @@ The design goal is simple: keep pipelines table-shaped while allowing SQL, Pytho
 
 A Vane Data pipeline has four user-visible layers:
 
-1. API surface: `import vane`, `vane.connect()`, DuckDB-compatible SQL, relation methods, UDFs, and AI helpers.
+1. API surface: `import vane`, `vane.connect()`, DuckDB-compatible SQL, relation methods, UDFs, and AI Functions.
 2. Relation pipeline: SQL operations, projections, filters, joins, UDF stages, and writes are composed as relation steps.
 3. Execution runner: local execution handles development and single-node jobs; the Ray runner distributes suitable scans, writes, and UDF work.
 4. UDF runtime: Python functions and callable classes run through task or actor backends.
@@ -70,15 +70,15 @@ Choose the backend based on callable shape and resource needs:
 
 Task backends are for functions without long-lived state. Actor backends are for classes that should be constructed once and reused across batches.
 
-## AI helper layer
+## AI Function layer
 
-AI helpers are relation methods built on the same UDF execution model:
+AI Functions are relation methods built on the same UDF execution model:
 
 - `embed_text` produces embedding output columns.
 - `classify_text` produces label output columns.
 - `prompt` produces response output columns from text or multimodal prompts.
 
-Use AI helpers for common provider-backed operations. Use custom UDFs when you need full control over model loading, batching, output schema, or provider behavior.
+Use AI Functions for common provider-backed operations. Use custom UDFs when you need full control over model loading, batching, output schema, or provider behavior.
 
 ## Configuration model
 

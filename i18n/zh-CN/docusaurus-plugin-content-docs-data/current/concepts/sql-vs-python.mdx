@@ -4,7 +4,7 @@ title: SQL vs Python
 
 Vane Data 面向同时需要 SQL 与 Python 的 relation workflow。两者可以在同一条 pipeline 中协作，而不是把关系型处理和 Python 逻辑割裂成两套系统。
 
-关系型处理交给 SQL。某个步骤需要 Python library、自定义状态、model call 或 row expansion 时，使用 Python UDF。操作符合内置 embedding、classification 或 prompting 模式时，使用 AI helper。
+关系型处理交给 SQL。某个步骤需要 Python library、自定义状态、model call 或 row expansion 时，使用 Python UDF。操作符合内置 embedding、classification 或 prompting 模式时，使用 AI Function。
 
 ## 决策指南
 
@@ -12,7 +12,7 @@ Vane Data 面向同时需要 SQL 与 Python 的 relation workflow。两者可以
 | --- | --- | --- |
 | 过滤行、投影列、join 表、聚合指标 | SQL | 声明式、可检查，并且可优化 |
 | 解码 media、调用 Python library、运行自定义 model | Python UDF | 让非 SQL 逻辑保持显式且可测试 |
-| 生成 embeddings、文本分类、prompt model | AI helper | 提供 provider-specific wrapper，并继承 Vane Data 的执行控制 |
+| 生成 embeddings、文本分类、prompt model | AI Function | 提供 provider-specific wrapper，并继承 Vane Data 的执行控制 |
 | 复用初始化成本较高的 model 或 client | Actor UDF backend | 初始化一次，然后处理多个 batch |
 | 扩展无状态 transform | `ray_task` | 将 function call 分发到 Ray worker |
 | 扩展 model inference 或 GPU 工作负载 | `ray_actor` | 结合 actor 复用与 Ray resource placement |
@@ -74,9 +74,9 @@ sentences = raw.map_batches(
 )
 ```
 
-## 使用 AI helper 处理常见 AI 任务
+## 使用 AI Function 处理常见 AI 任务
 
-当操作匹配内置 provider pattern 时，AI helper 是更合适的选择：
+当操作匹配内置 provider pattern 时，AI Function 是更合适的选择：
 
 ```python
 embedded = raw.embed_text(
@@ -87,7 +87,7 @@ embedded = raw.embed_text(
 )
 ```
 
-helper 会返回一个包含已配置输出列的 relation。如果 downstream stage 还需要 source ID、文本或 metadata，请使用自定义 UDF 返回完整 schema，或者在经过校验的步骤中显式地将 helper output 与 source row 组合起来。
+AI Function 会返回一个包含已配置输出列的 relation。如果 downstream stage 还需要 source ID、文本或 metadata，请使用自定义 UDF 返回完整 schema，或者在经过校验的步骤中显式地将 AI Function output 与 source row 组合起来。
 
 ## 推荐的 pipeline 形态
 
@@ -156,4 +156,4 @@ con.sql("""
 
 ## 经验法则
 
-如果操作可以用 SQL 清晰表达，就留在 SQL 中。如果它需要 Python state、外部 library、model execution 或 provider call，就放到 UDF 或 AI helper 中，并保持输入和输出 schema 显式。
+如果操作可以用 SQL 清晰表达，就留在 SQL 中。如果它需要 Python state、外部 library、model execution 或 provider call，就放到 UDF 或 AI Function 中，并保持输入和输出 schema 显式。
