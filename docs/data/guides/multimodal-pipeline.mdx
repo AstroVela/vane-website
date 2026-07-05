@@ -27,7 +27,7 @@ ingested = con.sql("""
         source_uri,
         media_type,
         customer_segment,
-        captured_at
+        cast(captured_at as varchar) as captured_at
     from read_parquet('output/media_ingest/')
     where asset_id is not null
       and source_uri is not null
@@ -49,7 +49,7 @@ Build the workflow as separate stages:
 5. Validation summary.
 6. Curated output and failure output.
 
-The important property is not the exact model. It is that every stage returns a typed relation with IDs, status, errors, and enough metadata to inspect what happened.
+The important property is not the exact model. It is that every stage returns a typed relation with IDs, status, errors, and enough metadata to inspect what happened. `map_batches` does not automatically pass input columns through, so each UDF must return every source column or metadata field that later stages need.
 
 ## 1. Filter before expensive work
 
@@ -86,6 +86,8 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
     asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
+    customer_segments = batch.column("customer_segment").to_pylist()
+    captured_at = batch.column("captured_at").to_pylist()
 
     media_bytes = []
     status = []
@@ -105,6 +107,8 @@ def load_local_bytes(batch: pa.Table) -> pa.Table:
         "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
+        "customer_segment": customer_segments,
+        "captured_at": captured_at,
         "media_bytes": media_bytes,
         "prepare_status": status,
         "prepare_error": error_message,
@@ -117,6 +121,8 @@ prepared = candidates.map_batches(
         "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
+        "customer_segment": "VARCHAR",
+        "captured_at": "VARCHAR",
         "media_bytes": "BLOB",
         "prepare_status": "VARCHAR",
         "prepare_error": "VARCHAR",
@@ -143,6 +149,8 @@ def inspect_images(batch: pa.Table) -> pa.Table:
     asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
+    customer_segments = batch.column("customer_segment").to_pylist()
+    captured_at = batch.column("captured_at").to_pylist()
     media_bytes = batch.column("media_bytes").to_pylist()
     prepare_status = batch.column("prepare_status").to_pylist()
     prepare_error = batch.column("prepare_error").to_pylist()
@@ -176,6 +184,8 @@ def inspect_images(batch: pa.Table) -> pa.Table:
         "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
+        "customer_segment": customer_segments,
+        "captured_at": captured_at,
         "image_width": width,
         "image_height": height,
         "decode_status": status,
@@ -189,6 +199,8 @@ decoded = prepared.map_batches(
         "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
+        "customer_segment": "VARCHAR",
+        "captured_at": "VARCHAR",
         "image_width": "BIGINT",
         "image_height": "BIGINT",
         "decode_status": "VARCHAR",
@@ -219,6 +231,8 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
     asset_ids = batch.column("asset_id").to_pylist()
     source_uris = batch.column("source_uri").to_pylist()
     media_types = batch.column("media_type").to_pylist()
+    customer_segments = batch.column("customer_segment").to_pylist()
+    captured_at = batch.column("captured_at").to_pylist()
     widths = batch.column("image_width").to_pylist()
     heights = batch.column("image_height").to_pylist()
     decode_status = batch.column("decode_status").to_pylist()
@@ -238,7 +252,7 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
         if previous_status != "ok":
             labels.append("")
             scores.append(0.0)
-            status.append("failed")
+            status.append(previous_status)
             error_message.append(previous_error)
         elif width and height and width >= height:
             labels.append("landscape_or_document")
@@ -255,6 +269,8 @@ def classify_by_shape(batch: pa.Table) -> pa.Table:
         "asset_id": asset_ids,
         "source_uri": source_uris,
         "media_type": media_types,
+        "customer_segment": customer_segments,
+        "captured_at": captured_at,
         "image_width": widths,
         "image_height": heights,
         "label": labels,
@@ -273,6 +289,8 @@ scored = decoded.map_batches(
         "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
+        "customer_segment": "VARCHAR",
+        "captured_at": "VARCHAR",
         "image_width": "BIGINT",
         "image_height": "BIGINT",
         "label": "VARCHAR",
@@ -346,6 +364,8 @@ curated = con.sql("""
         asset_id,
         source_uri,
         media_type,
+        customer_segment,
+        captured_at,
         image_width,
         image_height,
         label,
@@ -358,8 +378,8 @@ curated = con.sql("""
     from media_pipeline_scored
 """)
 
-curated.write_parquet("output/media_pipeline/curated/")
-failures.write_parquet("output/media_pipeline/failures/")
+curated.write_parquet("output/media_pipeline/curated.parquet")
+failures.write_parquet("output/media_pipeline/failures.parquet")
 ```
 
 Keeping failures in the same contract makes the run diagnosable instead of turning one bad file, bad credential, or bad decode into an opaque failed run.
@@ -392,6 +412,8 @@ scored = decoded.map_batches(
         "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
         "media_type": "VARCHAR",
+        "customer_segment": "VARCHAR",
+        "captured_at": "VARCHAR",
         "image_width": "BIGINT",
         "image_height": "BIGINT",
         "label": "VARCHAR",
@@ -404,18 +426,64 @@ scored = decoded.map_batches(
     },
     batch_size=64,
     execution_backend="ray_task",
-    concurrency=4,
 )
 ```
+
+`ray_task` is a function/task backend. Do not pass `concurrency` with `ray_task`; Ray scheduling and Vane's pending-window settings control task fan-out.
 
 For model stages, use `ray_actor` when model state should be reused:
 
 ```python
+class ModelStage:
+    def __init__(self) -> None:
+        # Load model, tokenizer, client, or GPU state here.
+        self.pipeline_version = "model-v1"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        asset_ids = batch.column("asset_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        media_types = batch.column("media_type").to_pylist()
+        customer_segments = batch.column("customer_segment").to_pylist()
+        decode_status = batch.column("decode_status").to_pylist()
+        decode_error = batch.column("decode_error").to_pylist()
+
+        labels = []
+        scores = []
+        status = []
+        error_message = []
+
+        for previous_status, previous_error in zip(decode_status, decode_error, strict=False):
+            if previous_status != "ok":
+                labels.append("")
+                scores.append(0.0)
+                status.append(previous_status)
+                error_message.append(previous_error)
+            else:
+                labels.append("needs_review")
+                scores.append(0.5)
+                status.append("ok")
+                error_message.append("")
+
+        return pa.table({
+            "asset_id": asset_ids,
+            "source_uri": source_uris,
+            "media_type": media_types,
+            "customer_segment": customer_segments,
+            "label": labels,
+            "score": scores,
+            "status": status,
+            "error_message": error_message,
+            "run_id": [RUN_ID] * len(asset_ids),
+        })
+
+
 scored = decoded.map_batches(
     ModelStage,
     schema={
         "asset_id": "VARCHAR",
         "source_uri": "VARCHAR",
+        "media_type": "VARCHAR",
+        "customer_segment": "VARCHAR",
         "label": "VARCHAR",
         "score": "DOUBLE",
         "status": "VARCHAR",
@@ -424,12 +492,12 @@ scored = decoded.map_batches(
     },
     batch_size=16,
     execution_backend="ray_actor",
-    gpus=1,
+    gpus=1.0,
     concurrency=2,
 )
 ```
 
-Every Ray worker must be able to import the UDF class or function and access the same storage, credentials, model files, provider keys, and Python dependencies. Validate that access before increasing concurrency.
+Actor backends require a callable class with no required constructor arguments. `gpus=1.0` is per actor, so `concurrency=2` needs two available GPU slots for full parallelism. Every Ray worker must be able to import the UDF class or function and access the same storage, credentials, model files, provider keys, and Python dependencies. Validate that access before increasing concurrency.
 
 ## Related guides
 

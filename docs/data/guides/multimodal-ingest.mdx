@@ -14,6 +14,8 @@ Rows also make feedback easier to diagnose. When a decode step, model call, or w
 
 Start with a manifest relation. It can come from Parquet, CSV, object storage listings, an application export, or a small Arrow table for local validation.
 
+This is an input contract, not a built-in connector contract. Vane does not enforce these column names, and creating a relation from this manifest does not fetch, decode, or validate every object behind `source_uri`. Treat `asset_id`, `source_uri`, `media_type`, metadata columns, and optional bytes columns as the stable table shape you pass to later SQL, UDF, AI, or GPU stages.
+
 Use these columns as the minimum contract:
 
 | Column | Purpose |
@@ -42,6 +44,8 @@ con = vane.connect()
 media = con.from_arrow(manifest)
 media.show()
 ```
+
+`con.from_arrow(manifest)` registers the rows you supplied. It does not turn `source_uri` into `payload_bytes`, inspect image dimensions, parse PDFs, transcribe audio, or extract video frames. Do that work in a later stage such as [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline), [Custom Python UDFs](/docs/data/guides/custom-python-udfs), [Embeddings at Scale](/docs/data/guides/embeddings-at-scale), or [GPU Inference](/docs/data/guides/gpu-inference).
 
 ## URI or bytes
 
@@ -75,6 +79,51 @@ Use one common prefix-free contract across media types, then add media-specific 
 | Video | `asset_id`, `source_uri`, `media_type`, `event_id` or session key, `capture_time`, optional `duration_seconds`, optional `frame_rate`, optional `payload_bytes` |
 
 Do not invent decoded output columns during ingest. Columns such as `transcript`, `ocr_text`, `frame_label`, `embedding`, and `model_score` belong to Multimodal Pipeline, AI Functions, GPU Inference, or Embeddings at Scale after the source relation is stable.
+
+### Minimal table examples
+
+For images, keep the URI and any known metadata separate from bytes:
+
+```sql
+select *
+from (values
+    ('img-001', 's3://media/images/img-001.jpg', 'image/jpeg', 'cam-a', 1920, 1080),
+    ('img-002', '/mnt/media/images/img-002.png', 'image/png', 'cam-b', null, null)
+) as images(asset_id, source_uri, media_type, camera_id, width, height)
+```
+
+If you already exported small image bytes for a fixture, use a `BLOB` column deliberately:
+
+```sql
+select
+    asset_id,
+    media_type,
+    payload_bytes,
+    'fixture-run-001' as ingest_run_id
+from image_fixture_bytes
+```
+
+For documents, preserve the source file and business key. PDF parsing or OCR should happen later.
+
+```sql
+select *
+from (values
+    ('doc-042', 's3://cases/case-17/doc-042.pdf', 'application/pdf', 'case-17', 'claim', 'en'),
+    ('doc-043', 's3://cases/case-17/doc-043.html', 'text/html', 'case-17', 'policy', 'en')
+) as documents(asset_id, source_uri, media_type, case_id, document_type, language)
+```
+
+For audio and video, prefer URI-first manifests because raw bytes and decoded frames grow quickly.
+
+```sql
+select *
+from (values
+    ('aud-010', 's3://calls/2026/07/aud-010.wav', 'audio/wav', 'call-88', 'en', 185.4),
+    ('vid-020', 's3://events/vid-020.mp4', 'video/mp4', 'event-12', '2026-07-04T18:30:00Z', 42.0)
+) as media(asset_id, source_uri, media_type, session_id, capture_time_or_language, duration_seconds)
+```
+
+For video-specific frame extraction, the codebase also includes a `VideoFrameSource(paths)` datasource that emits `video_path`, `frame_index`, and `frame_blob`. That is a media-specific datasource, not a general `source_uri` ingest API for every multimodal format.
 
 ## Filter before expensive work
 
@@ -126,9 +175,11 @@ The ingest output should still look like a source manifest, not a completed mode
 
 This shape feeds:
 
-- Multimodal Pipeline, which can decode, extract, chunk, label, and record per-stage status.
-- AI Functions, when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
-- GPU Inference, when later transformation stages construct prompt rows or model inputs from this stable source relation.
+- [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline), which can decode, extract, chunk, label, and record per-stage status.
+- [Custom Python UDFs](/docs/data/guides/custom-python-udfs), when loading bytes, parsing media, calling private clients, or returning a full row-level schema requires custom code.
+- [AI Functions](/docs/data/guides/ai-functions), when the ingest or extraction step provides text columns for classification, prompting, or embeddings.
+- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale), when text records or extracted chunks need vector output with stable IDs.
+- [GPU Inference](/docs/data/guides/gpu-inference), when later transformation stages construct prompt rows or model inputs from this stable source relation.
 
 ## Practical ingest checks
 

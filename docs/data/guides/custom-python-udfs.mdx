@@ -62,26 +62,38 @@ def prepare_document_text(batch: pa.Table) -> pa.Table:
     text_length = []
     needs_review = []
     review_reason = []
+    status = []
+    error = []
 
     for media_type, text in zip(media_types, texts, strict=False):
-        clean = re.sub(r"\s+", " ", str(text or "")).strip()
-        lower = clean.lower()
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
 
-        normalized_text.append(clean)
-        text_length.append(len(clean))
+            normalized_text.append(clean)
+            text_length.append(len(clean))
 
-        if media_type not in SUPPORTED_MEDIA_TYPES:
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
             needs_review.append(True)
-            review_reason.append("unsupported_media_type")
-        elif not clean:
-            needs_review.append(True)
-            review_reason.append("empty_text")
-        elif any(term in lower for term in RISK_TERMS):
-            needs_review.append(True)
-            review_reason.append("risk_term")
-        else:
-            needs_review.append(False)
-            review_reason.append("none")
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
 
     return pa.table({
         "document_id": document_ids,
@@ -92,6 +104,8 @@ def prepare_document_text(batch: pa.Table) -> pa.Table:
         "text_length": text_length,
         "needs_review": needs_review,
         "review_reason": review_reason,
+        "status": status,
+        "error": error,
     })
 
 
@@ -106,6 +120,8 @@ prepared = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_task",
@@ -114,7 +130,7 @@ prepared = documents.map_batches(
 prepared.show()
 ```
 
-This example returns the source `document_id`, `source_uri`, `media_type`, and `document_type` columns along with the new fields. That is intentional. Without those columns, downstream SQL validation can no longer explain which source row produced a result.
+This example returns the source `document_id`, `source_uri`, `media_type`, and `document_type` columns along with the new fields and explicit `status`/`error` columns. That is intentional. Vane does not create row-level diagnostics automatically. Uncaught exceptions fail the batch or query, so catch per-row failures inside the UDF when you want inspectable failure rows.
 
 ## Validate with SQL
 
@@ -152,6 +168,8 @@ Treat the schema as part of the UDF interface.
 | Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
 | Row count | A `map_batches` UDF normally returns one output row per input row. Use `flat_map` when one input can create zero or many rows. |
 
+For `flat_map`, the callable receives one row as a Python `dict`. It may return `None`, one output `dict`, or an iterable/generator of output dicts. The declared schema selects keys from those dicts; missing keys become null and extra keys are ignored. Use `flat_map` for chunking, frame extraction summaries, split records, or any stage where one input row can produce zero, one, or many output rows.
+
 If Arrow cannot infer the type you want, build an explicit array:
 
 ```python
@@ -181,6 +199,8 @@ debugged = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=8,
     execution_backend="subprocess_task",
@@ -201,7 +221,7 @@ Use a callable class when setup is expensive or state should be reused across ba
 - lookup tables or caches
 - GPU model state
 
-Actor backends construct the class inside the worker and reuse it for multiple batches. Pass the class itself, not an already-created instance.
+Actor backends construct the class inside the worker and reuse it for multiple batches. Pass the class itself, not an already-created instance or a plain function. Actor classes must have no required constructor arguments. Put configuration in environment variables, class-level defaults, optional default arguments, or a no-argument wrapper class.
 
 ```python
 import pyarrow as pa
@@ -217,21 +237,43 @@ class PromptBuilder:
 
     def __call__(self, batch: pa.Table) -> pa.Table:
         document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
         document_types = batch.column("document_type").to_pylist()
         texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
 
         prompts = []
         prompt_template = []
+        status = []
+        error = []
 
-        for document_type, text in zip(document_types, texts, strict=False):
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
             template = self.template_by_type.get(document_type, "Summarize this document:")
             prompt_template.append(template)
             prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
 
         return pa.table({
             "document_id": document_ids,
+            "source_uri": source_uris,
             "prompt_template": prompt_template,
             "prompt": prompts,
+            "status": status,
+            "error": error,
         })
 
 
@@ -239,8 +281,11 @@ prompts = prepared.map_batches(
     PromptBuilder,
     schema={
         "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
         "prompt_template": "VARCHAR",
         "prompt": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=64,
     execution_backend="subprocess_actor",
@@ -248,7 +293,7 @@ prompts = prepared.map_batches(
 )
 ```
 
-In a real model UDF, load the model, tokenizer, or client in `__init__`, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+In a real model UDF, load the model, tokenizer, or client in `__init__` or lazily on first call, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
 
 ## Backend choices
 
@@ -261,7 +306,9 @@ Pick the simplest backend that proves the current question.
 | `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
 | `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
 
-Ray backends require Ray execution to be configured before the distributed pipeline is created and run.
+The only valid backend names are `subprocess_task`, `subprocess_actor`, `ray_task`, and `ray_actor`. Older or shorthand options such as `local`, `subprocess`, `ray=True`, `use_process`, `actor_count`, and `prefer_actor` are not the current API. `concurrency` is supported for `subprocess_task`, `subprocess_actor`, and `ray_actor`; do not pass it with `ray_task`.
+
+For distributed execution and `ray_actor` pools, configure the Ray/Vane runner before the plan is created and run. Some direct Ray task paths can initialize Ray for a small run, but examples should configure Ray explicitly so worker environment, paths, and resources are intentional.
 
 ```python
 import vane
@@ -279,6 +326,8 @@ ray_prepared = documents.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=256,
     execution_backend="ray_task",
@@ -292,8 +341,11 @@ ray_prompts = prepared.map_batches(
     PromptBuilder,
     schema={
         "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
         "prompt_template": "VARCHAR",
         "prompt": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=128,
     execution_backend="ray_actor",
@@ -301,7 +353,49 @@ ray_prompts = prepared.map_batches(
 )
 ```
 
-Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+For GPU placement, request GPU resources per actor:
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # Load the tokenizer/model here so each actor owns its GPU state.
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` is per actor. With `concurrency=2`, Ray needs two available GPU slots for full parallelism.
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies. Callables are serialized into the plan, but referenced modules and runtime dependencies still need to exist in the worker environment.
 
 ## Local debug sequence
 
@@ -345,6 +439,8 @@ debug_relation = sample.map_batches(
         "text_length": "BIGINT",
         "needs_review": "BOOLEAN",
         "review_reason": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
     },
     batch_size=4,
     execution_backend="subprocess_task",
@@ -361,9 +457,11 @@ If this fails, keep the failure local. A Ray run will add import, dependency, st
 | --- | --- | --- |
 | Schema mismatch | Returned columns or types do not match `schema`. | Print the returned Arrow schema, then align column names and Arrow-compatible types. |
 | Missing ID or source columns | The UDF returned only derived columns. | Return stable IDs and source fields that downstream SQL, joins, and review need. |
+| Missing status or error fields | The UDF relies on exceptions or logs for row-level diagnostics. | Return explicit `status` and `error` columns when failures should remain reviewable. |
 | Arrow type incompatibility | The UDF returned Python objects Arrow cannot serialize. | Convert outputs to primitives, bytes, lists, structs, JSON strings, or explicit `pa.array` values. |
-| Worker import failure | A subprocess or Ray worker cannot import the module defining the UDF. | Put the callable in an importable module and install the same package/dependencies on every worker. |
-| Model loads at import time | Each worker import triggers heavy setup or fails before the actor starts. | Move model, tokenizer, and client setup into callable class `__init__`. |
+| Wrong callable shape | A task backend received a class/instance, or an actor backend received a function/instance. | Use a function for `subprocess_task`/`ray_task`; use a zero-required-argument callable class for `subprocess_actor`/`ray_actor`. |
+| Worker import failure | A subprocess or Ray worker cannot import the module defining the UDF. | Put referenced code in an importable module and install the same Python dependencies on every worker. |
+| Model loads at import time | Each worker import triggers heavy setup or fails before the actor starts. | Move model, tokenizer, and client setup into callable class `__init__` or first call. |
 | Batch works locally but fails on Ray | Workers cannot access data, credentials, model files, or compatible package versions. | Verify worker paths and environment with a tiny Ray sample before increasing data size. |
 | Memory spikes | Batch size, media bytes, or model outputs are too large. | Project fewer columns, lower `batch_size`, split stages, or use actor reuse for model state. |
 

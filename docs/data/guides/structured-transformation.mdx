@@ -16,8 +16,15 @@ import vane
 con = vane.connect()
 
 source_documents = con.sql("""
-    select *
-    from read_parquet('data/source_documents/*.parquet')
+    select
+        *,
+        filename as source_file,
+        file_row_number as source_row_number
+    from read_parquet(
+        'data/source_documents/*.parquet',
+        filename=true,
+        file_row_number=true
+    )
 """)
 source_documents.to_table("source_documents")
 
@@ -206,9 +213,9 @@ quality = con.sql("""
 """).map_batches(
     score_text_quality,
     schema={
-        "document_id": "VARCHAR",
-        "quality_score": "DOUBLE",
-        "quality_reason": "VARCHAR",
+        "document_id": vane.sqltypes.VARCHAR,
+        "quality_score": vane.sqltypes.DOUBLE,
+        "quality_reason": vane.sqltypes.VARCHAR,
     },
     batch_size=1024,
     execution_backend="subprocess_task",
@@ -217,9 +224,24 @@ quality = con.sql("""
 quality.to_table("document_quality")
 ```
 
-After the UDF, join the result back with SQL and run the same validation checks as any other derived column.
+`map_batches` returns only the columns declared in its schema. Join the result back with SQL when downstream stages need the curated source fields:
 
-## Dedup and clean pattern
+```python
+scored_documents = con.sql("""
+    select
+        c.*,
+        q.quality_score,
+        q.quality_reason
+    from curated_documents c
+    left join document_quality q using (document_id)
+""")
+
+scored_documents.to_table("scored_documents")
+```
+
+After the UDF, run the same validation checks as any other derived column.
+
+## Deduplicate Traceable Rows
 
 Deduplication is common for document manifests, extracted text, labels, and model outputs. Define the business key, normalize it deterministically, count duplicates, and keep the representative row by an explicit ordering rule.
 
@@ -280,7 +302,10 @@ con.sql("""
         count(*) as curated_rows,
         count(distinct document_id) as distinct_document_ids,
         count(*) filter (where document_id is null) as null_document_ids,
+        count(*) - count(distinct document_id) as duplicate_document_ids,
         count(*) filter (where source_uri is null) as null_source_uris,
+        count(*) filter (where source_file is null) as missing_source_file,
+        count(*) filter (where source_row_number is null) as missing_source_row_number,
         count(*) filter (where not ready_for_ai) as not_ready_for_ai_rows,
         count(*) filter (where review_label = 'unlabeled') as unlabeled_rows
     from curated_documents
@@ -295,6 +320,7 @@ Check at least:
 - value domains for media type, language, label, status, or task type
 - prompt text samples before model calls
 - model-output or quality-score distributions after enrichment
+- `status`, `error`, and run metadata fields before handoff
 - sample diff between source and curated values
 
 Use a sample diff for rules that change values:
@@ -323,10 +349,27 @@ Write outputs with a stable contract:
 - stable schema with explicit column names and types
 - stable IDs for every source object, prompt, chunk, label, or model-output row
 - traceability columns such as `source_uri`, `source_file`, `source_row_number`, `raw_id`, or `ingest_run_id`
+- explicit `status` and `error` columns for rows that are skipped or cannot be used by later stages
 - enough run metadata to compare one run with another
 
 ```python
-curated_documents.write_parquet("output/curated/documents/")
+final_documents = con.sql("""
+    select
+        *,
+        case
+            when ready_for_ai then 'ready'
+            else 'skipped'
+        end as status,
+        case
+            when ready_for_ai then null
+            else coalesce(quality_reason, 'not_ready_for_ai')
+        end as error,
+        'structured_transform_v1' as transform_run_id,
+        current_timestamp as transformed_at
+    from scored_documents
+""")
+
+final_documents.write_parquet("output/curated/documents.parquet")
 
 con.sql("""
     copy (
@@ -334,9 +377,10 @@ con.sql("""
             'documents' as dataset,
             count(*) as row_count,
             count(*) filter (where ready_for_ai) as ready_for_ai_rows,
+            count(*) filter (where status <> 'ready') as skipped_rows,
             min(created_at) as min_created_at,
             max(created_at) as max_created_at
-        from curated_documents
+        from final_documents
     )
     to 'output/curated/documents_validation.parquet'
     (format parquet)

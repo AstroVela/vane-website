@@ -65,6 +65,8 @@ with_output = con.from_arrow(
 
 Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns stable IDs, source fields, status, error columns, and model output in one schema.
 
+Run the helper on a tiny installed-package sample before scaling. The helper APIs are relation conveniences around `map_batches`, while backend validation is strict about callable shape. When you need guaranteed function/task or class/actor control, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) instead of relying on a helper backend override.
+
 ## Embed Text
 
 Use `embed_text` when each input row should receive one vector. For long documents, chunk first and use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale).
@@ -76,8 +78,6 @@ embedding_only = source.embed_text(
     model="text-embedding-3-small",
     output_column="embedding",
     batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -117,7 +117,6 @@ label_only = source.classify_text(
     model="facebook/bart-large-mnli",
     output_column="ai_label",
     batch_size=16,
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -165,9 +164,7 @@ response_only = prompts.prompt(
     model="gpt-4o-mini",
     system_message="Return concise business review notes.",
     output_column="review_note",
-    batch_size=8,
-    concurrency=4,
-    execution_backend="subprocess_actor",
+    max_api_concurrency=4,
 )
 ```
 
@@ -200,6 +197,16 @@ For structured outputs, use `return_format` with a Pydantic model and validate t
 
 Choose the smallest provider setup that can answer the current task.
 
+Provider names are not interchangeable across helper methods:
+
+| Helper | Supported providers in this codebase |
+| --- | --- |
+| `embed_text` | `transformers`, `openai`, `google` |
+| `classify_text` | `transformers` |
+| `prompt` | `openai`, `vllm`, `anthropic`, `google` |
+
+Defaults are method-specific. `embed_text` and `classify_text` default to `provider="transformers"`. `prompt` defaults to `provider="openai"`. The relation methods currently default to `execution_backend="subprocess_actor"` in code, but treat backend overrides as something to validate on a small installed-package sample before scaling.
+
 | Choice | Use it when | Watch for |
 | --- | --- | --- |
 | Hosted provider | You want managed models and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
@@ -210,11 +217,14 @@ Minimal configuration to set explicitly:
 
 - `provider`: for example `openai`, `transformers`, or `vllm`.
 - `model`: the exact hosted or local model identifier.
-- `batch_size`: how many rows each model call or batch processes.
-- `concurrency`: how many workers or actor calls run in parallel when supported.
-- `execution_backend`: start with `subprocess_actor`; use `ray_actor` only after the local sample is correct.
+- `batch_size`: how many input rows Vane passes to one `map_batches` UDF call. For prompt providers that call one row at a time, this is not the same as a provider API batch request.
+- `concurrency`: how many UDF workers or actors run in parallel when the selected backend supports it. Do not use `concurrency` with `ray_task`.
+- `max_api_concurrency`: for async prompt providers, the in-actor limit on simultaneous provider API calls.
+- `execution_backend`: a UDF backend override. Use it only after a tiny helper sample passes on the installed package; use a custom UDF when backend/resource behavior is part of the contract.
 
-Increase one setting at a time. Higher `batch_size` or `concurrency` can improve throughput, but it can also increase memory use, trigger provider rate limits, or make failures harder to isolate.
+Increase one setting at a time. Higher `batch_size`, UDF `concurrency`, or provider `max_api_concurrency` can improve throughput, but each one affects a different layer and can increase memory use, trigger provider rate limits, or make failures harder to isolate.
+
+AI Functions do not create per-row `status` or `error` columns. With `on_error="raise"`, failures raise after retries. With non-raise behavior, embeddings may become zero vectors, classifications may become null labels, and prompt responses may become null. Use a custom `map_batches(...)` UDF when the final relation must include stable IDs, source fields, model output, `status`, `error`, and run metadata from a single function.
 
 ## Small Sample First
 
@@ -236,7 +246,7 @@ For a larger run, keep the same validation checks and record provider, model, `b
 | Symptom | Likely cause | What to check |
 | --- | --- | --- |
 | Authentication error | Missing or unavailable hosted provider credentials. | API key environment variables, worker environment, provider account access. |
-| Rate limit or timeout | Too much provider concurrency or too large a batch. | Lower `concurrency`, lower `batch_size`, review provider quota and retry behavior. |
+| Rate limit or timeout | Too much provider API concurrency, too many UDF workers, or too large a provider-supported batch. | Lower `max_api_concurrency` for prompt calls, lower UDF `concurrency` where supported, reduce rows before the call, and review provider quota/retry behavior. |
 | Invalid label or JSON | Prompt, label set, model, or structured schema is too loose. | Reduce task scope, inspect raw outputs, tighten labels or `return_format`. |
 | Output row count mismatch | Input relation changed, ordering was not stable, or a failure path dropped rows. | Re-run on a small ordered sample and compare source/output counts before combining columns. |
 | Missing source column | The selected relation did not include the column used by the helper. | Check the input relation schema and project required fields before the AI call. |

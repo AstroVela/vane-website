@@ -85,6 +85,11 @@ Keep object storage configuration minimal for the first validation run. The scan
 import vane
 
 con = vane.connect()
+try:
+    con.execute("INSTALL httpfs")
+except Exception:
+    # The extension may already be installed in the current environment.
+    pass
 con.execute("LOAD httpfs")
 
 # Prefer environment variables for credentials:
@@ -107,7 +112,36 @@ con.execute("SET s3_use_ssl=false")
 con.execute("SET s3_url_style='path'")
 ```
 
-Do not put long-lived secrets in checked-in scripts or documentation snippets. If Ray will run the query, the same credentials and endpoint settings must be available to the workers.
+For Ray, prefer environment variables because workers create their own DuckDB connections:
+
+```bash
+export AWS_ENDPOINT_URL=http://localhost:9000
+export AWS_ACCESS_KEY_ID=minioadmin
+export AWS_SECRET_ACCESS_KEY=minioadmin
+export AWS_REGION=us-east-1
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+Driver-side `SET s3_*` statements are useful for a local validation query. They are not, by themselves, proof that every Ray worker has the same object-store credentials, endpoint, network route, or extension artifacts. Vane propagates common `AWS_*`, `AWS_ENDPOINT_URL`, `DUCKDB_*`, and `VANE_*` environment variables to Ray workers, and worker connections map those values into DuckDB S3 settings. Loaded extension/settings snapshots can also be replayed for distributed plans, but `INSTALL httpfs` may still require the extension to be available where workers run.
+
+Do not put long-lived secrets in checked-in scripts or documentation snippets.
+
+## Load from an existing relation
+
+If the source is already a DuckDB table, view, or relation, use this guide to validate the contract rather than treating it as an external database connector guide.
+
+```python
+raw_documents = con.sql("""
+    select *
+    from staging_documents
+    where text is not null
+    limit 10000
+""")
+
+raw_documents.to_table("raw_documents")
+```
+
+For an external SQL system, export a small Parquet or CSV sample first unless your application already registered a DuckDB-readable relation.
 
 ## Inspect the schema and sample
 
@@ -171,6 +205,38 @@ con.sql("""
 """).show()
 ```
 
+Check duplicate keys and URI shape before you build a pipeline on top of the slice:
+
+```python
+con.sql("""
+    select document_id, count(*) as rows
+    from raw_documents
+    where document_id is not null
+    group by document_id
+    having count(*) > 1
+    order by rows desc
+    limit 20
+""").show()
+```
+
+```python
+con.sql("""
+    select
+        case
+            when source_uri like 's3://%' then 's3'
+            when source_uri like 'file:%' then 'file'
+            when source_uri like '/%' then 'absolute_local'
+            else 'relative_or_app'
+        end as uri_kind,
+        count(*) as rows
+    from raw_documents
+    group by uri_kind
+    order by rows desc
+""").show()
+```
+
+When `source_uri` points to files or objects that later UDFs will read, test a few representative rows from the same environment that will run the next stage. A path that resolves on the driver can still fail on a Ray worker if the mount, credentials, endpoint, or network route is different.
+
 Replace the column names with fields that matter for your workflow. The point is not exhaustive data quality; it is to catch obvious load, schema, and slice mistakes before later stages hide them behind Python, AI, or GPU work.
 
 ## Produce the source relation
@@ -196,6 +262,16 @@ source_documents = con.sql("""
 source_documents.to_table("source_documents")
 ```
 
+Compare counts between the raw slice and the narrowed source relation:
+
+```python
+con.sql("""
+    select 'raw' as stage, count(*) as rows from raw_documents
+    union all
+    select 'source' as stage, count(*) as rows from source_documents
+""").show()
+```
+
 Use this relation as the input for the next guide:
 
 - Multimodal Pipeline when source URIs need decode, OCR, transcript, or media-specific processing.
@@ -218,7 +294,7 @@ Ray execution may schedule scans, writes, or UDFs on workers. Every worker must 
 - Access model files or provider credentials if later stages need them.
 - Write to an output path that is visible outside the worker.
 
-Configure Ray before creating the connection:
+Configure Ray before creating the connection when the workflow needs distributed scan, UDF, AI, GPU, or write behavior:
 
 ```python
 import vane
@@ -227,7 +303,7 @@ vane.configure(runner="ray")
 con = vane.connect()
 ```
 
-Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray if the workflow needs distributed scan, UDF, AI, GPU, or write behavior.
+Do not debug path visibility, schema issues, and distributed execution at the same time. First load and validate the slice locally; then run the same source relation with Ray. For object storage, prefer `AWS_*` and `AWS_ENDPOINT_URL` environment propagation for worker access, then use driver `SET s3_*` statements as local/session validation.
 
 ## Common failures and feedback
 

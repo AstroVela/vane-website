@@ -138,7 +138,9 @@ Choose the smallest provider setup that answers the current task.
 | Local model | You want local execution or private data handling with installed model libraries. | Dependency versions, model download, CPU/GPU memory, and model initialization time. |
 | Custom UDF | You need full control over IDs, retries, status columns, or embedding schema in one step. | More code to maintain; validate schema and errors carefully. |
 
-AI helper methods such as `embed_text(...)` are convenient, but their output relation contains the configured embedding column. If your final table needs IDs and metadata, explicitly combine helper output with the chunk rows after validating row counts and ordering, or use a custom UDF that returns the full schema.
+AI helper methods such as `embed_text(...)` are convenient, but their output relation contains only the configured embedding column. If your final table needs IDs, text, metadata, status, errors, provider, model, or run fields, explicitly combine helper output with the chunk rows only after validating row counts and deterministic ordering. For Ray or any path where you cannot make ordering a hard invariant, use a custom UDF that returns the full schema.
+
+Validate the helper on a tiny installed-package sample before using backend overrides. For actor reuse, strict GPU placement, retries, or row-level diagnostics, prefer the custom callable-class UDF pattern below.
 
 ## Embed with a hosted API
 
@@ -151,16 +153,14 @@ embedding_only = chunks.embed_text(
     model="text-embedding-3-small",
     output_column="embedding",
     batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
 )
 ```
 
-Start with conservative `batch_size` and `concurrency`. Increase one setting at a time and record provider errors, timeouts, and rate-limit responses.
+Start with conservative `batch_size`. If you add UDF `concurrency`, treat it as helper-batch concurrency that can increase simultaneous provider calls; it is not the same thing as provider-side token batching. Increase one setting at a time and record provider errors, timeouts, and rate-limit responses.
 
 ## Embed with a local model
 
-Local models avoid hosted API calls but add local dependencies and model-loading cost. Actor backends are usually the right first choice because the model can be initialized once per actor and reused across batches.
+Local models avoid hosted API calls but add local dependencies and model-loading cost. Use the high-level helper for a correctness sample; use a custom callable class when you need verified actor reuse, GPU placement, retries, or a complete output schema.
 
 ```python
 embedding_only = chunks.embed_text(
@@ -169,11 +169,10 @@ embedding_only = chunks.embed_text(
     model="sentence-transformers/all-MiniLM-L6-v2",
     output_column="embedding",
     batch_size=64,
-    execution_backend="subprocess_actor",
 )
 ```
 
-For strict GPU placement, custom retry behavior, or a single UDF that returns identifiers, text, status, errors, and embeddings together, use a callable class with `map_batches(...)` instead of the high-level helper.
+For `provider="transformers"`, the descriptor primarily uses `batch_size` and local GPU detection. UDF `concurrency` is not a substitute for model-internal batching or GPU capacity planning. For strict GPU placement, custom retry behavior, or a single UDF that returns identifiers, text, status, errors, and embeddings together, use a callable class with `map_batches(...)` instead of the high-level helper.
 
 ## Combine and validate output
 
@@ -202,12 +201,79 @@ embedded_table = (
     .append_column("embedding_provider", pa.array([PROVIDER] * chunk_table.num_rows))
     .append_column("embedding_model", pa.array([MODEL] * chunk_table.num_rows))
     .append_column("embedding_run_id", pa.array([RUN_ID] * chunk_table.num_rows))
+    .append_column("status", pa.array(["ok"] * chunk_table.num_rows))
+    .append_column("error", pa.array([""] * chunk_table.num_rows))
 )
 
 embedded = con.from_arrow(embedded_table)
 ```
 
 If you cannot make row order stable, do not rely on positional recombination. Write a custom embedding UDF that returns the full output schema, including IDs and error/status columns, in one relation.
+
+```python
+import pyarrow as pa
+
+
+class LocalEmbeddingUDF:
+    def __init__(self) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self.model = SentenceTransformer(self.model_name)
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        chunk_ids = batch.column("chunk_id").to_pylist()
+        document_ids = batch.column("document_id").to_pylist()
+        chunk_texts = batch.column("chunk_text").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+
+        embeddings = []
+        status = []
+        error = []
+
+        for text in chunk_texts:
+            try:
+                vector = self.model.encode([str(text or "")], convert_to_numpy=True)[0]
+                embeddings.append(vector.tolist())
+                status.append("ok")
+                error.append("")
+            except Exception as exc:
+                embeddings.append(None)
+                status.append("failed")
+                error.append(f"embed: {type(exc).__name__}: {exc}")
+
+        return pa.table({
+            "chunk_id": chunk_ids,
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "chunk_text": chunk_texts,
+            "embedding": embeddings,
+            "embedding_provider": ["transformers"] * len(chunk_ids),
+            "embedding_model": [self.model_name] * len(chunk_ids),
+            "embedding_run_id": [RUN_ID] * len(chunk_ids),
+            "status": status,
+            "error": error,
+        })
+
+
+embedded = chunks.map_batches(
+    LocalEmbeddingUDF,
+    schema={
+        "chunk_id": "VARCHAR",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "chunk_text": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "embedding_provider": "VARCHAR",
+        "embedding_model": "VARCHAR",
+        "embedding_run_id": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="subprocess_actor",
+)
+```
 
 ## Output schema
 
@@ -225,6 +291,8 @@ Write an embedding table that a downstream system and a reviewer can understand 
 | `embedding_provider` | Provider name, such as `openai` or `transformers`. |
 | `embedding_model` | Exact model identifier used for the run. |
 | `embedding_run_id` | Run identifier for repeatability and review. |
+| `status` | `ok`, `failed`, or `skipped` for the embedding stage. |
+| `error` | Empty on success; diagnostic text for failed or skipped rows. |
 
 Add source metadata columns that help you debug bad chunks or explain a sample to domain reviewers. Avoid silently dropping identifiers even if the downstream vector store does not require them.
 
@@ -233,7 +301,7 @@ Add source metadata columns that help you debug bad chunks or explain a sample t
 Write to a run-specific path so you can compare runs without overwriting earlier output.
 
 ```python
-embedded.write_parquet(f"output/embeddings/{RUN_ID}/")
+embedded.write_parquet(f"output/embeddings/{RUN_ID}.parquet")
 ```
 
 For distributed writes, make sure every worker can access the output filesystem or object store.
@@ -245,18 +313,29 @@ Move from local sample to Ray or larger batches only after chunk and embedding v
 ```python
 vane.configure(runner="ray")
 
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
+embedded = chunks.map_batches(
+    LocalEmbeddingUDF,
+    schema={
+        "chunk_id": "VARCHAR",
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "chunk_text": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "embedding_provider": "VARCHAR",
+        "embedding_model": "VARCHAR",
+        "embedding_run_id": "VARCHAR",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
     batch_size=128,
-    concurrency=8,
     execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
 )
 ```
 
-Every Ray worker needs access to the provider libraries, local model files or hosted API credentials, source data, and output path. Keep the same chunking configuration when you scale; otherwise you are measuring a different pipeline.
+Every Ray worker needs access to the provider libraries, local model files or hosted API credentials, source data, and output path. With `ray_actor`, the callable class must have no required constructor arguments. `gpus=1.0` is per actor, so `concurrency=N` requires N GPU slots. Keep the same chunking configuration when you scale; otherwise you are measuring a different pipeline.
 
 ## Tuning checklist
 

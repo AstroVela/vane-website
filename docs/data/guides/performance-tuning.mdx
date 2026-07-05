@@ -54,7 +54,9 @@ These are the main knobs for an initial workflow. Change one at a time and keep 
 | Knob | What it changes | Start here | Watch for |
 | --- | --- | --- | --- |
 | `batch_size` | Rows per UDF, AI, or inference call | Increase when per-call overhead dominates; decrease when memory or retries dominate | Out-of-memory errors, slow long-tail batches, worse provider latency |
-| `concurrency` | Number of batches or requests in flight | Increase only after each batch is reasonably efficient | Provider rate limits, memory pressure, output write contention |
+| UDF `concurrency` | Number of UDF batches or actors in flight, when the selected backend supports it | Increase only after each batch is reasonably efficient; do not pass it to `ray_task` | Provider rate limits, memory pressure, output write contention |
+| Provider API concurrency | Hosted-provider async request concurrency, when the provider exposes a separate option such as `max_api_concurrency` | Tune against provider limits, not Ray worker count | 429s, retry storms, quota errors, higher cost |
+| vLLM actor-pool concurrency | Number of vLLM actors created by the native vLLM executor or provider when Ray vLLM is enabled | Increase only when GPU slots and model memory are available | Ray pending actors, GPU OOM, low per-actor utilization |
 | Task vs actor | Whether work is stateless or reuses state | Use tasks for light stateless CPU work; actors for models, clients, GPU, or connection reuse | Model reload per batch, unbounded actor memory, worker startup failures |
 | Local vs Ray | Whether the pipeline stays local or uses Ray workers | Stay local for correctness and small samples; move to Ray when parallelism, worker placement, or GPUs matter | Path, dependency, credential, and output locations visible only on the driver |
 | GPU count | Available GPU resources for inference actors | Tune one GPU first; add GPUs when the GPU stage is confirmed as the bottleneck | CPU preprocessing bottlenecks, output bottlenecks, low utilization across many actors |
@@ -71,6 +73,28 @@ Hosted APIs and local GPU inference fail in different ways. Separate them before
 | GPU inference | Model load, GPU memory, GPU utilization, CPU preprocessing, media decode, output write | GPU out-of-memory, GPU mostly idle, model initialization per batch, slow decode/tokenization before GPU work | Use actor reuse; tune `batch_size`; separate preprocessing from inference; verify one GPU before increasing GPU count |
 
 Do not treat a hosted API rate limit as a Ray scheduling problem. Do not treat low GPU utilization as proof that more GPUs are needed. First confirm which stage is waiting and why.
+
+## vLLM and Ray-Backed Inference
+
+vLLM tuning has two different entry points in Vane:
+
+| Path | What to tune |
+| --- | --- |
+| SQL `vllm(prompt, model, options)` | Native vLLM operator settings: `engine_args`, `generate_args`, `batch_size`, `do_prefix_routing`, `max_buffer_size`, `min_bucket_size`, `prefix_match_threshold`, `inflight_limit`, `use_ray`, `concurrency`, `gpus_per_actor`, and `ray_actor_pool_name`. |
+| Relation `prompt(provider="vllm")` | AI helper and vLLM provider settings: prompt relation shape, helper output validation, `engine_args`, `generate_args`, `use_ray`, `concurrency`, `gpus_per_actor`, UDF `execution_backend`, and row-count/order recombination. |
+
+The native vLLM executor applies throughput-oriented engine defaults when you do not override them: `max_num_batched_tokens=8192` and `max_num_seqs=256`. Its Vane-side defaults include `concurrency=1`, `gpus_per_actor=1`, `batch_size=128`, `max_buffer_size=5000`, `min_bucket_size=16`, `inflight_limit=128`, and prefix routing enabled. Record any overrides in the run log, because changes to context length, sampling, tensor parallelism, or batching can dominate throughput comparisons.
+
+For Ray-backed native vLLM, separate the two resource layers:
+
+- UDF or relation backend concurrency controls how many Vane tasks or actors submit work.
+- vLLM actor-pool `concurrency` controls how many vLLM actors are created.
+- `gpus_per_actor` is per vLLM actor, so required GPU slots are approximately `concurrency * gpus_per_actor`.
+- Named pools through `ray_actor_pool_name` allow actor reuse and shared inflight tracking across distributed tasks.
+
+For prefix-heavy prompt sets, first establish a baseline with the same model, data slice, and sampling settings. Then test prompt ordering or native prefix routing (`do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`) without changing model settings. If the prompts do not share long prefixes, prefix routing is unlikely to explain the bottleneck. Do not treat `load_balance_threshold` as a primary tuning knob unless you have verified its effect in the current execution path.
+
+Backpressure matters when prompt submission is faster than GPU completion. In native SQL `vllm()`, `inflight_limit` bounds submitted prompts; a low value can protect memory and improve load awareness, while a value that is too low can starve the GPU. Treat it as a measured tuning variable, not a general speed knob.
 
 ## Symptoms and Fixes
 
@@ -100,8 +124,11 @@ For AI and inference workloads, measure at least:
 - rows entering the AI or model stage
 - calls or batches sent
 - successful rows and failed rows
+- UDF accepted, submitted, completed, produced, and emitted row counts when runtime counters are available
 - provider retry or rate-limit count, if hosted
+- provider API concurrency limit, if hosted
 - GPU memory and utilization, if local GPU
+- vLLM actor count, batch size, inflight limit, prefix routing settings, and engine args, if vLLM
 - output rows and bytes
 
 ## Performance Record
@@ -121,14 +148,39 @@ Include a record like this when you report a performance issue or compare tuning
 - Runner:
 - UDF/AI execution backend:
 - Batch size:
-- Concurrency:
+- UDF concurrency:
+- Provider max_api_concurrency:
+- vLLM actor-pool concurrency:
 - Task or actor:
+- UDF runtime counters:
+  - accepted input rows/bytes:
+  - submitted input rows/bytes:
+  - completed input rows:
+  - produced output rows/bytes:
+  - emitted output rows:
 - Provider/model:
+- Provider API limits:
+- vLLM:
+  - path: SQL vllm() / relation prompt(provider="vllm") / custom UDF
+  - engine_args:
+  - generate_args:
+  - batch_size:
+  - do_prefix_routing:
+  - min_bucket_size:
+  - prefix_match_threshold:
+  - load_balance_threshold:
+  - max_buffer_size:
+  - inflight_limit:
+  - ray_actor_pool_name:
 - GPU:
   - GPU count:
   - GPUs per actor:
   - observed utilization:
   - observed memory:
+- Ray:
+  - cluster resources:
+  - actor count:
+  - task pending/window settings:
 - Output:
   - output rows:
   - output bytes:
