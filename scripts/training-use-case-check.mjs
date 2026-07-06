@@ -19,7 +19,7 @@ const routes = readFileSync(routesPath, 'utf8')
 const footer = readFileSync('src/components/Footer.tsx', 'utf8')
 const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
-const heroShape = page.match(/function TrainingHeroShape\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+const heroShape = page.match(/function TrainingHeroShape\([^)]*\) \{[\s\S]*?\n\}/)?.[0] ?? ''
 const heroCss = css.match(/\.training-hero-art[\s\S]*?\.solution-hero-media/)?.[0] ?? ''
 const executionCss = css.match(/\.tl-execution\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
 const execMainCss = css.match(/\.tl-exec-main\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
@@ -75,29 +75,33 @@ const mustIncludeInPage = [
   'Build a reproducible multimodal training-data pipeline.',
   'Become a design partner',
   'Read the docs',
+  '面向 AI 模型的多模态训练数据流水线 — Vane',
+  '从原始多模态数据到训练可用的数据集版本。',
+  '查看基准测试',
+  '构建可复现的多模态训练数据 pipeline。',
 ]
 
 for (const text of mustIncludeInPage) {
   assert.match(page, new RegExp(escapeRegExp(text)), `${pagePath} should include "${text}"`)
 }
 
-assert.match(routes, /path:\s*'\/use-cases\/training'[\s\S]*TrainingUseCase\.tsx/, 'training route should render TrainingUseCase.tsx')
+assert.match(routes, /path:\s*routePath\('\/use-cases\/training'\)[\s\S]*TrainingUseCase\.tsx/, 'training route should render TrainingUseCase.tsx')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(page, /TRAINING_DESIGN_PARTNER_MAILTO/, 'training page should use the centralized training design partner mailto')
 assert.match(siteLinks, /TRAINING_DESIGN_PARTNER_MAILTO/, 'siteLinks should define the training design partner mailto')
 assert.doesNotMatch(page, /hello@vane\.ai|DESIGN_PARTNER_HREF/, 'training page should not hardcode the old design partner mailto')
 assert.doesNotMatch(page, /collectAnchor\('benchmark'\)|id="benchmark"|Proof · Performance|Measured, and reproducible\.|training-proof-grid|training-matrix|Full benchmarks/, 'training page should not render the removed proof/performance benchmark section')
 assert.doesNotMatch(page, /collectAnchor\('poc'\)|id="poc"|Do a POC|Estimate your training-data processing cost\.|Point your code agent at our docs|Open llms\.txt|training-poc/, 'training page should not render the removed POC card')
-assert.match(page, /href="\/benchmarks"[\s\S]*cta="See the benchmarks"/, 'training performance card should link to the standalone benchmarks page')
+assert.match(page, /to="\/benchmarks"[\s\S]*cta=\{copy\.seeBenchmarks\}/, 'training performance card should link to the standalone benchmarks page')
 assert.doesNotMatch(css, /\.training-poc|\.training-poc-actions/, 'training POC-only styles should be removed with the POC card')
 assert.doesNotMatch(page, /from vane\.ai import describe|describe\(items|num_gpus|your-caption-or-label-model|read_files\('s3:\/\/training-corpus\/\*'\)|For Physical AI and VLA training/, 'training page code sample should not use the older detailed helper API shape')
-assert.match(page, /function TrainingHeroShape\(\)[\s\S]*training-hero-art[\s\S]*thg-stage[\s\S]*training-art-flow[\s\S]*thg-inputs[\s\S]*thg-engine[\s\S]*thg-release/, 'training hero should render the multimodal-inputs → Vane engine → dataset-release pipeline visual')
+assert.match(page, /function TrainingHeroShape\([^)]*\)[\s\S]*training-hero-art[\s\S]*thg-stage[\s\S]*training-art-flow[\s\S]*thg-inputs[\s\S]*thg-engine[\s\S]*thg-release/, 'training hero should render the multimodal-inputs → Vane engine → dataset-release pipeline visual')
 assert.match(page, /const HERO_MODALITIES[\s\S]*'vision'[\s\S]*'video'[\s\S]*'audio'[\s\S]*'embeddings'[\s\S]*'sensor'/, 'training hero should carry five distinct modalities (image, video, audio, text, sensor)')
 assert.match(page, /<PixelIcon name=\{m\.icon\} size=\{15\} \/>/, 'training hero modality chips should reuse the site pixel-bitmap glyph language')
-assert.match(page, /className="thg-engine-title">VANE<[\s\S]*thg-engine-ops">decode · caption/, 'training hero engine node should read as the Vane processing stage')
+assert.match(page, /className="thg-engine-title">VANE<[\s\S]*thg-engine-ops">\{copy\.ops\}/, 'training hero engine node should read as the Vane processing stage')
 assert.doesNotMatch(heroShape, /training-art-tiles|tile-photo|tile-wave|tile-frame|tile-doc|tile-sensor|training-art-signal|orbit-a|orbit-b/, 'training hero should not render the old scattered modality tiles or bar-chart signal visual')
-assert.match(page, /<Button solid to="\/docs\/data\/examples\/training-data-pipeline" arrow>Run the pipeline<\/Button>[\s\S]*<Button href=\{TRAINING_DESIGN_PARTNER_MAILTO\} arrow>Request a demo<\/Button>/, 'training hero should prioritize running the pipeline and requesting a demo')
-assert.match(page, /<Button to="\/docs\/data\/examples">Read the docs<\/Button>/, 'training CTA should send docs readers to the examples index')
+assert.match(page, /<Button solid to="\/docs\/data\/examples\/training-data-pipeline" arrow>\{copy\.runPipeline\}<\/Button>[\s\S]*<Button href=\{TRAINING_DESIGN_PARTNER_MAILTO\} arrow>\{copy\.requestDemo\}<\/Button>/, 'training hero should prioritize running the pipeline and requesting a demo')
+assert.match(page, /<Button to="\/docs\/data\/examples">\{copy\.readDocs\}<\/Button>/, 'training CTA should send docs readers to the examples index')
 assert.doesNotMatch(page, /RUN_CODE|collectAnchor\('run-it'\)|id="run-it"|training-run-grid|Start with the training-data example\.|Open the example|Benchmark scripts|filename="run\.sh"|python -m vane_examples\.training_data_pipeline/, 'training page should not render the run-it example module')
 assert.doesNotMatch(css, /\.training-run-grid/, 'training run-it-only styles should be removed with the module')
 assert.match(css, /\.training-hero-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*486px/, 'training hero should use a two-column layout with a fixed 486px art column on desktop')
@@ -118,15 +122,16 @@ assert.match(component, /Vane Pipeline/, 'training data factory component should
 assert.match(component, /serialized waits/, 'legacy lane should use a compact execution-mode label')
 assert.match(component, /overlapped streaming/, 'Vane lane should use a compact execution-mode label')
 assert.doesNotMatch(component, /outcome-ledger|queue buildup|GPU feed gap|steady occupancy|balanced pipeline/, 'the polished timeline should remove redundant tag rows')
-assert.match(component, /const PIPELINE: string\[\]\[\][\s\S]*camera frames[\s\S]*decode frames[\s\S]*time sync[\s\S]*sensor projection[\s\S]*sample embed/, 'the diagram should model the shared pipeline as ordered stage columns')
-assert.match(component, /PIPELINE\.map\(\(column, index\)[\s\S]*tl-flow-step[\s\S]*PIPELINE_LABELS\[index\][\s\S]*tl-flow-arrow/, 'the diagram should render the shared pipeline as a columnar flow with arrows')
+assert.match(component, /const PIPELINE_EN: string\[\]\[\][\s\S]*camera frames[\s\S]*decode frames[\s\S]*time sync[\s\S]*sensor projection[\s\S]*sample embed/, 'the diagram should model the shared pipeline as ordered English stage columns')
+assert.match(component, /const PIPELINE_ZH: string\[\]\[\][\s\S]*解码 frames[\s\S]*时间同步[\s\S]*传感器投影[\s\S]*样本 embed/, 'the diagram should model the shared pipeline as ordered Chinese stage columns')
+assert.match(component, /copy\.pipeline\.map\(\(column, index\)[\s\S]*tl-flow-step[\s\S]*copy\.labels\[index\][\s\S]*tl-flow-arrow/, 'the diagram should render the shared pipeline as a localized columnar flow with arrows')
 assert.doesNotMatch(component, /INPUTS\.map|STAGES\.map|STAGES\.length|const INPUTS|const STAGES/, 'the interrupted flat input/stage row implementation should not remain')
 assert.match(component, /Same pipeline/, 'the diagram labels the shared pipeline before comparing execution')
 assert.match(component, /Legacy and Vane run these same stages; the lanes below compare execution\./, 'the diagram should explain why the shared pipeline is separated from execution lanes')
 assert.match(component, /tl-lanes/, 'legacy vs Vane are compared as two aligned execution lanes')
 assert.match(component, /sensor projection[\s\S]*sample embed/, 'the shared pipeline lists the multimodal stages')
-assert.match(component, /function LegacyExecution[\s\S]*waiting for full clip[\s\S]*<i aria-hidden="true"><span \/><\/i>[\s\S]*CPU decode[\s\S]*tl-gap-dots[\s\S]*GPU infer/, 'legacy execution should show full-clip progress, CPU decode, a feed gap, and delayed GPU inference')
-assert.match(component, /function VaneExecution[\s\S]*tl-schedule-flow[\s\S]*stream-a[\s\S]*stream-b[\s\S]*stream-c[\s\S]*stream-d[\s\S]*tl-work-row overlap[\s\S]*CPU decode[\s\S]*dynamic batch[\s\S]*GPU infer/, 'Vane execution should show a fast left-to-right scheduling stream across CPU decode, dynamic batching, and GPU inference')
+assert.match(component, /function LegacyExecution[\s\S]*waiting for full clip[\s\S]*CPU decode[\s\S]*GPU infer[\s\S]*<i aria-hidden="true"><span \/><\/i>[\s\S]*\{copy\.cpu\}[\s\S]*tl-gap-dots[\s\S]*\{copy\.gpu\}/, 'legacy execution should show full-clip progress, CPU decode, a feed gap, and delayed GPU inference')
+assert.match(component, /function VaneExecution[\s\S]*CPU decode[\s\S]*dynamic batch[\s\S]*GPU infer[\s\S]*tl-schedule-flow[\s\S]*stream-a[\s\S]*stream-b[\s\S]*stream-c[\s\S]*stream-d[\s\S]*tl-work-row overlap[\s\S]*\{copy\.cpu\}[\s\S]*\{copy\.batch\}[\s\S]*\{copy\.gpu\}/, 'Vane execution should show a fast left-to-right scheduling stream across CPU decode, dynamic batching, and GPU inference')
 assert.match(component, /gpuState:\s*'IDLE'[\s\S]*gpuNote:\s*'waiting on CPU stages'[\s\S]*gpuState:\s*'FULL'[\s\S]*gpuNote:\s*'CPU and GPU overlap'/, 'GPU cards should explicitly compare idle legacy utilization against full overlapped Vane utilization')
 assert.match(component, /function ExecutionTimeline[\s\S]*tl-execution[\s\S]*LegacyExecution[\s\S]*VaneExecution[\s\S]*GpuCard/, 'the comparison should render lane-specific execution models plus a GPU state card')
 assert.doesNotMatch(component, /STAGE_NODES|LINK_PATHS|GraphLinks|GraphInputs|GraphNodes|QueueMarkers|OccupancyMarkers|queue-stack|occupancy-pulse|pipeline-occupancy|sample-overlay|sample-lidar/, 'the compact pass should remove duplicate graph internals and looping decorative motion elements')

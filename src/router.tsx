@@ -2,8 +2,10 @@ import {useCallback, type MouseEvent} from 'react'
 import DocusaurusLink from '@docusaurus/Link'
 import type {Props as DocusaurusLinkProps} from '@docusaurus/Link'
 import { useHistory, useLocation } from '@docusaurus/router'
+import {useBaseUrlUtils} from '@docusaurus/useBaseUrl'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
+import { resolveLinkClickUrl } from './routerUrl'
 
 /* ------------------------------------------------------------------
    Compatibility layer for the site's existing Link/useRouter API.
@@ -22,22 +24,29 @@ type LinkProps = Omit<DocusaurusLinkProps, 'href' | 'to'> & {
   to: string
 }
 
-function isLocalizedDocsRoute(to: string) {
-  return to === '/docs/data' || to.startsWith('/docs/data/')
+function isAbsoluteInternalRoute(to: string) {
+  return to.startsWith('/') && !to.startsWith('//')
 }
 
 function shouldAutoAddBaseUrl(to: string, currentLocale: string, defaultLocale: string) {
   if (currentLocale === defaultLocale) return true
   if (!to.startsWith('/')) return true
-  return isLocalizedDocsRoute(to)
+  return isAbsoluteInternalRoute(to)
 }
 
 function useNavigate(): Navigate {
   const history = useHistory()
+  const {
+    i18n: { currentLocale, defaultLocale },
+  } = useDocusaurusContext()
+  const {withBaseUrl} = useBaseUrlUtils()
 
   return useCallback((to: string) => {
-    history.push(to)
-  }, [history])
+    const next = shouldAutoAddBaseUrl(to, currentLocale, defaultLocale)
+      ? withBaseUrl(to)
+      : to
+    history.push(next)
+  }, [currentLocale, defaultLocale, history, withBaseUrl])
 }
 
 export function useRouter(): RouterState {
@@ -61,7 +70,7 @@ export function Link({ to, className, children, autoAddBaseUrl, ...rest }: LinkP
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
 
     const href = e.currentTarget.getAttribute('href') ?? to
-    const url = new URL(href, window.location.origin)
+    const url = resolveLinkClickUrl({ href, to, currentHref: window.location.href })
     const samePageHash =
       url.hash &&
       url.pathname === window.location.pathname &&

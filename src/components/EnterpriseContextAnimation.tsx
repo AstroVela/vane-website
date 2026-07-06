@@ -1,16 +1,18 @@
+import { pickLocale, useSiteLocale } from '../siteI18n'
+
 const INPUTS = [
-  { label: 'contract.pdf', meta: 'PDF', tone: 'pdf' },
-  { label: 'inspection photo', meta: 'image', tone: 'image' },
-  { label: 'video frame', meta: 'video', tone: 'video' },
-  { label: 'call audio', meta: 'audio', tone: 'audio' },
-  { label: 'spreadsheet', meta: 'table', tone: 'sheet' },
-  { label: 'system log', meta: 'log', tone: 'log' },
+  { label: 'contract.pdf', labelZh: 'contract.pdf', meta: 'PDF', metaZh: 'PDF', tone: 'pdf' },
+  { label: 'inspection photo', labelZh: 'inspection photo', meta: 'image', metaZh: '图像', tone: 'image' },
+  { label: 'video frame', labelZh: 'video frame', meta: 'video', metaZh: '视频', tone: 'video' },
+  { label: 'call audio', labelZh: 'call audio', meta: 'audio', metaZh: '音频', tone: 'audio' },
+  { label: 'spreadsheet', labelZh: 'spreadsheet', meta: 'table', metaZh: '表格', tone: 'sheet' },
+  { label: 'system log', labelZh: 'system log', meta: 'log', metaZh: '日志', tone: 'log' },
 ]
 
 const OUTPUTS = [
-  { title: 'insights', detail: 'structured signals and issues' },
-  { title: 'evidence', detail: 'document · rule · source URI' },
-  { title: 'recommendations', detail: 'next action with rule context' },
+  { title: 'insights', titleZh: '洞察', detail: 'structured signals and issues', detailZh: '结构化信号和问题' },
+  { title: 'evidence', titleZh: '证据', detail: 'document · rule · source URI', detailZh: '文档 · 规则 · source URI' },
+  { title: 'recommendations', titleZh: '建议', detail: 'next action with rule context', detailZh: '带规则上下文的下一步动作' },
 ]
 
 function SourceVisual({ tone }: { tone: string }) {
@@ -87,22 +89,36 @@ function VaneCore() {
   )
 }
 
-function AgentReadyPanel() {
+function AgentReadyPanel({ locale }: { locale: ReturnType<typeof useSiteLocale> }) {
+  const copy = pickLocale(
+    locale,
+    {
+      title: 'Agent-ready outputs',
+      meta: 'context attached',
+      context: 'Context attached',
+    },
+    {
+      title: 'Agent 可用输出',
+      meta: '上下文已附加',
+      context: '上下文已附加',
+    },
+  )
+
   return (
     <article className="eca-agent-panel">
       <header>
-        <span>Agent-ready outputs</span>
-        <b>context attached</b>
+        <span>{copy.title}</span>
+        <b>{copy.meta}</b>
       </header>
       <div className="eca-agent-input">
         <i />
-        <span>Context attached</span>
+        <span>{copy.context}</span>
       </div>
       <div className="eca-output-stack">
         {OUTPUTS.map((output) => (
           <article className="eca-output-card" key={output.title}>
-            <strong>{output.title}</strong>
-            <span>{output.detail}</span>
+            <strong>{pickLocale(locale, output.title, output.titleZh)}</strong>
+            <span>{pickLocale(locale, output.detail, output.detailZh)}</span>
           </article>
         ))}
       </div>
@@ -111,12 +127,38 @@ function AgentReadyPanel() {
 }
 
 export default function EnterpriseContextAnimation() {
+  const locale = useSiteLocale()
+  const copy = pickLocale(
+    locale,
+    {
+      stageAria: 'Enterprise multimodal materials flow',
+      inputAria: 'Messy multimodal materials',
+      messy: 'messy materials',
+      outputAria: 'Outputs',
+      outputs: 'outputs',
+    },
+    {
+      stageAria: '企业多模态材料流',
+      inputAria: '复杂多模态材料',
+      messy: '复杂材料',
+      outputAria: '输出',
+      outputs: '输出',
+    },
+  )
+
   return (
-    <div className="enterprise-context-stage" aria-label="Enterprise multimodal materials flow">
-      <section className="eca-input-world" aria-label="Messy multimodal materials">
-        <p className="eca-stage-label">messy materials</p>
+    <div className="enterprise-context-stage" aria-label={copy.stageAria}>
+      <section className="eca-input-world" aria-label={copy.inputAria}>
+        <p className="eca-stage-label">{copy.messy}</p>
         <div className="eca-source-stack">
-          {INPUTS.map((input) => <SourceCard key={input.label} {...input} />)}
+          {INPUTS.map((input) => (
+            <SourceCard
+              key={input.label}
+              label={pickLocale(locale, input.label, input.labelZh)}
+              meta={pickLocale(locale, input.meta, input.metaZh)}
+              tone={input.tone}
+            />
+          ))}
         </div>
       </section>
 
@@ -124,9 +166,9 @@ export default function EnterpriseContextAnimation() {
         <VaneCore />
       </section>
 
-      <section className="eca-output-world" aria-label="Outputs">
-        <p className="eca-stage-label">outputs</p>
-        <AgentReadyPanel />
+      <section className="eca-output-world" aria-label={copy.outputAria}>
+        <p className="eca-stage-label">{copy.outputs}</p>
+        <AgentReadyPanel locale={locale} />
       </section>
 
       <svg className="eca-static-arrows" viewBox="0 0 640 330" aria-hidden="true">

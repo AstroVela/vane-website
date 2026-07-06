@@ -83,6 +83,9 @@ const mustIncludeInPage = [
   'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
   'Run the pipeline',
   'Request a demo',
+  '企业多模态数据基础设施 — Vane',
+  '把复杂的多模态业务材料转成可审计事实。',
+  '申请演示',
 ]
 
 for (const text of mustIncludeInPage) {
@@ -95,7 +98,7 @@ assert.ok(motifCount >= 2, 'motif should be rendered in the hero and problem flo
 const codeWindowCount = page.match(/<CodeWindow/g)?.length ?? 0
 assert.equal(codeWindowCount, 1, 'enterprise page should contain exactly one CodeWindow')
 
-assert.match(page, /<section className="intro enterprise-hero">\s*<div className="wrap enterprise-hero-grid">\s*<div className="enterprise-hero-copy">[\s\S]*<h1 className="h1 enterprise-hero-title">[\s\S]*<p className="lead enterprise-hero-lead">[\s\S]*<div className="enterprise-hero-actions">\s*<Button solid to=\{INSURANCE_AUDIT_DOC\} arrow>Run the pipeline<\/Button>\s*<Button href=\{ENTERPRISE_DESIGN_PARTNER_MAILTO\} arrow>Request a demo<\/Button>\s*<\/div>\s*<div className="enterprise-hero-meta">[\s\S]*<div className="enterprise-hero-art">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise hero should match the training two-column copy/action + right-rail visual pattern')
+assert.match(page, /<section className="intro enterprise-hero">\s*<div className="wrap enterprise-hero-grid">\s*<div className="enterprise-hero-copy">[\s\S]*<h1 className="h1 enterprise-hero-title">\{copy\.heading\}<\/h1>[\s\S]*<p className="lead enterprise-hero-lead">[\s\S]*<div className="enterprise-hero-actions">\s*<Button solid to=\{INSURANCE_AUDIT_DOC\} arrow>\{copy\.runPipeline\}<\/Button>\s*<Button href=\{ENTERPRISE_DESIGN_PARTNER_MAILTO\} arrow>\{copy\.requestDemo\}<\/Button>\s*<\/div>\s*<div className="enterprise-hero-meta">[\s\S]*<div className="enterprise-hero-art">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise hero should match the training two-column copy/action + right-rail visual pattern')
 assert.doesNotMatch(page, /function HeroDiagram|<HeroDiagram \/>|enterprise-hero-diagram/, 'enterprise page should replace the old hero mini diagram with the context animation')
 assert.doesNotMatch(page, /<Divider \/>\s*<EnterpriseContextAnimation \/>\s*<Divider \/>/, 'enterprise page should remove the standalone Context pipeline section')
 assert.doesNotMatch(page, /solution-hero-media|className="enterprise-audience"|extract_document\(media_type, uri\)|provenance\(\)|OCR \/ parse|recommended_review|fact\.confidence < 0\.8|source file, chunk, quote, confidence|<span>extract<\/span>|python -m vane_examples|claims_evidence\.sql|function RunTerminal|const CLAIMS_CODE|prompt\('Audit this document for missing evidence\. Return JSON\.', text\)|rule_hit IS NOT NULL|Runs on public \/ synthetic proxy data|Claims evidence pipeline|missing provenance|One pipeline for parsed files, models, and rules|One pipeline for source rows, models, and rules|Keep evidence beside each output|Scale without rewriting|business logic unchanged|same pipeline|Every insight comes with evidence|Run the example pipeline|Read the docs/, 'enterprise page should not imply built-in OCR/provenance helpers, runnable example modules, SQL scalar prompt helpers, old hero layout, or overclaim local-to-Ray / evidence behavior')
@@ -146,7 +149,7 @@ assert.doesNotMatch(css, /citation-return|color-scheme:\s*dark|neon|box-shadow:\
 assert.doesNotMatch(page, /What You Get|Not a verdict|WhatYouGetDiagram|enterprise-object-diagram/, 'enterprise page should not include the What You Get section')
 assert.doesNotMatch(page, /Claims, compliance and document review|claims teams|compliance teams|document review teams|Run the claims pipeline|Run the example pipeline|Have a stack of claims|Enterprise Multimodal Agent Infrastructure|WHERE confidence < 0\.8|finding \+ evidence|review task|case summary|claim summary|review_tasks|evidence · review · summary|Every finding comes with evidence|auditable findings|SQL → finding/, 'enterprise page should not include superseded claims-first copy outside the demo')
 
-assert.match(routes, /path:\s*'\/use-cases\/enterprise-agent'[\s\S]*EnterpriseAgentUseCase\.tsx/, 'enterprise-agent route should render EnterpriseAgentUseCase.tsx')
+assert.match(routes, /path:\s*routePath\('\/use-cases\/enterprise-agent'\)[\s\S]*EnterpriseAgentUseCase\.tsx/, 'enterprise-agent route should render EnterpriseAgentUseCase.tsx')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(page, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'enterprise page should use the centralized enterprise design partner mailto')
 assert.match(siteLinks, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'siteLinks should define the enterprise design partner mailto')

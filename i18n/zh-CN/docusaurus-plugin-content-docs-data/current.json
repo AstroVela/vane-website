@@ -3,9 +3,9 @@
     "message": "current",
     "description": "The label for version current"
   },
-  "sidebar.dataSidebar.category.Overview": {
+  "sidebar.dataSidebar.doc.Overview": {
     "message": "概览",
-    "description": "The label for category Overview in sidebar dataSidebar"
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Quickstart": {
     "message": "快速开始",

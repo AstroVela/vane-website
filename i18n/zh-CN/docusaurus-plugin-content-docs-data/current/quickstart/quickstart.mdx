@@ -3,7 +3,7 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇 Quickstart 通过一个小型多模态 AI data pipeline 展示 Vane Data：把文档、图像和音频表示为行，使用 SQL 选择有代表性的切片，为审核字段添加 Python 逻辑，可选调用 AI Function，然后校验并写出表格结果。
+这篇快速开始通过一个小型多模态 AI data pipeline 展示 Vane Data：把文档、图像和音频表示为行，使用 SQL 选择有代表性的切片，为审核字段添加 Python 逻辑，可选调用 AI Function，然后校验并写出表格结果。
 
 必需路径使用内联数据在本地运行。完成必需步骤不需要 Ray、GPU、远程存储、真实媒体文件或模型 provider 凭证。AI 调用是可选步骤，并已明确标注。
 
@@ -15,7 +15,7 @@ slug: /quickstart/quickstart
 python -m pip install vane-ai
 ```
 
-这篇 Quickstart 还会用 PyArrow 作为 Python UDF 的返回值类型：
+这篇快速开始还会用 PyArrow 作为 Python UDF 的返回值类型：
 
 ```bash
 python -m pip install pyarrow
@@ -203,7 +203,7 @@ review_rows.show()
 
 ## 5. 可选：调用 AI Function
 
-必需的 Quickstart 路径已经展示了多模态 relation 形态和可供 AI 使用的提示词列。如果你已经配置 provider 凭证，可以使用 `prompt(...)` 运行一个小规模托管 AI 调用。
+必需路径已经展示了多模态 relation 形态和可供 AI 使用的提示词列。如果你已经配置 provider 凭证，可以使用 `prompt(...)` 运行一个小规模托管 AI 调用。
 
 ```python
 ai_only = review_rows.prompt(
@@ -292,8 +292,8 @@ load a small multimodal slice -> SQL select candidates -> prepare AI-ready field
 
 ## 下一步
 
-- [Multimodal Ingest](/zh-CN/docs/data/guides/multimodal-ingest)
-- [AI Functions](/zh-CN/docs/data/guides/ai-functions)
-- [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)
-- [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)
-- [SQL vs Python](/zh-CN/docs/data/concepts/sql-vs-python)
+- [多模态数据加载](/zh-CN/docs/data/guides/multimodal-ingest)
+- [AI 函数](/zh-CN/docs/data/guides/ai-functions)
+- [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)
+- [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)
+- [SQL 与 Python](/zh-CN/docs/data/concepts/sql-vs-python)

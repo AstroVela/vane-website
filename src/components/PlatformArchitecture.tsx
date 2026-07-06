@@ -1,4 +1,5 @@
 import Box from './Box'
+import { pickLocale, useSiteLocale } from '../siteI18n'
 
 /* Three-pillar engine diagram: Data -> RL -> Agent with a feedback loop
    returning to Data, over the shared Vane Core runtime panel. */
@@ -34,54 +35,74 @@ const PILLARS: Array<{
   number: string
   name: string
   status: 'Available now' | 'Coming soon'
+  statusZh: string
   tagline: string
+  taglineZh: string
   chips: string[]
+  chipsZh: string[]
 }> = [
   {
     tone: 'data',
     number: '1',
     name: 'Vane Data',
     status: 'Available now',
+    statusZh: '现已可用',
     tagline: 'Unified multimodal data from any source.',
+    taglineZh: '统一来自任意来源的多模态数据。',
     chips: ['Image', 'Video', 'Audio', 'Text', 'Documents', 'Events', 'Sensors', 'Tables'],
+    chipsZh: ['图像', '视频', '音频', '文本', '文档', '事件', '传感器', '表格'],
   },
   {
     tone: 'rl',
     number: '2',
     name: 'Vane RL',
     status: 'Coming soon',
+    statusZh: '即将推出',
     tagline: 'Train, evaluate, and align models across modalities.',
+    taglineZh: '跨模态训练、评估并对齐模型。',
     chips: ['Rollout', 'Trajectory', 'Reward', 'Training', 'Evaluation'],
+    chipsZh: ['Rollout', 'Trajectory', 'Reward', '训练', '评估'],
   },
   {
     tone: 'agent',
     number: '3',
     name: 'Vane Agent',
     status: 'Coming soon',
+    statusZh: '即将推出',
     tagline: 'Act in the real world, solve tasks, create value.',
+    taglineZh: '在真实世界中行动，完成任务，创造价值。',
     chips: ['Planning', 'Reasoning', 'Action', 'Feedback', 'Memory'],
+    chipsZh: ['规划', '推理', '行动', '反馈', '记忆'],
   },
 ]
 
-const CORE_FEATURES: Array<{ title: string; copy: string; icon: IconName }> = [
+const CORE_FEATURES: Array<{ title: string; titleZh: string; copy: string; copyZh: string; icon: IconName }> = [
   {
     title: 'Unified Multimodal Data Type',
+    titleZh: '统一的多模态数据类型',
     copy: 'Sensors, metadata, lineage, and model artifacts under one execution semantics.',
+    copyZh: '传感器、元数据、lineage 和模型 artifact 使用同一套执行语义。',
     icon: 'layers',
   },
   {
     title: 'Streaming + Backpressure + Dynamic Batching',
+    titleZh: 'Streaming + Backpressure + Dynamic Batching',
     copy: 'Continuous flow for large objects with adaptive batching and pressure control.',
+    copyZh: '让大对象持续流动，并通过自适应 batching 和压力控制保持稳定。',
     icon: 'stream',
   },
   {
     title: 'Overlapped Heterogeneous Execution',
+    titleZh: '重叠的异构执行',
     copy: 'CPU, GPU, IO, and model inference overlap through asynchronous scheduling.',
+    copyZh: '通过异步调度重叠 CPU、GPU、IO 和模型推理。',
     icon: 'chip',
   },
   {
     title: 'Edge-Cloud Coordination',
+    titleZh: '端云协同',
     copy: 'The same pipeline runs across local devices and Ray clusters.',
+    copyZh: '同一条 pipeline 可运行在本地设备和 Ray 集群上。',
     icon: 'cloud',
   },
 ]
@@ -353,14 +374,39 @@ function PillarArt({ tone }: { tone: Tone }) {
 }
 
 export default function PlatformArchitecture() {
+  const locale = useSiteLocale()
+  const copy = pickLocale(
+    locale,
+    {
+      curated: 'Curated & versioned data',
+      policies: <>Models &amp; policies<br />power agents</>,
+      feedback: <>New data &amp; feedback<br />enrich the dataset</>,
+      feedbackTitle: 'FEEDBACK LOOP',
+      feedbackCopy: 'New data, outcomes, and feedback continuously improve the system.',
+      outcomes: <>Actions &amp; outcomes<br />in the world</>,
+      local: 'Local Runtime',
+      ray: 'Ray Runtime',
+    },
+    {
+      curated: '整理并版本化的数据',
+      policies: <>模型与策略<br />驱动 Agent</>,
+      feedback: <>新数据与反馈<br />丰富数据集</>,
+      feedbackTitle: '反馈回路',
+      feedbackCopy: '新数据、结果和反馈会持续改进系统。',
+      outcomes: <>真实世界中的<br />动作与结果</>,
+      local: '本地 Runtime',
+      ray: 'Ray Runtime',
+    },
+  )
+
   return (
     <Box className="platform-arch">
       <div className="pa-arcs" aria-hidden="true">
         <div className="pa-arc pa-tone-data pa-arc-data">
-          <span>Curated &amp; versioned data</span>
+          <span>{copy.curated}</span>
         </div>
         <div className="pa-arc pa-tone-rl pa-arc-rl">
-          <span>Models &amp; policies<br />power agents</span>
+          <span>{copy.policies}</span>
         </div>
       </div>
 
@@ -368,17 +414,17 @@ export default function PlatformArchitecture() {
         {PILLARS.map((pillar) => (
           <div className={`pa-pillar pa-tone-${pillar.tone}`} key={pillar.name}>
             <span className={`status-pill ${pillar.status === 'Available now' ? 'available' : 'soon'} pa-pillar-status`}>
-              {pillar.status}
+              {pickLocale(locale, pillar.status, pillar.statusZh)}
             </span>
             <span className="pa-pillar-icon"><PillarIcon tone={pillar.tone} /></span>
             <div className="pa-pillar-name">
               <b>{pillar.number}</b>
               <h4>{pillar.name}</h4>
             </div>
-            <p className="pa-pillar-tagline">{pillar.tagline}</p>
+            <p className="pa-pillar-tagline">{pickLocale(locale, pillar.tagline, pillar.taglineZh)}</p>
             <div className="pa-pillar-divider" />
             <div className="pa-chips">
-              {pillar.chips.map((chip) => (
+              {pickLocale(locale, pillar.chips, pillar.chipsZh).map((chip) => (
                 <span key={chip}>{chip}</span>
               ))}
             </div>
@@ -389,17 +435,17 @@ export default function PlatformArchitecture() {
 
       <div className="pa-return">
         <div className="pa-return-path pa-tone-data pa-return-data" aria-hidden="true">
-          <span>New data &amp; feedback<br />enrich the dataset</span>
+          <span>{copy.feedback}</span>
         </div>
         <div className="pa-feedback">
           <span className="pa-feedback-ico"><MiniIcon name="loop" /></span>
           <div>
-            <h4>FEEDBACK LOOP</h4>
-            <p>New data, outcomes, and feedback continuously improve the system.</p>
+            <h4>{copy.feedbackTitle}</h4>
+            <p>{copy.feedbackCopy}</p>
           </div>
         </div>
         <div className="pa-return-path pa-tone-agent pa-return-agent" aria-hidden="true">
-          <span>Actions &amp; outcomes<br />in the world</span>
+          <span>{copy.outcomes}</span>
         </div>
       </div>
 
@@ -407,9 +453,9 @@ export default function PlatformArchitecture() {
         <div className="pa-core-head">
           <h3>Vane Core</h3>
           <div className="pa-runtime-pills">
-            <span><MiniIcon name="local" />Local Runtime</span>
+            <span><MiniIcon name="local" />{copy.local}</span>
             <b>+</b>
-            <span><MiniIcon name="ray" />Ray Runtime</span>
+            <span><MiniIcon name="ray" />{copy.ray}</span>
           </div>
         </div>
 
@@ -418,9 +464,9 @@ export default function PlatformArchitecture() {
             <div className="pa-core-feature" key={feature.title}>
               <div className="pa-core-feature-head">
                 <span className="pa-core-icon"><MiniIcon name={feature.icon} /></span>
-                <h4>{feature.title}</h4>
+                <h4>{pickLocale(locale, feature.title, feature.titleZh)}</h4>
               </div>
-              <p>{feature.copy}</p>
+              <p>{pickLocale(locale, feature.copy, feature.copyZh)}</p>
             </div>
           ))}
         </div>

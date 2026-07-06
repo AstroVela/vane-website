@@ -1,5 +1,6 @@
 import Box from './Box'
 import Eyebrow from './Eyebrow'
+import { pickLocale, useSiteLocale } from '../siteI18n'
 
 /* Site-native execution-timeline diagram: the shared multimodal pipeline is
    drawn once as a columnar flow, then Legacy and Vane execution are compared
@@ -7,7 +8,7 @@ import Eyebrow from './Eyebrow'
 
 /* The pipeline as a convergent left-to-right flow; each inner array is one
    column, arrows are drawn between columns. */
-const PIPELINE: string[][] = [
+const PIPELINE_EN: string[][] = [
   ['camera frames', 'LiDAR sweeps', 'radar returns', 'ego pose + calib'],
   ['decode frames', 'load sweeps'],
   ['time sync', 'ego-pose align'],
@@ -15,7 +16,16 @@ const PIPELINE: string[][] = [
   ['label + track', 'sample embed'],
 ]
 
-const PIPELINE_LABELS = ['inputs', 'decode', 'align', 'fuse', 'package']
+const PIPELINE_ZH: string[][] = [
+  ['camera frames', 'LiDAR sweeps', 'radar returns', 'ego pose + calib'],
+  ['解码 frames', '加载 sweeps'],
+  ['时间同步', 'ego-pose 对齐'],
+  ['传感器投影'],
+  ['标注 + 跟踪', '样本 embed'],
+]
+
+const PIPELINE_LABELS_EN = ['inputs', 'decode', 'align', 'fuse', 'package']
+const PIPELINE_LABELS_ZH = ['输入', '解码', '对齐', '融合', '打包']
 
 type Lane = {
   key: 'legacy' | 'vane'
@@ -26,7 +36,7 @@ type Lane = {
   gpuNote: string
 }
 
-const LANES: Lane[] = [
+const LANES_EN: Lane[] = [
   {
     key: 'legacy',
     name: 'Legacy Pipeline',
@@ -42,6 +52,25 @@ const LANES: Lane[] = [
     note: 'CPU decode, dynamic batching, and GPU inference stay overlapped.',
     gpuState: 'FULL',
     gpuNote: 'CPU and GPU overlap',
+  },
+]
+
+const LANES_ZH: Lane[] = [
+  {
+    key: 'legacy',
+    name: 'Legacy Pipeline',
+    mode: '串行等待',
+    note: 'GPU 工作要等 CPU 解码和完整片段组装完成后才开始。',
+    gpuState: 'IDLE',
+    gpuNote: '等待 CPU 阶段',
+  },
+  {
+    key: 'vane',
+    name: 'Vane Pipeline',
+    mode: '重叠流式执行',
+    note: 'CPU 解码、dynamic batching 和 GPU 推理保持重叠执行。',
+    gpuState: 'FULL',
+    gpuNote: 'CPU 与 GPU 重叠',
   },
 ]
 
@@ -64,27 +93,59 @@ function GpuCard({ lane }: { lane: Lane }) {
   )
 }
 
-function LegacyExecution() {
+function LegacyExecution({ locale }: { locale: ReturnType<typeof useSiteLocale> }) {
+  const copy = pickLocale(
+    locale,
+    {
+      aria: 'Legacy waits for the full clip before GPU inference',
+      waiting: 'waiting for full clip',
+      cpu: 'CPU decode',
+      gpu: 'GPU infer',
+    },
+    {
+      aria: 'Legacy 在 GPU 推理前等待完整片段',
+      waiting: '等待完整片段',
+      cpu: 'CPU 解码',
+      gpu: 'GPU 推理',
+    },
+  )
+
   return (
     <div className="tl-exec-main legacy">
-      <div className="tl-hold-status" aria-label="Legacy waits for the full clip before GPU inference">
-        <span>waiting for full clip</span>
+      <div className="tl-hold-status" aria-label={copy.aria}>
+        <span>{copy.waiting}</span>
         <i aria-hidden="true"><span /></i>
       </div>
       <div className="tl-work-row legacy">
-        <span className="tl-work-card cpu">CPU decode</span>
+        <span className="tl-work-card cpu">{copy.cpu}</span>
         <span className="tl-gap-dots" aria-hidden="true">
           <i /><i /><i />
         </span>
-        <span className="tl-work-card gpu">GPU infer</span>
+        <span className="tl-work-card gpu">{copy.gpu}</span>
       </div>
     </div>
   )
 }
 
-function VaneExecution() {
+function VaneExecution({ locale }: { locale: ReturnType<typeof useSiteLocale> }) {
+  const copy = pickLocale(
+    locale,
+    {
+      aria: 'Vane overlaps CPU decode, dynamic batching, and GPU inference',
+      cpu: 'CPU decode',
+      batch: 'dynamic batch',
+      gpu: 'GPU infer',
+    },
+    {
+      aria: 'Vane 重叠执行 CPU 解码、dynamic batching 和 GPU 推理',
+      cpu: 'CPU 解码',
+      batch: 'dynamic batch',
+      gpu: 'GPU 推理',
+    },
+  )
+
   return (
-    <div className="tl-exec-main vane" aria-label="Vane overlaps CPU decode, dynamic batching, and GPU inference">
+    <div className="tl-exec-main vane" aria-label={copy.aria}>
       <span className="tl-schedule-flow" aria-hidden="true">
         <i className="stream-a" />
         <i className="stream-b" />
@@ -92,27 +153,27 @@ function VaneExecution() {
         <i className="stream-d" />
       </span>
       <div className="tl-work-row overlap">
-        <span className="tl-work-card cpu">CPU decode</span>
+        <span className="tl-work-card cpu">{copy.cpu}</span>
         <span className="tl-work-card batch">
-          <span>dynamic batch</span>
+          <span>{copy.batch}</span>
           <i aria-hidden="true" />
         </span>
-        <span className="tl-work-card gpu">GPU infer</span>
+        <span className="tl-work-card gpu">{copy.gpu}</span>
       </div>
     </div>
   )
 }
 
-function ExecutionTimeline({ lane }: { lane: Lane }) {
+function ExecutionTimeline({ lane, locale }: { lane: Lane; locale: ReturnType<typeof useSiteLocale> }) {
   return (
     <div className={`tl-execution ${lane.key}`} aria-label={`${lane.name} execution timeline`}>
-      {lane.key === 'legacy' ? <LegacyExecution /> : <VaneExecution />}
+      {lane.key === 'legacy' ? <LegacyExecution locale={locale} /> : <VaneExecution locale={locale} />}
       <GpuCard lane={lane} />
     </div>
   )
 }
 
-function ExecutionPanel({ lane }: { lane: Lane }) {
+function ExecutionPanel({ lane, locale }: { lane: Lane; locale: ReturnType<typeof useSiteLocale> }) {
   return (
     <article className={`tl-lane ${lane.key}`}>
       <div className="tl-lane-head">
@@ -123,7 +184,7 @@ function ExecutionPanel({ lane }: { lane: Lane }) {
         </span>
       </div>
 
-      <ExecutionTimeline lane={lane} />
+      <ExecutionTimeline lane={lane} locale={locale} />
 
       <p className="tl-note">{lane.note}</p>
     </article>
@@ -131,32 +192,65 @@ function ExecutionPanel({ lane }: { lane: Lane }) {
 }
 
 export default function TrainingDataFactoryAnimation() {
+  const locale = useSiteLocale()
+  const copy = pickLocale(
+    locale,
+    {
+      aria: 'Execution timeline',
+      eyebrow: 'Execution timeline',
+      title: 'Legacy queues. Vane keeps the graph occupied.',
+      lead: 'The same multimodal training-data pipeline runs on both sides. Legacy execution builds queues between stages; Vane streams media, batches dynamically, and keeps GPU work fed.',
+      samePipeline: 'Same pipeline',
+      pipelineNote: 'Legacy and Vane run these same stages; the lanes below compare execution.',
+      imageAlt: 'Camera frame at an urban intersection',
+      caption: 'camera frame · ts 00:14.280',
+      stagesAria: 'Multimodal training-data pipeline stages',
+      lanes: LANES_EN,
+      pipeline: PIPELINE_EN,
+      labels: PIPELINE_LABELS_EN,
+    },
+    {
+      aria: '执行时间线',
+      eyebrow: '执行时间线',
+      title: 'Legacy 会排队等待。Vane 让 graph 持续运行。',
+      lead: '两侧运行的是同一条多模态训练数据 pipeline。Legacy 执行会在阶段之间形成队列；Vane 流式处理媒体、动态 batching，并让 GPU 持续有工作可做。',
+      samePipeline: '同一条 pipeline',
+      pipelineNote: 'Legacy 和 Vane 运行相同阶段；下方两条 lane 对比执行方式。',
+      imageAlt: '城市路口的相机帧',
+      caption: 'camera frame · ts 00:14.280',
+      stagesAria: '多模态训练数据 pipeline 阶段',
+      lanes: LANES_ZH,
+      pipeline: PIPELINE_ZH,
+      labels: PIPELINE_LABELS_ZH,
+    },
+  )
+
   return (
-    <section className="section training-data-factory" aria-label="Execution timeline">
+    <section className="section training-data-factory" aria-label={copy.aria}>
       <div className="wrap">
         <div className="shead">
-          <Eyebrow>Execution timeline</Eyebrow>
-          <h2 className="h2">Legacy queues. Vane keeps the graph occupied.</h2>
+          <Eyebrow>{copy.eyebrow}</Eyebrow>
+          <h2 className="h2">{copy.title}</h2>
           <p className="lead">
-            The same multimodal training-data pipeline runs on both sides. Legacy execution builds queues between stages; Vane streams media, batches dynamically, and keeps GPU work fed.
+            {copy.lead}
           </p>
         </div>
 
         <Box className="tl-board">
           <div className="tl-pipeline">
             <div className="tl-pipeline-head">
-              <span className="tl-kicker">Same pipeline</span>
-              <span className="tl-pipeline-note">Legacy and Vane run these same stages; the lanes below compare execution.</span>
+              <span className="tl-kicker">{copy.samePipeline}</span>
+              <span className="tl-pipeline-note">{copy.pipelineNote}</span>
             </div>
             <div className="tl-flow">
               <figure className="tl-sample">
-                <img src="/img/use-cases/hero-driving-intersection.webp" alt="Camera frame at an urban intersection" />
-                <figcaption>camera frame · ts 00:14.280</figcaption>
+                <img src="/img/use-cases/hero-driving-intersection.webp" alt={copy.imageAlt} />
+                <figcaption>{copy.caption}</figcaption>
               </figure>
-              <div className="tl-flow-main" aria-label="Multimodal training-data pipeline stages">
-                {PIPELINE.map((column, index) => (
-                  <div className="tl-flow-step" key={PIPELINE_LABELS[index]}>
-                    <span className="tl-mini-label">{PIPELINE_LABELS[index]}</span>
+              <div className="tl-flow-main" aria-label={copy.stagesAria}>
+                {copy.pipeline.map((column, index) => (
+                  <div className="tl-flow-step" key={copy.labels[index]}>
+                    <span className="tl-mini-label">{copy.labels[index]}</span>
                     <div className="tl-step-items">
                       {column.map((label) => (
                         <span className={index === 0 ? 'tl-chip' : 'tl-stage'} key={label}>
@@ -164,7 +258,7 @@ export default function TrainingDataFactoryAnimation() {
                         </span>
                       ))}
                     </div>
-                    {index < PIPELINE.length - 1 && <span className="tl-flow-arrow" aria-hidden="true">→</span>}
+                    {index < copy.pipeline.length - 1 && <span className="tl-flow-arrow" aria-hidden="true">→</span>}
                   </div>
                 ))}
               </div>
@@ -174,8 +268,8 @@ export default function TrainingDataFactoryAnimation() {
           <div className="tl-divider" aria-hidden="true" />
 
           <div className="tl-lanes">
-            {LANES.map((lane) => (
-              <ExecutionPanel lane={lane} key={lane.key} />
+            {copy.lanes.map((lane) => (
+              <ExecutionPanel lane={lane} locale={locale} key={lane.key} />
             ))}
           </div>
         </Box>

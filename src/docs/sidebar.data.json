@@ -1,10 +1,5 @@
 [
-  {
-    "group": "Overview",
-    "items": [
-      { "slug": "index", "label": "Docs Home" }
-    ]
-  },
+  { "slug": "index", "label": "Overview" },
   {
     "group": "Quickstart",
     "items": [

@@ -5,7 +5,8 @@
   "description": "Marketing and documentation site for Vane — a DuckDB-compatible engine for multimodal data pipelines on Ray.",
   "license": "Apache-2.0",
   "scripts": {
-    "dev": "docusaurus start",
+    "dev": "node scripts/dev.mjs",
+    "dev:en": "docusaurus start",
     "dev:zh-CN": "docusaurus start --locale zh-CN",
     "build": "docusaurus build",
     "docs:lint": "node scripts/docs-lint.mjs",

@@ -32,6 +32,8 @@ type DataSidebarItem =
       type: 'doc'
       id: string
       label: string
+      key?: string
+      className?: string
     }
   | {
       type: 'link'
@@ -70,12 +72,14 @@ function toSidebarItem(entry: DocsSidebarEntry): DataSidebarItem {
         type: 'doc',
         id: docIdForSlug(entry.slug),
         label: entry.label,
+        key: entry.label,
+        ...(entry.slug === 'index' && {className: 'docs-data-overview-link'}),
       }
     : docIdForSlug(entry.slug)
 }
 
 const sidebars: SidebarsConfig = {
-  dataSidebar: (docsSidebar as DocsSidebarGroup[]).map(toSidebarItem),
+  dataSidebar: (docsSidebar as DocsSidebarEntry[]).map(toSidebarItem),
 }
 
 export default sidebars

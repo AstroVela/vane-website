@@ -57,6 +57,7 @@ const config = {
     },
   ],
   plugins: [
+    require.resolve('./src/plugins/devServerWebSocketPath.ts'),
     [
       '@docusaurus/plugin-content-docs',
       {
@@ -77,7 +78,7 @@ const config = {
     },
     docs: {
       sidebar: {
-        autoCollapseCategories: true,
+        autoCollapseCategories: false,
       },
     },
     colorMode: {

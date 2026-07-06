@@ -110,13 +110,7 @@ export function sidebarSlugs(sidebar, sidebarPath, onError = () => {}) {
     return slugs
   }
 
-  for (const group of sidebar) {
-    if (!group || typeof group.group !== 'string' || !Array.isArray(group.items)) {
-      onError(sidebarPath, 0, 'Each sidebar group must have a group string and items array.')
-      continue
-    }
-    visit(group.items)
-  }
+  visit(sidebar)
   return slugs
 }
 
@@ -187,10 +181,7 @@ export function buildManifest({ root, registryPath, sidebarPath }) {
     return { label: entry.label, to: entry.to }
   }
 
-  const groups = sidebar.map((group) => ({
-    group: group.group,
-    items: group.items.map(manifestEntry),
-  }))
+  const sidebarEntries = sidebar.map(manifestEntry)
 
   const orderedSlugs = sidebarSlugs(sidebar, sidebarPath)
   const pagesInOrder = orderedSlugs.map((slug) => pageBySlug.get(slug)).filter(Boolean)
@@ -200,6 +191,6 @@ export function buildManifest({ root, registryPath, sidebarPath }) {
     routePrefix: docsRoutePrefix,
     generatedFrom: ['src/docs/registry.ts', 'src/docs/sidebar.data.json', 'docs/data/**/*.mdx'],
     pages: pagesInOrder,
-    sidebar: groups,
+    sidebar: sidebarEntries,
   }
 }

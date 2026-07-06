@@ -44,15 +44,15 @@ after(async () => {
   await fetch(`${webdriverUrl}/session/${sessionId}`, { method: 'DELETE' })
 })
 
-maybeTest('active docs sidebar groups can be collapsed by the reader', async () => {
+maybeTest('docs sidebar keeps sibling categories open when another one expands', async () => {
   await request(`/session/${sessionId}/url`, {
     url: `${docsUrl}/docs/data/guides/structured-transformation`,
   })
   await new Promise((resolve) => setTimeout(resolve, 1500))
 
   const initial = await execute(`
-    return Array.from(document.querySelectorAll('.side .gt')).map((button) => ({
-      text: button.textContent.trim().replace('▸', ''),
+    return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]')).map((button) => ({
+      text: button.textContent.trim(),
       expanded: button.getAttribute('aria-expanded'),
     }))
   `)
@@ -65,40 +65,38 @@ maybeTest('active docs sidebar groups can be collapsed by the reader', async () 
   )
 
   await execute(`
-    const button = Array.from(document.querySelectorAll('.side .gt'))
-      .find((el) => el.textContent.trim().replace('▸', '') === 'Guides')
+    const button = Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
+      .find((el) => el.textContent.trim() === 'Data Ingestion')
     button.click()
     return button.getAttribute('aria-expanded')
   `)
   await new Promise((resolve) => setTimeout(resolve, 50))
-  const guidesExpanded = await execute(`
-    return Array.from(document.querySelectorAll('.side .gt'))
-      .find((el) => el.textContent.trim().replace('▸', '') === 'Guides')
+  const dataIngestionExpanded = await execute(`
+    return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
+      .find((el) => el.textContent.trim() === 'Data Ingestion')
       .getAttribute('aria-expanded')
   `)
 
-  assert.equal(guidesExpanded, 'false')
+  assert.equal(dataIngestionExpanded, 'true')
 
   await execute(`
-    const button = Array.from(document.querySelectorAll('.side .gt'))
-      .find((el) => el.textContent.trim().replace('▸', '') === 'Guides')
+    const button = Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
+      .find((el) => el.textContent.trim() === 'AI & Inference')
     button.click()
     return button.getAttribute('aria-expanded')
   `)
   await new Promise((resolve) => setTimeout(resolve, 50))
-
-  await execute(`
-    const button = Array.from(document.querySelectorAll('.side .gt'))
-      .find((el) => el.textContent.trim().replace('▸', '') === 'Data Transformation')
-    button.click()
-    return button.getAttribute('aria-expanded')
-  `)
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  const transformationStillCollapsed = await execute(`
-    return Array.from(document.querySelectorAll('.side .gt'))
-      .find((el) => el.textContent.trim().replace('▸', '') === 'Data Transformation')
-      .getAttribute('aria-expanded')
+  const siblingStates = await execute(`
+    return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
+      .filter((el) => ['Data Ingestion', 'AI & Inference'].includes(el.textContent.trim()))
+      .map((el) => ({
+        text: el.textContent.trim(),
+        expanded: el.getAttribute('aria-expanded'),
+      }))
   `)
 
-  assert.equal(transformationStillCollapsed, 'false')
+  assert.deepEqual(siblingStates, [
+    { text: 'Data Ingestion', expanded: 'true' },
+    { text: 'AI & Inference', expanded: 'true' },
+  ])
 })

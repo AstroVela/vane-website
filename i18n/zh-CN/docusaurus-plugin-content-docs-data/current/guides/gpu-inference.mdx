@@ -4,7 +4,7 @@ title: GPU 推理
 
 当你需要批量将多模态或文本数据交给本地或私有 LLM 推理时，请使用 GPU Inference。典型输入包括抽取后的文档、字幕、转写文本、标签，或前序 Vane 阶段准备好的提示词行。
 
-本指南聚焦 Vane 中用于 batch 提示词推理的 vLLM 路径。对于不依赖 vLLM 的通用 GPU 模型代码，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。
+本指南聚焦 Vane 中用于 batch 提示词推理的 vLLM 路径。对于不依赖 vLLM 的通用 GPU 模型代码，请使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
 
 常见 workflow 如下：
 
@@ -289,4 +289,4 @@ Vane 为原生 vLLM 引擎调度器应用面向吞吐量的默认值，你可以
 
 它也不是生产服务指南，不覆盖自动扩缩容、SLA、流量管理、在线请求路由或长期运行服务的运维。
 
-对于非 vLLM GPU 模型、自定义分词器、多模态预处理，或完整的自定义输出 schema，请使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。对于托管 provider 的提示词调用和小型 AI 增强任务，请使用 [AI Functions](/zh-CN/docs/data/guides/ai-functions)。
+对于非 vLLM GPU 模型、自定义分词器、多模态预处理，或完整的自定义输出 schema，请使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。对于托管 provider 的提示词调用和小型 AI 增强任务，请使用 [AI 函数](/zh-CN/docs/data/guides/ai-functions)。
