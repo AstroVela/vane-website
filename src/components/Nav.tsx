@@ -6,7 +6,8 @@ import { cx } from './cx'
 import Mark from './Mark'
 import ProductGlyph from '../docs/ProductGlyph'
 import CommandPalette from './CommandPalette'
-import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
+import { PRODUCT_ORDER, PRODUCTS, productTagline } from '../docs/products'
+import { pickLocale, useSiteLocale } from '../siteI18n'
 import { useGitHubStars } from './useGitHubStars'
 import { DISCORD_URL, GITHUB_REPO, GITHUB_URL } from '../siteLinks'
 
@@ -74,6 +75,7 @@ export default function Nav({
   withSearch = false,
   withCta = true,
 }: NavProps) {
+  const locale = useSiteLocale()
   const {
     i18n: { currentLocale },
   } = useDocusaurusContext()
@@ -142,10 +144,61 @@ export default function Nav({
     return () => document.removeEventListener('keydown', onKey)
   }, [withSearch])
 
+  const copy = pickLocale(
+    locale,
+    {
+      getStarted: 'Get Started',
+      solutions: 'Solutions',
+      trainingTitle: 'Multimodal Data Pipeline',
+      trainingDesc: 'Prepare multimodal data for training — large-scale SQL + Python UDF preprocessing.',
+      trainingMeta: 'For Training · Data / ML teams →',
+      agentTitle: 'Enterprise Multimodal Agent',
+      agentDesc: 'Multimodal agents for the enterprise — a production-grade data backend.',
+      agentMeta: 'For Enterprise · Platform / App teams →',
+      benchmarks: 'Benchmarks',
+      docs: 'Docs',
+      platform: 'Vane platform',
+      soon: 'SOON',
+      resources: 'Resources',
+      blog: 'Blog',
+      releaseNotes: 'Release Notes',
+      searchDocs: 'Search the docs',
+      joinDiscord: 'Join our Discord',
+      star: 'Star',
+      contact: 'Contact us',
+      closeMenu: 'Close menu',
+      openMenu: 'Open menu',
+      mobileTraining: 'Autonomous Driving / Physical AI',
+    },
+    {
+      getStarted: '开始使用',
+      solutions: '解决方案',
+      trainingTitle: '多模态数据流水线',
+      trainingDesc: '为模型训练准备多模态数据：大规模 SQL 与 Python UDF 预处理。',
+      trainingMeta: '面向训练 · 数据 / ML 团队 →',
+      agentTitle: '企业多模态 Agent',
+      agentDesc: '面向企业多模态 Agent 的生产级数据后端。',
+      agentMeta: '面向企业 · 平台 / 应用团队 →',
+      benchmarks: '基准测试',
+      docs: '文档',
+      platform: 'Vane 平台',
+      soon: '即将推出',
+      resources: '资源',
+      blog: '博客',
+      releaseNotes: '发布说明',
+      searchDocs: '搜索文档',
+      joinDiscord: '加入 Discord',
+      star: '加星',
+      contact: '联系我们',
+      closeMenu: '关闭菜单',
+      openMenu: '打开菜单',
+      mobileTraining: '自动驾驶 / Physical AI',
+    },
+  )
   const ctaClass = cx('btn btn-solid btn-sm', ctaReveal && 'nav-cta', ctaReveal && show && 'show')
   const ctaInner = (
     <>
-      Get Started <span className="ar">→</span>
+      {copy.getStarted} <span className="ar">→</span>
     </>
   )
 
@@ -169,7 +222,7 @@ export default function Nav({
               aria-expanded={mmOpen}
               onClick={() => setMmOpen((v) => !v)}
             >
-              Solutions
+              {copy.solutions}
               <span className="caret">▾</span>
             </button>
             {mmOpen && (
@@ -181,12 +234,11 @@ export default function Nav({
                         <PipelineIcon />
                       </span>
                       <span>
-                        <span className="mt">Multimodal Data Pipeline</span>
+                        <span className="mt">{copy.trainingTitle}</span>
                         <span className="md">
-                          Prepare multimodal data for training — large-scale SQL + Python UDF
-                          preprocessing.
+                          {copy.trainingDesc}
                         </span>
-                        <span className="mg">For Training · Data / ML teams →</span>
+                        <span className="mg">{copy.trainingMeta}</span>
                       </span>
                     </Link>
                     <Link className="mega-it" to="/use-cases/enterprise-agent" onClick={() => setMmOpen(false)}>
@@ -194,11 +246,11 @@ export default function Nav({
                         <AgentIcon />
                       </span>
                       <span>
-                        <span className="mt">Enterprise Multimodal Agent</span>
+                        <span className="mt">{copy.agentTitle}</span>
                         <span className="md">
-                          Multimodal agents for the enterprise — a production-grade data backend.
+                          {copy.agentDesc}
                         </span>
-                        <span className="mg">For Enterprise · Platform / App teams →</span>
+                        <span className="mg">{copy.agentMeta}</span>
                       </span>
                     </Link>
                   </div>
@@ -207,7 +259,7 @@ export default function Nav({
             )}
           </div>
 
-          <Link to="/benchmarks">Benchmarks</Link>
+          <Link to="/benchmarks">{copy.benchmarks}</Link>
 
           <div
             className={cx('nav-dd', dOpen && 'open')}
@@ -220,13 +272,13 @@ export default function Nav({
               aria-expanded={dOpen}
               onClick={() => setDOpen((v) => !v)}
             >
-              Docs
+              {copy.docs}
               <span className="caret">▾</span>
             </button>
             {dOpen && (
               <div className="dd-pan mega-pan">
                 <div className="dd-card prod-menu">
-                  <div className="prod-menu-eyebrow">Vane platform</div>
+                  <div className="prod-menu-eyebrow">{copy.platform}</div>
                   {PRODUCT_ORDER.map((id) => {
                     const p = PRODUCTS[id]
                     const soon = p.status === 'soon'
@@ -243,9 +295,9 @@ export default function Nav({
                         <span>
                           <span className="mt">
                             {p.name}
-                            {soon && <span className="soon-pill">SOON</span>}
+                            {soon && <span className="soon-pill">{copy.soon}</span>}
                           </span>
-                          <span className="md">{p.tagline}</span>
+                          <span className="md">{productTagline(p, locale)}</span>
                         </span>
                       </Link>
                     )
@@ -266,14 +318,14 @@ export default function Nav({
               aria-expanded={rOpen}
               onClick={() => setROpen((v) => !v)}
             >
-              Resources
+              {copy.resources}
               <span className="caret">▾</span>
             </button>
             {rOpen && (
               <div className="dd-pan res-pan">
                 <div className="dd-card ddrop">
                   <Link to="/blog" onClick={() => setROpen(false)}>
-                    Blog <span className="ar">→</span>
+                    {copy.blog} <span className="ar">→</span>
                   </Link>
                   <a
                     href={`${GITHUB_URL}/releases`}
@@ -281,7 +333,7 @@ export default function Nav({
                     rel="noreferrer"
                     onClick={() => setROpen(false)}
                   >
-                    Release Notes <span className="ar">→</span>
+                    {copy.releaseNotes} <span className="ar">→</span>
                   </a>
                 </div>
               </div>
@@ -293,24 +345,24 @@ export default function Nav({
             <button
               type="button"
               className="nav-search"
-              aria-label="Search the docs"
+              aria-label={copy.searchDocs}
               aria-keyshortcuts="Meta+K Control+K"
               onClick={() => setCmdkOpen(true)}
             >
               <span className="si">⌕</span>
-              <span className="sl">Search the docs</span>
+              <span className="sl">{copy.searchDocs}</span>
               <span className="kbd">⌘K</span>
             </button>
           )}
-          <a className="nav-discord" href={DISCORD_URL} target="_blank" rel="noreferrer" aria-label="Join our Discord">
+          <a className="nav-discord" href={DISCORD_URL} target="_blank" rel="noreferrer" aria-label={copy.joinDiscord}>
             <DiscordIcon />
           </a>
           <a className="ghp" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GitHubIcon />
-            <span>Star</span>
+            <span>{copy.star}</span>
             {stars && <b>{stars}</b>}
           </a>
-          <Link className="nav-contact" to="/contact">Contact us</Link>
+          <Link className="nav-contact" to="/contact">{copy.contact}</Link>
           <button type="button" className="nav-locale" onClick={switchLocale}>{localeLabel}</button>
           {withCta &&
             (ctaHref ? (
@@ -325,7 +377,7 @@ export default function Nav({
           <button
             type="button"
             className={cx('nav-burger', mobOpen && 'open')}
-            aria-label={mobOpen ? 'Close menu' : 'Open menu'}
+            aria-label={mobOpen ? copy.closeMenu : copy.openMenu}
             aria-expanded={mobOpen}
             onClick={() => setMobOpen((v) => !v)}
           >
@@ -340,26 +392,26 @@ export default function Nav({
           <div className="wrap">
             <div className="mob-sec">
               <Link className="mob-head" to="/use-cases" onClick={() => setMobOpen(false)}>
-                Solutions
+                {copy.solutions}
               </Link>
               <Link className="mob-sub" to="/use-cases/training" onClick={() => setMobOpen(false)}>
-                Autonomous Driving / Physical AI
+                {copy.mobileTraining}
               </Link>
               <Link
                 className="mob-sub"
                 to="/use-cases/enterprise-agent"
                 onClick={() => setMobOpen(false)}
               >
-                Enterprise Multimodal Agent
+                {copy.agentTitle}
               </Link>
             </div>
             <div className="mob-sec">
               <Link className="mob-head" to="/benchmarks" onClick={() => setMobOpen(false)}>
-                Benchmarks
+                {copy.benchmarks}
               </Link>
             </div>
             <div className="mob-sec">
-              <span className="mob-label">Docs</span>
+              <span className="mob-label">{copy.docs}</span>
               {PRODUCT_ORDER.map((id) => {
                 const p = PRODUCTS[id]
                 const soon = p.status === 'soon'
@@ -371,18 +423,18 @@ export default function Nav({
                     onClick={() => setMobOpen(false)}
                   >
                     {p.name}
-                    {soon && <span className="soon-pill">SOON</span>}
+                    {soon && <span className="soon-pill">{copy.soon}</span>}
                   </Link>
                 )
               })}
             </div>
             <div className="mob-sec">
-              <span className="mob-label">Resources</span>
+              <span className="mob-label">{copy.resources}</span>
               <Link className="mob-sub" to="/blog" onClick={() => setMobOpen(false)}>
-                Blog
+                {copy.blog}
               </Link>
               <Link className="mob-sub" to="/contact" onClick={() => setMobOpen(false)}>
-                Contact us
+                {copy.contact}
               </Link>
               <a
                 className="mob-sub"
@@ -391,7 +443,7 @@ export default function Nav({
                 rel="noreferrer"
                 onClick={() => setMobOpen(false)}
               >
-                Release Notes
+                {copy.releaseNotes}
               </a>
             </div>
             <div className="mob-sec">

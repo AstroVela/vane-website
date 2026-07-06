@@ -5,60 +5,64 @@ import { LEGACY_DOC_SLUG_LIST } from '../docs/legacySlugs'
 // import the React/MDX registry. Data docs are owned by content-docs; agent
 // and rl still render a coming-soon teaser at `/docs/<product>`.
 
-const vaneRoutesPlugin: PluginModule = () => {
+function localizedPath(baseUrl: string, path: string) {
+  if (path === '/') return baseUrl
+  return `/${[baseUrl, path].join('/').split('/').filter(Boolean).join('/')}`
+}
+
+const vaneRoutesPlugin: PluginModule = (context) => {
   return {
     name: 'vane-routes',
     contentLoaded({ actions }) {
       const { addRoute } = actions
+      const routePath = (path: string) => localizedPath(context.baseUrl, path)
 
       addRoute({
-        path: '/',
+        path: routePath('/'),
         component: '@site/src/pages/Home.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/use-cases',
+        path: routePath('/use-cases'),
         component: '@site/src/pages/UseCases.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/use-cases/training',
+        path: routePath('/use-cases/training'),
         component: '@site/src/pages/TrainingUseCase.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/use-cases/enterprise-agent',
+        path: routePath('/use-cases/enterprise-agent'),
         component: '@site/src/pages/EnterpriseAgentUseCase.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/benchmarks',
+        path: routePath('/benchmarks'),
         component: '@site/src/pages/Benchmarks.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/blog',
+        path: routePath('/blog'),
         component: '@site/src/pages/Blog.tsx',
         exact: true,
       })
 
       addRoute({
-        path: '/contact',
+        path: routePath('/contact'),
         component: '@site/src/pages/Contact.tsx',
         exact: true,
       })
 
       const docsRoute = (path: string) =>
-        addRoute({ path, component: '@site/src/pages/Docs.tsx', exact: true })
+        addRoute({ path: routePath(path), component: '@site/src/pages/Docs.tsx', exact: true })
 
-      ;['data'].forEach((product) => {
-        LEGACY_DOC_SLUG_LIST.forEach((slug) => docsRoute(`/docs/${product}/${slug}`))
-      })
+      LEGACY_DOC_SLUG_LIST.forEach((slug) => docsRoute(`/docs/data/${slug}`))
       LEGACY_DOC_SLUG_LIST.forEach((slug) => docsRoute(`/docs/${slug}`))
 
       docsRoute('/docs/agent')

@@ -254,14 +254,9 @@
   ],
   "sidebar": [
     {
-      "group": "Overview",
-      "items": [
-        {
-          "slug": "index",
-          "label": "Docs Home",
-          "route": "/docs/data"
-        }
-      ]
+      "slug": "index",
+      "label": "Overview",
+      "route": "/docs/data"
     },
     {
       "group": "Quickstart",

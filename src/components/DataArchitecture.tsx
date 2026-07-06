@@ -1,4 +1,5 @@
 import Box from './Box'
+import { pickLocale, useSiteLocale } from '../siteI18n'
 
 /* Vane Data overview: multimodal inputs -> the Vane Data engine -> model-ready
    outputs, over the shared Vane Core runtime panel. A Data-scoped companion to
@@ -29,52 +30,67 @@ type IconName =
   | 'local'
   | 'ray'
 
-const INPUTS: Array<{ icon: IconName; label: string }> = [
-  { icon: 'sensors', label: 'Sensors' },
-  { icon: 'table', label: 'Tables' },
-  { icon: 'document', label: 'Documents' },
-  { icon: 'image', label: 'Images' },
-  { icon: 'video', label: 'Video' },
-  { icon: 'audio', label: 'Audio' },
-  { icon: 'events', label: 'Events' },
-  { icon: 'embeddings', label: 'Embeddings' },
+const INPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
+  { icon: 'sensors', label: 'Sensors', labelZh: '传感器' },
+  { icon: 'table', label: 'Tables', labelZh: '表格' },
+  { icon: 'document', label: 'Documents', labelZh: '文档' },
+  { icon: 'image', label: 'Images', labelZh: '图像' },
+  { icon: 'video', label: 'Video', labelZh: '视频' },
+  { icon: 'audio', label: 'Audio', labelZh: '音频' },
+  { icon: 'events', label: 'Events', labelZh: '事件' },
+  { icon: 'embeddings', label: 'Embeddings', labelZh: 'Embedding' },
 ]
 
-const OUTPUTS: Array<{ icon: IconName; label: string }> = [
-  { icon: 'cube', label: 'Model-ready Multimodal Assets' },
-  { icon: 'folder', label: 'Grounded Context Packages' },
-  { icon: 'list', label: 'Agent Actions & Recommendations' },
-  { icon: 'loop', label: 'Trajectory & Learning Updates' },
+const OUTPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
+  { icon: 'cube', label: 'Model-ready Multimodal Assets', labelZh: '模型可用的多模态资产' },
+  { icon: 'folder', label: 'Grounded Context Packages', labelZh: '有来源依据的上下文包' },
+  { icon: 'list', label: 'Agent Actions & Recommendations', labelZh: 'Agent 动作与建议' },
+  { icon: 'loop', label: 'Trajectory & Learning Updates', labelZh: 'Trajectory 与学习更新' },
 ]
 
-const STAGES = ['Ingest', 'Parse', 'Transform', 'Infer', 'Enrich', 'Package']
-
-const CAPABILITIES: Array<{ icon: IconName; title: string; art: ArtName }> = [
-  { icon: 'model', title: 'Native Multimodal Data Model', art: 'modalities' },
-  { icon: 'graph', title: 'Compute + Inference Operator Graph', art: 'operators' },
-  { icon: 'chip', title: 'Parallel CPU-GPU-IO Execution', art: 'compute' },
-  { icon: 'cloud', title: 'Edge-to-Cloud Deployment', art: 'edge' },
+const STAGES = [
+  { label: 'Ingest', labelZh: '加载' },
+  { label: 'Parse', labelZh: '解析' },
+  { label: 'Transform', labelZh: '转换' },
+  { label: 'Infer', labelZh: '推理' },
+  { label: 'Enrich', labelZh: '增强' },
+  { label: 'Package', labelZh: '打包' },
 ]
 
-const CORE_FEATURES: Array<{ title: string; copy: string; icon: IconName }> = [
+const CAPABILITIES: Array<{ icon: IconName; title: string; titleZh: string; art: ArtName }> = [
+  { icon: 'model', title: 'Native Multimodal Data Model', titleZh: '原生多模态数据模型', art: 'modalities' },
+  { icon: 'graph', title: 'Compute + Inference Operator Graph', titleZh: '计算 + 推理算子图', art: 'operators' },
+  { icon: 'chip', title: 'Parallel CPU-GPU-IO Execution', titleZh: '并行 CPU-GPU-IO 执行', art: 'compute' },
+  { icon: 'cloud', title: 'Edge-to-Cloud Deployment', titleZh: '端到云部署', art: 'edge' },
+]
+
+const CORE_FEATURES: Array<{ title: string; titleZh: string; copy: string; copyZh: string; icon: IconName }> = [
   {
     title: 'Unified Multimodal Data Type',
+    titleZh: '统一的多模态数据类型',
     copy: 'Sensors, metadata, lineage, and model artifacts under one execution semantics.',
+    copyZh: '传感器、元数据、lineage 和模型 artifact 使用同一套执行语义。',
     icon: 'layers',
   },
   {
     title: 'Streaming + Backpressure + Dynamic Batching',
+    titleZh: 'Streaming + Backpressure + Dynamic Batching',
     copy: 'Continuous flow for large objects with adaptive batching and pressure control.',
+    copyZh: '让大对象持续流动，并通过自适应 batching 和压力控制保持稳定。',
     icon: 'stream',
   },
   {
     title: 'Overlapped Heterogeneous Execution',
+    titleZh: '重叠的异构执行',
     copy: 'CPU, GPU, IO, and model inference overlap through asynchronous scheduling.',
+    copyZh: '通过异步调度重叠 CPU、GPU、IO 和模型推理。',
     icon: 'chip',
   },
   {
     title: 'Edge-Cloud Coordination',
+    titleZh: '端云协同',
     copy: 'The same pipeline runs across local devices and Ray clusters.',
+    copyZh: '同一条 pipeline 可运行在本地设备和 Ray 集群上。',
     icon: 'cloud',
   },
 ]
@@ -350,11 +366,28 @@ function DataMesh() {
 }
 
 export default function DataArchitecture() {
+  const locale = useSiteLocale()
+  const copy = pickLocale(
+    locale,
+    {
+      inputs: 'Multimodal Inputs',
+      outputs: 'Outputs / Outcomes',
+      local: 'Local Runtime',
+      ray: 'Ray Runtime',
+    },
+    {
+      inputs: '多模态输入',
+      outputs: '输出 / 结果',
+      local: '本地 Runtime',
+      ray: 'Ray Runtime',
+    },
+  )
+
   return (
     <Box className="data-arch">
       <div className="da-labels">
-        <span className="da-label">Multimodal Inputs</span>
-        <span className="da-label da-label-end">Outputs / Outcomes</span>
+        <span className="da-label">{copy.inputs}</span>
+        <span className="da-label da-label-end">{copy.outputs}</span>
       </div>
 
       <div className="da-flow">
@@ -362,7 +395,7 @@ export default function DataArchitecture() {
           {INPUTS.map((item) => (
             <div className="da-io-card" key={item.label}>
               <span className="da-io-ic"><Icon name={item.icon} /></span>
-              <span className="da-io-label">{item.label}</span>
+              <span className="da-io-label">{pickLocale(locale, item.label, item.labelZh)}</span>
             </div>
           ))}
         </div>
@@ -378,7 +411,7 @@ export default function DataArchitecture() {
                 {CAPABILITIES.map((cap) => (
                   <div className="da-cap" key={cap.title}>
                     <span className="da-cap-ic"><Icon name={cap.icon} /></span>
-                    <span className="da-cap-title">{cap.title}</span>
+                    <span className="da-cap-title">{pickLocale(locale, cap.title, cap.titleZh)}</span>
                     <CapabilityArt name={cap.art} />
                   </div>
                 ))}
@@ -386,7 +419,7 @@ export default function DataArchitecture() {
             </div>
             <div className="da-stages">
               {STAGES.map((stage) => (
-                <span key={stage}>{stage}</span>
+                <span key={stage.label}>{pickLocale(locale, stage.label, stage.labelZh)}</span>
               ))}
             </div>
           </div>
@@ -398,7 +431,7 @@ export default function DataArchitecture() {
           {OUTPUTS.map((item) => (
             <div className="da-io-card" key={item.label}>
               <span className="da-io-ic"><Icon name={item.icon} /></span>
-              <span className="da-io-label">{item.label}</span>
+              <span className="da-io-label">{pickLocale(locale, item.label, item.labelZh)}</span>
             </div>
           ))}
         </div>
@@ -408,9 +441,9 @@ export default function DataArchitecture() {
         <div className="pa-core-head">
           <h3>Vane Core</h3>
           <div className="pa-runtime-pills">
-            <span><Icon name="local" />Local Runtime</span>
+            <span><Icon name="local" />{copy.local}</span>
             <b>+</b>
-            <span><Icon name="ray" />Ray Runtime</span>
+            <span><Icon name="ray" />{copy.ray}</span>
           </div>
         </div>
 
@@ -419,9 +452,9 @@ export default function DataArchitecture() {
             <div className="pa-core-feature" key={feature.title}>
               <div className="pa-core-feature-head">
                 <span className="pa-core-icon"><Icon name={feature.icon} /></span>
-                <h4>{feature.title}</h4>
+                <h4>{pickLocale(locale, feature.title, feature.titleZh)}</h4>
               </div>
-              <p>{feature.copy}</p>
+              <p>{pickLocale(locale, feature.copy, feature.copyZh)}</p>
             </div>
           ))}
         </div>

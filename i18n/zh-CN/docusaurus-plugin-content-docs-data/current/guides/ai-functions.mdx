@@ -4,7 +4,7 @@ title: AI 函数
 
 Vane Data 面向多模态 AI 工作负载设计。AI Function 让你能直接在数据上运行模型：生成 embedding、做文本分类，或调用大语言模型、多模态模型。
 
-对于 embedding、文本分类和提示词调用等常见任务，AI Function 是合适的起点。当主要工作是对大量文档分块并生成 embedding 时，使用 [Embeddings at Scale](/zh-CN/docs/data/guides/embeddings-at-scale)。对于 vLLM 或 GPU 加速的 batch 提示词调用，使用 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。当你需要完全控制模型加载、重试、输出 schema、预处理或逐行错误列时，使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。
+对于 embedding、文本分类和提示词调用等常见任务，AI Function 是合适的起点。当主要工作是对大量文档分块并生成 embedding 时，使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)。对于 vLLM 或 GPU 加速的 batch 提示词调用，使用 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。当你需要完全控制模型加载、重试、输出 schema、预处理或逐行错误列时，使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
 
 ## 输入 relation
 
@@ -61,7 +61,7 @@ with_output = con.from_arrow(
 
 ## Embed Text
 
-当每个输入行都应该获得一个向量时，使用 `embed_text`。对于长文档，先做分块，并使用 [Embeddings at Scale](/zh-CN/docs/data/guides/embeddings-at-scale)。
+当每个输入行都应该获得一个向量时，使用 `embed_text`。对于长文档，先做分块，并使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)。
 
 ```python
 embedding_only = source.embed_text(
@@ -198,7 +198,7 @@ reviewed = con.from_arrow(
 | --- | --- | --- |
 | 托管 provider | 需要托管模型，并且可以使用外部 API 调用。 | 凭证、成本、延迟、速率限制，以及 provider 专用的输出行为。 |
 | 本地模型 | 需要基于已安装模型库的本地执行。 | 模型下载、依赖版本、内存使用，以及 actor 初始化时间。 |
-| vLLM 或 GPU 模型 | 需要 GPU 加速的提示词吞吐量或私有 LLM 推理。 | vLLM 路径和 GPU 专用调优请参考 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。 |
+| vLLM 或 GPU 模型 | 需要 GPU 加速的提示词吞吐量或私有 LLM 推理。 | vLLM 路径和 GPU 专用调优请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。 |
 
 建议显式设置的最小配置：
 
@@ -212,6 +212,6 @@ reviewed = con.from_arrow(
 
 ## 下一步
 
-- 使用 [Embeddings at Scale](/zh-CN/docs/data/guides/embeddings-at-scale) 处理文档分块、稳定的分块 ID、embedding 输出 schema，以及更大规模的 embedding 作业。
-- 使用 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference) 处理基于 vLLM 的提示词 batch、GPU actor 复用和 Ray GPU 执行。
-- 当 AI Function 范围过窄，或输出必须由一个 batch 函数同时包含 ID、源字段、状态、错误和模型输出时，使用 [Custom Python UDFs](/zh-CN/docs/data/guides/custom-python-udfs)。
+- 使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale) 处理文档分块、稳定的分块 ID、embedding 输出 schema，以及更大规模的 embedding 作业。
+- 使用 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference) 处理基于 vLLM 的提示词 batch、GPU actor 复用和 Ray GPU 执行。
+- 当 AI Function 范围过窄，或输出必须由一个 batch 函数同时包含 ID、源字段、状态、错误和模型输出时，使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。

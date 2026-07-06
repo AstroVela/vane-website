@@ -196,6 +196,592 @@ table.dt td:first-child { color: var(--ink); }
 @media (max-width: 1080px){ .docs { --docs-sidebar-w: 240px; grid-template-columns: var(--docs-sidebar-w) minmax(0,1fr); padding-right: 0; } .toc { display:none; } }
 @media (max-width: 800px){ .docs { grid-template-columns: 1fr; padding: 0; } .side { display:none; } .doc { padding: 30px 22px 80px; } .doc-meta { align-items: flex-start; flex-direction: column; } .doc-updated { text-align: left; } }
 
+/* Docusaurus docs keeps the #10 content/i18n pipeline, while these rules
+   restore the pre-#10 custom docs surface for /docs/data pages. */
+[class*="docsWrapper"],
+[class*="docRoot"],
+main[class*="docMainContainer"] {
+  background-color: var(--paper);
+}
+
+@media (min-width: 997px) {
+  .theme-doc-sidebar-container[class*="docSidebarContainer"] {
+    --doc-sidebar-width: var(--docs-sidebar-w, 280px);
+    width: var(--docs-sidebar-w, 280px);
+    margin-top: 0;
+    border-right: 1.5px solid var(--line);
+  }
+
+  .theme-doc-sidebar-container > [class*="sidebarViewport"] {
+    position: sticky;
+    top: 58px;
+    height: calc(100vh - 58px);
+    max-height: calc(100vh - 58px);
+    overflow-y: auto;
+  }
+
+  .theme-doc-sidebar-container [class*="sidebar_"] {
+    height: 100%;
+    padding-top: 0;
+  }
+
+  main[class*="docMainContainer"] {
+    max-width: calc(100% - var(--docs-sidebar-w, 280px));
+  }
+
+  main[class*="docMainContainer"] > .container {
+    max-width: none;
+    margin: 0;
+    padding: 0 var(--docs-right-gutter, 24px) 0 0 !important;
+  }
+
+  main[class*="docMainContainer"] .docs-data-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--docs-toc-w, 200px);
+    margin: 0;
+  }
+
+  main[class*="docMainContainer"] .docs-data-row > .col {
+    padding: 0;
+  }
+
+  main[class*="docMainContainer"] .docs-data-doc-col {
+    max-width: none !important;
+    min-width: 0;
+  }
+
+  main[class*="docMainContainer"] .docs-data-toc-col {
+    width: var(--docs-toc-w, 200px);
+    max-width: var(--docs-toc-w, 200px);
+  }
+}
+
+.theme-doc-sidebar-container .docs-data-menu {
+  padding: 26px 20px 50px;
+  font-weight: 400;
+}
+
+.theme-doc-sidebar-container .prod {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.theme-doc-sidebar-container .prod-ic {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-2);
+}
+
+.theme-doc-sidebar-container .prod-name {
+  font-weight: 700;
+  font-size: 14.5px;
+  letter-spacing: -0.02em;
+}
+
+.theme-doc-sidebar-container .menu__list {
+  margin: 0;
+  padding-left: 0;
+}
+
+.theme-doc-sidebar-container .menu__list .menu__list {
+  margin: 1px 0 10px 15px;
+  padding-left: 9px;
+  border-left: 1.5px solid var(--line-2);
+}
+
+.theme-doc-sidebar-container .menu__list .menu__list .menu__list {
+  margin: 0 0 7px 13px;
+  padding-left: 8px;
+}
+
+.theme-doc-sidebar-container .menu__list-item:not(:first-child) {
+  margin-top: 1px;
+}
+
+.theme-doc-sidebar-container .menu__list-item-collapsible {
+  border-radius: var(--r);
+}
+
+.theme-doc-sidebar-container .menu__list-item-collapsible:hover,
+.theme-doc-sidebar-container .menu__link:hover {
+  background: var(--paper-2) !important;
+}
+
+.theme-doc-sidebar-container .menu__list-item-collapsible--active {
+  background: transparent;
+}
+
+.theme-doc-sidebar-container .menu__link,
+.theme-doc-sidebar-container .menu__caret {
+  border-radius: var(--r);
+}
+
+.theme-doc-sidebar-container .menu__link {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 6px 9px;
+  text-decoration: none;
+  border: 1.5px solid transparent;
+}
+
+.theme-doc-sidebar-container .menu__link:hover {
+  color: var(--ink);
+}
+
+.theme-doc-sidebar-container .docs-data-overview-link > .menu__link {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: normal;
+  text-transform: uppercase;
+  padding: 8px;
+}
+
+html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .docs-data-overview-link > .menu__link {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.theme-doc-sidebar-container .menu__link--active:not(.menu__link--sublist) {
+  border-color: var(--line);
+  background: var(--paper-2) !important;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.theme-doc-sidebar-container .menu__link--active:hover {
+  color: var(--ink);
+}
+
+.theme-doc-sidebar-container .menu__link--sublist {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: normal;
+  text-transform: uppercase;
+  padding: 8px;
+}
+
+html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .menu__link--sublist {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.theme-doc-sidebar-container .menu__list .menu__list .menu__link--sublist {
+  color: var(--ink-2);
+  font-size: 13.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 6px 8px;
+}
+
+html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .menu__list .menu__list .menu__link--sublist {
+  font-size: 14px;
+}
+
+.theme-doc-sidebar-container .menu__link--sublist.menu__link--active {
+  background: transparent !important;
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.theme-doc-sidebar-container .menu__link--sublist-caret::after {
+  width: 9px;
+  min-width: 9px;
+  height: 9px;
+  margin-left: auto;
+  background-size: 18px 18px;
+  opacity: 0.55;
+}
+
+main[class*="docMainContainer"] .doc {
+  padding: 40px var(--docs-content-pad, 44px) 100px;
+  min-width: 0;
+}
+
+.theme-doc-markdown.markdown {
+  --docs-prose-w: min(100%, 1420px);
+  --docs-media-w: var(--docs-prose-w);
+  color: var(--ink-2);
+}
+
+.theme-doc-markdown.markdown > *:first-child {
+  margin-top: 0;
+}
+
+.theme-doc-markdown.markdown h1.dh {
+  font-size: clamp(30px,3.6vw,42px);
+  line-height: 1.06;
+  margin: 12px 0 0;
+  letter-spacing: -0.02em;
+}
+
+.theme-doc-markdown.markdown h2.ds {
+  font-size: 22px;
+  margin: 40px 0 0;
+  padding-top: 14px;
+  scroll-margin-top: 74px;
+  letter-spacing: -0.015em;
+}
+
+.theme-doc-markdown.markdown h3.dss {
+  font-size: 16px;
+  margin: 26px 0 0;
+  scroll-margin-top: 74px;
+}
+
+.theme-doc-markdown.markdown p {
+  font-size: 14.5px;
+  line-height: 1.66;
+  color: var(--ink-2);
+  max-width: var(--docs-prose-w);
+  margin: 12px 0 0;
+}
+
+.theme-doc-markdown.markdown .dintro {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 14px 0 0;
+  max-width: var(--docs-prose-w);
+}
+
+.theme-doc-markdown.markdown .term {
+  margin: 18px 0 0;
+  max-width: var(--docs-media-w);
+}
+
+.theme-doc-markdown.markdown a.dlink {
+  color: var(--accent);
+  text-decoration: none;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+
+.theme-doc-markdown.markdown a.dlink:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.theme-doc-markdown.markdown ul.dl {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  max-width: var(--docs-prose-w);
+}
+
+.theme-doc-markdown.markdown ul.dl li {
+  position: relative;
+  padding: 6px 0 6px 22px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.theme-doc-markdown.markdown ul.dl li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  color: var(--ink-3);
+}
+
+.theme-doc-markdown.markdown ol.dol {
+  list-style: decimal;
+  margin: 14px 0 0;
+  padding-left: 24px;
+  max-width: var(--docs-prose-w);
+}
+
+.theme-doc-markdown.markdown ol.dol li {
+  padding: 6px 0 6px 4px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.theme-doc-markdown.markdown .dq {
+  max-width: var(--docs-prose-w);
+  margin: 18px 0 0;
+  padding: 2px 0 2px 16px;
+  border-left: 1.5px solid var(--line);
+  color: var(--ink-2);
+}
+
+.theme-doc-markdown.markdown .dq p:first-child {
+  margin-top: 0;
+}
+
+.theme-doc-markdown.markdown .dr {
+  max-width: var(--docs-media-w);
+  margin: 34px 0;
+  border: 0;
+  border-top: 1.5px solid var(--line-2);
+}
+
+.theme-doc-markdown.markdown .dimg {
+  display: block;
+  width: 100%;
+  max-width: var(--docs-media-w);
+  height: auto;
+  object-fit: contain;
+  margin: 18px 0 0;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  background: var(--paper-2);
+}
+
+.theme-doc-markdown.markdown .ddetails {
+  max-width: var(--docs-media-w);
+  margin: 18px 0 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--paper-2);
+  padding: 12px 14px;
+}
+
+.theme-doc-markdown.markdown .ddetails summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.theme-doc-markdown.markdown .ddetails > *:last-child {
+  margin-bottom: 0;
+}
+
+.theme-doc-markdown.markdown .callout {
+  display: flex;
+  gap: 12px;
+  max-width: var(--docs-media-w, 1420px);
+  margin: 18px 0 0;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  background: var(--paper-2);
+  padding: 13px 15px;
+}
+
+.theme-doc-markdown.markdown .callout .cb {
+  font-weight: 700;
+  flex: none;
+}
+
+.theme-doc-markdown.markdown .callout p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.theme-doc-markdown.markdown table.dt {
+  border-collapse: collapse;
+  display: table;
+  width: 100%;
+  max-width: var(--docs-media-w);
+  margin: 18px 0 0;
+}
+
+.theme-doc-markdown.markdown table.dt th,
+.theme-doc-markdown.markdown table.dt td {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-top: 1px solid var(--line-2);
+}
+
+.theme-doc-markdown.markdown table.dt thead th {
+  border-top: none;
+  border-bottom: 1.5px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.theme-doc-markdown.markdown table.dt td:first-child {
+  color: var(--ink);
+}
+
+main[class*="docMainContainer"] .doc-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  max-width: var(--docs-media-w, 1420px);
+  margin: 48px 0 0;
+  padding-top: 22px;
+  border-top: 1.5px solid var(--line-2);
+}
+
+main[class*="docMainContainer"] .doc-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+main[class*="docMainContainer"] .doc-edit:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+main[class*="docMainContainer"] .doc-edit svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+main[class*="docMainContainer"] .doc-updated {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-style: italic;
+  text-align: right;
+}
+
+main[class*="docMainContainer"] .doc-updated strong {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+main[class*="docMainContainer"] .pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 48px 0 0;
+  padding-top: 22px;
+  border-top: 1.5px solid var(--line-2);
+  max-width: var(--docs-media-w, 1420px);
+}
+
+main[class*="docMainContainer"] .pager a {
+  font-size: 13.5px;
+  text-decoration: none;
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  padding: 11px 15px;
+  background: var(--paper-2);
+}
+
+main[class*="docMainContainer"] .pager a:hover {
+  transform: translate(-1px,-1px);
+}
+
+main[class*="docMainContainer"] .pager .nx {
+  margin-left: auto;
+}
+
+.theme-doc-toc-desktop .table-of-contents {
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  position: static;
+  font-size: 12.5px;
+  overflow: visible;
+}
+
+.theme-doc-toc-desktop .table-of-contents,
+.theme-doc-toc-desktop .table-of-contents ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.theme-doc-toc-desktop .table-of-contents__left-border {
+  border-left: 0;
+}
+
+.theme-doc-toc-desktop .table-of-contents li {
+  margin: 0;
+}
+
+.theme-doc-toc-desktop .table-of-contents__link {
+  display: block;
+  color: var(--ink-3);
+  text-decoration: none;
+  padding: 5px 0 5px 11px;
+  border-left: 1.5px solid var(--line-2);
+}
+
+.theme-doc-toc-desktop .table-of-contents__link:hover,
+.theme-doc-toc-desktop .table-of-contents__link--active {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.theme-doc-toc-desktop .table-of-contents__link--active {
+  border-left-color: var(--ink);
+  font-weight: 700;
+}
+
+@media (max-width: 1080px) and (min-width: 997px) {
+  .theme-doc-sidebar-container[class*="docSidebarContainer"] {
+    --doc-sidebar-width: 240px;
+    width: 240px;
+  }
+
+  main[class*="docMainContainer"] {
+    max-width: calc(100% - 240px);
+  }
+
+  main[class*="docMainContainer"] .docs-data-row {
+    display: block;
+  }
+
+  main[class*="docMainContainer"] .docs-data-toc-col {
+    display: none;
+  }
+}
+
+@media (max-width: 996px) {
+  .theme-doc-sidebar-container[class*="docSidebarContainer"] {
+    display: none;
+  }
+
+  main[class*="docMainContainer"] {
+    max-width: none;
+  }
+
+  main[class*="docMainContainer"] > .container {
+    max-width: none;
+    padding: 0 !important;
+  }
+
+  main[class*="docMainContainer"] .doc {
+    padding: 30px 22px 80px;
+  }
+
+  main[class*="docMainContainer"] .doc-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  main[class*="docMainContainer"] .doc-updated {
+    text-align: left;
+  }
+}
+
 /* ---- Docs product layer (Data / Agent / RL) ---- */
 /* Coming-soon products reuse the live docs frame; their sidebar holds only the
    product card, so drop the divider that would otherwise hang under it. */

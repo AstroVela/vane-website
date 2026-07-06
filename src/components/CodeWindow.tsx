@@ -2,6 +2,7 @@ import type {CSSProperties} from 'react'
 import { useRef, useState } from 'react'
 import { Highlight } from 'prism-react-renderer'
 import { vaneCodeTheme } from './codeTheme'
+import { pickLocale, useSiteLocale } from '../siteI18n'
 
 /* Code window (.term): macOS traffic-light dots + filename, optional blinking
    `running` LED, and a syntax-highlighted body.
@@ -30,8 +31,24 @@ export default function CodeWindow({
   copyable = true,
   language,
 }: CodeWindowProps) {
+  const locale = useSiteLocale()
   const preRef = useRef<HTMLPreElement>(null)
   const [copied, setCopied] = useState(false)
+  const copy = pickLocale(
+    locale,
+    {
+      copy: 'Copy',
+      copied: 'Copied',
+      aria: 'Copy code',
+      running: 'running',
+    },
+    {
+      copy: '复制',
+      copied: '已复制',
+      aria: '复制代码',
+      running: '运行中',
+    },
+  )
 
   const onCopy = async () => {
     const text = preRef.current?.textContent ?? ''
@@ -55,12 +72,12 @@ export default function CodeWindow({
         {running && (
           <span className="run">
             <span className="led" />
-            running
+            {copy.running}
           </span>
         )}
         {copyable && (
-          <button type="button" className="term-copy" onClick={onCopy} aria-label="Copy code">
-            {copied ? 'Copied' : 'Copy'}
+          <button type="button" className="term-copy" onClick={onCopy} aria-label={copy.aria}>
+            {copied ? copy.copied : copy.copy}
           </button>
         )}
       </div>

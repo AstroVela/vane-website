@@ -16,8 +16,9 @@ Prerequisites: **Node 20.19+** (or 22.12+) and npm.
 
 ```bash
 npm install        # install dependencies
-npm run dev        # start the dev server (http://localhost:3000)
-npm run dev:zh-CN  # start the Chinese locale dev server
+npm run dev        # start the bilingual dev server (http://localhost:3000)
+npm run dev:en     # start the English locale Docusaurus server only
+npm run dev:zh-CN  # start the Chinese locale Docusaurus server only
 npm run build      # production build to build/
 npm run preview    # serve the production build locally
 npm run lint       # run ESLint
@@ -27,6 +28,13 @@ npm run docs:manifest:check  # verify docs/manifest.json is current
 npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
 npm run docs:llms:check      # verify generated LLM docs files are current
 ```
+
+The default `npm run dev` command starts one Docusaurus server per locale with
+separate generated-file directories, then exposes them through one local proxy:
+English routes such as `/docs/data` and Chinese routes such as `/zh-CN/docs/data`
+are both available from `http://localhost:3000`. Use `npm run dev:en` or
+`npm run dev:zh-CN` only when you intentionally want a single-locale Docusaurus
+server.
 
 ## Project structure
 
@@ -39,7 +47,7 @@ src/
   pages/               Home, UseCases, Benchmarks, Docs
   components/          shared UI (Nav, Footer, CodeWindow, …)
   docs/
-    registry.ts        MDX page registry and public doc slug ordering
+    registry.ts        docs metadata registry and public doc slug ordering
     sidebar.data.json  Vane Data docs grouping / ordering
   index.css, pages.css global styles and design tokens
 
@@ -75,8 +83,7 @@ slugs, so `guides/my-guide.mdx` becomes `/zh-CN/docs/data/guides/my-guide`.
 
 1. Create `docs/data/<section>/<slug>.mdx`. Add a `title` frontmatter field, then
    write the body in Markdown or MDX. Do not add a top-level `#` heading; the
-   rendered page `<h1>` still comes from `DOCS_PAGES` during the current
-   registry transition. The public Vane Data route mirrors the docs folder, for example
+   page title comes from frontmatter. The public Vane Data route mirrors the docs folder, for example
    `docs/data/guides/my-guide.mdx` becomes `/docs/data/guides/my-guide`.
 
    ```mdx
@@ -97,8 +104,8 @@ slugs, so `guides/my-guide.mdx` becomes `/zh-CN/docs/data/guides/my-guide`.
    Choose an existing section folder when possible: `quickstart`, `concepts`,
    `guides`, `examples`, `deploy`, or `contributing`.
 
-2. Register the MDX file in `src/docs/registry.ts` by importing it and
-   adding it to `DOCS_PAGES` with the desired public slug and the same title.
+2. Register the MDX file in `src/docs/registry.ts` by adding it to `DOCS_PAGES`
+   with the desired public slug, source path, and the same title.
 
 3. Add the page to the sidebar in `src/docs/sidebar.data.json` by referencing
    its slug under the desired group:
@@ -111,8 +118,8 @@ slugs, so `guides/my-guide.mdx` becomes `/zh-CN/docs/data/guides/my-guide`.
    `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/<section>/<slug>.mdx`.
    Keep the same file name and slug; translate the frontmatter title and body.
 
-That's it — the page `<h1>`, the sidebar label, and the prev/next pager all come
-from `DOCS_PAGES`; the in-page TOC is built from the page's `##` headings.
+That's it — Docusaurus renders the MDX page, while `DOCS_PAGES` remains the
+stable metadata registry used by docs tooling and product navigation.
 
 Before opening a docs PR, run:
 

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 .docusaurus
+.tmp-docusaurus-dev
 build
 dist
 dist-ssr

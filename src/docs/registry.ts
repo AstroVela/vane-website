@@ -1,175 +1,147 @@
-import type {ComponentType} from 'react'
 import docsSidebar from './sidebar.data.json'
-
-import DocsHome from '../../docs/data/index.mdx'
-import ConceptAiFunctionsDoc from '../../docs/data/concepts/ai-functions.mdx'
-import ArchitectureDoc from '../../docs/data/concepts/architecture.mdx'
-import ExecutionModelDoc from '../../docs/data/concepts/execution-model.mdx'
-import SqlVsPythonDoc from '../../docs/data/concepts/sql-vs-python.mdx'
-import UdfsDoc from '../../docs/data/concepts/udfs.mdx'
-import ContributingDevelopmentDoc from '../../docs/data/contributing/development.mdx'
-import RayClusterDoc from '../../docs/data/deploy/ray-cluster.mdx'
-import SizingDoc from '../../docs/data/deploy/sizing.mdx'
-import SingleNodeDoc from '../../docs/data/deploy/single-node.mdx'
-import ExamplesHome from '../../docs/data/examples/index.mdx'
-import InsuranceDocumentAuditDoc from '../../docs/data/examples/insurance-document-audit.mdx'
-import MultimodalDataLakeDoc from '../../docs/data/examples/multimodal-data-lake.mdx'
-import TenderComplianceCheckDoc from '../../docs/data/examples/tender-compliance-check.mdx'
-import TrainingDataPipelineDoc from '../../docs/data/examples/training-data-pipeline.mdx'
-import GuideAiFunctionsDoc from '../../docs/data/guides/ai-functions.mdx'
-import CustomPythonUdfsDoc from '../../docs/data/guides/custom-python-udfs.mdx'
-import EmbeddingsAtScaleDoc from '../../docs/data/guides/embeddings-at-scale.mdx'
-import GpuInferenceDoc from '../../docs/data/guides/gpu-inference.mdx'
-import MultimodalIngestDoc from '../../docs/data/guides/multimodal-ingest.mdx'
-import MultimodalPipelineDoc from '../../docs/data/guides/multimodal-pipeline.mdx'
-import PerformanceTuningDoc from '../../docs/data/guides/performance-tuning.mdx'
-import StructuredDataLoadDoc from '../../docs/data/guides/structured-data-load.mdx'
-import StructuredTransformationDoc from '../../docs/data/guides/structured-transformation.mdx'
-import InstallationDoc from '../../docs/data/quickstart/installation.mdx'
-import QuickstartDoc from '../../docs/data/quickstart/quickstart.mdx'
-import WhatIsVaneDoc from '../../docs/data/quickstart/what-is-vane-data.mdx'
+import type {SiteLocale} from '../siteI18n'
 
 export type DocPage = {
-  Component: ComponentType
   source: string
   title: string
+  titleZh: string
 }
 
 export const DOCS_PAGES = {
   index: {
-    Component: DocsHome,
     source: 'docs/data/index.mdx',
     title: 'Vane Data Docs',
+    titleZh: 'Vane Data 文档',
   },
   'quickstart/what-is-vane-data': {
-    Component: WhatIsVaneDoc,
     source: 'docs/data/quickstart/what-is-vane-data.mdx',
     title: 'What Is Vane Data?',
+    titleZh: '什么是 Vane Data？',
   },
   'quickstart/installation': {
-    Component: InstallationDoc,
     source: 'docs/data/quickstart/installation.mdx',
     title: 'Installation',
+    titleZh: '安装',
   },
   'quickstart/quickstart': {
-    Component: QuickstartDoc,
     source: 'docs/data/quickstart/quickstart.mdx',
     title: 'Quickstart',
+    titleZh: '快速开始',
   },
   'concepts/architecture': {
-    Component: ArchitectureDoc,
     source: 'docs/data/concepts/architecture.mdx',
     title: 'Architecture',
+    titleZh: '架构',
   },
   'concepts/execution-model': {
-    Component: ExecutionModelDoc,
     source: 'docs/data/concepts/execution-model.mdx',
     title: 'Execution Model',
+    titleZh: '执行模型',
   },
   'concepts/sql-vs-python': {
-    Component: SqlVsPythonDoc,
     source: 'docs/data/concepts/sql-vs-python.mdx',
     title: 'SQL vs Python',
+    titleZh: 'SQL 与 Python',
   },
   'concepts/udfs': {
-    Component: UdfsDoc,
     source: 'docs/data/concepts/udfs.mdx',
     title: 'UDFs',
+    titleZh: 'UDF',
   },
   'concepts/ai-functions': {
-    Component: ConceptAiFunctionsDoc,
     source: 'docs/data/concepts/ai-functions.mdx',
     title: 'AI Functions',
+    titleZh: 'AI 函数',
   },
   'guides/multimodal-ingest': {
-    Component: MultimodalIngestDoc,
     source: 'docs/data/guides/multimodal-ingest.mdx',
     title: 'Multimodal Ingest',
+    titleZh: '多模态数据加载',
   },
   'guides/structured-data-load': {
-    Component: StructuredDataLoadDoc,
     source: 'docs/data/guides/structured-data-load.mdx',
     title: 'Structured Data Load',
+    titleZh: '结构化数据加载',
   },
   'guides/custom-python-udfs': {
-    Component: CustomPythonUdfsDoc,
     source: 'docs/data/guides/custom-python-udfs.mdx',
     title: 'Custom Python UDFs',
+    titleZh: '自定义 Python UDF',
   },
   'guides/multimodal-pipeline': {
-    Component: MultimodalPipelineDoc,
     source: 'docs/data/guides/multimodal-pipeline.mdx',
     title: 'Multimodal Pipeline',
+    titleZh: '多模态 Pipeline',
   },
   'guides/structured-transformation': {
-    Component: StructuredTransformationDoc,
     source: 'docs/data/guides/structured-transformation.mdx',
     title: 'Structured Transformation',
+    titleZh: '结构化转换',
   },
   'guides/ai-functions': {
-    Component: GuideAiFunctionsDoc,
     source: 'docs/data/guides/ai-functions.mdx',
     title: 'AI Functions',
+    titleZh: 'AI 函数',
   },
   'guides/gpu-inference': {
-    Component: GpuInferenceDoc,
     source: 'docs/data/guides/gpu-inference.mdx',
     title: 'GPU Inference',
+    titleZh: 'GPU 推理',
   },
   'guides/embeddings-at-scale': {
-    Component: EmbeddingsAtScaleDoc,
     source: 'docs/data/guides/embeddings-at-scale.mdx',
     title: 'Embeddings at Scale',
+    titleZh: '大规模 Embedding',
   },
   'guides/performance-tuning': {
-    Component: PerformanceTuningDoc,
     source: 'docs/data/guides/performance-tuning.mdx',
     title: 'Performance Tuning',
+    titleZh: '性能调优',
   },
   examples: {
-    Component: ExamplesHome,
     source: 'docs/data/examples/index.mdx',
     title: 'Examples',
+    titleZh: '示例',
   },
   'examples/training-data-pipeline': {
-    Component: TrainingDataPipelineDoc,
     source: 'docs/data/examples/training-data-pipeline.mdx',
     title: 'Training Data Pipeline',
+    titleZh: '训练数据流水线',
   },
   'examples/insurance-document-audit': {
-    Component: InsuranceDocumentAuditDoc,
     source: 'docs/data/examples/insurance-document-audit.mdx',
     title: 'Insurance Document Audit',
+    titleZh: '保险文档审计',
   },
   'examples/tender-compliance-check': {
-    Component: TenderComplianceCheckDoc,
     source: 'docs/data/examples/tender-compliance-check.mdx',
     title: 'Tender Compliance Check',
+    titleZh: '招标合规检查',
   },
   'examples/multimodal-data-lake': {
-    Component: MultimodalDataLakeDoc,
     source: 'docs/data/examples/multimodal-data-lake.mdx',
     title: 'Multimodal Data Lake',
+    titleZh: '多模态数据湖',
   },
   'deploy/single-node': {
-    Component: SingleNodeDoc,
     source: 'docs/data/deploy/single-node.mdx',
     title: 'Single Node',
+    titleZh: '单节点',
   },
   'deploy/ray-cluster': {
-    Component: RayClusterDoc,
     source: 'docs/data/deploy/ray-cluster.mdx',
     title: 'Ray Cluster',
+    titleZh: 'Ray 集群',
   },
   'deploy/sizing': {
-    Component: SizingDoc,
     source: 'docs/data/deploy/sizing.mdx',
     title: 'Sizing',
+    titleZh: '容量规划',
   },
   'contributing/development': {
-    Component: ContributingDevelopmentDoc,
     source: 'docs/data/contributing/development.mdx',
     title: 'Development',
+    titleZh: '开发',
   },
 } satisfies Record<string, DocPage>
 
@@ -194,7 +166,7 @@ export type DocsSidebarGroup = {
 
 export type DocsSidebarEntry = DocsSidebarItem | DocsSidebarGroup
 
-export const DOCS_SIDEBAR = docsSidebar as DocsSidebarGroup[]
+export const DOCS_SIDEBAR = docsSidebar as DocsSidebarEntry[]
 
 export function isDocsSidebarGroup(entry: DocsSidebarEntry): entry is DocsSidebarGroup {
   return 'group' in entry
@@ -223,6 +195,28 @@ export const DEFAULT_DOC_SLUG: DocSlug = 'index'
 
 export function isDocSlug(slug: string | undefined): slug is DocSlug {
   return Boolean(slug && slug in DOCS_PAGES)
+}
+
+const DOC_GROUP_LABELS_ZH: Record<string, string> = {
+  Quickstart: '快速开始',
+  Concepts: '核心概念',
+  Guides: '使用指南',
+  'Data Ingestion': '数据加载',
+  'Data Transformation': '数据转换',
+  'AI & Inference': 'AI 与推理',
+  Optimization: '优化',
+  Examples: '示例',
+  Deploy: '部署',
+  Contributing: '贡献',
+}
+
+export function docPageTitle(slug: DocSlug, locale: SiteLocale) {
+  const page = DOCS_PAGES[slug]
+  return locale === 'zh-CN' ? page.titleZh : page.title
+}
+
+export function docGroupLabel(group: string, locale: SiteLocale) {
+  return locale === 'zh-CN' ? DOC_GROUP_LABELS_ZH[group] ?? group : group
 }
 
 export function getDocGroupPath(slug: DocSlug) {

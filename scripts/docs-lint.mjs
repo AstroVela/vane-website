@@ -117,8 +117,8 @@ function checkLegacyDocRoutes(pages, sidebar) {
   if (!routes.includes('LEGACY_DOC_SLUG_LIST')) {
     addError(routesPath, 0, 'Docs routes must register legacy docs slugs.')
   }
-  if (!/LEGACY_DOC_SLUG_LIST\.forEach\(\(slug\) => docsRoute\(`\/docs\/\$\{product\}\/\$\{slug\}`\)\)/.test(routes)) {
-    addError(routesPath, 0, 'Docs routes must keep product-scoped legacy docs URLs working.')
+  if (!/LEGACY_DOC_SLUG_LIST\.forEach\(\(slug\) => docsRoute\(`\/docs\/data\/\$\{slug\}`\)\)/.test(routes)) {
+    addError(routesPath, 0, 'Docs routes must keep data-product legacy docs URLs working.')
   }
   if (!/LEGACY_DOC_SLUG_LIST\.forEach\(\(slug\) => docsRoute\(`\/docs\/\$\{slug\}`\)\)/.test(routes)) {
     addError(routesPath, 0, 'Docs routes must keep legacy default-product docs URLs working.')

@@ -23,6 +23,10 @@ const mustIncludeInPage = [
   'Image Generation',
   'Multimodal Structured Output',
   'Voice AI Analytics',
+  'AI pipeline 使用场景 — Vane',
+  'Vane 面向这些 AI pipeline 构建',
+  '语义搜索',
+  '语音 AI 分析',
 ]
 
 for (const text of mustIncludeInPage) {
@@ -30,7 +34,7 @@ for (const text of mustIncludeInPage) {
 }
 
 assert.match(page, /import Head from '@docusaurus\/Head'/, 'UseCases page should import Head')
-assert.match(page, /<Head>[\s\S]*<title>AI pipeline use cases — Vane<\/title>[\s\S]*<\/Head>/, 'UseCases page should render page metadata')
+assert.match(page, /<Head>[\s\S]*<title>\{copy\.title\}<\/title>[\s\S]*<meta[\s\S]*content=\{copy\.description\}[\s\S]*<meta property="og:title" content=\{copy\.title\} \/>[\s\S]*<meta property="og:description" content=\{copy\.ogDescription\} \/>[\s\S]*<\/Head>/, 'UseCases page should render localized page metadata')
 assert.doesNotMatch(page, /See all examples/, 'UseCases page should not render a See all examples CTA')
 assert.doesNotMatch(data, /summary:\s*string/, 'UseCase type should not include the unused summary field')
 assert.doesNotMatch(data, /^\s*summary:/m, 'Use case records should not carry unused summary values')

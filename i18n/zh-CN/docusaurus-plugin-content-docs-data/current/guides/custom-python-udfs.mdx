@@ -318,7 +318,7 @@ embedded = prepared.map_batches(
 )
 ```
 
-`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。
+`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
 
 每个 Ray worker 都必须能够导入该可调用对象，并访问相同的数据路径、模型文件、凭据和 Python 依赖。
 
@@ -426,7 +426,7 @@ Backend 选择应该跟随 UDF 类型：
 
 ## 相关文档
 
-- 当主要任务是表形态清理、join、去重、校验或输出整理时，使用 [Structured Transformation](/zh-CN/docs/data/guides/structured-transformation)。
-- 当 UDF 需要读取 bytes、解码文件、提取媒体特征，或记录逐阶段状态和错误时，使用 [Multimodal Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
-- 对于标准 embedding、文本分类或提示词增强，使用 [AI Functions](/zh-CN/docs/data/guides/ai-functions)。当你需要自定义模型、自定义 output schema、外部客户端行为，或完全控制预处理与后处理时，使用 Custom Python UDFs。
-- 阅读 [UDFs](/zh-CN/docs/data/concepts/udfs)，了解 `map_batches`、可调用类和执行 backend 背后的概念模型。
+- 当主要任务是表形态清理、join、去重、校验或输出整理时，使用 [结构化转换](/zh-CN/docs/data/guides/structured-transformation)。
+- 当 UDF 需要读取 bytes、解码文件、提取媒体特征，或记录逐阶段状态和错误时，使用 [多模态 Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
+- 对于标准 embedding、文本分类或提示词增强，使用 [AI 函数](/zh-CN/docs/data/guides/ai-functions)。当你需要自定义模型、自定义 output schema、外部客户端行为，或完全控制预处理与后处理时，使用自定义 Python UDF。
+- 阅读 [UDF](/zh-CN/docs/data/concepts/udfs)，了解 `map_batches`、可调用类和执行 backend 背后的概念模型。
