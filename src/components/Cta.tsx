@@ -18,7 +18,7 @@ export default function Cta({
   const defaultTitle = pickLocale(
     locale,
     'Build your first AI pipeline on multimodal data.',
-    '用多模态数据构建你的第一条 AI pipeline。',
+    '用多模态数据跑起第一条 AI 流水线',
   )
 
   return (

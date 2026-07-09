@@ -61,7 +61,7 @@ export const PRODUCTS: Record<ProductId, Product> = {
     tagline: 'RL for multimodal models',
     taglineZh: '面向多模态模型的强化学习',
     desc: 'Reinforcement learning for multimodal models — environments, reward models, and high-throughput rollouts running on the same distributed Ray runtime as the rest of Vane.',
-    descZh: '面向多模态模型的强化学习：环境、奖励模型和高吞吐 rollout 与 Vane 其他部分运行在同一个分布式 Ray runtime 上。',
+    descZh: '面向多模态模型的强化学习：环境、奖励模型和 high-throughput rollout 与 Vane 其他部分运行在同一个分布式 Ray runtime 上。',
     caps: [
       'Distributed rollouts on Ray',
       'Pluggable reward models',

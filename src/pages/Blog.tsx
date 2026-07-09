@@ -23,14 +23,14 @@ export default function Blog() {
     },
     {
       eyebrow: '博客',
-      heading: 'Vane 团队笔记',
-      lead: '这里会发布工程笔记、版本深度解读和实践报告。',
+      heading: 'Vane 技术博客',
+      lead: '这里会发布工程博客、版本解析和真实场景实践。',
       soon: '即将推出',
-      empty: '还没有发布文章。',
-      reserved: '这个页面会用于发布多模态数据 pipeline、基准测试和生产使用模式相关的长文更新。',
+      empty: '暂时还没有发布文章。',
+      reserved: '这个页面会用于发布关于多模态数据流水线、基准测试和生产使用模式的长文更新。',
       readDocs: '阅读文档',
       benchmarks: '查看基准测试',
-      explore: '浏览使用场景',
+      explore: '浏览用例',
     },
   )
 

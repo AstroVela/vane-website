@@ -38,18 +38,18 @@ const INPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
   { icon: 'video', label: 'Video', labelZh: '视频' },
   { icon: 'audio', label: 'Audio', labelZh: '音频' },
   { icon: 'events', label: 'Events', labelZh: '事件' },
-  { icon: 'embeddings', label: 'Embeddings', labelZh: 'Embedding' },
+  { icon: 'embeddings', label: 'Embeddings', labelZh: 'embeddings' },
 ]
 
 const OUTPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
-  { icon: 'cube', label: 'Model-ready Multimodal Assets', labelZh: '模型可用的多模态资产' },
-  { icon: 'folder', label: 'Grounded Context Packages', labelZh: '有来源依据的上下文包' },
-  { icon: 'list', label: 'Agent Actions & Recommendations', labelZh: 'Agent 动作与建议' },
-  { icon: 'loop', label: 'Trajectory & Learning Updates', labelZh: 'Trajectory 与学习更新' },
+  { icon: 'cube', label: 'Model-ready Multimodal Assets', labelZh: '可直接送入模型的多模态资产' },
+  { icon: 'folder', label: 'Grounded Context Packages', labelZh: '带来源依据的上下文包' },
+  { icon: 'list', label: 'Agent Actions & Recommendations', labelZh: 'Agent 行动建议' },
+  { icon: 'loop', label: 'Trajectory & Learning Updates', labelZh: '轨迹与学习更新' },
 ]
 
 const STAGES = [
-  { label: 'Ingest', labelZh: '加载' },
+  { label: 'Ingest', labelZh: '接入' },
   { label: 'Parse', labelZh: '解析' },
   { label: 'Transform', labelZh: '转换' },
   { label: 'Infer', labelZh: '推理' },
@@ -61,36 +61,36 @@ const CAPABILITIES: Array<{ icon: IconName; title: string; titleZh: string; art:
   { icon: 'model', title: 'Native Multimodal Data Model', titleZh: '原生多模态数据模型', art: 'modalities' },
   { icon: 'graph', title: 'Compute + Inference Operator Graph', titleZh: '计算 + 推理算子图', art: 'operators' },
   { icon: 'chip', title: 'Parallel CPU-GPU-IO Execution', titleZh: '并行 CPU-GPU-IO 执行', art: 'compute' },
-  { icon: 'cloud', title: 'Edge-to-Cloud Deployment', titleZh: '端到云部署', art: 'edge' },
+  { icon: 'cloud', title: 'Edge-to-Cloud Deployment', titleZh: '云边一体部署', art: 'edge' },
 ]
 
 const CORE_FEATURES: Array<{ title: string; titleZh: string; copy: string; copyZh: string; icon: IconName }> = [
   {
     title: 'Unified Multimodal Data Type',
-    titleZh: '统一的多模态数据类型',
+    titleZh: '统一的多模态数据语义',
     copy: 'Sensors, metadata, lineage, and model artifacts under one execution semantics.',
-    copyZh: '传感器、元数据、lineage 和模型 artifact 使用同一套执行语义。',
+    copyZh: '传感器、元数据、血缘和 model artifacts 放在同一套执行语义下。',
     icon: 'layers',
   },
   {
     title: 'Streaming + Backpressure + Dynamic Batching',
-    titleZh: 'Streaming + Backpressure + Dynamic Batching',
+    titleZh: 'streaming、backpressure 与 dynamic batching',
     copy: 'Continuous flow for large objects with adaptive batching and pressure control.',
-    copyZh: '让大对象持续流动，并通过自适应 batching 和压力控制保持稳定。',
+    copyZh: '大对象持续流动，批量大小随压力自动调整。',
     icon: 'stream',
   },
   {
     title: 'Overlapped Heterogeneous Execution',
-    titleZh: '重叠的异构执行',
+    titleZh: '异构执行重叠调度',
     copy: 'CPU, GPU, IO, and model inference overlap through asynchronous scheduling.',
-    copyZh: '通过异步调度重叠 CPU、GPU、IO 和模型推理。',
+    copyZh: 'CPU、GPU、IO 和模型推理通过 async scheduling 重叠执行。',
     icon: 'chip',
   },
   {
     title: 'Edge-Cloud Coordination',
-    titleZh: '端云协同',
+    titleZh: '云边协同',
     copy: 'The same pipeline runs across local devices and Ray clusters.',
-    copyZh: '同一条 pipeline 可运行在本地设备和 Ray 集群上。',
+    copyZh: '同一条流水线可跨本地设备和 Ray 集群运行。',
     icon: 'cloud',
   },
 ]
@@ -378,7 +378,7 @@ export default function DataArchitecture() {
     {
       inputs: '多模态输入',
       outputs: '输出 / 结果',
-      local: '本地 Runtime',
+      local: 'local runtime',
       ray: 'Ray Runtime',
     },
   )

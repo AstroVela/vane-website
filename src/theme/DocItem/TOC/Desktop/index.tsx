@@ -5,7 +5,7 @@ import { pickLocale, useSiteLocale } from '../../../../siteI18n'
 export default function DocItemTOCDesktop() {
   const locale = useSiteLocale()
   const {toc} = useDoc()
-  const title = pickLocale(locale, 'On this page', '本页内容')
+  const title = pickLocale(locale, 'On this page', '本页目录')
 
   return (
     <aside className="toc theme-doc-toc-desktop">
