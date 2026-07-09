@@ -23,8 +23,11 @@ const mustIncludeInPage = [
   'Image Generation',
   'Multimodal Structured Output',
   'Voice AI Analytics',
-  'AI pipeline 使用场景 — Vane',
-  'Vane 面向这些 AI pipeline 构建',
+  'Vane AI 工作流用例',
+  'Vane 适合哪些 AI 工作流',
+  '常见生产场景示例，每个用例都说明问题、流水线、代码、输入输出和适用时机。',
+  '查看 Vane 支撑的多模态 AI 工作流用例：embeddings、语义检索、去重、图像处理、批量生成、结构化抽取和语音分析。',
+  '要把网页级抓取数据变成可检索语料，通常不能靠临时脚本拼 SQL、分块、GPU embedding 和 Parquet 写出。',
   '语义搜索',
   '语音 AI 分析',
 ]

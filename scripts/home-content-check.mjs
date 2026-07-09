@@ -32,6 +32,14 @@ const mustIncludeInHome = [
   'Multimodal data, agents, and RL on one core.',
   'Vane is the multimodal engine behind the four workloads above.',
   'Become a design partner',
+  '多模态原生AI引擎',
+  '用 SQL、Python UDF、embeddings 和批量模型推理处理文档、媒体、传感器数据与表格；本地开发，Ray 上扩展到生产规模',
+  '多模态 AI 场景',
+  '从训练数据准备到企业 Agent 后端，真实 AI 系统面对的都是混杂的多模态数据',
+  '企业多模态 Agent',
+  '把 PDF、图片、视频、日志、表单等转化成可信可追溯的Agent决策',
+  '批量模型推理性能',
+  '面向多模态数据、Agents 和 RL的多模态AI引擎',
 ]
 
 for (const text of mustIncludeInHome) {
@@ -47,17 +55,22 @@ assert.match(platform, /Available now/, 'PlatformArchitecture should mark Vane D
 assert.match(platform, /Coming soon/, 'PlatformArchitecture should mark the upcoming pillars as coming soon')
 
 assert.match(nav, /solutions:\s*'Solutions'/, 'Desktop nav should label the solutions menu "Solutions"')
+assert.match(nav, /把 PDF、图片、视频、日志、表单等转化成可信可追溯的Agent决策/, 'Nav enterprise solution description should use the finalized Chinese decision copy')
+assert.doesNotMatch(nav, /为企业 Agent 提供可审计、可扩展的多模态数据后端。/, 'Nav should not keep the old Chinese enterprise backend description')
+assert.doesNotMatch(home, /把 PDF、图片、视频、日志、表单和表格整理成可追溯的事实，以及 Agent 可直接使用的上下文。/, 'Home should not keep the old Chinese enterprise scenario summary')
 assert.match(nav, /\{copy\.solutions\}[\s\S]*<span className="caret">▾<\/span>/, 'Desktop nav should render the localized solutions menu label')
 assert.match(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*\{copy\.solutions\}\s*<\/Link>/, 'Mobile nav should render the localized solutions menu label')
 assert.doesNotMatch(nav, />\s*Use Cases\s*<span className="caret">▾<\/span>/, 'Desktop nav should not label the solutions menu "Use Cases"')
 assert.doesNotMatch(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*Use Cases\s*<\/Link>/, 'Mobile nav should not label the solutions menu "Use Cases"')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
+assert.match(footer, /面向 AI 流水线与 Agents 的多模态原生引擎。在 Ray 上运行 SQL、Python UDF、embeddings 和模型推理。/, 'Footer should use the finalized Chinese home blurb')
 assert.match(footer, /Enterprise Multimodal Data/, 'Footer product nav should use the broader enterprise data label')
 assert.match(footer, /training:\s*'Multimodal Data Pipeline'/, 'Footer product nav should define the training solution label')
 assert.match(footer, /enterprise:\s*'Enterprise Multimodal Data'/, 'Footer product nav should define the broader enterprise data label')
 assert.match(footer, /to="\/use-cases\/training"[\s\S]*\{copy\.training\}/, 'Footer product nav should link the training solution directly')
 assert.match(footer, /to="\/use-cases\/enterprise-agent"[\s\S]*\{copy\.enterprise\}/, 'Footer product nav should link the enterprise solution directly')
 assert.match(cta, /Build your first AI pipeline on multimodal data\./, 'Default CTA should use the updated Home closing copy')
+assert.match(cta, /用多模态数据跑起第一条 AI 流水线/, 'Default CTA should use the finalized Chinese copy')
 assert.match(css, /h1,\s*h2,\s*h3\s*\{[\s\S]*font-family:\s*inherit;/, 'Bare headings should keep the pre-#10 inherited Vane mono font instead of Infima heading font')
 assert.match(css, /\.scenario-card::before\s*\{\s*display:\s*none;\s*\}/, 'Scenario cards should disable the Box overlay so hover does not obscure content')
 assert.match(css, /\.scenario-card:hover[\s\S]*background:\s*var\(--paper-3\)/, 'Scenario card hover should use a light background instead of a dark overlay')

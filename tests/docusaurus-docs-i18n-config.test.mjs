@@ -61,7 +61,7 @@ test('shared code windows localize copy controls for Chinese pages', () => {
 })
 
 test('shared navigation localizes visible short labels for Chinese pages', () => {
-  assert.match(navSource, /star:\s*'加星'/)
+  assert.match(navSource, /star:\s*'Star'/)
 })
 
 test('docs paginator maps generated metadata titles back to localized docs titles', () => {

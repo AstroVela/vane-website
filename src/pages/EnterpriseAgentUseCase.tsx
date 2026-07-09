@@ -77,7 +77,7 @@ function Motif({ compact = false, locale }: { compact?: boolean; locale: SiteLoc
     },
     {
       source: '复杂材料',
-      target: '可审计事实',
+      target: '可信决策',
     },
   )
 
@@ -103,12 +103,12 @@ function ProblemDiagram({ locale }: { locale: SiteLocale }) {
       outputs: 'insights · evidence · recommendations',
     },
     {
-      before: '之前 — 割裂的处理链',
-      steps: ['复杂材料', 'OCR 脚本', '临时文件', 'LLM 调用', '更多脚本', 'SQL 规则', '人工审核'],
-      warning: '⚠ 系统分散 · glue code 到处都是 · 来源引用丢失 · 难以调试 · 可复现性差',
-      after: '之后 — 一条 pipeline',
-      messy: '复杂材料',
-      facts: '可审计事实',
+      before: '之前 — 碎片化链路',
+      steps: ['杂乱材料', 'OCR 脚本', '临时文件', 'LLM 调用', '更多脚本', 'SQL 规则', '人工审查'],
+      warning: '⚠ 系统分散 · 到处是 glue code · 来源引用丢失 · 难以调试 · 可复现性差',
+      after: '之后 — 一条流水线',
+      messy: '杂乱材料',
+      facts: '可信决策',
       outputs: '洞察 · 证据 · 建议',
     },
   )
@@ -160,35 +160,35 @@ const HOW_CARDS: Array<{
 }> = [
   {
     title: 'Compose SQL, UDFs, and model review as relations',
-    titleZh: '把 SQL、UDF 和模型审核组合成 relation',
+    titleZh: '把 SQL、UDF 和模型推理组合成一条关系流水线',
     copy: 'Start with parsed rows and source metadata, then add SQL rules, explicit UDF stages, and model-assisted review without splitting the workflow across separate jobs.',
-    copyZh: '从解析后的行和来源元数据开始，再加入 SQL 规则、显式 UDF 阶段和模型辅助审核，不需要把 workflow 拆成多个独立任务。',
+    copyZh: '从原始多模态数据开始，把 SQL 规则、UDF 计算和模型推理接到同一条流水线里，不再拆成多个任务。',
     inputs: ['SQL rules', 'UDF stages', 'model review'],
-    inputsZh: ['SQL 规则', 'UDF 阶段', '模型审核'],
+    inputsZh: ['SQL 规则', 'UDF 计算', '模型推理'],
     result: 'relation pipeline',
-    resultZh: 'relation pipeline',
+    resultZh: '关系流水线',
   },
   {
     title: 'Make source references part of the output',
-    titleZh: '让来源引用成为输出的一部分',
+    titleZh: '把来源引用保留到最终结果里',
     copy: 'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
-    copyZh: 'AI helper 会返回配置好的输出列，因此最终审核行应显式保留 document ID、规则命中、audit JSON 和 source URI。',
+    copyZh: 'AI Function 会返回配置好的输出列，显式保留文档 ID、规则命中、审计 JSON 和来源 URI。',
     inputs: ['model output'],
     inputsZh: ['模型输出'],
     result: 'review row',
-    resultZh: '审核行',
+    resultZh: '证据追溯',
     fields: 'document ID · rule hit · audit JSON · source URI',
-    fieldsZh: 'document ID · 规则命中 · audit JSON · source URI',
+    fieldsZh: '文档 ID · 规则命中 · 审计 JSON · 来源 URI',
   },
   {
     title: 'Move to Ray after local validation',
-    titleZh: '本地验证后再迁移到 Ray',
+    titleZh: '从本地执行，快速切换到 Ray 扩展',
     copy: 'Validate locally first, then switch runner and UDF backends when distribution helps. The relation shape stays stable; worker storage, dependencies, and credentials still matter.',
-    copyZh: '先在本地验证；只有分布式执行有帮助时，再切换 runner 和 UDF backend。relation 形态保持稳定，但 worker 存储、依赖和凭证仍然需要处理。',
+    copyZh: '从本地运行，简单快速的切换到 Ray 分布式运行',
     inputs: ['local sample', 'Ray runner'],
-    inputsZh: ['本地样本', 'Ray runner'],
+    inputsZh: ['本地运行', 'Ray runner'],
     result: 'same relation shape',
-    resultZh: '相同 relation 形态',
+    resultZh: '同一关系形态',
   },
 ]
 
@@ -231,12 +231,12 @@ const DOC_ROWS_ZH = [
   { id: 'DOC-1031', text: 'coverage limit', src: 'memo.pdf' },
 ]
 const PIPELINE_STAGES_EN = ['SQL rules', 'model review', 'audit rows']
-const PIPELINE_STAGES_ZH = ['SQL 规则', '模型审核', '审计行']
+const PIPELINE_STAGES_ZH = ['SQL 规则', '模型推理', '文件处理']
 // The audit row's produced columns, straight from the final relation in
 // AUDIT_CODE (rule_hit, audit_json, source_uri) — keeps the figure honest to the
 // code below and reinforces the page's source-reference / evidence-chain point.
 const AUDIT_OUTPUTS_EN = ['rule hit', 'audit JSON', 'source URI']
-const AUDIT_OUTPUTS_ZH = ['规则命中', 'audit JSON', 'source URI']
+const AUDIT_OUTPUTS_ZH = ['业务洞察', '决策建议', '证据链']
 
 /* Real-example flow: a parsed document table feeds one Vane pipeline (SQL rules
    -> model review -> audit rows) that produces auditable outputs. Three equal-
@@ -253,8 +253,8 @@ function ExamplePipelineDiagram({ locale }: { locale: SiteLocale }) {
       auditOutputs: AUDIT_OUTPUTS_EN,
     },
     {
-      parsed: '解析后的文档表',
-      pipeline: 'Vane · 一条 pipeline',
+      parsed: '原始材料',
+      pipeline: 'Vane · 一条流水线',
       outputs: '输出',
       rows: DOC_ROWS_ZH,
       stages: PIPELINE_STAGES_ZH,
@@ -333,32 +333,28 @@ export default function EnterpriseAgentUseCase() {
       example: 'Real Example',
       exampleTitle: 'Insurance document audit pattern',
       exampleLead: 'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
-      note: 'Note',
-      noteCopy: 'Vane Data does not ship a dedicated insurance workflow. This example shows the SQL and Relation API shape, not a production decision system. OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages.',
       ctaTitle: 'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
     },
     {
-      title: '企业多模态数据基础设施 — Vane',
-      description: '使用 Vane Data，把解析后的文档行、媒体引用、SQL 规则、显式 UDF 阶段和模型辅助审核放在同一个可审计的 relation workflow 中。',
-      ogTitle: '把复杂的多模态业务材料转成可审计事实。',
-      ogDescription: '在企业审核 workflow 中，让源行、规则、模型输出和来源引用保持在一起。',
-      eyebrow: '企业多模态数据基础设施',
-      heading: '把复杂的多模态业务材料转成可审计事实。',
-      lead: '把解析后的文档行、媒体引用、表格、日志和模型输出放进一条 pipeline。用 SQL 做确定性检查，用显式 UDF 阶段做抽取，在合适的位置加入模型辅助审核。',
-      runPipeline: '运行 pipeline',
+      title: '企业多模态Agent — Vane',
+      description: '用 Vane Data 将文档行、媒体引用、SQL 规则、UDF 计算和模型推理放进一条可追溯的关系流水线。',
+      ogTitle: '把分散的业务材料整理成可复核的证据链',
+      ogDescription: '为企业审查工作流把 source rows、规则、模型输出和 source references 放在一起。',
+      eyebrow: '企业多模态Agent',
+      heading: '从繁杂的多模态文件到Agent的业务决策',
+      lead: '一个SQL流水线统筹文档、图片、视频、表格、日志处理和模型推理，Agent决策可信可追溯',
+      runPipeline: '运行示例',
       requestDemo: '申请演示',
-      meta: '文档行 · 媒体引用 · 表格 · 日志 · 模型输出',
+      meta: 'document rows · media refs · 表格 · 日志 · 模型输出',
       problemEyebrow: '问题',
-      problemTitle: '难点不在于调用模型，而在于重建证据链。',
-      problemLead: '今天，这条链通常被拼在 OCR 脚本、临时文件、模型调用、SQL 任务和审核工具之间。',
+      problemTitle: '为Agent构建从多模态文件到可信决策和可追溯的证据链',
+      problemLead: '如今这条链通常被拼接在 OCR 脚本、临时文件、模型调用、SQL 任务和审查工具之间。',
       how: 'Vane 如何工作',
-      howTitle: '源行 → 可审计输出，作为一条 relation pipeline。',
+      howTitle: '以一条关系语义的SQL流水线，从多模数据变成可信决策',
       example: '真实示例',
-      exampleTitle: '保险文档审计模式',
-      exampleLead: '从解析后的理赔文档和来源引用开始，再在同一个可审计 relation 中应用确定性规则和可选模型审核。',
-      note: '说明',
-      noteCopy: 'Vane Data 不内置专用保险 workflow。这个示例展示的是 SQL 和 Relation API 的形态，不是生产决策系统。OCR、解析和保单系统抽取发生在上游，或放在显式 UDF 阶段中。',
-      ctaTitle: '有文档行、媒体引用、日志或模型输出，需要转成可审计事实？',
+      exampleTitle: '保险审核流水线',
+      exampleLead: '从理赔申请和原始理赔材料出发，在一条SQL流水线里完成非结构数据处理、模型推理和规则检查。',
+      ctaTitle: '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
     },
   )
 
@@ -441,12 +437,6 @@ export default function EnterpriseAgentUseCase() {
           <ExamplePipelineDiagram locale={locale} />
           <div className="enterprise-code-block">
             <CodeWindow filename="insurance_document_audit.py" code={AUDIT_CODE} language="python" />
-            <Box flat className="enterprise-honesty">
-              <span className="enterprise-honesty-label">{copy.note}</span>
-              <span>
-                {copy.noteCopy}
-              </span>
-            </Box>
           </div>
         </div>
       </section>

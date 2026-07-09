@@ -42,7 +42,7 @@ const mustIncludeInPage = [
   'UDF stages',
   'relation pipeline',
   'Make source references part of the output',
-  'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
+  'AI Function 会返回配置好的输出列，显式保留文档 ID、规则命中、审计 JSON 和来源 URI。',
   'review row',
   'Move to Ray after local validation',
   'Validate locally first, then switch runner and UDF backends when distribution helps. The relation shape stays stable; worker storage, dependencies, and credentials still matter.',
@@ -76,15 +76,33 @@ const mustIncludeInPage = [
   'select claim_id, document_id, document_type, rule_hit, audit_json, source_uri',
   'from audited join rule_hits using (document_id, claim_id, document_type, source_uri)',
   'source_uri',
-  'Vane Data does not ship a dedicated insurance workflow.',
-  'This example shows the SQL and Relation API shape, not a production decision system.',
-  'OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages.',
   'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
   'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
   'Run the pipeline',
   'Request a demo',
-  '企业多模态数据基础设施 — Vane',
-  '把复杂的多模态业务材料转成可审计事实。',
+  '企业多模态Agent — Vane',
+  '把分散的业务材料整理成可复核的证据链',
+  '从繁杂的多模态文件到Agent的业务决策',
+  '一个SQL流水线统筹文档、图片、视频、表格、日志处理和模型推理，Agent决策可信可追溯',
+  '运行示例',
+  '可信决策',
+  '为Agent构建从多模态文件到可信决策和可追溯的证据链',
+  '以一条关系语义的SQL流水线，从多模数据变成可信决策',
+  '模型推理',
+  'UDF 计算',
+  '证据追溯',
+  '本地运行',
+  '从本地运行，简单快速的切换到 Ray 分布式运行',
+  '把来源引用保留到最终结果里',
+  '从本地执行，快速切换到 Ray 扩展',
+  '保险审核流水线',
+  '从理赔申请和原始理赔材料出发，在一条SQL流水线里完成非结构数据处理、模型推理和规则检查。',
+  '原始材料',
+  '业务洞察',
+  '决策建议',
+  '证据链',
+  '文件处理',
+  '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
   '申请演示',
 ]
 
@@ -97,6 +115,7 @@ assert.ok(motifCount >= 2, 'motif should be rendered in the hero and problem flo
 
 const codeWindowCount = page.match(/<CodeWindow/g)?.length ?? 0
 assert.equal(codeWindowCount, 1, 'enterprise page should contain exactly one CodeWindow')
+assert.doesNotMatch(page, /enterprise-honesty|Vane Data does not ship a dedicated insurance workflow\.|This example shows the SQL and Relation API shape, not a production decision system\.|OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages\.|Vane Data 不自带专用保险工作流。|这个示例展示的是 SQL 和 Relation API 的形态，而不是生产决策系统。|OCR、解析和保单系统抽取发生在上游或显式 UDF 计算。/, 'enterprise page should not render or retain the explanatory note box copy in either locale')
 
 assert.match(page, /<section className="intro enterprise-hero">\s*<div className="wrap enterprise-hero-grid">\s*<div className="enterprise-hero-copy">[\s\S]*<h1 className="h1 enterprise-hero-title">\{copy\.heading\}<\/h1>[\s\S]*<p className="lead enterprise-hero-lead">[\s\S]*<div className="enterprise-hero-actions">\s*<Button solid to=\{INSURANCE_AUDIT_DOC\} arrow>\{copy\.runPipeline\}<\/Button>\s*<Button href=\{ENTERPRISE_DESIGN_PARTNER_MAILTO\} arrow>\{copy\.requestDemo\}<\/Button>\s*<\/div>\s*<div className="enterprise-hero-meta">[\s\S]*<div className="enterprise-hero-art">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise hero should match the training two-column copy/action + right-rail visual pattern')
 assert.doesNotMatch(page, /function HeroDiagram|<HeroDiagram \/>|enterprise-hero-diagram/, 'enterprise page should replace the old hero mini diagram with the context animation')

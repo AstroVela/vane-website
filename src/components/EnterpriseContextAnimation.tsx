@@ -2,17 +2,17 @@ import { pickLocale, useSiteLocale } from '../siteI18n'
 
 const INPUTS = [
   { label: 'contract.pdf', labelZh: 'contract.pdf', meta: 'PDF', metaZh: 'PDF', tone: 'pdf' },
-  { label: 'inspection photo', labelZh: 'inspection photo', meta: 'image', metaZh: '图像', tone: 'image' },
-  { label: 'video frame', labelZh: 'video frame', meta: 'video', metaZh: '视频', tone: 'video' },
-  { label: 'call audio', labelZh: 'call audio', meta: 'audio', metaZh: '音频', tone: 'audio' },
-  { label: 'spreadsheet', labelZh: 'spreadsheet', meta: 'table', metaZh: '表格', tone: 'sheet' },
-  { label: 'system log', labelZh: 'system log', meta: 'log', metaZh: '日志', tone: 'log' },
+  { label: 'inspection photo', labelZh: '巡检照片', meta: 'image', metaZh: '图像', tone: 'image' },
+  { label: 'video frame', labelZh: '视频帧', meta: 'video', metaZh: '视频', tone: 'video' },
+  { label: 'call audio', labelZh: '通话音频', meta: 'audio', metaZh: '音频', tone: 'audio' },
+  { label: 'spreadsheet', labelZh: '电子表格', meta: 'table', metaZh: '表格', tone: 'sheet' },
+  { label: 'system log', labelZh: '系统日志', meta: 'log', metaZh: '日志', tone: 'log' },
 ]
 
 const OUTPUTS = [
-  { title: 'insights', titleZh: '洞察', detail: 'structured signals and issues', detailZh: '结构化信号和问题' },
-  { title: 'evidence', titleZh: '证据', detail: 'document · rule · source URI', detailZh: '文档 · 规则 · source URI' },
-  { title: 'recommendations', titleZh: '建议', detail: 'next action with rule context', detailZh: '带规则上下文的下一步动作' },
+  { title: 'insights', titleZh: '洞察', detail: 'structured signals and issues', detailZh: '结构化信号与问题' },
+  { title: 'evidence', titleZh: '证据', detail: 'document · rule · source URI', detailZh: '文档 · 规则 · 来源 URI' },
+  { title: 'recommendations', titleZh: '建议', detail: 'next action with rule context', detailZh: '带规则上下文的下一步行动' },
 ]
 
 function SourceVisual({ tone }: { tone: string }) {
@@ -98,7 +98,7 @@ function AgentReadyPanel({ locale }: { locale: ReturnType<typeof useSiteLocale> 
       context: 'Context attached',
     },
     {
-      title: 'Agent 可用输出',
+      title: 'Agent可用输出',
       meta: '上下文已附加',
       context: '上下文已附加',
     },
@@ -139,8 +139,8 @@ export default function EnterpriseContextAnimation() {
     },
     {
       stageAria: '企业多模态材料流',
-      inputAria: '复杂多模态材料',
-      messy: '复杂材料',
+      inputAria: '杂乱多模态材料',
+      messy: '杂乱材料',
       outputAria: '输出',
       outputs: '输出',
     },

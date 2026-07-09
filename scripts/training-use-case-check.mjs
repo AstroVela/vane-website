@@ -75,10 +75,14 @@ const mustIncludeInPage = [
   'Build a reproducible multimodal training-data pipeline.',
   'Become a design partner',
   'Read the docs',
-  '面向 AI 模型的多模态训练数据流水线 — Vane',
-  '从原始多模态数据到训练可用的数据集版本。',
+  '多模态AI模型训练数据流水线 — Vane',
+  '把原始多模态数据变成可发布的训练数据集',
+  '更高吞吐，更简洁的代码',
+  '让训练数据准备跑满 GPU',
+  '一套引擎，代码简单',
+  '训练数据发布流水线',
   '查看基准测试',
-  '构建可复现的多模态训练数据 pipeline。',
+  '构建高效简单的多模态训练数据流水线',
 ]
 
 for (const text of mustIncludeInPage) {

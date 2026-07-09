@@ -16,8 +16,8 @@ export default function ComingSoon({ product }: { product: Product }) {
     },
     {
       soon: '即将推出',
-      planned: '计划中的能力',
-      available: 'Vane Data 现在可用',
+      planned: '计划能力',
+      available: 'Vane Data 现已可用',
     },
   )
   const desc = productDescription(product, locale)
