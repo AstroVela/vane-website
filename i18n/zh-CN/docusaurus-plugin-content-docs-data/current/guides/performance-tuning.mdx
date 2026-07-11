@@ -9,7 +9,7 @@ title: 性能调优
 本地：
 
 ```python
-vane.configure(runner="native")
+vane.configure(runner="local")
 ```
 
 Ray：
@@ -18,7 +18,7 @@ Ray：
 vane.configure(runner="ray")
 ```
 
-native runner 会流式处理 Arrow 记录 batch。Ray runner 会在需要时初始化 Ray，并将逻辑计划发送给 Ray 查询 driver。
+local runner 会流式处理 Arrow 记录 batch。Ray runner 会在需要时初始化 Ray，并将逻辑计划发送给 Ray 查询 driver。
 
 ## batch size
 
@@ -90,14 +90,6 @@ export VANE_RAY_SCAN_TASK_SIZE_GROUPING=true
 当 `VANE_RAY_MAX_TASK_BACKLOG` 设置为正值时，它会限制待处理 Ray 任务的数量。公开注册表中 `0` 表示不限制。
 
 当 driver 提交速度快于 worker 消费速度时使用它。
-
-## native runner batch size
-
-当你需要为测量或内存控制指定明确值时，`VANE_NATIVE_RUNNER_BATCH_SIZE` 会覆盖 native runner batch size。
-
-```bash
-export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
-```
 
 ## 避免常见瓶颈
 

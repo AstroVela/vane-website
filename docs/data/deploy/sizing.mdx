@@ -41,12 +41,11 @@ Use:
 
 ```python
 execution_backend="subprocess_actor"
+gpus=0.0
+actor_number=1
 ```
 
-Start with:
-
-- `actor_number=1`
-- a batch size that keeps the model busy without memory pressure
+Start with a batch size that keeps the model busy without memory pressure.
 
 Increase `actor_number` only if CPU/GPU resources remain idle.
 

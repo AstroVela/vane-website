@@ -41,12 +41,11 @@ execution_backend="subprocess_task"
 
 ```python
 execution_backend="subprocess_actor"
+gpus=0.0
+actor_number=1
 ```
 
-起始配置：
-
-- `actor_number=1`
-- 选择能让模型保持忙碌、且不会造成内存压力的 batch 大小
+起始时请选择能让模型保持忙碌、且不会造成内存压力的 batch 大小。
 
 只有在 CPU/GPU 资源仍然空闲时，才增加 `actor_number`。
 

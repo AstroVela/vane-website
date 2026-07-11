@@ -50,14 +50,6 @@ out = rel.map_batches(
 
 这个 actor 池会在每个 actor 内复用模型或客户端，但它不是共享可变状态。有状态 `vane.cls` v1 是另一套单 actor、query scope 契约。本地 subprocess actor 不会预留或隔离 GPU。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
-## native runner batch size
-
-当你需要测量或约束 native runner 使用的 batch size 时，使用 `VANE_NATIVE_RUNNER_BATCH_SIZE`：
-
-```bash
-export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
-```
-
 ## 文件系统
 
 对于本地文件，使用普通 DuckDB SQL function：

@@ -9,7 +9,7 @@ Start with a correct local pipeline, then tune the smallest number of variables.
 Local:
 
 ```python
-vane.configure(runner="native")
+vane.configure(runner="local")
 ```
 
 Ray:
@@ -18,7 +18,7 @@ Ray:
 vane.configure(runner="ray")
 ```
 
-The native runner streams Arrow record batches. The Ray runner initializes Ray when needed and sends a logical plan to a Ray query driver.
+The local runner streams Arrow record batches. The Ray runner initializes Ray when needed and sends a logical plan to a Ray query driver.
 
 ## Batch size
 
@@ -90,14 +90,6 @@ Related public config:
 `VANE_RAY_MAX_TASK_BACKLOG` limits pending Ray tasks when set to a positive value. `0` means unlimited in the public registry.
 
 Use it when the driver can submit faster than workers can consume.
-
-## Native runner batch size
-
-`VANE_NATIVE_RUNNER_BATCH_SIZE` overrides the native runner batch size when you need an explicit value for measurement or memory control.
-
-```bash
-export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
-```
 
 ## Avoid common bottlenecks
 

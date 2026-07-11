@@ -366,7 +366,6 @@ result = rel.prompt(
     return_format=Decision,
     use_chat_completions=True,
     output_column="decision",
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -430,7 +429,6 @@ result = rel.embed_text(
     max_chunk_chars=1000,
     chunk_overlap_chars=200,
     output_column="embedding",
-    execution_backend="subprocess_actor",
 )
 ```
 
@@ -491,7 +489,6 @@ result = rel.classify_text(
     provider="transformers",
     model="facebook/bart-large-mnli",
     output_column="label",
-    execution_backend="subprocess_actor",
 )
 ```
 
