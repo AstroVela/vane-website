@@ -6,6 +6,13 @@ title: AI 函数
 
 精确签名与选项请查阅 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，Expression 与 Relation 两种模型的设计原因请阅读 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。
 
+**前提条件**
+
+- 在每个可能执行 relation 的环境中安装 OpenAI client，包括所有 worker 环境：`python -m pip install openai`。
+- 在每个 worker 的环境中设置 `OPENAI_API_KEY`。不要把凭据放入 SQL 文本或 options。
+- 在 `data/documents/*.parquet` 提供 Parquet 文件，其中包含可转换为 `VARCHAR` 的 `document_id`、`document_type`、`source_uri` 与 `text` 列。在选中的切片中，ID 必须非 null 且唯一，source URI 与文本必须非 null。
+- 运行前确保输出父目录已存在，例如执行 `mkdir -p output`。
+
 ## 1. 准备可审查的源数据
 
 首先准备稳定的业务 ID、将发送给模型的源文本，以及足以复现和审查输出的元数据：
@@ -231,7 +238,7 @@ assert list(reviewable.columns) == expected_columns
 assert [str(dtype) for dtype in reviewable.types] == expected_types
 
 print({"error_output_count": error_output_count})
-reviewable.write_parquet("output/ai-review-2026-07-11-001/")
+reviewable.write_parquet("output/ai-review-2026-07-11-001.parquet")
 ```
 
 这次写入会把失败行与其 ID、源数据、prompt 和状态一起保留下来，供后续审查。只有当下游只接受完全干净的结果时，才要求 `error_output_count == 0`。真正开始一次新的 provider 运行时，请使用新的 `run_id` 和输出路径；写入持久表时，应按稳定 key merge 或 replace，不要盲目追加 retry 结果。

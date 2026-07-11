@@ -6,6 +6,13 @@ This guide completes one reviewable document-analysis task. It uses SQL `ai_prom
 
 Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures and options, and [AI Function Concepts](/docs/data/concepts/ai-functions) for the reasons behind the Expression and Relation models.
 
+**Prerequisites**
+
+- Install the OpenAI client in every environment that may execute the relation, including every worker environment: `python -m pip install openai`.
+- Set `OPENAI_API_KEY` in every worker's environment. Do not put credentials in SQL text or options.
+- Provide Parquet files at `data/documents/*.parquet` with `document_id`, `document_type`, `source_uri`, and `text` columns that can be cast to `VARCHAR`. In the selected slice, IDs must be non-null and unique, and source URIs and text must be non-null.
+- Ensure the output parent directory exists before running, for example with `mkdir -p output`.
+
 ## 1. Prepare a Reviewable Source
 
 Start with a stable business ID, the source text sent to the model, and enough metadata to reproduce and review an output:
@@ -231,7 +238,7 @@ assert list(reviewable.columns) == expected_columns
 assert [str(dtype) for dtype in reviewable.types] == expected_types
 
 print({"error_output_count": error_output_count})
-reviewable.write_parquet("output/ai-review-2026-07-11-001/")
+reviewable.write_parquet("output/ai-review-2026-07-11-001.parquet")
 ```
 
 The write keeps failed rows beside their IDs, source, prompt, and status for review. Require `error_output_count == 0` only when the next stage accepts clean results exclusively. Use a new `run_id` and output path for a genuinely new provider run; for a durable table, merge or replace by stable keys instead of blindly appending retries.
