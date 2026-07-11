@@ -2,216 +2,425 @@
 title: AI 函数
 ---
 
-Vane Data 面向多模态 AI 工作负载设计。AI Function 让你能直接在数据上运行模型：生成 embedding、做文本分类，或调用大语言模型、多模态模型。
+本指南将完成一个可审查的文档分析任务：首先使用 SQL `ai_prompt` 和 `ai_embed`，然后把 Python Expression 作为同一保持行数模型的备选入口，最后仅针对必须使用 Relation API 的能力切换到 Relation。
 
-对于 embedding、文本分类和提示词调用等常见任务，AI Function 是合适的起点。当主要工作是对大量文档分块并生成 embedding 时，使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)。对于 vLLM 或 GPU 加速的 batch 提示词调用，使用 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。当你需要完全控制模型加载、重试、输出 schema、预处理或逐行错误列时，使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
+精确签名与选项请查阅 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，Expression 与 Relation 两种模型的设计原因请阅读 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。
 
-## 输入 relation
+## 1. 准备可审查的源数据
 
-先准备一个包含以下列的 relation：
-
-- 稳定的业务 ID，例如 `document_id`、`ticket_id`、`case_id` 或 `line_item_id`。
-- 模型所需的文本列或字段。
-- 便于后续审查异常输出的源元数据，例如 `source_uri`、`media_type`、`document_type` 或 `created_at`。
+首先准备稳定的业务 ID、将发送给模型的源文本，以及足以复现和审查输出的元数据：
 
 ```python
 import vane
 
 con = vane.connect()
-
-source = con.sql("""
-    select
-        document_id,
-        document_type,
-        text,
-        source_uri
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
-    order by document_id
-    limit 100
-""")
-
-source.to_table("source_sample")
-```
-
-保持第一个样本小且有序。稳定排序可以让你以确定性的方式校验辅助函数输出，并将其与源行组合。
-
-## 保留 ID
-
-`embed_text(...)`、`classify_text(...)` 和 `prompt(...)` 会返回已配置的输出列。如果最终结果还需要 ID 和源列，请先验证行数和顺序，再显式地将输出列与源行组合。
-
-```python
-source_table = source.to_arrow_table()
-```
-
-对于下面的每个任务，比较行数，并且只有在检查通过后，才将新列追加到 `source_table`：
-
-```python
-output_table = output_only.to_arrow_table()
-
-if output_table.num_rows != source_table.num_rows:
-    raise ValueError("AI output row count does not match source row count")
-
-with_output = con.from_arrow(
-    source_table.append_column("ai_output", output_table["ai_output"])
+source = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(document_type AS VARCHAR) AS document_type,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(text AS VARCHAR) AS source_text
+    FROM read_parquet('data/documents/*.parquet')
+    """
 )
+source.to_table("ai_review_source")
 ```
 
-将 `ai_output` 替换为该任务实际使用的输出列名。如果不希望单独执行重组步骤，可以编写自定义 `map_batches(...)` UDF，在一个 schema 中同时返回稳定 ID、源字段、状态、错误列和模型输出。
+`document_id` 是审查和写入时使用的 key。`source_uri`、`document_type` 与 `source_text` 用于说明每个模型结果来自哪里，以及 provider 实际看到了什么。
 
-## Embed Text
+## 2. 用 SQL Expression 完成任务
 
-当每个输入行都应该获得一个向量时，使用 `embed_text`。对于长文档，先做分块，并使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)。
+### 选择候选切片
 
-```python
-embedding_only = source.embed_text(
-    "text",
-    provider="openai",
-    model="text-embedding-3-small",
-    output_column="embedding",
-    batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
-)
-```
-
-校验项：
-
-- 输入列：过滤后 `text` 应为非 null。
-- 输出列：`embedding` 应存在，并且向量长度应符合该模型的预期。
-- ID 保留：只有在行数校验通过后，才将 embedding 列与 `document_id` 组合。
-- 结果审查：检查少量行，确认空文本或过短文本没有被意外生成 embedding。
+在任何 provider 调用之前先用普通 SQL 过滤。第一次运行应保持规模小、顺序确定并具有代表性：
 
 ```python
-embedding_table = embedding_only.to_arrow_table()
-
-if embedding_table.num_rows != source_table.num_rows:
-    raise ValueError("embedding row count mismatch")
-
-if embedding_table.num_rows == 0:
-    raise ValueError("empty embedding sample")
-
-if not embedding_table["embedding"][0].as_py():
-    raise ValueError("first embedding is empty")
-
-embedded = con.from_arrow(
-    source_table.append_column("embedding", embedding_table["embedding"])
-)
-```
-
-## Classify Text
-
-当标签集合较小，并且每个输入行都应获得一个标签时，使用 `classify_text`。
-
-```python
-label_only = source.classify_text(
-    "text",
-    labels=["invoice", "claim", "memo", "other"],
-    provider="transformers",
-    model="facebook/bart-large-mnli",
-    output_column="ai_label",
-    batch_size=16,
-    execution_backend="subprocess_actor",
-)
-```
-
-校验项：
-
-- 输入列：`text` 应包含你希望分类器看到的文本。
-- 输出列：`ai_label` 应只包含你提供的标签之一。
-- ID 保留：行数校验后，将 `ai_label` 追加到源表。
-- 结果审查：按标签抽样检查，确认标签集合是否过宽、过窄，或缺少业务分类。
-
-```python
-label_table = label_only.to_arrow_table()
-
-if label_table.num_rows != source_table.num_rows:
-    raise ValueError("classification row count mismatch")
-
-labels = set(label_table["ai_label"].to_pylist())
-allowed = {"invoice", "claim", "memo", "other"}
-unexpected = labels - allowed
-if unexpected:
-    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
-
-classified = con.from_arrow(
-    source_table.append_column("ai_label", label_table["ai_label"])
-)
-```
-
-## Prompt
-
-当输出需要由逐行提示词生成时，使用 `prompt`。第一个提示词应保持范围明确，并便于人工检查。
-
-```python
-prompts = con.sql("""
-    select
+candidates = con.sql(
+    """
+    SELECT
+        'ai-review-2026-07-11-001'::VARCHAR AS run_id,
         document_id,
         document_type,
         source_uri,
-        'Summarize this document in one sentence: ' || text as review_prompt
-    from source_sample
-""")
-
-response_only = prompts.prompt(
-    "review_prompt",
-    provider="openai",
-    model="gpt-4o-mini",
-    system_message="Return concise business review notes.",
-    output_column="review_note",
-    batch_size=8,
-    concurrency=4,
-    execution_backend="subprocess_actor",
+        source_text,
+        (
+            'Summarize the business issue and required follow-up in one sentence: '
+            || source_text
+        )::VARCHAR AS review_prompt
+    FROM ai_review_source
+    WHERE source_text IS NOT NULL
+      AND trim(source_text) <> ''
+      AND document_type IN ('invoice', 'claim', 'memo')
+    ORDER BY document_id
+    LIMIT 100
+    """
 )
+candidates.to_table("ai_review_candidates")
+
+expected_ids = [row[0] for row in con.sql(
+    "SELECT document_id FROM ai_review_candidates ORDER BY document_id"
+).fetchall()]
+expected_row_count = len(expected_ids)
+
+if expected_row_count == 0:
+    raise ValueError("AI review candidate slice is empty")
+if len(set(expected_ids)) != expected_row_count:
+    raise ValueError("document_id must be unique in the candidate slice")
 ```
 
-校验项：
+稳定排序让本次校验运行可以复现。后续每个 projection 都会保留 ID 与源字段；模型输出的先后顺序绝不能充当身份契约。
 
-- 输入列：`review_prompt` 只应包含模型应该看到的字段。
-- 输出列：`review_note` 应为非空，并且足够短，便于审查。
-- ID 保留：将输出与 `document_id`、`document_type` 和 `source_uri` 组合。
-- 结果审查：在增大 `limit`、`batch_size` 或 `concurrency` 前，先人工检查小样本。
+### 先生成审查说明
+
+执行 relation 前，在每个 worker 的环境中设置 `OPENAI_API_KEY`。不要把 key、token、password 或 secret 放入 SQL options。
 
 ```python
-prompt_table = prompts.to_arrow_table()
-response_table = response_only.to_arrow_table()
+prompted = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        ai_prompt(
+            review_prompt,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini',
+                concurrency := 2,
+                max_api_concurrency := 4,
+                batch_size := 8,
+                max_retries := 2,
+                on_error := 'log',
+                system_message := 'Return one concise factual review note.',
+                temperature := 0.0
+            )
+        ) AS review_note
+    FROM ai_review_candidates
+    ORDER BY document_id
+    """
+)
+prompted.to_table("ai_review_prompted")
+```
 
-if response_table.num_rows != prompt_table.num_rows:
-    raise ValueError("prompt row count mismatch")
+第二个参数是一个 foldable constant `STRUCT`。Provider、model、执行参数与请求设置都不能逐行变化。设置 `on_error := 'log'` 后，经过 retry 仍失败的响应会以 null `review_note` 留给校验步骤，而不会悄悄消失。
 
-empty = [x for x in response_table["review_note"].to_pylist() if not x]
-if empty:
-    raise ValueError("prompt returned empty responses")
+### 需要检索时添加 Embedding
 
-reviewed = con.from_arrow(
-    prompt_table.append_column("review_note", response_table["review_note"])
+如果审查产物不需要向量，可以跳过本节。如果需要，就在保留源数据与 prompt 输出的同时再增加一个 SQL Expression 列：
+
+```python
+reviewed = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        review_note,
+        ai_embed(
+            source_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                dimensions := 512,
+                normalize := true,
+                concurrency := 2,
+                batch_size := 32,
+                max_retries := 2,
+                on_error := 'raise'
+            )
+        ) AS embedding
+    FROM ai_review_prompted
+    ORDER BY document_id
+    """
+)
+reviewed.to_table("ai_review_model_output")
+```
+
+两个调用都是 `SELECT` projection 的顶层值。每个调用只增加一个有类型、保持行数的输出列；过滤、分组、join 与逐行变化的配置都应放在 AI expression 之外。
+
+### 校验并写入审查产物
+
+先把可容忍的 prompt 失败转换成显式审查状态，再在写入前检查行数、ID、null/error 输出与精确 schema：
+
+```python
+reviewable = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        review_note,
+        embedding,
+        CASE
+            WHEN review_note IS NULL OR trim(review_note) = ''
+                THEN 'prompt_error'
+            WHEN embedding IS NULL OR array_length(embedding) <> 512
+                THEN 'embedding_error'
+            ELSE 'ready'
+        END::VARCHAR AS ai_status
+    FROM ai_review_model_output
+    ORDER BY document_id
+    """
+)
+reviewable.to_table("ai_review_result")
+
+validation = con.sql(
+    """
+    SELECT
+        count(*) AS row_count,
+        count(DISTINCT document_id) AS distinct_id_count,
+        count(*) FILTER (WHERE document_id IS NULL) AS null_id_count,
+        count(*) FILTER (
+            WHERE source_uri IS NULL OR source_text IS NULL
+        ) AS null_source_count,
+        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
+    FROM ai_review_result
+    """
+).fetchone()
+(
+    actual_row_count,
+    distinct_id_count,
+    null_id_count,
+    null_source_count,
+    error_output_count,
+) = validation
+
+assert actual_row_count == expected_row_count
+assert distinct_id_count == expected_row_count
+assert null_id_count == 0
+assert null_source_count == 0
+
+actual_ids = [row[0] for row in con.sql(
+    "SELECT document_id FROM ai_review_result ORDER BY document_id"
+).fetchall()]
+assert actual_ids == expected_ids
+
+expected_columns = [
+    "run_id",
+    "document_id",
+    "document_type",
+    "source_uri",
+    "source_text",
+    "review_prompt",
+    "review_note",
+    "embedding",
+    "ai_status",
+]
+expected_types = [
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "FLOAT[512]",
+    "VARCHAR",
+]
+assert list(reviewable.columns) == expected_columns
+assert [str(dtype) for dtype in reviewable.types] == expected_types
+
+print({"error_output_count": error_output_count})
+reviewable.write_parquet("output/ai-review-2026-07-11-001/")
+```
+
+这次写入会把失败行与其 ID、源数据、prompt 和状态一起保留下来，供后续审查。只有当下游只接受完全干净的结果时，才要求 `error_output_count == 0`。真正开始一次新的 provider 运行时，请使用新的 `run_id` 和输出路径；写入持久表时，应按稳定 key merge 或 replace，不要盲目追加 retry 结果。
+
+## 3. 将 Python Expression 作为备选入口
+
+当有类型的 provider/configuration 更适合在 Python 中构造时，使用 Python Expression。它与 SQL Expression 具有相同的单列、保持行数 projection 语义；它并不是获得结构化、多模态或表形输出的入口。
+
+```python
+python_prompt_provider_options = vane.ai.OpenAIProviderOptions(
+    concurrency=2,
+    max_api_concurrency=4,
+)
+python_embedding_provider_options = vane.ai.OpenAIProviderOptions(
+    concurrency=2,
+)
+python_prompt_options = vane.ai.OpenAIPromptOptions(
+    temperature=0,
+    on_error="log",
+)
+python_embedding_options = vane.ai.OpenAIEmbeddingOptions(
+    on_error="raise",
+)
+
+python_prompted = candidates.select(
+    vane.col("run_id"),
+    vane.col("document_id"),
+    vane.col("document_type"),
+    vane.col("source_uri"),
+    vane.col("source_text"),
+    vane.col("review_prompt"),
+    vane.ai.prompt(
+        vane.col("review_prompt"),
+        provider="openai",
+        model="gpt-4o-mini",
+        provider_options=python_prompt_provider_options,
+        prompt_options=python_prompt_options,
+        system_message="Return one concise factual review note.",
+    ).alias("review_note"),
+)
+
+python_reviewed = python_prompted.select(
+    vane.col("run_id"),
+    vane.col("document_id"),
+    vane.col("document_type"),
+    vane.col("source_uri"),
+    vane.col("source_text"),
+    vane.col("review_prompt"),
+    vane.col("review_note"),
+    vane.ai.embed(
+        vane.col("source_text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=python_embedding_provider_options,
+        embedding_options=python_embedding_options,
+        dimensions=512,
+        normalize=True,
+    ).alias("embedding"),
+)
+python_reviewed.to_table("ai_review_python_model_output")
+```
+
+对 `ai_review_python_model_output` 应执行与 `ai_review_model_output` 相同的行数、有序 ID、null/error、schema 及按 run 写入检查。每个 AI Expression 都应直接放在 `rel.select(...)` 中并设置 alias；不要在过滤条件中使用，也不要手工把输出与源行重新组合。
+
+## 4. 仅在专用能力需要时使用 Relation API
+
+Relation helper 是 Python 表变换。Vane 不提供直接的 SQL Relation 或 table-function API。只有当任务需要 SQL 或 Python Expression 未公开的能力时，才使用这些 helper。
+
+### 结构化或多模态 Prompt
+
+调用 `rel.prompt` 前先定义 response model 并完成 import。对于支持图像输入的 provider/model 组合，同一 helper 还接受 `image_columns`：
+
+```python
+from pydantic import BaseModel
+
+
+class ReviewDecision(BaseModel):
+    label: str
+    reason: str
+
+
+multimodal_candidates = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(review_prompt AS VARCHAR) AS review_prompt,
+        image
+    FROM read_parquet('data/review-items/*.parquet')
+    WHERE review_prompt IS NOT NULL
+    ORDER BY document_id
+    LIMIT 20
+    """
+)
+
+decision_only = multimodal_candidates.prompt(
+    "review_prompt",
+    image_columns=["image"],
+    provider="openai",
+    model="gpt-4o-mini",
+    provider_options=vane.ai.OpenAIProviderOptions(
+        max_api_concurrency=4,
+    ),
+    prompt_options=vane.ai.OpenAIPromptOptions(
+        temperature=0,
+        on_error="log",
+    ),
+    return_format=ReviewDecision,
+    output_column="decision_json",
+    execution_backend="subprocess_task",
 )
 ```
 
-对于结构化输出，使用 `return_format` 配合 Pydantic 模型，并在写入最终 relation 前校验 JSON 字符串。
+发布前，应使用 `ReviewDecision` 校验每个非 null 的 `decision_json`。纯文本输入可以省略 `image_columns`；只有所选 provider 支持结构化响应时才保留 `return_format`。
 
-## Provider 与执行选择
+### 内置分类
 
-选择能够完成当前任务的最小 provider 配置。
+`rel.classify_text` 是内置的 zero-shot 分类路径：
 
-| 选择 | 适用场景 | 需要关注 |
-| --- | --- | --- |
-| 托管 provider | 需要托管模型，并且可以使用外部 API 调用。 | 凭证、成本、延迟、速率限制，以及 provider 专用的输出行为。 |
-| 本地模型 | 需要基于已安装模型库的本地执行。 | 模型下载、依赖版本、内存使用，以及 actor 初始化时间。 |
-| vLLM 或 GPU 模型 | 需要 GPU 加速的提示词吞吐量或私有 LLM 推理。 | vLLM 路径和 GPU 专用调优请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。 |
+```python
+label_only = candidates.classify_text(
+    "source_text",
+    labels=["billing", "delivery", "policy", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="review_label",
+    batch_size=16,
+    execution_backend="subprocess_task",
+)
+```
 
-建议显式设置的最小配置：
+扩容前，应验证每个非 null label 都属于声明的集合，并从每个标签分组中抽样检查。
 
-- `provider`：例如 `openai`、`transformers` 或 `vllm`。
-- `model`：准确的托管或本地模型标识符。
-- `batch_size`：每次模型调用或 batch 处理的行数。
-- `concurrency`：在支持时，并行运行的 worker 或 actor 调用数量。
-- `execution_backend`：从 `subprocess_actor` 开始；只有在本地样本正确后，再使用 `ray_actor`。
+### 内置长文本分块
 
-一次只调整一个设置。更高的 `batch_size` 或 `concurrency` 可以提升吞吐量，但也可能增加内存使用、触发 provider 速率限制，或让失败更难隔离。
+`rel.embed_text` 通过 `max_chunk_chars` 负责内置字符分块：
 
-## 下一步
+```python
+chunk_embedding_only = candidates.embed_text(
+    "source_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    max_chunk_chars=2000,
+    chunk_overlap_chars=200,
+    output_column="chunked_embedding",
+    execution_backend="subprocess_task",
+)
+```
 
-- 使用 [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale) 处理文档分块、稳定的分块 ID、embedding 输出 schema，以及更大规模的 embedding 作业。
-- 使用 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference) 处理基于 vLLM 的提示词 batch、GPU actor 复用和 Ray GPU 执行。
-- 当 AI Function 范围过窄，或输出必须由一个 batch 函数同时包含 ID、源字段、状态、错误和模型输出时，使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
+如果每个现有行只需要增加一个 embedding 列，请使用 SQL `ai_embed` 或 `vane.ai.embed`。只有需要 helper 自行拆分并组合长文本时才使用这个 Relation helper；如果每个 chunk 都需要独立的稳定 ID 和行，请阅读 [大规模 Embedding 指南](/zh-CN/docs/data/guides/embeddings-at-scale)。
+
+### 显式选择 Relation Backend 与 Actor Pool
+
+Relation 方法可以显式选择 `execution_backend`。对于 Ray-backed vLLM actor pool，provider `concurrency` 会映射为 actor 数，而 `gpus_per_actor` 会为每个 actor 请求对应的 Ray GPU 资源：
+
+```python
+vane.configure(runner="ray")
+
+gpu_response_only = candidates.prompt(
+    "review_prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    provider_options=vane.ai.VLLMProviderOptions(
+        concurrency=2,
+        gpus_per_actor=1,
+    ),
+    prompt_options=vane.ai.VLLMPromptOptions(
+        max_tokens=128,
+        temperature=0,
+        on_error="log",
+    ),
+    output_column="gpu_review_note",
+    execution_backend="ray_actor",
+)
+```
+
+示例中的 `_only` 命名是刻意的：Relation helper 可能只返回配置的输出列，而不会自动保留所有源字段。必须在调用前规划源数据保留方式。只有下游不需要源 key 时，才把内置 helper 用作隔离的仅输出阶段；需要 key 时，应使用自定义 row-preserving batch UDF，在同一个已声明 schema 中返回稳定 ID 与输出。绝不能按行位置重新关联结果。
+
+## 5. 安全运行 Provider 与写入
+
+- **Provider 与 model：** 记录精确的 provider、model、prompt/run 版本与输出路径。Hosted provider 带来网络、quota、延迟和成本问题；local provider 则需要关注依赖、模型文件、内存与启动开销。
+- **凭据：** Provider descriptor 会被序列化，并在 worker 上延迟实例化。凭据应放入每个 worker 的环境，而不是 SQL 文本或序列化 options；worker 的网络访问也应只开放必要 endpoint。
+- **执行控制：** SQL 与 Python Expression 由 active runner 选择 local subprocess actor 或 Ray actor；Relation 方法可以显式选择 backend。Provider `concurrency` 控制 actor 数，`max_api_concurrency` 限制单个 actor 内的调用数，batch size 则影响吞吐、内存和失败范围。
+- **Retry 与错误：** 如果失败应该终止样本校验，请使用 `on_error="raise"`。容错模式可能把 prompt 失败转换成 null；已知维度时，还可能把 embedding 失败转换成 zero vector，因此必须检查所选输出契约。Wrapper 与 provider SDK 的 retry 都可能重复调用。
+- **外部副作用：** Provider 请求既不是事务操作，也不提供 exactly-once。Query retry 可能产生新的请求与费用，rollback 也无法撤销已完成的调用。请保留 `(run_id, document_id)`，写入可审查的 run 产物，并让下游 merge 具备幂等性。
+
+## 后续阅读
+
+- [AI Function API 参考](/zh-CN/docs/data/reference/ai-api) — SQL Expression、Python Expression、Relation、provider 与 option 的精确契约。
+- [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions) — 两种语义模型为何具有不同的能力与输出边界。
+- [GPU 推理](/zh-CN/docs/data/guides/gpu-inference) — local/Ray-backed vLLM 执行、actor 复用与 GPU 校验。
+- [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale) — 确定性 chunk ID、大型 embedding 作业与可审查向量输出。
+- [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs) — 保留源字段的多列 schema，以及超出内置 helper 能力的逐行诊断。

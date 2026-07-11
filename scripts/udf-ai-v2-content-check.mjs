@@ -201,18 +201,61 @@ const assertRelatedExamples = (source, schema, message) => {
   schema.check?.(blocks, message)
 }
 
+const aliasMaterializerPattern =
+  /\.(?:fetchall|fetchone|fetchmany|fetch_arrow_table|to_arrow_table|to_arrow_reader|show|write_parquet|to_table)\s*\(/
+
+const assertAliasMaterializedBeforeDetach = (block, alias, message) => {
+  const tryIndex = block.indexOf('try:')
+  const aliasCallIndex = block.indexOf(`${alias}(text)`, tryIndex + 1)
+  const finallyIndex = block.indexOf('finally:', aliasCallIndex + 1)
+  const detachIndex = block.indexOf(`vane.detach_function("${alias}"`, finallyIndex + 1)
+  assert.ok(
+    tryIndex !== -1 &&
+      aliasCallIndex > tryIndex &&
+      finallyIndex > aliasCallIndex &&
+      detachIndex > finallyIndex,
+    `${message}: alias invocation should stay inside try before detach in finally`,
+  )
+  assert.match(
+    block.slice(aliasCallIndex, finallyIndex),
+    aliasMaterializerPattern,
+    `${message}: alias work should be consumed by a true materializer inside try before detach`,
+  )
+}
+
+const assertClassificationBackendConfig = (block, message) => {
+  const call = block.match(/\.classify_text\(([\s\S]*?)\n\)/)?.[1]
+  assert.ok(call, `${message}: classification example should contain a complete call`)
+  const backend = call.match(/\bexecution_backend\s*=\s*"([^"]+)"/)?.[1]
+  if (!backend) return
+
+  assert.ok(
+    ['subprocess_task', 'ray_task', 'subprocess_actor', 'ray_actor'].includes(backend),
+    `${message}: classification should use a verified Relation backend`,
+  )
+  if (backend.endsWith('_actor')) {
+    assert.match(
+      call,
+      /\bactor_number\s*=\s*[1-9]\d*/,
+      `${message}: explicit actor backend requires a valid actor_number`,
+    )
+  }
+}
+
 const assertSqlVsPythonLifecycle = (blocks, message) => {
   assert.equal(blocks.length, 3, `${message}: SQL, Python, and Relation examples`)
   const alias = blocks[0].match(/alias="([a-z_]\w*)"/)?.[1]
   assert.ok(alias, `${message}: SQL example should define an alias`)
   assertSubstringOrder(
     blocks[0],
-    ['vane.attach_function(', `${alias}(text)`, 'projected.explain()', `vane.detach_function("${alias}"`],
+    ['vane.attach_function(', `${alias}(text)`, 'finally:', `vane.detach_function("${alias}"`],
     `${message} alias lifecycle`,
   )
+  assertAliasMaterializedBeforeDetach(blocks[0], alias, `${message} alias lifecycle`)
   assert.match(blocks[0], /import vane[\s\S]*con = vane\.connect\(\)[\s\S]*def normalize_text/)
   assert.match(blocks[1], /import vane[\s\S]*source = con\.sql\([\s\S]*@vane\.func[\s\S]*source\.select\(/)
   assert.match(blocks[2], /import vane[\s\S]*rel = con\.sql\([\s\S]*rel\.classify_text\([\s\S]*FROM classified/)
+  assertClassificationBackendConfig(blocks[2], `${message} classification backend`)
 }
 
 const assertExecutionConceptExamples = (blocks, message) => {
@@ -465,6 +508,419 @@ const assertAiConceptExampleOrder = (source, message) => {
   )
 }
 
+const markdownHeadings = (source) =>
+  markdownLines(source)
+    .map(({ text }) => text)
+    .filter((line) => /^#{2,6} /.test(line))
+
+const assertGuideHeadingSchema = (source, patterns, message) => {
+  const headings = markdownHeadings(source)
+  assert.equal(
+    headings.length,
+    patterns.length,
+    `${message}: expected the complete semantic heading schema`,
+  )
+  patterns.forEach((pattern, index) => {
+    assert.match(
+      headings[index],
+      pattern,
+      `${message}: semantic heading ${index + 1} should match ${pattern}`,
+    )
+  })
+}
+
+const assertBilingualGuideStructure = (schema) => {
+  for (const locale of ['en', 'zh']) {
+    assertGuideHeadingSchema(
+      schema.sources[locale],
+      schema.headings[locale],
+      `${locale === 'en' ? 'English' : 'Chinese'} ${schema.label}`,
+    )
+  }
+
+  assert.deepEqual(
+    markdownHeadings(schema.sources.en).map((heading) => heading.match(/^#+/)?.[0].length),
+    markdownHeadings(schema.sources.zh).map((heading) => heading.match(/^#+/)?.[0].length),
+    `${schema.label}: bilingual semantic heading-level parity`,
+  )
+  assert.deepEqual(
+    fencedCodeBlocks(schema.sources.zh),
+    fencedCodeBlocks(schema.sources.en),
+    `${schema.label}: bilingual fenced-code parity`,
+  )
+}
+
+const codeBlockContaining = (source, pattern, message) => {
+  const block = fencedCodeBlocks(source).find((candidate) => pattern.test(candidate))
+  assert.ok(block, `${message}: missing code block matching ${pattern}`)
+  return block
+}
+
+const assertNoCredentialSqlFields = (block, message) => {
+  assert.doesNotMatch(
+    block,
+    /\b(?:api_key|token|password|secret|authorization)\s*:=/i,
+    `${message}: SQL options should not contain credential-like fields`,
+  )
+}
+
+const assertQuickstartTask = (source, locale, message) => {
+  const blocks = fencedCodeBlocks(source)
+  const callableIndex = blocks.findIndex((block) => /def review_status\(source_text\):/.test(block))
+  const workflowIndex = blocks.findIndex((block) => /vane\.attach_function\(/.test(block))
+  assert.ok(
+    callableIndex !== -1 && workflowIndex > callableIndex,
+    `${message}: raw callable should be defined before alias attachment`,
+  )
+
+  const workflow = blocks[workflowIndex]
+  assertSubstringOrder(
+    workflow,
+    [
+      'review_alias = "review_status_sql"',
+      'vane.attach_function(',
+      'alias=review_alias',
+      'try:',
+      'review_status_sql(source_text::VARCHAR) AS review_status',
+      'ai_prompt(',
+      'struct_pack(',
+      'validation =',
+      'assert actual_row_count == expected_row_count',
+      'result.write_parquet(output_path)',
+      'result.show()',
+      'finally:',
+      'vane.detach_function(review_alias, connection=con)',
+    ],
+    `${message} SQL-first lifecycle`,
+  )
+  assert.match(
+    workflow,
+    /SELECT\s+asset_id,\s+source_uri,\s+source_text,\s+review_status_sql\(source_text::VARCHAR\) AS review_status/,
+    `${message}: alias projection should preserve stable ID and source columns`,
+  )
+  assert.match(
+    workflow,
+    /SELECT\s+asset_id,\s+source_uri,\s+source_text,\s+review_status,\s+ai_prompt\([\s\S]*struct_pack\([\s\S]*\) AS ai_review_note/,
+    `${message}: optional AI branch should use constant SQL ai_prompt beside source fields`,
+  )
+  assertNoCredentialSqlFields(workflow, `${message} optional AI branch`)
+
+  const examples = blocks.join('\n')
+  const sqlAiIndex = examples.indexOf('ai_prompt(')
+  const pythonOrRelationAiIndex = examples.search(
+    /vane\.ai\.|\.(?:prompt|embed_text|classify_text)\(/,
+  )
+  assert.ok(
+    sqlAiIndex !== -1 &&
+      (pythonOrRelationAiIndex === -1 || sqlAiIndex < pythonOrRelationAiIndex),
+    `${message}: optional SQL ai_prompt should precede Python or Relation AI`,
+  )
+
+  const rolePatterns = locale === 'en'
+    ? [
+        /\[UDF Relation API\]\(\/docs\/data\/reference\/udf-api#relation-api\)/,
+        /\[AI Relation API\]\(\/docs\/data\/reference\/ai-api#relation-api\)/,
+        /\[Custom Python UDFs\]\(\/docs\/data\/guides\/custom-python-udfs\)/,
+        /\[AI Functions\]\(\/docs\/data\/guides\/ai-functions\)/,
+      ]
+    : [
+        /\[UDF Relation API\]\(\/zh-CN\/docs\/data\/reference\/udf-api#relation-api\)/,
+        /\[AI Relation API\]\(\/zh-CN\/docs\/data\/reference\/ai-api#relation-api\)/,
+        /\[自定义 Python UDF\]\(\/zh-CN\/docs\/data\/guides\/custom-python-udfs\)/,
+        /\[AI 函数\]\(\/zh-CN\/docs\/data\/guides\/ai-functions\)/,
+      ]
+  assertPatterns(source, rolePatterns, `${message} role links`)
+}
+
+const assertCustomUdfTask = (source, locale, message) => {
+  const blocks = fencedCodeBlocks(source)
+  const primary = blocks[0]
+  assert.match(primary, /^```python\nimport vane\b/, `${message}: primary task should be Python setup`)
+  const callable = primary.match(/def ([a-z_]\w*)\([^)]*\):/)?.[1]
+  const alias = primary.match(/alias="([a-z_]\w*)"/)?.[1]
+  assert.ok(callable, `${message}: primary task should define its raw callable`)
+  assert.ok(alias, `${message}: primary task should define its SQL alias`)
+  assertSubstringOrder(
+    primary,
+    [
+      `def ${callable}`,
+      'con = vane.connect()',
+      'vane.attach_function(',
+      `alias="${alias}"`,
+      `${alias}(text) AS review_text`,
+      'expected_ids =',
+      'assert list(result.columns)',
+      'result.write_parquet(',
+      'finally:',
+      `vane.detach_function("${alias}", connection=con)`,
+      'con.close()',
+    ],
+    `${message} primary SQL alias lifecycle`,
+  )
+  assert.match(
+    primary,
+    new RegExp(
+      `SELECT\\s+document_id,\\s+source_uri,\\s+text,\\s+${escapeRegExp(alias)}\\(text\\) AS review_text`,
+    ),
+    `${message}: SQL alias projection should preserve document ID and source URI`,
+  )
+
+  const pythonHeading = locale === 'en'
+    ? /^## Alternate Workflow: Python Expression$/
+    : /^## 备用工作流：Python Expression$/
+  const relationHeading = locale === 'en'
+    ? /^## Relation API for Table-Shaped Capabilities$/
+    : /^## Relation API：只用于表形能力$/
+  const pythonSection = conceptSection(source, pythonHeading, `${message} Python Expression`)
+  const relationSection = conceptSection(source, relationHeading, `${message} Relation API`)
+  assertPatterns(
+    pythonSection,
+    [/@vane\.func\(/, /vane\.func\.batch\(/, /source\.select\(/],
+    `${message} Python Expression alternatives`,
+  )
+  assertSubstringOrder(
+    blocks.join('\n'),
+    ['vane.attach_function(', '@vane.func(', 'vane.func.batch(', '@vane.cls(', 'source.map_batches('],
+    `${message} SQL, Python Expression, and Relation order`,
+  )
+
+  const relationBlocks = fencedCodeBlocks(relationSection)
+  const multiColumn = relationBlocks.find((block) => /def prepare_review_batch\(/.test(block))
+  const flatMap = relationBlocks.find((block) => /source\.flat_map\(/.test(block))
+  const rowMap = relationBlocks.find((block) => /source\.map\(/.test(block))
+  const actorReuse = relationBlocks.find((block) => /class ReviewRuleSet:/.test(block))
+  assert.ok(multiColumn, `${message}: Relation examples should define multi-column map_batches`)
+  assert.ok(flatMap, `${message}: Relation examples should define cardinality-changing flat_map`)
+  assert.ok(rowMap, `${message}: Relation examples should define current row-wise scalar map`)
+  assert.ok(actorReuse, `${message}: Relation examples should define actor-backed reuse`)
+  assertPatterns(
+    multiColumn,
+    [
+      /pa\.table\(/,
+      /"document_id":/,
+      /"source_uri":/,
+      /"review_text":/,
+      /"text_length":/,
+      /"status":/,
+      /source\.map_batches\(/,
+    ],
+    `${message} multi-column map_batches`,
+  )
+  assertPatterns(
+    flatMap,
+    [/yield \{/, /"document_id": row\["document_id"\]/, /source\.flat_map\(/],
+    `${message} cardinality-changing flat_map`,
+  )
+  assertPatterns(
+    rowMap,
+    [
+      /def build_review_key\(document_id, source_uri, text\):/,
+      /source\.map\(/,
+      /return_type=duckdb\.sqltypes\.VARCHAR/,
+      /execution_backend="subprocess_task"/,
+      /value AS review_key/,
+    ],
+    `${message} row-wise scalar map`,
+  )
+  assertSubstringOrder(
+    actorReuse,
+    [
+      'class ReviewRuleSet:',
+      'source.map_batches(',
+      'ReviewRuleSet,',
+      'execution_backend="subprocess_actor"',
+      'actor_number=2',
+      'gpus=0.0',
+    ],
+    `${message} actor-backed reuse`,
+  )
+  assertPatterns(
+    relationSection,
+    [/subprocess_task/, /subprocess_actor/, /ray_task/, /ray_actor/, /gpus=1\.0/, /worker/],
+    `${message} backend and GPU guidance`,
+  )
+  for (const block of relationBlocks) {
+    assert.doesNotMatch(
+      block,
+      /\bconcurrency\s*=/,
+      `${message}: UDF Relation examples should not use AI provider concurrency`,
+    )
+  }
+  assertRejects(
+    collapseWrappedMarkdown(relationSection),
+    locale === 'en'
+      ? [/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i]
+      : [/rel\.map`?\s*(?:是|作为)\s*pandas batch/i],
+    `${message} current rel.map contract`,
+  )
+  assert.doesNotMatch(
+    relationBlocks.join('\n'),
+    /import pandas|\bpd\.|pandas\.DataFrame/i,
+    `${message}: rel.map should not restore the stale pandas implementation`,
+  )
+
+  const rolePatterns = locale === 'en'
+    ? [
+        /\[UDF API Reference\]\(\/docs\/data\/reference\/udf-api\)/,
+        /\[UDF Concepts\]\(\/docs\/data\/concepts\/udfs\)/,
+      ]
+    : [
+        /\[UDF API 参考\]\(\/zh-CN\/docs\/data\/reference\/udf-api\)/,
+        /\[UDF 概念\]\(\/zh-CN\/docs\/data\/concepts\/udfs\)/,
+      ]
+  assertPatterns(source, rolePatterns, `${message} role links`)
+}
+
+const sqlStringBodies = (block) =>
+  [...block.matchAll(/"""([\s\S]*?)"""/g)].map((match) => match[1])
+
+const assertAiGuideTask = (source, locale, message) => {
+  const blocks = fencedCodeBlocks(source)
+  const examples = blocks.join('\n')
+  assertSubstringOrder(
+    examples,
+    [
+      'ai_prompt(',
+      'ai_embed(',
+      'validation =',
+      'reviewable.write_parquet(',
+      'vane.ai.prompt(',
+      'vane.ai.embed(',
+      'multimodal_candidates.prompt(',
+      'candidates.classify_text(',
+      'candidates.embed_text(',
+      'gpu_response_only = candidates.prompt(',
+    ],
+    `${message} SQL, Python Expression, and specialized Relation order`,
+  )
+
+  const sqlPrompt = codeBlockContaining(source, /\bai_prompt\(/, `${message} SQL ai_prompt`)
+  const sqlEmbed = codeBlockContaining(source, /\bai_embed\(/, `${message} SQL ai_embed`)
+  assert.match(
+    sqlPrompt,
+    /SELECT\s+run_id,\s+document_id,\s+document_type,\s+source_uri,\s+source_text,\s+review_prompt,\s+ai_prompt\([\s\S]*struct_pack\(/,
+    `${message}: SQL ai_prompt should preserve stable ID and source fields with constant options`,
+  )
+  assert.match(
+    sqlEmbed,
+    /SELECT\s+run_id,\s+document_id,\s+document_type,\s+source_uri,\s+source_text,\s+review_prompt,\s+review_note,\s+ai_embed\([\s\S]*struct_pack\(/,
+    `${message}: SQL ai_embed should preserve stable ID, source, and prompt output with constant options`,
+  )
+  assertNoCredentialSqlFields(sqlPrompt, `${message} SQL ai_prompt`)
+  assertNoCredentialSqlFields(sqlEmbed, `${message} SQL ai_embed`)
+
+  const pythonExpression = codeBlockContaining(
+    source,
+    /vane\.ai\.prompt\([\s\S]*vane\.ai\.embed\(/,
+    `${message} Python Expression`,
+  )
+  assertSubstringOrder(
+    pythonExpression,
+    [
+      'python_prompt_provider_options = vane.ai.OpenAIProviderOptions(',
+      'python_embedding_provider_options = vane.ai.OpenAIProviderOptions(',
+      'python_prompt_options = vane.ai.OpenAIPromptOptions(',
+      'python_embedding_options = vane.ai.OpenAIEmbeddingOptions(',
+      'python_prompted = candidates.select(',
+      'vane.ai.prompt(',
+      ').alias("review_note")',
+      'python_reviewed = python_prompted.select(',
+      'vane.ai.embed(',
+      ').alias("embedding")',
+    ],
+    `${message} complete Python Expression construction`,
+  )
+
+  const structured = codeBlockContaining(
+    source,
+    /class ReviewDecision\(BaseModel\):[\s\S]*multimodal_candidates\.prompt\(/,
+    `${message} structured and multimodal Relation prompt`,
+  )
+  assertSubstringOrder(
+    structured,
+    [
+      'from pydantic import BaseModel',
+      'class ReviewDecision(BaseModel):',
+      'multimodal_candidates = con.sql(',
+      'multimodal_candidates.prompt(',
+      'image_columns=["image"]',
+      'return_format=ReviewDecision',
+      'output_column="decision_json"',
+      'execution_backend="subprocess_task"',
+    ],
+    `${message} structured and multimodal Relation prompt`,
+  )
+  const classification = codeBlockContaining(
+    source,
+    /candidates\.classify_text\(/,
+    `${message} Relation classification`,
+  )
+  assertPatterns(
+    classification,
+    [/labels=\[/, /output_column="review_label"/, /execution_backend="subprocess_task"/],
+    `${message} Relation classification`,
+  )
+  const chunking = codeBlockContaining(
+    source,
+    /candidates\.embed_text\(/,
+    `${message} Relation chunking`,
+  )
+  assertPatterns(
+    chunking,
+    [/max_chunk_chars=2000/, /chunk_overlap_chars=200/, /output_column="chunked_embedding"/],
+    `${message} Relation chunking`,
+  )
+  const actorControls = codeBlockContaining(
+    source,
+    /gpu_response_only = candidates\.prompt\(/,
+    `${message} Relation actor controls`,
+  )
+  assertSubstringOrder(
+    actorControls,
+    [
+      'vane.configure(runner="ray")',
+      'gpu_response_only = candidates.prompt(',
+      'provider_options=vane.ai.VLLMProviderOptions(',
+      'concurrency=2',
+      'gpus_per_actor=1',
+      'execution_backend="ray_actor"',
+    ],
+    `${message} valid Relation actor controls`,
+  )
+
+  for (const block of blocks) {
+    for (const sqlBody of sqlStringBodies(block)) {
+      assert.doesNotMatch(
+        sqlBody,
+        /(?:^|[^\w])(?:rel\.)?(?:prompt|embed_text|classify_text)\s*\(/,
+        `${message}: Relation helpers should not appear as a direct SQL API`,
+      )
+    }
+  }
+  assert.doesNotMatch(source, /append_column\(/, `${message}: rejects manual AI recombination`)
+  assertPatterns(
+    source,
+    locale === 'en'
+      ? [
+          /worker environment/,
+          /does not provide a direct SQL Relation or table-function API/,
+          /stable business ID/,
+          /idempotent/,
+          /\[AI Function API Reference\]\(\/docs\/data\/reference\/ai-api\)/,
+          /\[AI Function Concepts\]\(\/docs\/data\/concepts\/ai-functions\)/,
+        ]
+      : [
+          /worker 的环境/,
+          /不提供直接的 SQL Relation 或 table-function API/,
+          /稳定的业务 ID/,
+          /幂等性/,
+          /\[AI Function API 参考\]\(\/zh-CN\/docs\/data\/reference\/ai-api\)/,
+          /\[AI Function 概念\]\(\/zh-CN\/docs\/data\/concepts\/ai-functions\)/,
+        ],
+    `${message} operational and role guidance`,
+  )
+}
+
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
@@ -505,10 +961,19 @@ const executionModelZh = read(paths.executionModelZh)
 const sqlVsPython = read(paths.sqlVsPython)
 const sqlVsPythonZh = read(paths.sqlVsPythonZh)
 const customUdfs = read('docs/data/guides/custom-python-udfs.mdx')
+const customUdfsZh = read(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/custom-python-udfs.mdx',
+)
 const aiGuide = read('docs/data/guides/ai-functions.mdx')
+const aiGuideZh = read(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/ai-functions.mdx',
+)
 const embeddingsGuide = read('docs/data/guides/embeddings-at-scale.mdx')
 const gpuGuide = read('docs/data/guides/gpu-inference.mdx')
 const quickstart = read('docs/data/quickstart/quickstart.mdx')
+const quickstartZh = read(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
+)
 const overview = read('docs/data/index.mdx')
 const overviewZh = read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/index.mdx')
 const registry = read('src/docs/registry.ts')
@@ -1144,8 +1609,12 @@ const relatedConceptSchemas = [
         id: 'materialization and Arrow',
         heading: { en: /^## Materialization starts work$/, zh: /^## 物化开始执行$/ },
         require: {
-          en: [/(?=[\s\S]*consumer requests data or writes it)(?=[\s\S]*show\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*At materialization[^.\n]{0,220}active runner)/i],
-          zh: [/(?=[\s\S]*consumer 请求数据或写出结果)(?=[\s\S]*show\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*物化时[^。\n]{0,220}active runner)/i],
+          en: [/(?=[\s\S]*consumer requests data or writes it)(?=[\s\S]*show\(\))(?=[\s\S]*to_arrow_reader\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*At materialization[^.\n]{0,220}active runner)/i],
+          zh: [/(?=[\s\S]*consumer 请求数据或写出结果)(?=[\s\S]*show\(\))(?=[\s\S]*to_arrow_reader\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*物化时[^。\n]{0,220}active runner)/i],
+        },
+        reject: {
+          en: [/to_record_batch\(\)/],
+          zh: [/to_record_batch\(\)/],
         },
       },
       {
@@ -1253,7 +1722,7 @@ const relatedConceptSchemas = [
     ],
     examples: {
       languages: ['python', 'python', 'python'],
-      order: ['vane.attach_function(', 'normalize_text_sql(text)', 'projected.explain()', 'vane.detach_function(', 'source = con.sql(', 'source.select(', 'rel = con.sql(', 'rel.classify_text(', 'FROM classified'],
+      order: ['vane.attach_function(', 'normalize_text_sql(text)', 'vane.detach_function(', 'source = con.sql(', 'source.select(', 'rel = con.sql(', 'rel.classify_text(', 'FROM classified'],
       check: assertSqlVsPythonLifecycle,
     },
   },
@@ -1367,14 +1836,76 @@ assert.throws(
   /rejects/,
   'Relation guards should reject stale pandas-batch semantics',
 )
-const earlyDetachSqlVsPython = sqlVsPython.replace(
+const sqlVsPythonExampleBlocks = fencedCodeBlocks(sqlVsPython)
+const explainOnlyAliasLifecycle = [...sqlVsPythonExampleBlocks]
+explainOnlyAliasLifecycle[0] = `\`\`\`python
+import vane
+
+con = vane.connect()
+
+def normalize_text(value):
+    return str(value).strip().lower()
+
+vane.attach_function(
+    normalize_text,
+    alias="normalize_text_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+    return_dtype="VARCHAR",
+)
+
+try:
+    projected = con.sql("SELECT normalize_text_sql(text) FROM documents")
+    plan = projected.explain()
+finally:
+    vane.detach_function("normalize_text_sql", connection=con)
+\`\`\``
+assert.throws(
+  () => assertSqlVsPythonLifecycle(
+    explainOnlyAliasLifecycle,
+    'explain-only alias lifecycle mutation probe',
+  ),
+  /materializ|consume/i,
+  'SQL vs Python guards should reject explain-only alias lifecycles',
+)
+const earlyDetachAliasLifecycle = [...sqlVsPythonExampleBlocks]
+earlyDetachAliasLifecycle[0] = explainOnlyAliasLifecycle[0].replace(
   '    plan = projected.explain()\nfinally:\n    vane.detach_function("normalize_text_sql", connection=con)',
-  '    vane.detach_function("normalize_text_sql", connection=con)\n    plan = projected.explain()\nfinally:\n    pass',
+  'finally:\n    vane.detach_function("normalize_text_sql", connection=con)\nprojected.fetchall()',
 )
 assert.throws(
-  () => assertRelatedExamples(earlyDetachSqlVsPython, relatedConceptSchemas[2].examples, 'early-detach mutation probe'),
-  /examples|alias lifecycle/,
+  () => assertSqlVsPythonLifecycle(earlyDetachAliasLifecycle, 'early-detach mutation probe'),
+  /inside try|alias lifecycle/,
   'SQL vs Python guards should consume lazy alias work before detach',
+)
+const invalidActorClassification = [...sqlVsPythonExampleBlocks]
+invalidActorClassification[0] = explainOnlyAliasLifecycle[0].replace(
+  '    plan = projected.explain()',
+  '    rows = projected.fetchall()',
+)
+invalidActorClassification[2] = invalidActorClassification[2].replace(
+  '    output_column="label",',
+  '    output_column="label",\n    execution_backend="subprocess_actor",',
+)
+assert.throws(
+  () => assertSqlVsPythonLifecycle(
+    invalidActorClassification,
+    'classification actor configuration mutation probe',
+  ),
+  /actor_number/,
+  'SQL vs Python guards should reject actor classification without actor_number',
+)
+const taskBackendClassification = [...invalidActorClassification]
+taskBackendClassification[2] = taskBackendClassification[2].replace(
+  'execution_backend="subprocess_actor"',
+  'execution_backend="subprocess_task"',
+)
+assert.doesNotThrow(
+  () => assertSqlVsPythonLifecycle(
+    taskBackendClassification,
+    'classification task backend acceptance probe',
+  ),
+  'SQL vs Python guards should accept a verified task backend without actor_number',
 )
 assert.throws(
   () => assertReferenceIntroduction(
@@ -1842,9 +2373,183 @@ for (const schema of relatedConceptSchemas) {
   assertRelatedConceptSchema(schema)
 }
 
+const guideSchemas = [
+  {
+    id: 'quickstart',
+    label: 'Quickstart',
+    sources: { en: quickstart, zh: quickstartZh },
+    headings: {
+      en: [
+        /^## Before you start$/,
+        /^## 1\. Create a connection and source table$/,
+        /^## 2\. Select candidates with SQL$/,
+        /^## 3\. Define a raw scalar callable$/,
+        /^## 4\. Run the SQL Expression path safely$/,
+        /^## What the validation checks$/,
+        /^## When to use Relation API$/,
+        /^## Next$/,
+      ],
+      zh: [
+        /^## 开始之前$/,
+        /^## 1\. 创建连接和来源表$/,
+        /^## 2\. 使用 SQL 选择候选行$/,
+        /^## 3\. 定义原始 scalar callable$/,
+        /^## 4\. 安全运行 SQL Expression 路径$/,
+        /^## 校验内容$/,
+        /^## 何时使用 Relation API$/,
+        /^## 下一步$/,
+      ],
+    },
+    check: assertQuickstartTask,
+  },
+  {
+    id: 'custom-udf',
+    label: 'Custom Python UDF Guide',
+    sources: { en: customUdfs, zh: customUdfsZh },
+    headings: {
+      en: [
+        /^## Task Goal and Prerequisites$/,
+        /^## Primary Workflow: SQL Expression \(Recommended\)$/,
+        /^## Alternate Workflow: Python Expression$/,
+        /^### Scalar Python Expression with `vane\.func`$/,
+        /^### Arrow Batch Python Expression with `vane\.func\.batch`$/,
+        /^## Stateful `vane\.cls`: A Narrow Contract$/,
+        /^## Relation API for Table-Shaped Capabilities$/,
+        /^### Capability: Arrow Multi-Column or Whole-Table Output — `rel\.map_batches`$/,
+        /^### Capability: Explicit Zero, One, or Many Rows — `rel\.flat_map`$/,
+        /^### Capability: Row-Wise Scalar Output with an Explicit Relation Executor — `rel\.map`$/,
+        /^### Capability: Model or Client Reuse Across Batches — Actor-Backed Relation Classes$/,
+        /^### Scale Backends and Resources$/,
+        /^### Output, Error, and Side-Effect Contracts$/,
+        /^## Related Guides$/,
+      ],
+      zh: [
+        /^## 任务目标与前置条件$/,
+        /^## 主要工作流：SQL Expression（推荐）$/,
+        /^## 备用工作流：Python Expression$/,
+        /^### 使用 `vane\.func` 的 Scalar Python Expression$/,
+        /^### 使用 `vane\.func\.batch` 的 Arrow Batch Python Expression$/,
+        /^## Stateful `vane\.cls`：窄范围契约$/,
+        /^## Relation API：只用于表形能力$/,
+        /^### 能力：Arrow 多列或完整表阶段输出 — `rel\.map_batches`$/,
+        /^### 能力：显式零行、一行或多行 — `rel\.flat_map`$/,
+        /^### 能力：使用显式 Relation Executor 的逐行 Scalar 输出 — `rel\.map`$/,
+        /^### 能力：跨 Batch 复用模型或客户端 — Actor-Backed Relation Class$/,
+        /^### 扩展 Backend 与资源$/,
+        /^### 输出、错误与副作用契约$/,
+        /^## 相关指南$/,
+      ],
+    },
+    check: assertCustomUdfTask,
+  },
+  {
+    id: 'ai-guide',
+    label: 'AI Functions Guide',
+    sources: { en: aiGuide, zh: aiGuideZh },
+    headings: {
+      en: [
+        /^## 1\. Prepare a Reviewable Source$/,
+        /^## 2\. Complete the Task with SQL Expression$/,
+        /^### Select a Candidate Slice$/,
+        /^### Generate Review Notes First$/,
+        /^### Add Embeddings When Retrieval Is Part of the Task$/,
+        /^### Validate and Write the Review Artifact$/,
+        /^## 3\. Use Python Expression as an Alternate$/,
+        /^## 4\. Use Relation API Only for Specialized Capabilities$/,
+        /^### Structured or Multimodal Prompting$/,
+        /^### Built-In Classification$/,
+        /^### Built-In Long-Text Chunking$/,
+        /^### Select an Explicit Relation Backend and Actor Pool$/,
+        /^## 5\. Operate Providers and Writes Safely$/,
+        /^## Next Steps$/,
+      ],
+      zh: [
+        /^## 1\. 准备可审查的源数据$/,
+        /^## 2\. 用 SQL Expression 完成任务$/,
+        /^### 选择候选切片$/,
+        /^### 先生成审查说明$/,
+        /^### 需要检索时添加 Embedding$/,
+        /^### 校验并写入审查产物$/,
+        /^## 3\. 将 Python Expression 作为备选入口$/,
+        /^## 4\. 仅在专用能力需要时使用 Relation API$/,
+        /^### 结构化或多模态 Prompt$/,
+        /^### 内置分类$/,
+        /^### 内置长文本分块$/,
+        /^### 显式选择 Relation Backend 与 Actor Pool$/,
+        /^## 5\. 安全运行 Provider 与写入$/,
+        /^## 后续阅读$/,
+      ],
+    },
+    check: assertAiGuideTask,
+  },
+]
+
+for (const schema of guideSchemas) {
+  assertBilingualGuideStructure(schema)
+  for (const locale of ['en', 'zh']) {
+    schema.check(
+      schema.sources[locale],
+      locale,
+      `${locale === 'en' ? 'English' : 'Chinese'} ${schema.label}`,
+    )
+  }
+}
+
+const quickstartOrderMutation = quickstart
+  .replace('## 2. Select candidates with SQL', '## __QUICKSTART_ORDER_SWAP__')
+  .replace('## 3. Define a raw scalar callable', '## 2. Select candidates with SQL')
+  .replace('## __QUICKSTART_ORDER_SWAP__', '## 3. Define a raw scalar callable')
+assert.throws(
+  () => assertGuideHeadingSchema(
+    quickstartOrderMutation,
+    guideSchemas[0].headings.en,
+    'Quickstart targeted order mutation',
+  ),
+  /semantic heading/,
+  'Quickstart guards should reject SQL candidate selection after callable definition',
+)
+const quickstartEarlyDetachMutation = quickstart.replace(
+  '    result.show()\nfinally:\n    vane.detach_function(review_alias, connection=con)',
+  'finally:\n    vane.detach_function(review_alias, connection=con)\n    result.show()',
+)
+assert.throws(
+  () => assertQuickstartTask(
+    quickstartEarlyDetachMutation,
+    'en',
+    'Quickstart early-detach mutation',
+  ),
+  /SQL-first lifecycle/,
+  'Quickstart guards should consume the lazy result before detaching its alias',
+)
+const customUdfPandasMapMutation = customUdfs.replace(
+  'def build_review_key(document_id, source_uri, text):',
+  'import pandas as pd\n\n\ndef build_review_key(document_id, source_uri, text):',
+)
+assert.throws(
+  () => assertCustomUdfTask(
+    customUdfPandasMapMutation,
+    'en',
+    'Custom UDF stale pandas map mutation',
+  ),
+  /stale pandas implementation/,
+  'Custom UDF guards should reject the stale pandas rel.map contract',
+)
+const aiUndefinedResponseModelMutation = aiGuide.replace(
+  'class ReviewDecision(BaseModel):',
+  'class UndefinedReplacement(BaseModel):',
+)
+assert.throws(
+  () => assertAiGuideTask(
+    aiUndefinedResponseModelMutation,
+    'en',
+    'AI Guide undefined response-model mutation',
+  ),
+  /structured and multimodal Relation prompt/,
+  'AI Guide guards should reject a response model used before definition',
+)
+
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
-assert.match(aiGuide, /vane\.ai\.(embed|prompt)[\s\S]*\.alias\(/, 'AI guide should demonstrate expression projection')
 assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
 assert.match(embeddingsGuide, /vane\.ai\.embed[\s\S]*vane\.col[\s\S]*\.alias\("embedding"\)/, 'Embedding guide should demonstrate expression embedding')
 

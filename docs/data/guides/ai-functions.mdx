@@ -2,216 +2,425 @@
 title: AI Functions
 ---
 
-Vane Data is built for multimodal AI workloads. AI Functions let you run models over data: generating embeddings, classifying text, or calling large language and multimodal models.
+This guide completes one reviewable document-analysis task. It uses SQL `ai_prompt` and `ai_embed` first, shows Python Expression as an alternate entry point to the same row-preserving model, and moves to Relation API only for capabilities that require it.
 
-AI Functions are a good starting point for common tasks such as embeddings, text classification, and prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, preprocessing, or per-row error columns.
+Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures and options, and [AI Function Concepts](/docs/data/concepts/ai-functions) for the reasons behind the Expression and Relation models.
 
-## Input Relation
+## 1. Prepare a Reviewable Source
 
-Start with a relation that contains:
-
-- A stable business ID, such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
-- The text column or fields needed by the model.
-- Source metadata that helps review unusual outputs later, such as `source_uri`, `media_type`, `document_type`, or `created_at`.
+Start with a stable business ID, the source text sent to the model, and enough metadata to reproduce and review an output:
 
 ```python
 import vane
 
 con = vane.connect()
-
-source = con.sql("""
-    select
-        document_id,
-        document_type,
-        text,
-        source_uri
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
-    order by document_id
-    limit 100
-""")
-
-source.to_table("source_sample")
-```
-
-Keep the first sample small and ordered. Stable ordering lets you validate AI Function output deterministically and combine it with source rows.
-
-## Preserve IDs
-
-`embed_text(...)`, `classify_text(...)`, and `prompt(...)` return the configured output column. If the final result also needs IDs and source columns, validate row counts and ordering first, then explicitly combine the output column with source rows.
-
-```python
-source_table = source.to_arrow_table()
-```
-
-For each task below, compare row counts and append the new column to `source_table` only after the check passes:
-
-```python
-output_table = output_only.to_arrow_table()
-
-if output_table.num_rows != source_table.num_rows:
-    raise ValueError("AI output row count does not match source row count")
-
-with_output = con.from_arrow(
-    source_table.append_column("ai_output", output_table["ai_output"])
+source = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(document_type AS VARCHAR) AS document_type,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(text AS VARCHAR) AS source_text
+    FROM read_parquet('data/documents/*.parquet')
+    """
 )
+source.to_table("ai_review_source")
 ```
 
-Replace `ai_output` with the actual output column name used by the task. If you do not want a separate recombination step, write a custom `map_batches(...)` UDF that returns stable IDs, source fields, status, error columns, and model output in one schema.
+`document_id` is the review and write key. `source_uri`, `document_type`, and `source_text` explain where each model result came from and what the provider saw.
 
-## Embed Text
+## 2. Complete the Task with SQL Expression
 
-Use `embed_text` when each input row should get one vector. For long documents, chunk first and use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale).
+### Select a Candidate Slice
 
-```python
-embedding_only = source.embed_text(
-    "text",
-    provider="openai",
-    model="text-embedding-3-small",
-    output_column="embedding",
-    batch_size=64,
-    concurrency=4,
-    execution_backend="subprocess_actor",
-)
-```
-
-Validation checks:
-
-- Input column: filtered `text` should be non-null.
-- Output column: `embedding` should exist, and vector length should match the model expectation.
-- ID preservation: combine the embedding column with `document_id` only after row-count validation passes.
-- Result review: inspect a few rows to confirm empty or very short text was not embedded accidentally.
+Use ordinary SQL to filter before any provider call. Keep the first run small, deterministic, and representative:
 
 ```python
-embedding_table = embedding_only.to_arrow_table()
-
-if embedding_table.num_rows != source_table.num_rows:
-    raise ValueError("embedding row count mismatch")
-
-if embedding_table.num_rows == 0:
-    raise ValueError("empty embedding sample")
-
-if not embedding_table["embedding"][0].as_py():
-    raise ValueError("first embedding is empty")
-
-embedded = con.from_arrow(
-    source_table.append_column("embedding", embedding_table["embedding"])
-)
-```
-
-## Classify Text
-
-Use `classify_text` when the label set is small and each input row should get one label.
-
-```python
-label_only = source.classify_text(
-    "text",
-    labels=["invoice", "claim", "memo", "other"],
-    provider="transformers",
-    model="facebook/bart-large-mnli",
-    output_column="ai_label",
-    batch_size=16,
-    execution_backend="subprocess_actor",
-)
-```
-
-Validation checks:
-
-- Input column: `text` should contain the text you want the classifier to see.
-- Output column: `ai_label` should contain only one of the labels you provided.
-- ID preservation: append `ai_label` to the source table after row-count validation.
-- Result review: sample by label and check whether the label set is too broad, too narrow, or missing business categories.
-
-```python
-label_table = label_only.to_arrow_table()
-
-if label_table.num_rows != source_table.num_rows:
-    raise ValueError("classification row count mismatch")
-
-labels = set(label_table["ai_label"].to_pylist())
-allowed = {"invoice", "claim", "memo", "other"}
-unexpected = labels - allowed
-if unexpected:
-    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
-
-classified = con.from_arrow(
-    source_table.append_column("ai_label", label_table["ai_label"])
-)
-```
-
-## Prompt
-
-Use `prompt` when output is generated from a row-level prompt. Keep the first prompt narrow and easy to review.
-
-```python
-prompts = con.sql("""
-    select
+candidates = con.sql(
+    """
+    SELECT
+        'ai-review-2026-07-11-001'::VARCHAR AS run_id,
         document_id,
         document_type,
         source_uri,
-        'Summarize this document in one sentence: ' || text as review_prompt
-    from source_sample
-""")
-
-response_only = prompts.prompt(
-    "review_prompt",
-    provider="openai",
-    model="gpt-4o-mini",
-    system_message="Return concise business review notes.",
-    output_column="review_note",
-    batch_size=8,
-    concurrency=4,
-    execution_backend="subprocess_actor",
+        source_text,
+        (
+            'Summarize the business issue and required follow-up in one sentence: '
+            || source_text
+        )::VARCHAR AS review_prompt
+    FROM ai_review_source
+    WHERE source_text IS NOT NULL
+      AND trim(source_text) <> ''
+      AND document_type IN ('invoice', 'claim', 'memo')
+    ORDER BY document_id
+    LIMIT 100
+    """
 )
+candidates.to_table("ai_review_candidates")
+
+expected_ids = [row[0] for row in con.sql(
+    "SELECT document_id FROM ai_review_candidates ORDER BY document_id"
+).fetchall()]
+expected_row_count = len(expected_ids)
+
+if expected_row_count == 0:
+    raise ValueError("AI review candidate slice is empty")
+if len(set(expected_ids)) != expected_row_count:
+    raise ValueError("document_id must be unique in the candidate slice")
 ```
 
-Validation checks:
+The stable ordering makes this validation run reproducible. The ID and source fields remain in every later projection; model output order is never used as an identity contract.
 
-- Input column: `review_prompt` should contain only fields the model should see.
-- Output column: `review_note` should be non-empty and short enough to review.
-- ID preservation: combine output with `document_id`, `document_type`, and `source_uri`.
-- Result review: manually inspect a small sample before increasing `limit`, `batch_size`, or `concurrency`.
+### Generate Review Notes First
+
+Set `OPENAI_API_KEY` in the environment of every worker before executing the relation. Never place a key, token, password, or secret in SQL options.
 
 ```python
-prompt_table = prompts.to_arrow_table()
-response_table = response_only.to_arrow_table()
+prompted = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        ai_prompt(
+            review_prompt,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini',
+                concurrency := 2,
+                max_api_concurrency := 4,
+                batch_size := 8,
+                max_retries := 2,
+                on_error := 'log',
+                system_message := 'Return one concise factual review note.',
+                temperature := 0.0
+            )
+        ) AS review_note
+    FROM ai_review_candidates
+    ORDER BY document_id
+    """
+)
+prompted.to_table("ai_review_prompted")
+```
 
-if response_table.num_rows != prompt_table.num_rows:
-    raise ValueError("prompt row count mismatch")
+The second argument is one foldable constant `STRUCT`. Provider, model, execution, and request settings cannot vary by row. With `on_error := 'log'`, a response that still fails after retries remains a null `review_note` for the validation step instead of silently disappearing.
 
-empty = [x for x in response_table["review_note"].to_pylist() if not x]
-if empty:
-    raise ValueError("prompt returned empty responses")
+### Add Embeddings When Retrieval Is Part of the Task
 
-reviewed = con.from_arrow(
-    prompt_table.append_column("review_note", response_table["review_note"])
+Skip this step when the review artifact does not need vectors. When it does, add one more SQL Expression column while retaining the source and prompt output:
+
+```python
+reviewed = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        review_note,
+        ai_embed(
+            source_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                dimensions := 512,
+                normalize := true,
+                concurrency := 2,
+                batch_size := 32,
+                max_retries := 2,
+                on_error := 'raise'
+            )
+        ) AS embedding
+    FROM ai_review_prompted
+    ORDER BY document_id
+    """
+)
+reviewed.to_table("ai_review_model_output")
+```
+
+Both calls are top-level values in `SELECT` projections. Each adds one typed, row-preserving output column; filtering, grouping, joins, and row-varying configuration stay outside the AI expression.
+
+### Validate and Write the Review Artifact
+
+Turn tolerant prompt failures into an explicit review status, then check cardinality, IDs, null/error output, and the exact schema before writing:
+
+```python
+reviewable = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        document_type,
+        source_uri,
+        source_text,
+        review_prompt,
+        review_note,
+        embedding,
+        CASE
+            WHEN review_note IS NULL OR trim(review_note) = ''
+                THEN 'prompt_error'
+            WHEN embedding IS NULL OR array_length(embedding) <> 512
+                THEN 'embedding_error'
+            ELSE 'ready'
+        END::VARCHAR AS ai_status
+    FROM ai_review_model_output
+    ORDER BY document_id
+    """
+)
+reviewable.to_table("ai_review_result")
+
+validation = con.sql(
+    """
+    SELECT
+        count(*) AS row_count,
+        count(DISTINCT document_id) AS distinct_id_count,
+        count(*) FILTER (WHERE document_id IS NULL) AS null_id_count,
+        count(*) FILTER (
+            WHERE source_uri IS NULL OR source_text IS NULL
+        ) AS null_source_count,
+        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
+    FROM ai_review_result
+    """
+).fetchone()
+(
+    actual_row_count,
+    distinct_id_count,
+    null_id_count,
+    null_source_count,
+    error_output_count,
+) = validation
+
+assert actual_row_count == expected_row_count
+assert distinct_id_count == expected_row_count
+assert null_id_count == 0
+assert null_source_count == 0
+
+actual_ids = [row[0] for row in con.sql(
+    "SELECT document_id FROM ai_review_result ORDER BY document_id"
+).fetchall()]
+assert actual_ids == expected_ids
+
+expected_columns = [
+    "run_id",
+    "document_id",
+    "document_type",
+    "source_uri",
+    "source_text",
+    "review_prompt",
+    "review_note",
+    "embedding",
+    "ai_status",
+]
+expected_types = [
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "FLOAT[512]",
+    "VARCHAR",
+]
+assert list(reviewable.columns) == expected_columns
+assert [str(dtype) for dtype in reviewable.types] == expected_types
+
+print({"error_output_count": error_output_count})
+reviewable.write_parquet("output/ai-review-2026-07-11-001/")
+```
+
+The write keeps failed rows beside their IDs, source, prompt, and status for review. Require `error_output_count == 0` only when the next stage accepts clean results exclusively. Use a new `run_id` and output path for a genuinely new provider run; for a durable table, merge or replace by stable keys instead of blindly appending retries.
+
+## 3. Use Python Expression as an Alternate
+
+Use Python Expression when typed provider/configuration construction belongs in Python. It has the same one-column, row-preserving projection semantics as SQL Expression; it is not the path to structured, multimodal, or table-shaped output.
+
+```python
+python_prompt_provider_options = vane.ai.OpenAIProviderOptions(
+    concurrency=2,
+    max_api_concurrency=4,
+)
+python_embedding_provider_options = vane.ai.OpenAIProviderOptions(
+    concurrency=2,
+)
+python_prompt_options = vane.ai.OpenAIPromptOptions(
+    temperature=0,
+    on_error="log",
+)
+python_embedding_options = vane.ai.OpenAIEmbeddingOptions(
+    on_error="raise",
+)
+
+python_prompted = candidates.select(
+    vane.col("run_id"),
+    vane.col("document_id"),
+    vane.col("document_type"),
+    vane.col("source_uri"),
+    vane.col("source_text"),
+    vane.col("review_prompt"),
+    vane.ai.prompt(
+        vane.col("review_prompt"),
+        provider="openai",
+        model="gpt-4o-mini",
+        provider_options=python_prompt_provider_options,
+        prompt_options=python_prompt_options,
+        system_message="Return one concise factual review note.",
+    ).alias("review_note"),
+)
+
+python_reviewed = python_prompted.select(
+    vane.col("run_id"),
+    vane.col("document_id"),
+    vane.col("document_type"),
+    vane.col("source_uri"),
+    vane.col("source_text"),
+    vane.col("review_prompt"),
+    vane.col("review_note"),
+    vane.ai.embed(
+        vane.col("source_text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=python_embedding_provider_options,
+        embedding_options=python_embedding_options,
+        dimensions=512,
+        normalize=True,
+    ).alias("embedding"),
+)
+python_reviewed.to_table("ai_review_python_model_output")
+```
+
+Apply the same row-count, ordered-ID, null/error, schema, and run-specific write checks used for `ai_review_model_output`. Keep every AI Expression directly inside `rel.select(...)` with an alias; do not use it in filters or manually recombine its output with source rows.
+
+## 4. Use Relation API Only for Specialized Capabilities
+
+Relation helpers are Python table transformations. Vane does not provide a direct SQL Relation or table-function API for them. Use them only when the task requires capabilities that SQL or Python Expression does not expose.
+
+### Structured or Multimodal Prompting
+
+Define the response model and import before calling `rel.prompt`. The same helper accepts `image_columns` for provider/model combinations that support image input:
+
+```python
+from pydantic import BaseModel
+
+
+class ReviewDecision(BaseModel):
+    label: str
+    reason: str
+
+
+multimodal_candidates = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(review_prompt AS VARCHAR) AS review_prompt,
+        image
+    FROM read_parquet('data/review-items/*.parquet')
+    WHERE review_prompt IS NOT NULL
+    ORDER BY document_id
+    LIMIT 20
+    """
+)
+
+decision_only = multimodal_candidates.prompt(
+    "review_prompt",
+    image_columns=["image"],
+    provider="openai",
+    model="gpt-4o-mini",
+    provider_options=vane.ai.OpenAIProviderOptions(
+        max_api_concurrency=4,
+    ),
+    prompt_options=vane.ai.OpenAIPromptOptions(
+        temperature=0,
+        on_error="log",
+    ),
+    return_format=ReviewDecision,
+    output_column="decision_json",
+    execution_backend="subprocess_task",
 )
 ```
 
-For structured output, use `return_format` with a Pydantic model and validate the JSON string before writing the final relation.
+Validate every non-null `decision_json` against `ReviewDecision` before publishing it. Use text-only input by omitting `image_columns`; keep `return_format` only when the selected provider supports structured responses.
 
-## Provider and Execution Choices
+### Built-In Classification
 
-Choose the smallest provider setup that answers the current task.
+`rel.classify_text` is the built-in zero-shot classification path:
 
-| Choice | Use when | Watch |
-| --- | --- | --- |
-| Hosted provider | You need a managed model and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
-| Local model | You need local execution through installed model libraries. | Model download, dependency versions, memory use, and actor initialization time. |
-| vLLM or GPU model | You need GPU-backed prompt throughput or private LLM inference. | vLLM paths and GPU-specific tuning are covered in [GPU Inference](/docs/data/guides/gpu-inference). |
+```python
+label_only = candidates.classify_text(
+    "source_text",
+    labels=["billing", "delivery", "policy", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="review_label",
+    batch_size=16,
+    execution_backend="subprocess_task",
+)
+```
 
-Minimum settings to make explicit:
+Validate non-null labels against the declared set and sample every label group before scaling.
 
-- `provider`: for example `openai`, `transformers`, or `vllm`.
-- `model`: the exact hosted or local model identifier.
-- `batch_size`: rows per model call or batch processing step.
-- `concurrency`: worker or actor calls running in parallel when supported.
-- `execution_backend`: start with `subprocess_actor`; use `ray_actor` only after the local sample is correct.
+### Built-In Long-Text Chunking
 
-Change one setting at a time. Higher `batch_size` or `concurrency` can improve throughput, but it can also increase memory use, hit provider rate limits, or make failures harder to isolate.
+`rel.embed_text` owns built-in character chunking through `max_chunk_chars`:
+
+```python
+chunk_embedding_only = candidates.embed_text(
+    "source_text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    max_chunk_chars=2000,
+    chunk_overlap_chars=200,
+    output_column="chunked_embedding",
+    execution_backend="subprocess_task",
+)
+```
+
+Use SQL `ai_embed` or `vane.ai.embed` when each existing row simply needs one embedding column. Use this Relation helper when the helper must split and combine long text itself; use the [Embeddings at Scale Guide](/docs/data/guides/embeddings-at-scale) when chunks need their own stable IDs and rows.
+
+### Select an Explicit Relation Backend and Actor Pool
+
+Relation methods can select `execution_backend` explicitly. For a Ray-backed vLLM actor pool, provider `concurrency` maps to actor count while `gpus_per_actor` requests the Ray GPU resource for each actor:
+
+```python
+vane.configure(runner="ray")
+
+gpu_response_only = candidates.prompt(
+    "review_prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    provider_options=vane.ai.VLLMProviderOptions(
+        concurrency=2,
+        gpus_per_actor=1,
+    ),
+    prompt_options=vane.ai.VLLMPromptOptions(
+        max_tokens=128,
+        temperature=0,
+        on_error="log",
+    ),
+    output_column="gpu_review_note",
+    execution_backend="ray_actor",
+)
+```
+
+The `_only` names are deliberate: Relation helpers may return only their configured output columns rather than automatically retaining every source field. Plan source preservation before the call. Use the built-in helper as an isolated output-only stage only when downstream work does not need source keys. When it does, use a custom row-preserving batch UDF that returns the stable IDs and outputs in one declared schema. Never reconnect results by row position.
+
+## 5. Operate Providers and Writes Safely
+
+- **Provider and model:** Record the exact provider, model, prompt/run version, and output path. Hosted providers add network, quota, latency, and cost concerns; local providers add dependency, model-file, memory, and startup concerns.
+- **Credentials:** Provider descriptors are serialized and instantiated lazily on workers. Put credentials in each worker environment, not in SQL text or serialized options, and limit worker network access to the required endpoint.
+- **Execution controls:** SQL and Python Expression let the active runner choose a local subprocess actor or Ray actor. Relation methods can choose an explicit backend. Provider `concurrency` controls actor count; `max_api_concurrency` limits calls inside an actor; batch size affects throughput, memory, and failure scope.
+- **Retries and errors:** Validate with `on_error="raise"` when failures should stop the sample. Tolerant modes can turn prompt failures into nulls and, when the dimension is known, embedding failures into zero vectors, so check the output contract you selected. Wrapper and provider-SDK retries can both repeat a call.
+- **External effects:** Provider requests are not transactional or exactly-once. A query retry can incur another request and charge, and rollback cannot undo a completed call. Preserve `(run_id, document_id)`, write reviewable run artifacts, and make downstream merges idempotent.
 
 ## Next Steps
 
-- Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) for document chunking, stable chunk IDs, embedding output schema, and larger embedding jobs.
-- Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM-backed prompt batches, GPU actor reuse, and Ray GPU execution.
-- Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when AI Functions are too narrow or when the output must include IDs, source fields, status, errors, and model output from a single batch function.
+- [AI Function API Reference](/docs/data/reference/ai-api) — exact SQL Expression, Python Expression, Relation, provider, and option contracts.
+- [AI Function Concepts](/docs/data/concepts/ai-functions) — why the two semantic models have different capability and output boundaries.
+- [GPU Inference](/docs/data/guides/gpu-inference) — local and Ray-backed vLLM execution, actor reuse, and GPU validation.
+- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) — deterministic chunk IDs, large embedding jobs, and reviewable vector outputs.
+- [Custom Python UDFs](/docs/data/guides/custom-python-udfs) — source-preserving multi-column schemas and per-row diagnostics beyond built-in helpers.
