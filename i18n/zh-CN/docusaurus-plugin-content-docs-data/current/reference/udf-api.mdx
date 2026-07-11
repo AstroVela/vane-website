@@ -14,6 +14,19 @@ Expression UDF 参与 projection，并且通常让每个输入行对应一个输
 
 `vane.attach_function` 和 `vane.detach_function` 是 SQL Expression 调用的 Python 注册控制接口，不构成独立的 API 模型。
 
+**注册对象兼容矩阵**
+
+| 注册对象 | 必需或允许的参数 | 禁止或固定的参数 |
+| --- | --- | --- |
+| 已装饰的 `VaneFunction` | `parameters`；decorator 或 attach call 提供有效 `return_dtype` | 禁止 `input_names`、`schema`、`batch_size`、`gpus` 和 `actor_number`。 |
+| Raw scalar callable | `parameters` 和 `return_dtype` | 禁止所有 batch 与 actor 参数。 |
+| Raw batch function | `parameters`、`input_names` 和单列 `schema`；可选 `batch_size` 和 `gpus` | 禁止 `return_dtype` 和 `actor_number`。 |
+| 零参数 raw batch callable class | Raw batch 参数加正整数 `actor_number` | 禁止 constructor 参数和 `return_dtype`；这是 actor-backed 复用，不是 `vane.cls` 状态契约。 |
+| 已实例化的 `VaneClassInstance` | `parameters`；可选显式 `input_names` 和 `batch_size` 覆盖 | `return_dtype`、`schema`、`gpus` 和 `actor_number` 不能覆盖 decorator；行数保持是固定契约。 |
+| 已实例化的 `VaneClassBatchInstance` | `parameters` 和 `input_names`；可选 `schema` 和 `batch_size` 覆盖 | `return_dtype`、`gpus` 和 `actor_number` 不能覆盖 decorator；decorator 必须设置 `row_preserving=True`。 |
+
+未实例化的 Vane class wrapper 必须先捕获 constructor 参数，例如调用 `Counter()`，然后才能注册。
+
 #### `vane.attach_function`
 
 **用途**
@@ -92,7 +105,7 @@ finally:
 
 **限制与错误**
 
-不支持的对象、缺少类型、非法选项组合、重复的 `input_names`，以及未实例化的 Vane class wrapper 都会在 Python preflight 阶段失败。应在 active transaction 外执行注册，因为 DuckDB catalog apply 可能取消当前 transaction。下方共用兼容矩阵是允许覆盖参数的规范。
+不支持的对象、缺少类型、非法选项组合、重复的 `input_names`，以及未实例化的 Vane class wrapper 都会在 Python preflight 阶段失败。应在 active transaction 外执行注册，因为 DuckDB catalog apply 可能取消当前 transaction。上方共用兼容矩阵是允许覆盖参数的规范。
 
 **相关页面**
 
@@ -215,19 +228,6 @@ vane.detach_function("identity_sql", connection=con)
 **相关页面**
 
 [SQL alias 生命周期任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Connection 与执行语义](/zh-CN/docs/data/concepts/udfs)
-
-**注册对象兼容矩阵**
-
-| 注册对象 | 必需或允许的参数 | 禁止或固定的参数 |
-| --- | --- | --- |
-| 已装饰的 `VaneFunction` | `parameters`；decorator 或 attach call 提供有效 `return_dtype` | 禁止 `input_names`、`schema`、`batch_size`、`gpus` 和 `actor_number`。 |
-| Raw scalar callable | `parameters` 和 `return_dtype` | 禁止所有 batch 与 actor 参数。 |
-| Raw batch function | `parameters`、`input_names` 和单列 `schema`；可选 `batch_size` 和 `gpus` | 禁止 `return_dtype` 和 `actor_number`。 |
-| 零参数 raw batch callable class | Raw batch 参数加正整数 `actor_number` | 禁止 constructor 参数和 `return_dtype`；这是 actor-backed 复用，不是 `vane.cls` 状态契约。 |
-| 已实例化的 `VaneClassInstance` | `parameters`；可选显式 `input_names` 和 `batch_size` 覆盖 | `return_dtype`、`schema`、`gpus` 和 `actor_number` 不能覆盖 decorator；行数保持是固定契约。 |
-| 已实例化的 `VaneClassBatchInstance` | `parameters` 和 `input_names`；可选 `schema` 和 `batch_size` 覆盖 | `return_dtype`、`gpus` 和 `actor_number` 不能覆盖 decorator；decorator 必须设置 `row_preserving=True`。 |
-
-未实例化的 Vane class wrapper 必须先捕获 constructor 参数，例如调用 `Counter()`，然后才能注册。
 
 ### Python 入口
 

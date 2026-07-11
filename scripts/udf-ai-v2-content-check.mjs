@@ -4,30 +4,69 @@ import { existsSync, readFileSync } from 'node:fs'
 const read = (path) => readFileSync(path, 'utf8')
 const stripTags = (value) => value.replace(/<[^>]+>/g, '')
 
+const markdownLines = (source) => {
+  const lines = []
+  let offset = 0
+  let inFence = false
+
+  for (const rawLine of source.split('\n')) {
+    const text = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+    if (/^\s*```/.test(text)) {
+      inFence = !inFence
+    } else if (!inFence) {
+      lines.push({ text, offset })
+    }
+
+    offset += rawLine.length + 1
+  }
+
+  return lines
+}
+
+const exactLineIndex = (source, line, from = 0) =>
+  markdownLines(source).find(({ text, offset }) => text === line && offset >= from)?.offset ?? -1
+
 const assertOrdered = (source, labels, message) => {
   let cursor = -1
 
   for (const label of labels) {
-    const next = source.indexOf(label, cursor + 1)
-    assert.ok(next > cursor, `${message}: expected ${label} after the previous item`)
+    const next = exactLineIndex(source, label, cursor + 1)
+    assert.ok(next > cursor, `${message}: expected exact line ${label} after the previous item`)
     cursor = next
   }
 }
 
 const section = (source, heading, nextHeading) => {
-  const start = source.indexOf(heading)
-  assert.notEqual(start, -1, `missing section ${heading}`)
-  const end = nextHeading ? source.indexOf(nextHeading, start + heading.length) : source.length
+  const start = exactLineIndex(source, heading)
+  assert.notEqual(start, -1, `missing exact section heading ${heading}`)
+  const end = nextHeading ? exactLineIndex(source, nextHeading, start + heading.length) : source.length
   assert.ok(end > start, `invalid section boundary for ${heading}`)
   return source.slice(start, end)
 }
 
 const assertEntryTemplate = (source, entries, labels, message) => {
+  const expectedHeadings = entries.map((entry) => `#### \`${entry}\``)
+  const actualHeadings = markdownLines(source)
+    .map(({ text }) => text)
+    .filter((line) => /^#### /.test(line))
+  assert.deepEqual(actualHeadings, expectedHeadings, `${message}: expected exact level-four entry headings`)
+
   entries.forEach((entry, index) => {
     const next = entries[index + 1]
     const body = section(source, `#### \`${entry}\``, next ? `#### \`${next}\`` : undefined)
-    assertOrdered(body, labels, `${message}: ${entry}`)
+    const actualLabels = markdownLines(body)
+      .map(({ text }) => text)
+      .filter((line) => /^\*\*[^*]+\*\*$/.test(line))
+    assert.deepEqual(actualLabels, labels, `${message}: ${entry} should use the exact entry template`)
   })
+}
+
+const assertApiModels = (source, models, message) => {
+  const actualModels = markdownLines(source)
+    .map(({ text }) => text)
+    .filter((line) => /^## [^#].*\bAPI\b/.test(line))
+  assert.deepEqual(actualModels, models, `${message}: expected only the canonical top-level API models`)
 }
 
 const paths = {
@@ -111,6 +150,35 @@ const referenceLabelsZh = [
   '**相关页面**',
 ]
 
+assert.throws(
+  () => assertOrdered(
+    '### Expression API\n## Relation API',
+    ['## Expression API', '## Relation API'],
+    'heading-level probe',
+  ),
+  /expected exact line/,
+  'heading guards should reject a wrong heading level',
+)
+assert.throws(
+  () => assertEntryTemplate(
+    '#### `probe`\n**One**\n**Unexpected**\n**Two**',
+    ['probe'],
+    ['**One**', '**Two**'],
+    'entry-template probe',
+  ),
+  /exact entry template/,
+  'entry-template guards should reject extra bold-only labels',
+)
+assert.throws(
+  () => assertApiModels(
+    '## Expression API\n## SQL API\n## Relation API',
+    ['## Expression API', '## Relation API'],
+    'API-model probe',
+  ),
+  /canonical top-level API models/,
+  'API-model guards should reject an extra top-level API model',
+)
+
 assertOrdered(
   udfReference,
   ['## Expression API', '### SQL Entry Point (Recommended)', '### Python Entry Point', '## Relation API'],
@@ -120,6 +188,28 @@ assertOrdered(
   udfReferenceZh,
   ['## Expression API', '### SQL 入口（推荐）', '### Python 入口', '## Relation API'],
   'Chinese UDF reference',
+)
+assertApiModels(udfReference, ['## Expression API', '## Relation API'], 'UDF reference')
+assertApiModels(udfReferenceZh, ['## Expression API', '## Relation API'], 'Chinese UDF reference')
+assertOrdered(
+  udfReference,
+  ['### SQL Entry Point (Recommended)', '**Registered-object compatibility**', '#### `vane.attach_function`'],
+  'UDF registered-object compatibility placement',
+)
+assertOrdered(
+  udfReferenceZh,
+  ['### SQL 入口（推荐）', '**注册对象兼容矩阵**', '#### `vane.attach_function`'],
+  'Chinese UDF registered-object compatibility placement',
+)
+assert.equal(
+  markdownLines(udfReference).filter(({ text }) => text === '**Registered-object compatibility**').length,
+  1,
+  'UDF reference should contain one shared registered-object compatibility block',
+)
+assert.equal(
+  markdownLines(udfReferenceZh).filter(({ text }) => text === '**注册对象兼容矩阵**').length,
+  1,
+  'Chinese UDF reference should contain one shared registered-object compatibility block',
 )
 assert.doesNotMatch(udfReference, /three (parallel |complementary )?(APIs|API surfaces|surfaces)/i)
 assert.doesNotMatch(udfReferenceZh, /三(?:个|种)(?:并列|平行|互补)?(?:的)?(?: API|API|接口|表面)/)

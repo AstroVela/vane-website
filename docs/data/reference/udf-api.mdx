@@ -14,6 +14,19 @@ Expression UDFs participate in a projection and normally preserve one output row
 
 `vane.attach_function` and `vane.detach_function` are Python registration controls for SQL Expression calls. They do not define a separate API model.
 
+**Registered-object compatibility**
+
+| Registered object | Required or allowed arguments | Forbidden or fixed arguments |
+| --- | --- | --- |
+| Decorated `VaneFunction` | `parameters`; effective `return_dtype` from the decorator or attach call | `input_names`, `schema`, `batch_size`, `gpus`, and `actor_number` are forbidden. |
+| Raw scalar callable | `parameters` and `return_dtype` | All batch and actor arguments are forbidden. |
+| Raw batch function | `parameters`, `input_names`, and one-column `schema`; optional `batch_size` and `gpus` | `return_dtype` and `actor_number` are forbidden. |
+| Zero-argument raw batch callable class | Raw batch arguments plus a positive `actor_number` | Constructor arguments and `return_dtype` are forbidden; this is actor-backed reuse, not the `vane.cls` state contract. |
+| Instantiated `VaneClassInstance` | `parameters`; optional explicit `input_names` and `batch_size` override | `return_dtype`, `schema`, `gpus`, and `actor_number` cannot override the decorator; row preservation is fixed. |
+| Instantiated `VaneClassBatchInstance` | `parameters` and `input_names`; optional `schema` and `batch_size` override | `return_dtype`, `gpus`, and `actor_number` cannot override the decorator; the decorator must set `row_preserving=True`. |
+
+Uninstantiated Vane class wrappers must first capture constructor arguments, for example `Counter()`, before registration.
+
 #### `vane.attach_function`
 
 **Purpose**
@@ -92,7 +105,7 @@ finally:
 
 **Restrictions and errors**
 
-Unsupported objects, missing types, invalid option combinations, duplicate `input_names`, and uninstantiated Vane class wrappers fail during Python preflight. Apply registration outside an active transaction: the DuckDB catalog apply can cancel the active transaction. The shared compatibility table below is normative for allowed overrides.
+Unsupported objects, missing types, invalid option combinations, duplicate `input_names`, and uninstantiated Vane class wrappers fail during Python preflight. Apply registration outside an active transaction: the DuckDB catalog apply can cancel the active transaction. The shared compatibility table above is normative for allowed overrides.
 
 **Related pages**
 
@@ -215,19 +228,6 @@ Use the same connection that owns the alias. A missing alias or a connection mis
 **Related pages**
 
 [SQL alias lifecycle task](/docs/data/guides/custom-python-udfs) · [Connection and execution semantics](/docs/data/concepts/udfs)
-
-**Registered-object compatibility**
-
-| Registered object | Required or allowed arguments | Forbidden or fixed arguments |
-| --- | --- | --- |
-| Decorated `VaneFunction` | `parameters`; effective `return_dtype` from the decorator or attach call | `input_names`, `schema`, `batch_size`, `gpus`, and `actor_number` are forbidden. |
-| Raw scalar callable | `parameters` and `return_dtype` | All batch and actor arguments are forbidden. |
-| Raw batch function | `parameters`, `input_names`, and one-column `schema`; optional `batch_size` and `gpus` | `return_dtype` and `actor_number` are forbidden. |
-| Zero-argument raw batch callable class | Raw batch arguments plus a positive `actor_number` | Constructor arguments and `return_dtype` are forbidden; this is actor-backed reuse, not the `vane.cls` state contract. |
-| Instantiated `VaneClassInstance` | `parameters`; optional explicit `input_names` and `batch_size` override | `return_dtype`, `schema`, `gpus`, and `actor_number` cannot override the decorator; row preservation is fixed. |
-| Instantiated `VaneClassBatchInstance` | `parameters` and `input_names`; optional `schema` and `batch_size` override | `return_dtype`, `gpus`, and `actor_number` cannot override the decorator; the decorator must set `row_preserving=True`. |
-
-Uninstantiated Vane class wrappers must first capture constructor arguments, for example `Counter()`, before registration.
 
 ### Python Entry Point
 
