@@ -60,7 +60,7 @@ vane.attach_function(
 | `alias` | SQL 函数名。`None` 表示从 wrapper 或 callable 推导。 |
 | `connection` | alias 所属 connection。`None` 使用 `duckdb.default_connection()`。 |
 | `replace` | `False` 会拒绝已存在的 signature；`True` 只能替换同一 connection 拥有且 SQL signature 相同的 Vane alias。 |
-| `parameters` | SQL 输入类型 list 或 tuple；是否必需由下方对象兼容矩阵决定。 |
+| `parameters` | SQL 输入类型 list 或 tuple；是否必需由上方对象兼容矩阵决定。 |
 | `return_dtype` | scalar 输出类型；兼容矩阵允许时可来自 decorator。 |
 | `input_names` | 有序的 batch SQL 参数名；必须非空、数量匹配 `parameters`，且忽略大小写后唯一。 |
 | `schema` | batch 输出 mapping；SQL batch alias 必须恰好声明一个输出列。 |

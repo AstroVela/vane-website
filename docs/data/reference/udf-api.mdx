@@ -60,7 +60,7 @@ vane.attach_function(
 | `alias` | SQL function name. `None` derives the name from the wrapper or callable. |
 | `connection` | Owning connection. `None` uses `duckdb.default_connection()`. |
 | `replace` | `False` rejects an existing signature. `True` may replace only a Vane alias owned by this connection with the same SQL signature. |
-| `parameters` | SQL input types as a list or tuple; required by the supported object contracts below. |
+| `parameters` | SQL input types as a list or tuple; required by the supported object contracts above. |
 | `return_dtype` | Scalar output type. It may come from a decorator where the compatibility matrix permits. |
 | `input_names` | Ordered batch SQL argument names. Names must be non-empty, match `parameters`, and be unique case-insensitively. |
 | `schema` | Batch output mapping. SQL batch aliases require exactly one declared output column. |
