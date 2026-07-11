@@ -599,15 +599,21 @@ const conceptSchemas = [
         heading: { en: /^## .*Relation API/i, zh: /^## .*Relation API/i },
         invariants: {
           en: { mustMatch: [
-            [/(?:table[- ]shaped|table transformation)[^.\n]{0,100}(?:multi(?:ple)?[- ]columns?|several columns)[^.\n]{0,100}(?:cardinality change|changes? cardinality)/i, 'reserve Relation for table shape, multiple columns, and cardinality change'],
+            [/(?:table[- ]shaped|table transformation)/i, 'reserve Relation for table-shaped output'],
+            [/(?:multi(?:ple)?[- ]columns?|several columns)/i, 'support multiple Relation columns'],
+            [/(?:cardinality change|changes? cardinality)/i, 'support Relation cardinality change'],
             [/(?:no direct|does not (?:expose|provide)|is unavailable)[^.\n]{0,60}\bSQL\b[^.\n]{0,50}\b(?:Relation|table[- ]function) API/i, 'deny a direct SQL Relation API'],
-            [/rel\.map_batches[^.\n]{0,100}rel\.flat_map[^.\n]{0,100}rel\.map\b/i, 'name the three public Relation methods'],
+            [/rel\.map_batches/i, 'name rel.map_batches'],
+            [/rel\.flat_map/i, 'name rel.flat_map'],
             [/rel\.map\b[^.\n]{0,80}row-wise scalar[^.\n]{0,80}(?:not|rather than)[^.\n]{0,40}(?:pandas )?batch/i, 'keep rel.map row-wise scalar rather than batch-shaped'],
           ], mustNotMatch: [[/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i, 'describe rel.map as pandas batch processing']] },
           zh: { mustMatch: [
-            [/(?:表形|表状|表转换)[^。\n]{0,80}(?:多列|多个列)[^。\n]{0,80}(?:改变基数|基数变化)/, '把 Relation 用于表形、多列和基数变化'],
+            [/(?:表形|表状|表转换)/, '把 Relation 用于表形输出'],
+            [/(?:多列|多个列)/, '支持 Relation 多列输出'],
+            [/(?:改变基数|基数变化)/, '支持 Relation 基数变化'],
             [/(?:不提供|未提供|没有|不可用)[^。\n]{0,60}SQL[^。\n]{0,50}(?:Relation|table[- ]function) API/, '否定直接的 SQL Relation API'],
-            [/rel\.map_batches[^。\n]{0,100}rel\.flat_map[^。\n]{0,100}rel\.map\b/i, '列出三个公开 Relation 方法'],
+            [/rel\.map_batches/i, '提及 rel.map_batches'],
+            [/rel\.flat_map/i, '提及 rel.flat_map'],
             [/rel\.map\b[^。\n]{0,80}逐行 scalar[^。\n]{0,80}(?:不是|而非)[^。\n]{0,40}pandas batch/i, '保持 rel.map 为逐行 scalar 而非 batch 处理'],
           ], mustNotMatch: [[/rel\.map`?\s*(?:是|作为)\s*pandas batch/i, '把 rel.map 写成 pandas batch 处理']] },
         },
@@ -633,16 +639,18 @@ const conceptSchemas = [
           en: {
             mustMatch: [
               [/actor[- ]backed[^.\n]{0,120}(?:reuse|reuses|retain|retains|keep|keeps)[^.\n]{0,80}(?:callable(?: instance)?|function object)[^.\n]{0,100}(?:model[^.\n]{0,60}client|client[^.\n]{0,60}model)/i, 'explain per-actor callable, model, and client reuse'],
+              [/(?:multiple|several) actors?[^.\n]{0,40}(?:do not|don't|cannot|can't|never)[^.\n]{0,40}(?:create|provide|form|share)[^.\n]{0,30}shared state semantics?/i, 'deny shared state semantics across actors'],
               [/vane\.cls(?:[^.\n]{0,40}vane\.cls\.batch)?[^.\n]{0,140}(?:narrower|limited|more tightly scoped)[^.\n]{0,40}mutable[- ]state contract[\s\S]{0,180}(?:\bv1\b[^.\n]{0,100}actor_number\s*=\s*1|actor_number\s*=\s*1[^.\n]{0,100}\bv1\b|(?:one|single) actor(?: instance)?[^.\n]{0,80}(?:one|single) query)/i, 'distinguish the narrower vane.cls state limit'],
             ],
-            mustNotMatch: [[/actor[- ]backed[^.\n]{0,120}(?:callable )?reuse\s+(?:is|provides?|creates?|forms?|(?:can|will|does)\s+(?:provide|create|form))\s+(?:a\s+)?(?:durable|persistent|shared) (?:application )?state/i, 'treat general actor reuse as durable state'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, 'give vane.cls a multi-actor state limit']],
+            mustNotMatch: [[/(?:multiple|several) actors?\s+(?:automatically\s+)?(?:create|provide|form|share)\s+shared state semantics?/i, 'claim shared state semantics across actors'], [/actor[- ]backed[^.\n]{0,120}(?:callable )?reuse\s+(?:is|provides?|creates?|forms?|(?:can|will|does)\s+(?:provide|create|form))\s+(?:a\s+)?(?:durable|persistent|shared) (?:application )?state/i, 'treat general actor reuse as durable state'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, 'give vane.cls a multi-actor state limit']],
           },
           zh: {
             mustMatch: [
               [/Actor-backed[^。\n]{0,120}(?:复用|重用|保留)[^。\n]{0,80}(?:callable(?: instance)?|可调用对象)[^。\n]{0,100}(?:模型[^。\n]{0,60}客户端|客户端[^。\n]{0,60}模型)/i, '解释 actor 内 callable、模型和客户端的复用'],
+              [/多个 actor[^。\n]{0,30}(?:不会|不能|无法)[^。\n]{0,30}(?:形成|创建|提供)[^。\n]{0,20}共享状态语义/i, '否定多个 actor 之间的共享状态语义'],
               [/vane\.cls(?:[^。\n]{0,40}vane\.cls\.batch)?[^。\n]{0,140}(?:范围更窄|更窄|受限|限制更严)[^。\n]{0,40}(?:可变状态契约|mutable-state contract)[\s\S]{0,180}(?:v1[^。\n]{0,100}actor_number\s*=\s*1|actor_number\s*=\s*1[^。\n]{0,100}v1|(?:一个|单个) actor(?: instance)?[^。\n]{0,80}(?:一次|单次) query)/i, '区分范围更窄的 vane.cls 状态限制'],
             ],
-            mustNotMatch: [[/actor-backed[^。\n]{0,120}(?:callable )?复用\s*(?:(?:会|可以|能够)\s*)?(?:是|提供|创建|形成)[^。\n]{0,20}(?:持久|永久|共享)(?:应用)?状态/i, '把一般 actor 复用写成持久状态'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, '给 vane.cls 多 actor 状态限制']],
+            mustNotMatch: [[/多个 actor\s*(?:会|可以|能够)\s*(?:自动)?(?:形成|创建|提供)\s*共享状态语义/i, '声称多个 actor 具有共享状态语义'], [/actor-backed[^。\n]{0,120}(?:callable )?复用\s*(?:(?:会|可以|能够)\s*)?(?:是|提供|创建|形成)[^。\n]{0,20}(?:持久|永久|共享)(?:应用)?状态/i, '把一般 actor 复用写成持久状态'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, '给 vane.cls 多 actor 状态限制']],
           },
         },
       },
@@ -790,12 +798,16 @@ const conceptSchemas = [
         heading: { en: /^## .*Provider.*Runner.*Lifecycle/i, zh: /^## .*Provider.*Runner.*生命周期/i },
         invariants: {
           en: { mustMatch: [
-            [/provider descriptors?[^.\n]{0,80}(?:cross|pass)[^.\n]{0,30}(?:execution[- ]plan|plan(?:ning)?) boundary[\s\S]{0,240}(?:lazily|on demand)[^.\n]{0,50}workers?[^.\n]{0,100}(?:reuse|reused)/i, 'cross the plan boundary and lazily reuse worker resources'],
-            [/active runner[^.\n]{0,100}\blocal\b[^.\n]{0,100}\bRay\b/i, 'contrast active-runner local and Ray execution'],
+            [/(?:provider descriptors?[^.\n]{0,80}(?:cross|pass)[^.\n]{0,40}(?:execution[- ]plan|plan(?:ning)?) boundary|plans?[^.\n]{0,80}(?:carry|contain)[^.\n]{0,50}serializable provider descriptors?)/i, 'carry serializable provider descriptors across the plan boundary'],
+            [/(?:selected client or model[^.\n]{0,100}(?:instantiated|created)[^.\n]{0,30}(?:lazily|on first use)[^.\n]{0,50}workers?|workers?[^.\n]{0,80}(?:instantiate|create)[^.\n]{0,50}(?:selected )?client or model[^.\n]{0,50}(?:on first use|lazily))/i, 'instantiate provider resources on first worker use'],
+            [/(?:reused?[^.\n]{0,80}(?:within )?each actor[^.\n]{0,140}(?:across|between) batches|each actor[^.\n]{0,80}(?:retains?|reuses?|keeps?)[^.\n]{0,80}(?:across|between) batches)/i, 'reuse provider resources per actor across batches'],
+            [/active runner[^.\n]{0,60}(?:chooses?|decides?|selects?)(?=[^.\n]{0,180}\blocal\b)(?=[^.\n]{0,180}\bRay(?:-backed| actor| run| execution)?\b)/i, 'contrast active-runner local and Ray execution'],
           ] },
           zh: { mustMatch: [
-            [/Provider descriptor[^。\n]{0,80}(?:跨越|穿过)[^。\n]{0,30}执行计划[\s\S]{0,240}(?:延迟|按需)[^。\n]{0,50}worker[^。\n]{0,100}复用/i, '说明 descriptor 跨越执行计划并在 worker 延迟复用资源'],
-            [/active runner[^。\n]{0,100}local[^。\n]{0,100}Ray/i, '对比 active runner 的 local 与 Ray 执行'],
+            [/(?:Provider descriptor[^。\n]{0,80}(?:跨越|穿过)[^。\n]{0,40}执行计划(?:边界)?|执行计划[^。\n]{0,80}(?:携带|包含)[^。\n]{0,50}可序列化的? Provider descriptor)/i, '让执行计划携带可序列化的 Provider descriptor'],
+            [/(?:所选客户端或模型[^。\n]{0,80}(?:延迟|按需)[^。\n]{0,40}worker[^。\n]{0,40}实例化|worker[^。\n]{0,80}(?:首次使用|第一次使用)[^。\n]{0,40}实例化[^。\n]{0,50}所选客户端或模型)/i, '在 worker 首次使用时实例化 Provider 资源'],
+            [/(?:复用[^。\n]{0,80}每个 actor[^。\n]{0,140}(?:多个|跨) batch|每个 actor(?=[^。\n]{0,100}(?:保留|复用))(?=[^。\n]{0,100}(?:跨|多个) batch))/i, '在每个 actor 内跨 batch 复用 Provider 资源'],
+            [/active runner[^。\n]{0,60}(?:选择|决定)(?=[^。\n]{0,180}local)(?=[^。\n]{0,180}Ray)/i, '对比 active runner 的 local 与 Ray 执行'],
           ] },
         },
       },
@@ -842,16 +854,20 @@ const conceptSchemas = [
 
 const [udfConceptSchema, aiConceptSchema] = conceptSchemas
 const udfActorRules = udfConceptSchema.sections.find(({ id }) => id === 'actor reuse and state').invariants
+const udfRelationRules = udfConceptSchema.sections.find(({ id }) => id === 'Relation API').invariants
 const udfStateRules = udfConceptSchema.sections.find(
   ({ id }) => id === 'state, failure, and effects',
+).invariants
+const aiLifecycleRules = aiConceptSchema.sections.find(
+  ({ id }) => id === 'provider and runner lifecycle',
 ).invariants
 const aiEffectsRules = aiConceptSchema.sections.find(
   ({ id }) => id === 'credentials and effects',
 ).invariants
 
 const highRiskConceptProbes = [
-  [udfActorRules.en, 'English UDF actor reuse', 'Actor-backed execution reuses a callable instance, model, and client within each actor. `vane.cls` has the narrower mutable-state contract; in v1 it uses `actor_number=1` across one query. General actor-backed callable reuse does not provide durable application state and cannot create shared state.', ['Actor-backed callable reuse is durable application state.', 'Actor-backed callable reuse provides durable application state.', 'Actor-backed callable reuse creates shared state.', '`vane.cls` uses `actor_number=2` in v1.']],
-  [udfActorRules.zh, 'Chinese UDF actor reuse', 'Actor-backed 执行会在 actor 内复用 callable instance、模型与客户端。`vane.cls` 是范围更窄的可变状态契约；在 v1 使用 `actor_number=1`，限于单次 query。一般 actor-backed callable 复用不会创建持久应用状态，也不能提供共享状态。', ['Actor-backed callable 复用是持久应用状态。', 'Actor-backed callable 复用提供持久应用状态。', 'Actor-backed callable 复用创建共享状态。', '`vane.cls` 在 v1 使用 `actor_number=2`。']],
+  [udfActorRules.en, 'English UDF actor reuse', 'Actor-backed execution reuses a callable instance, model, and client within each actor. Multiple actors do not create shared state semantics. `vane.cls` has the narrower mutable-state contract; in v1 it uses `actor_number=1` across one query. General actor-backed callable reuse does not provide durable application state and cannot create shared state.', ['Actor-backed callable reuse is durable application state.', 'Actor-backed callable reuse provides durable application state.', 'Actor-backed callable reuse creates shared state.', 'Multiple actors create shared state semantics.', '`vane.cls` uses `actor_number=2` in v1.']],
+  [udfActorRules.zh, 'Chinese UDF actor reuse', 'Actor-backed 执行会在 actor 内复用 callable instance、模型与客户端。多个 actor 不会自动形成共享状态语义。`vane.cls` 是范围更窄的可变状态契约；在 v1 使用 `actor_number=1`，限于单次 query。一般 actor-backed callable 复用不会创建持久应用状态，也不能提供共享状态。', ['Actor-backed callable 复用是持久应用状态。', 'Actor-backed callable 复用提供持久应用状态。', 'Actor-backed callable 复用创建共享状态。', '多个 actor 会自动形成共享状态语义。', '`vane.cls` 在 v1 使用 `actor_number=2`。']],
   [udfStateRules.en, 'English UDF state', 'State is scoped to one query, local to one actor, and ephemeral. State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. Actor loss makes the query fail instead of recreating an actor with empty state. Distributed execution does not guarantee global row evaluation order. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'Actor loss transparently recreates an actor with empty state.', 'Distributed execution guarantees a stable global row evaluation order.', 'External side effects are transactional.']],
   [udfStateRules.zh, 'Chinese UDF state', '状态限定在单次 query、单个 actor 内，并且是临时的。状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。actor 丢失会导致 query 失败，而不是用空状态重建 actor。分布式执行不保证全局行求值顺序。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', 'actor 丢失会透明地用空状态重建 actor。', '分布式执行保证稳定的全局行求值顺序。', '外部副作用会被事务回滚。']],
   [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. SQL option binding rejects credential-like fields. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee. Carry stable IDs, retain reviewable inputs and outputs, and make downstream writes idempotent.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
@@ -870,6 +886,18 @@ for (const [rules, label, accurate, inversions] of highRiskConceptProbes) {
       `${label} guards should reject the inverted claim: ${inversion}`,
     )
   }
+}
+
+for (const [rules, label, paraphrase] of [
+  [udfRelationRules.en, 'English UDF Relation', 'Relation can change cardinality. Public methods include `rel.map_batches`, `rel.flat_map`, and `rel.map`; `rel.map` is the row-wise scalar Relation API, not a pandas batch transform. It supports table-shaped, multi-column output. Vane exposes no direct SQL Relation or table-function API.'],
+  [udfRelationRules.zh, 'Chinese UDF Relation', 'Relation 可以改变基数。公开方法包括 `rel.map_batches`、`rel.flat_map` 和 `rel.map`；`rel.map` 是逐行 scalar Relation API，而非 pandas batch 处理。它支持表形、多列输出。Vane 不提供直接的 SQL Relation 或 table-function API。'],
+  [aiLifecycleRules.en, 'English AI lifecycle', 'Plans carry serializable provider descriptors. Workers instantiate the selected client or model on first use, and each actor retains it across batches. The active runner decides whether that actor is local or Ray-backed.'],
+  [aiLifecycleRules.zh, 'Chinese AI lifecycle', '执行计划携带可序列化的 Provider descriptor。worker 在首次使用时实例化所选客户端或模型，每个 actor 会跨 batch 保留它。active runner 决定该 actor 是由 local 还是 Ray backend 承载。'],
+]) {
+  assert.doesNotThrow(
+    () => assertConceptInvariants(paraphrase, rules, `${label} paraphrase probe`),
+    `${label} guards should accept reordered accurate wording`,
+  )
 }
 
 for (const schema of conceptSchemas) {
