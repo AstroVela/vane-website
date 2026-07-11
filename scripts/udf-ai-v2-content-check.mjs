@@ -383,11 +383,13 @@ const executableCodeBlocks = (source) =>
 
 const assertNoRemovedNativeRunner = (source, message) => {
   for (const block of executableCodeBlocks(source)) {
-    assert.doesNotMatch(
-      block,
-      /vane\.configure\(\s*runner\s*=\s*["']native["']\s*\)/,
-      `${message}: executable examples should use a public runner name`,
-    )
+    for (const call of callSlices(block, 'vane.configure')) {
+      assert.doesNotMatch(
+        call,
+        /\brunner\s*=\s*["']native["']/,
+        `${message}: executable examples should use a public runner name`,
+      )
+    }
   }
 }
 
@@ -649,12 +651,12 @@ const assertReferenceActorBackendComplete = (source, locale, message) => {
         if (!/\bexecution_backend\s*=\s*["'](?:subprocess_actor|ray_actor)["']/.test(call)) continue
         assert.match(
           call,
-          /\bactor_number\s*=\s*[1-9]\d*/,
+          /\bactor_number\s*=\s*[1-9]\d*(?![\w.])/,
           `${message} ${entry}: explicit actor backend requires positive actor_number in the same call`,
         )
         assert.match(
           call,
-          /\bgpus\s*=\s*(?:0(?:\.\d+)?|[1-9]\d*(?:\.\d+)?)/,
+          /\bgpus\s*=\s*(?:0|[1-9]\d*)(?:\.\d+)?(?![\w.])/,
           `${message} ${entry}: explicit actor backend requires nonnegative gpus in the same call`,
         )
       }
@@ -677,8 +679,8 @@ const assertSizingLocalActorRecipe = (source, heading, nextHeading, message) => 
     /execution_backend\s*=\s*["']subprocess_actor["']/,
     `${message} local actor recipe`,
   )
-  assert.match(recipe, /\bactor_number\s*=\s*1\b/, `${message}: local actor recipe actor_number`)
-  assert.match(recipe, /\bgpus\s*=\s*0(?:\.0+)?\b/, `${message}: local CPU actor recipe gpus`)
+  assert.match(recipe, /\bactor_number\s*=\s*1(?![\w.])/, `${message}: local actor recipe actor_number`)
+  assert.match(recipe, /\bgpus\s*=\s*0\.0(?![\w.])/, `${message}: local CPU actor recipe gpus`)
 }
 
 const assertGuideExamplesSafe = (source, message, predefinedNames = []) => {
@@ -776,7 +778,7 @@ const assertClassificationBackendConfig = (block, message) => {
   if (backend.endsWith('_actor')) {
     assert.match(
       call,
-      /\bactor_number\s*=\s*[1-9]\d*/,
+      /\bactor_number\s*=\s*[1-9]\d*(?![\w.])/,
       `${message}: explicit actor backend requires a valid actor_number`,
     )
   }
@@ -1858,56 +1860,57 @@ const quickstart = read('docs/data/quickstart/quickstart.mdx')
 const quickstartZh = read(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
 )
+const approvedDocumentationPair = (id, kind, label, options = {}) => {
+  const paths = {
+    en: `docs/data/${id}.mdx`,
+    zh: `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/${id}.mdx`,
+  }
+  return {
+    id,
+    kind,
+    label,
+    paths,
+    sources: { en: read(paths.en), zh: read(paths.zh) },
+    ...options,
+  }
+}
 const approvedBilingualDocumentationPairs = [
-  { kind: 'reference', label: 'UDF API Reference', sources: { en: udfReference, zh: udfReferenceZh } },
-  { kind: 'reference', label: 'AI Function API Reference', sources: { en: aiReference, zh: aiReferenceZh } },
-  { kind: 'concept', label: 'UDF Concepts', sources: { en: udfConcept, zh: udfConceptZh } },
-  { kind: 'concept', label: 'AI Function Concepts', sources: { en: aiConcept, zh: aiConceptZh } },
-  { kind: 'concept', label: 'Architecture Concepts', sources: { en: architecture, zh: architectureZh } },
-  { kind: 'concept', label: 'Execution Model Concepts', sources: { en: executionModel, zh: executionModelZh } },
-  { kind: 'concept', label: 'SQL vs Python Concepts', sources: { en: sqlVsPython, zh: sqlVsPythonZh } },
-  { kind: 'guide', label: 'Quickstart', sources: { en: quickstart, zh: quickstartZh } },
-  { kind: 'guide', label: 'Custom Python UDF Guide', sources: { en: customUdfs, zh: customUdfsZh } },
-  { kind: 'guide', label: 'AI Functions Guide', sources: { en: aiGuide, zh: aiGuideZh } },
-  { kind: 'guide', label: 'Embeddings at Scale Guide', sources: { en: embeddingsGuide, zh: embeddingsGuideZh } },
-  { kind: 'guide', label: 'GPU Inference Guide', sources: { en: gpuGuide, zh: gpuGuideZh } },
-  {
-    kind: 'guide',
-    label: 'Multimodal Ingest Guide',
-    sources: {
-      en: read('docs/data/guides/multimodal-ingest.mdx'),
-      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/multimodal-ingest.mdx'),
-    },
-    exactCodeParity: true,
-  },
-  {
-    kind: 'guide',
-    label: 'Multimodal Pipeline Guide',
-    sources: {
-      en: read('docs/data/guides/multimodal-pipeline.mdx'),
-      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/multimodal-pipeline.mdx'),
-    },
-    exactCodeParity: true,
-  },
-  {
-    kind: 'guide',
-    label: 'Structured Transformation Guide',
-    sources: {
-      en: read('docs/data/guides/structured-transformation.mdx'),
-      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/structured-transformation.mdx'),
-    },
-    predefinedNames: ['rel', 'con'],
-    exactCodeParity: true,
-  },
-  {
-    kind: 'guide',
-    label: 'Performance Tuning Guide',
-    sources: {
-      en: read('docs/data/guides/performance-tuning.mdx'),
-      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/performance-tuning.mdx'),
-    },
-    exactCodeParity: true,
-  },
+  approvedDocumentationPair('reference/udf-api', 'reference', 'UDF API Reference'),
+  approvedDocumentationPair('reference/ai-api', 'reference', 'AI Function API Reference'),
+  approvedDocumentationPair('concepts/udfs', 'concept', 'UDF Concepts'),
+  approvedDocumentationPair('concepts/ai-functions', 'concept', 'AI Function Concepts'),
+  approvedDocumentationPair('concepts/architecture', 'concept', 'Architecture Concepts'),
+  approvedDocumentationPair('concepts/execution-model', 'concept', 'Execution Model Concepts'),
+  approvedDocumentationPair('concepts/sql-vs-python', 'concept', 'SQL vs Python Concepts'),
+  approvedDocumentationPair('quickstart/quickstart', 'guide', 'Quickstart'),
+  approvedDocumentationPair('guides/custom-python-udfs', 'guide', 'Custom Python UDF Guide'),
+  approvedDocumentationPair('guides/ai-functions', 'guide', 'AI Functions Guide'),
+  approvedDocumentationPair('guides/embeddings-at-scale', 'guide', 'Embeddings at Scale Guide'),
+  approvedDocumentationPair('guides/gpu-inference', 'guide', 'GPU Inference Guide'),
+  approvedDocumentationPair(
+    'guides/multimodal-ingest',
+    'guide',
+    'Multimodal Ingest Guide',
+    { exactCodeParity: true },
+  ),
+  approvedDocumentationPair(
+    'guides/multimodal-pipeline',
+    'guide',
+    'Multimodal Pipeline Guide',
+    { exactCodeParity: true },
+  ),
+  approvedDocumentationPair(
+    'guides/structured-transformation',
+    'guide',
+    'Structured Transformation Guide',
+    { predefinedNames: ['rel', 'con'], exactCodeParity: true },
+  ),
+  approvedDocumentationPair(
+    'guides/performance-tuning',
+    'guide',
+    'Performance Tuning Guide',
+    { exactCodeParity: true },
+  ),
 ]
 const overview = read('docs/data/index.mdx')
 const overviewZh = read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/index.mdx')
@@ -3501,10 +3504,55 @@ for (const schema of embeddingGpuGuideSchemas) {
   assertBilingualGuideTask(schema)
 }
 
+const expectedApprovedPairIds = [
+  'reference/udf-api',
+  'reference/ai-api',
+  'concepts/udfs',
+  'concepts/ai-functions',
+  'concepts/architecture',
+  'concepts/execution-model',
+  'concepts/sql-vs-python',
+  'quickstart/quickstart',
+  'guides/custom-python-udfs',
+  'guides/ai-functions',
+  'guides/embeddings-at-scale',
+  'guides/gpu-inference',
+  'guides/multimodal-ingest',
+  'guides/multimodal-pipeline',
+  'guides/structured-transformation',
+  'guides/performance-tuning',
+]
+const assertUniqueApprovedPairIds = (pairs, message) => {
+  const ids = pairs.map(({ id }) => id)
+  assert.equal(new Set(ids).size, ids.length, `${message}: pair ids should be unique`)
+}
+const assertApprovedPairPathIdentity = (pair, message) => {
+  const expectedPaths = {
+    en: `docs/data/${pair.id}.mdx`,
+    zh: `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/${pair.id}.mdx`,
+  }
+  assert.deepEqual(pair.paths, expectedPaths, `${message}: stable bilingual paths`)
+  assert.equal(pair.sources.en, read(pair.paths.en), `${message}: English source path identity`)
+  assert.equal(pair.sources.zh, read(pair.paths.zh), `${message}: Chinese source path identity`)
+}
+const assertApprovedPairRegistryIdentity = (pairs, message) => {
+  assert.deepEqual(
+    pairs.map(({ id }) => id),
+    expectedApprovedPairIds,
+    `${message}: exact ordered pair ids`,
+  )
+  assertUniqueApprovedPairIds(pairs, message)
+  for (const pair of pairs) assertApprovedPairPathIdentity(pair, `${message} ${pair.id}`)
+}
+
 assert.equal(
   approvedBilingualDocumentationPairs.length,
   16,
   'Task 10 should keep an explicit registry of all approved bilingual documentation pairs',
+)
+assertApprovedPairRegistryIdentity(
+  approvedBilingualDocumentationPairs,
+  'Task 10 approved bilingual pair registry',
 )
 for (const pair of approvedBilingualDocumentationPairs) {
   assertBilingualDocumentationPair(pair)
@@ -3699,18 +3747,29 @@ const validActorReferenceProbe = [
   '```',
   '**Restrictions and errors**',
 ].join('\n')
-const incompleteActorReferenceMutation = validActorReferenceProbe
-  .replace('    actor_number=1,\n', '')
-  .replace('    gpus=0.0,\n', '')
-assert.throws(
-  () => assertReferenceActorBackendComplete(
-    incompleteActorReferenceMutation,
-    'en',
-    'incomplete actor Reference mutation',
-  ),
-  /requires positive actor_number/,
-  'Reference minimal calls should reject an incomplete explicit actor backend',
-)
+for (const [label, mutation] of [
+  ['missing actor_number', validActorReferenceProbe.replace('    actor_number=1,\n', '')],
+  ['zero actor_number', validActorReferenceProbe.replace('actor_number=1', 'actor_number=0')],
+  ['fractional actor_number', validActorReferenceProbe.replace('actor_number=1', 'actor_number=1.5')],
+  ['actor_number suffix junk', validActorReferenceProbe.replace('actor_number=1', 'actor_number=1x')],
+]) {
+  assert.throws(
+    () => assertReferenceActorBackendComplete(mutation, 'en', `${label} mutation`),
+    /positive actor_number/,
+    `Reference minimal calls should reject ${label}`,
+  )
+}
+for (const [label, mutation] of [
+  ['missing gpus', validActorReferenceProbe.replace('    gpus=0.0,\n', '')],
+  ['negative gpus', validActorReferenceProbe.replace('gpus=0.0', 'gpus=-0.1')],
+  ['gpus suffix junk', validActorReferenceProbe.replace('gpus=0.0', 'gpus=0.0x')],
+]) {
+  assert.throws(
+    () => assertReferenceActorBackendComplete(mutation, 'en', `${label} mutation`),
+    /nonnegative gpus/,
+    `Reference minimal calls should reject ${label}`,
+  )
+}
 
 const validSizingProbe = [
   '## Local model actor',
@@ -3721,15 +3780,87 @@ const validSizingProbe = [
   '```',
   '## Ray task',
 ].join('\n')
+for (const [label, mutation] of [
+  ['missing actor_number', validSizingProbe.replace('actor_number=1\n', '')],
+  ['wrong actor_number', validSizingProbe.replace('actor_number=1', 'actor_number=2')],
+  ['fractional actor_number', validSizingProbe.replace('actor_number=1', 'actor_number=1.5')],
+]) {
+  assert.throws(
+    () => assertSizingLocalActorRecipe(
+      mutation,
+      '## Local model actor',
+      '## Ray task',
+      `${label} sizing mutation`,
+    ),
+    /local actor recipe actor_number/,
+    `Sizing should reject ${label}`,
+  )
+}
+for (const [label, mutation] of [
+  ['missing gpus', validSizingProbe.replace('gpus=0.0\n', '')],
+  ['wrong gpus', validSizingProbe.replace('gpus=0.0', 'gpus=0')],
+]) {
+  assert.throws(
+    () => assertSizingLocalActorRecipe(
+      mutation,
+      '## Local model actor',
+      '## Ray task',
+      `${label} sizing mutation`,
+    ),
+    /local CPU actor recipe gpus/,
+    `Sizing should reject ${label}`,
+  )
+}
+
+for (const [label, source] of [
+  ['native runner with a later argument', '```python\nvane.configure(runner="native", ray_init_sql="SELECT 1")\n```'],
+  ['native runner after an earlier argument', '```python\nvane.configure(ray_init_sql="SELECT 1", runner="native")\n```'],
+  ['native runner with a trailing comma', "```python\nvane.configure(runner='native',)\n```"],
+]) {
+  assert.throws(
+    () => assertNoRemovedNativeRunner(source, `${label} mutation`),
+    /public runner name/,
+    `runner guards should reject ${label}`,
+  )
+}
+for (const [label, source] of [
+  ['local runner with multiple arguments', '```python\nvane.configure(runner="local", ray_init_sql="SELECT 1")\n```'],
+  ['Ray runner after an earlier argument', '```python\nvane.configure(ray_init_sql="SELECT 1", runner="ray",)\n```'],
+]) {
+  assert.doesNotThrow(
+    () => assertNoRemovedNativeRunner(source, `valid ${label} probe`),
+    `runner guards should accept a valid ${label}`,
+  )
+}
+
+const duplicatePairRegistryMutation = [
+  ...approvedBilingualDocumentationPairs.slice(0, -1),
+  approvedBilingualDocumentationPairs[0],
+]
 assert.throws(
-  () => assertSizingLocalActorRecipe(
-    validSizingProbe.replace('gpus=0.0\n', ''),
-    '## Local model actor',
-    '## Ray task',
-    'sizing mutation',
-  ),
-  /local CPU actor recipe gpus/,
-  'Sizing should require explicit gpus=0.0 in the local actor recipe',
+  () => assertUniqueApprovedPairIds(duplicatePairRegistryMutation, 'duplicate pair mutation'),
+  /pair ids should be unique/,
+  'approved pair registry should reject duplicate ids',
+)
+const replacementPairRegistryMutation = approvedBilingualDocumentationPairs.map((pair, index) => (
+  index === 4 ? { ...pair, id: 'concepts/replacement' } : pair
+))
+assert.throws(
+  () => assertApprovedPairRegistryIdentity(replacementPairRegistryMutation, 'replacement pair mutation'),
+  /exact ordered pair ids/,
+  'approved pair registry should reject a replaced id',
+)
+const replacedPathPairMutation = {
+  ...approvedBilingualDocumentationPairs[0],
+  paths: {
+    ...approvedBilingualDocumentationPairs[0].paths,
+    zh: approvedBilingualDocumentationPairs[1].paths.zh,
+  },
+}
+assert.throws(
+  () => assertApprovedPairPathIdentity(replacedPathPairMutation, 'replacement path mutation'),
+  /stable bilingual paths/,
+  'approved pair registry should reject a replaced path identity',
 )
 
 const quickstartOrderMutation = quickstart
