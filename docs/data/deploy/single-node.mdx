@@ -11,7 +11,7 @@ For predictable single-node scripts, select local execution before creating the 
 ```python
 import vane
 
-vane.configure(runner="native")
+vane.configure(runner="local")
 
 con = vane.connect()
 con.sql("select 42").show()
@@ -22,7 +22,7 @@ con.sql("select 42").show()
 Use:
 
 - `subprocess_task` for stateless batch functions.
-- `subprocess_actor` for stateful callable classes.
+- `subprocess_actor` for callable classes with reusable setup.
 
 ```python
 out = rel.map_batches(
@@ -41,11 +41,14 @@ out = rel.map_batches(
     schema={"id": "BIGINT", "label": "VARCHAR"},
     batch_size=32,
     execution_backend="subprocess_actor",
-    concurrency=2,
+    actor_number=2,
+    gpus=0.0,
 )
 ```
 
 Return identifiers or metadata from the UDF when downstream stages need to join outputs back to source rows.
+
+This actor pool reuses a model or client per actor; it is not shared mutable state. Stateful `vane.cls` v1 is a separate one-actor, query-scoped contract. Local subprocess actors do not reserve or isolate GPUs. See the [UDF API Reference](/docs/data/reference/udf-api).
 
 ## Native runner batch size
 

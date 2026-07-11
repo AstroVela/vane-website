@@ -13,7 +13,7 @@ Record:
 - projected columns
 - UDF backend
 - batch size
-- concurrency
+- Relation `actor_number`, AI `concurrency`, and (for prompt providers) `max_api_concurrency`
 - CPU/GPU resources
 - output rows
 - elapsed time
@@ -45,10 +45,10 @@ execution_backend="subprocess_actor"
 
 Start with:
 
-- `concurrency=1`
+- `actor_number=1`
 - a batch size that keeps the model busy without memory pressure
 
-Increase concurrency only if CPU/GPU resources remain idle.
+Increase `actor_number` only if CPU/GPU resources remain idle.
 
 ## Ray task
 
@@ -68,15 +68,15 @@ Use:
 execution_backend="ray_actor"
 ```
 
-Good for stateful model inference.
+Good for actor-backed model inference.
 
 Sizing rule:
 
 ```text
-required GPUs = concurrency * gpus
+required GPUs = actor_number * gpus
 ```
 
-If `concurrency=4` and `gpus=1`, the Ray cluster needs at least 4 available GPUs for full parallelism.
+If `actor_number=4` and `gpus=1`, the Ray cluster needs at least 4 available GPUs for full parallelism.
 
 ## Scan sizing
 
@@ -101,12 +101,14 @@ rows * dimensions * 4 bytes
 
 For 10 million rows and 768 float32 dimensions, raw vector values alone are about 30 GB before file format overhead.
 
+Relation actor pools use `actor_number`. Public AI provider option `concurrency` maps to the outer AI UDF actor count; for prompt providers, `max_api_concurrency` bounds in-flight provider requests inside each actor. Stateful `vane.cls` v1 always uses one actor and should not be sized as a parallel actor pool. See the [UDF API Reference](/docs/data/reference/udf-api) and [AI Function API Reference](/docs/data/reference/ai-api).
+
 ## Red flags
 
 - One UDF batch contains unused large columns.
 - Workers download model weights for every batch.
 - Output is written to node-local disk from a distributed job.
-- API-backed providers run with concurrency higher than rate limits.
+- AI-backed jobs exceed provider rate limits through too many actors, too many in-flight requests per actor, or both.
 - A single huge file prevents parallelism.
 
 Fix projection, actor reuse, shared storage, provider limits, and partitioning before adding more machines.

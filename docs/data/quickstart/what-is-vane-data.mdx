@@ -50,6 +50,8 @@ Vane Data is a good fit when you want to run an early validation workflow on rea
 - Use GPU inference, including vLLM-backed batch inference, when a larger prompt or model workload needs GPU execution.
 - Start locally, then move selected stages to Ray when throughput, actor reuse, reprocessing scale, or GPU placement becomes important.
 
+For one-column enrichment, prefer the SQL Expression entry point: use `vane.attach_function` to register a Python callable as a SQL alias, or use the built-in `ai_prompt` and `ai_embed` SQL functions, so the result stays beside source columns in the same projection. The Python Expression equivalents are `vane.func`, `vane.func.batch(..., row_preserving=True)`, `vane.ai.prompt`, and `vane.ai.embed`. Use the Relation API for multi-column output or row-shaping work. See the [UDF API Reference](/docs/data/reference/udf-api) and [AI Function API Reference](/docs/data/reference/ai-api).
+
 Typical scenarios include:
 
 - Turning raw text into training, evaluation, or retrieval datasets.

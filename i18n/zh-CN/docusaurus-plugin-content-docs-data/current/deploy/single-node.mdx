@@ -11,7 +11,7 @@ title: 单节点
 ```python
 import vane
 
-vane.configure(runner="native")
+vane.configure(runner="local")
 
 con = vane.connect()
 con.sql("select 42").show()
@@ -22,7 +22,7 @@ con.sql("select 42").show()
 使用：
 
 - `subprocess_task` 运行无状态 batch 函数。
-- `subprocess_actor` 运行有状态可调用类。
+- `subprocess_actor` 运行需要复用初始化结果的可调用类。
 
 ```python
 out = rel.map_batches(
@@ -41,11 +41,14 @@ out = rel.map_batches(
     schema={"id": "BIGINT", "label": "VARCHAR"},
     batch_size=32,
     execution_backend="subprocess_actor",
-    concurrency=2,
+    actor_number=2,
+    gpus=0.0,
 )
 ```
 
 当下游阶段需要将输出关联回源行时，请从 UDF 返回标识符或元数据。
+
+这个 actor 池会在每个 actor 内复用模型或客户端，但它不是共享可变状态。有状态 `vane.cls` v1 是另一套单 actor、query scope 契约。本地 subprocess actor 不会预留或隔离 GPU。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
 ## native runner batch size
 

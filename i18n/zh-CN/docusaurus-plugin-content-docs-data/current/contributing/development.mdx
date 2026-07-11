@@ -91,4 +91,4 @@ python -m pytest tests/fast/test_udf_process.py
 
 ## 贡献经验法则
 
-保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。
+保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.func`、`vane.cls`、`vane.attach_function`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。SQL 是推荐的 Expression 入口；公开 UDF 契约见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)，AI 辅助函数契约见 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。

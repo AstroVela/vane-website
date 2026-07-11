@@ -50,6 +50,8 @@ source data -> relation/SQL -> Python UDF or AI function -> validation -> tabula
 - 当更大的提示词或模型工作负载需要 GPU 执行时，使用 GPU 推理，包括基于 vLLM 的 batch 推理。
 - 从本地执行开始；当吞吐量、Ray actor 复用、重处理规模或 GPU 资源放置/调度变得重要时，再把选定阶段迁移到 Ray。
 
+对于单列数据富集，优先使用 SQL Expression 入口：使用 `vane.attach_function` 把 Python callable 注册为 SQL alias，或使用内置 SQL Function `ai_prompt` 和 `ai_embed`，让结果与源列保留在同一个 projection 中。对应的 Python Expression 入口是 `vane.func`、`vane.func.batch(..., row_preserving=True)`、`vane.ai.prompt` 和 `vane.ai.embed`。多列输出或改变行形态的任务使用 Relation API。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)和 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。
+
 典型的场景包括：
 
 - 将原始文本转换为训练、评估或检索数据集。
