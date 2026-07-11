@@ -381,6 +381,358 @@ const fencedCodeLanguages = (source) =>
 const executableCodeBlocks = (source) =>
   fencedCodeBlocks(source).filter((block) => !block.startsWith('```text\n'))
 
+const assertNoRemovedNativeRunner = (source, message) => {
+  for (const block of executableCodeBlocks(source)) {
+    assert.doesNotMatch(
+      block,
+      /vane\.configure\(\s*runner\s*=\s*["']native["']\s*\)/,
+      `${message}: executable examples should use a public runner name`,
+    )
+  }
+}
+
+const fencedCodeBlockParts = (block) => {
+  const match = block.match(/^```([^\n]*)\n([\s\S]*?)\n```$/)
+  assert.ok(match, 'expected a complete fenced code block')
+  return { language: match[1].trim().split(/\s+/)[0], body: match[2] }
+}
+
+const semanticApiHeadingTrace = (source) => markdownHeadings(source)
+  .flatMap((heading) => {
+    const level = heading.match(/^#+/)?.[0].length ?? 0
+    if (level > 3) return []
+    const text = heading.replace(/^#{2,6}\s+/, '')
+    const candidates = []
+    for (const [token, pattern] of [
+      ['SQL', /\bSQL\b/],
+      ['Python', /\bPython\b/],
+      ['Relation API', /\bRelation API\b/],
+    ]) {
+      const index = text.search(pattern)
+      if (index !== -1) candidates.push({ level, token, index })
+    }
+    if (!candidates.some(({ token }) => token === 'SQL' || token === 'Python')) {
+      const index = text.search(/\bExpression API\b/)
+      if (index !== -1) candidates.push({ level, token: 'Expression API', index })
+    }
+    return candidates
+      .sort((left, right) => left.index - right.index)
+      .map(({ level: headingLevel, token }) => ({ level: headingLevel, token }))
+  })
+
+const referencePublicApiEntries = (source) => markdownLines(source)
+  .map(({ text }) => text.match(/^#### `([^`]+)`$/)?.[1])
+  .filter(Boolean)
+
+const assertReferencePublicApiParity = (en, zh, message) => {
+  const enEntries = referencePublicApiEntries(en)
+  const zhEntries = referencePublicApiEntries(zh)
+  assert.ok(enEntries.length > 0, `${message}: public API entry registry should not be empty`)
+  assert.deepEqual(enEntries, zhEntries, `${message}: bilingual public API entry lists`)
+}
+
+const primaryApiCallTrace = (source) => {
+  const patterns = [
+    ['vane.attach_function', /\bvane\.attach_function\s*\(/g],
+    ['vane.detach_function', /\bvane\.detach_function\s*\(/g],
+    ['vane.func.batch', /\bvane\.func\.batch\s*\(/g],
+    ['vane.func', /\bvane\.func\s*\(/g],
+    ['vane.cls.batch', /\bvane\.cls\.batch\s*\(/g],
+    ['vane.cls', /\bvane\.cls\s*\(/g],
+    ['vane.ai.prompt', /\bvane\.ai\.prompt\s*\(/g],
+    ['vane.ai.embed', /\bvane\.ai\.embed\s*\(/g],
+    ['vane.col', /\bvane\.col\s*\(/g],
+    ['vane.lit', /\bvane\.lit\s*\(/g],
+    ['vane.sql_expr', /\bvane\.sql_expr\s*\(/g],
+    ['vane.configure', /\bvane\.configure\s*\(/g],
+    ['ai_prompt', /(?<![.\w])ai_prompt\s*\(/g],
+    ['ai_embed', /(?<![.\w])ai_embed\s*\(/g],
+    ['connection.sql', /\b(?:con|conn|ray_con)\.sql\s*\(/g],
+    ['Relation.select', /(?<![.\w])[A-Za-z_]\w*\.select\s*\(/g],
+    ['Relation.map_batches', /(?<![.\w])[A-Za-z_]\w*\.map_batches\s*\(/g],
+    ['Relation.flat_map', /(?<![.\w])[A-Za-z_]\w*\.flat_map\s*\(/g],
+    ['Relation.map', /(?<![.\w])[A-Za-z_]\w*\.map\s*\(/g],
+    ['Relation.prompt', /(?<![.\w])[A-Za-z_]\w*\.prompt\s*\(/g],
+    ['Relation.embed_text', /(?<![.\w])[A-Za-z_]\w*\.embed_text\s*\(/g],
+    ['Relation.classify_text', /(?<![.\w])[A-Za-z_]\w*\.classify_text\s*\(/g],
+  ]
+  const calls = []
+  let blockOffset = 0
+  for (const block of executableCodeBlocks(source)) {
+    const { body } = fencedCodeBlockParts(block)
+    for (const [token, pattern] of patterns) {
+      pattern.lastIndex = 0
+      for (let match = pattern.exec(body); match; match = pattern.exec(body)) {
+        calls.push({ token, index: blockOffset + match.index })
+      }
+    }
+    blockOffset += body.length + 1
+  }
+  return calls.sort((left, right) => left.index - right.index).map(({ token }) => token)
+}
+
+const assertGuidePrimaryApiCallParity = (en, zh, message) => {
+  const enCalls = primaryApiCallTrace(en)
+  const zhCalls = primaryApiCallTrace(zh)
+  assert.ok(enCalls.length > 0, `${message}: primary API call trace should not be empty`)
+  assert.deepEqual(enCalls, zhCalls, `${message}: bilingual primary API call order`)
+}
+
+const scopedPlaceholderPattern = /\b(?:TODO|TBD|your_function_here|example_alias)\b/i
+
+const assertNoScopedPlaceholders = (blocks, message) => {
+  for (const block of blocks) {
+    assert.doesNotMatch(block, scopedPlaceholderPattern, `${message}: unresolved placeholder`)
+  }
+}
+
+const stripPythonStringsAndComments = (source) => {
+  let result = ''
+  let index = 0
+  let quote = null
+  let escaped = false
+  let comment = false
+
+  while (index < source.length) {
+    const char = source[index]
+    if (comment) {
+      if (char === '\n') {
+        comment = false
+        result += '\n'
+      } else {
+        result += ' '
+      }
+      index += 1
+      continue
+    }
+    if (quote) {
+      if (quote.length === 3 && source.startsWith(quote, index)) {
+        result += ' '.repeat(3)
+        index += 3
+        quote = null
+        continue
+      }
+      if (quote.length === 1 && !escaped && char === quote) {
+        result += ' '
+        index += 1
+        quote = null
+        continue
+      }
+      result += char === '\n' ? '\n' : ' '
+      if (quote.length === 1) {
+        if (escaped) escaped = false
+        else if (char === '\\') escaped = true
+      }
+      index += 1
+      continue
+    }
+    if (char === '#') {
+      comment = true
+      result += ' '
+      index += 1
+      continue
+    }
+    if (source.startsWith("'''", index) || source.startsWith('\"\"\"', index)) {
+      quote = source.slice(index, index + 3)
+      result += ' '.repeat(3)
+      index += 3
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      escaped = false
+      result += ' '
+      index += 1
+      continue
+    }
+    result += char
+    index += 1
+  }
+  return result
+}
+
+const addPythonDefinitions = (line, names, responseTypes) => {
+  const className = line.match(/^\s*class\s+([A-Za-z_]\w*)\b/)?.[1]
+  if (className) {
+    names.add(className)
+    responseTypes.add(className)
+  }
+  const functionMatch = line.match(/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(([^)]*)/)
+  if (functionMatch) {
+    names.add(functionMatch[1])
+    for (const parameter of functionMatch[2].split(',')) {
+      const name = parameter.trim().match(/^\*{0,2}([A-Za-z_]\w*)/)?.[1]
+      if (name) names.add(name)
+    }
+  }
+  const importMatch = line.match(/^\s*import\s+([A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)*(?:\s+as\s+([A-Za-z_]\w*))?/)
+  if (importMatch) names.add(importMatch[2] ?? importMatch[1])
+  const fromImport = line.match(/^\s*from\s+[^\s]+\s+import\s+(.+)$/)?.[1]
+  if (fromImport) {
+    for (const item of fromImport.split(',')) {
+      const match = item.trim().match(/^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?/)
+      if (!match) continue
+      const name = match[2] ?? match[1]
+      names.add(name)
+      if (/^[A-Z]/.test(name)) responseTypes.add(name)
+    }
+  }
+  const assignment = line.match(/^\s*([A-Za-z_]\w*)\s*(?::[^=]+)?=(?!=)/)?.[1]
+  if (assignment) {
+    names.add(assignment)
+    if (/^[A-Z]/.test(assignment)) responseTypes.add(assignment)
+  }
+  for (const pattern of [/^\s*for\s+([A-Za-z_]\w*)\s+in\b/, /\bas\s+([A-Za-z_]\w*)\s*:/]) {
+    const name = line.match(pattern)?.[1]
+    if (name) names.add(name)
+  }
+}
+
+const assertPythonDefinedNames = (block, state, message) => {
+  const { language, body } = fencedCodeBlockParts(block)
+  if (!['python', 'py'].includes(language)) return
+  const source = stripPythonStringsAndComments(body)
+  const receiverPattern = /\b([A-Za-z_]\w*)\.(sql|select|map_batches|flat_map|map|prompt|embed_text|classify_text)\s*\(/g
+
+  for (const line of source.split('\n')) {
+    receiverPattern.lastIndex = 0
+    for (let match = receiverPattern.exec(line); match; match = receiverPattern.exec(line)) {
+      const [, receiver, method] = match
+      if (match.index > 0 && line[match.index - 1] === '.') continue
+      if (method === 'sql' && !['con', 'conn', 'ray_con'].includes(receiver)) continue
+      assert.ok(
+        state.names.has(receiver),
+        `${message}: ${receiver}.${method} receiver should be assigned before use`,
+      )
+    }
+    for (const match of line.matchAll(/\breturn_format\s*=\s*([A-Z][A-Za-z0-9_]*)\b/g)) {
+      assert.ok(
+        state.responseTypes.has(match[1]),
+        `${message}: return_format class ${match[1]} should be defined or imported before use`,
+      )
+    }
+    addPythonDefinitions(line, state.names, state.responseTypes)
+  }
+}
+
+const referenceMinimalExampleBlocks = (source, locale, message) => {
+  const lines = markdownLines(source)
+  const entries = lines.filter(({ text }) => /^#### `[^`]+`$/.test(text))
+  const minimalLabel = locale === 'zh' ? '**最小示例**' : '**Minimal example**'
+  const restrictionsLabel = locale === 'zh' ? '**限制与错误**' : '**Restrictions and errors**'
+  return entries.flatMap((entry, index) => {
+    const body = source.slice(entry.offset, entries[index + 1]?.offset ?? source.length)
+    const start = exactLineIndex(body, minimalLabel)
+    const end = exactLineIndex(body, restrictionsLabel, start + minimalLabel.length)
+    assert.ok(start !== -1 && end > start, `${message}: ${entry.text} minimal example boundary`)
+    const blocks = executableCodeBlocks(body.slice(start, end))
+    assert.ok(blocks.length > 0, `${message}: ${entry.text} should contain an executable minimal example`)
+    return blocks.map((block) => ({ entry: entry.text, block }))
+  })
+}
+
+const assertReferenceExamplesSafe = (source, locale, message) => {
+  for (const { entry, block } of referenceMinimalExampleBlocks(source, locale, message)) {
+    assertNoScopedPlaceholders([block], `${message} ${entry}`)
+    assertPythonDefinedNames(
+      block,
+      { names: new Set(), responseTypes: new Set() },
+      `${message} ${entry}`,
+    )
+  }
+}
+
+const assertReferenceActorBackendComplete = (source, locale, message) => {
+  for (const { entry, block } of referenceMinimalExampleBlocks(source, locale, message)) {
+    for (const marker of ['.prompt', '.embed_text', '.classify_text']) {
+      for (const call of callSlices(block, marker)) {
+        if (!/\bexecution_backend\s*=\s*["'](?:subprocess_actor|ray_actor)["']/.test(call)) continue
+        assert.match(
+          call,
+          /\bactor_number\s*=\s*[1-9]\d*/,
+          `${message} ${entry}: explicit actor backend requires positive actor_number in the same call`,
+        )
+        assert.match(
+          call,
+          /\bgpus\s*=\s*(?:0(?:\.\d+)?|[1-9]\d*(?:\.\d+)?)/,
+          `${message} ${entry}: explicit actor backend requires nonnegative gpus in the same call`,
+        )
+      }
+    }
+  }
+}
+
+const assertNoFictionalNativeRunnerBatchSize = (source, message) => {
+  assert.doesNotMatch(
+    source,
+    /\bVANE_NATIVE_RUNNER_BATCH_SIZE\b/,
+    `${message}: should not document an unregistered native-runner environment variable`,
+  )
+}
+
+const assertSizingLocalActorRecipe = (source, heading, nextHeading, message) => {
+  const actorSection = section(source, heading, nextHeading)
+  const recipe = codeBlockContaining(
+    actorSection,
+    /execution_backend\s*=\s*["']subprocess_actor["']/,
+    `${message} local actor recipe`,
+  )
+  assert.match(recipe, /\bactor_number\s*=\s*1\b/, `${message}: local actor recipe actor_number`)
+  assert.match(recipe, /\bgpus\s*=\s*0(?:\.0+)?\b/, `${message}: local CPU actor recipe gpus`)
+}
+
+const assertGuideExamplesSafe = (source, message, predefinedNames = []) => {
+  const blocks = executableCodeBlocks(source)
+  assertNoScopedPlaceholders(blocks, message)
+  assertNoRemovedNativeRunner(source, message)
+  assertNoFictionalNativeRunnerBatchSize(source, message)
+  const state = {
+    names: new Set(predefinedNames),
+    responseTypes: new Set(predefinedNames.filter((name) => /^[A-Z]/.test(name))),
+  }
+  for (const block of blocks) assertPythonDefinedNames(block, state, message)
+}
+
+const assertBilingualDocumentationPair = (pair) => {
+  const { label, kind, sources } = pair
+  const headingLevels = (source) => markdownHeadings(source)
+    .map((heading) => heading.match(/^#+/)?.[0].length)
+  assert.deepEqual(
+    headingLevels(sources.en),
+    headingLevels(sources.zh),
+    `${label}: approved bilingual heading-level parity`,
+  )
+  assert.deepEqual(
+    semanticApiHeadingTrace(sources.en),
+    semanticApiHeadingTrace(sources.zh),
+    `${label}: approved bilingual API model order`,
+  )
+
+  if (kind === 'reference') {
+    assertReferencePublicApiParity(sources.en, sources.zh, label)
+    assertReferenceExamplesSafe(sources.en, 'en', `English ${label}`)
+    assertReferenceExamplesSafe(sources.zh, 'zh', `Chinese ${label}`)
+  }
+  if (kind === 'concept') {
+    assert.ok(
+      semanticApiHeadingTrace(sources.en).length > 0,
+      `${label}: Concept model trace should not be empty`,
+    )
+  }
+  if (kind === 'guide') {
+    assertGuidePrimaryApiCallParity(sources.en, sources.zh, label)
+    assertGuideExamplesSafe(sources.en, `English ${label}`, pair.predefinedNames)
+    assertGuideExamplesSafe(sources.zh, `Chinese ${label}`, pair.predefinedNames)
+  }
+  if (pair.exactCodeParity) {
+    assert.deepEqual(
+      fencedCodeBlocks(sources.en),
+      fencedCodeBlocks(sources.zh),
+      `${label}: bilingual supporting-Guide code parity`,
+    )
+  }
+}
+
 const assertRelatedExamples = (source, schema, message) => {
   const blocks = fencedCodeBlocks(source)
   assert.deepEqual(fencedCodeLanguages(source), schema.languages, `${message}: fenced example order`)
@@ -1506,6 +1858,57 @@ const quickstart = read('docs/data/quickstart/quickstart.mdx')
 const quickstartZh = read(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
 )
+const approvedBilingualDocumentationPairs = [
+  { kind: 'reference', label: 'UDF API Reference', sources: { en: udfReference, zh: udfReferenceZh } },
+  { kind: 'reference', label: 'AI Function API Reference', sources: { en: aiReference, zh: aiReferenceZh } },
+  { kind: 'concept', label: 'UDF Concepts', sources: { en: udfConcept, zh: udfConceptZh } },
+  { kind: 'concept', label: 'AI Function Concepts', sources: { en: aiConcept, zh: aiConceptZh } },
+  { kind: 'concept', label: 'Architecture Concepts', sources: { en: architecture, zh: architectureZh } },
+  { kind: 'concept', label: 'Execution Model Concepts', sources: { en: executionModel, zh: executionModelZh } },
+  { kind: 'concept', label: 'SQL vs Python Concepts', sources: { en: sqlVsPython, zh: sqlVsPythonZh } },
+  { kind: 'guide', label: 'Quickstart', sources: { en: quickstart, zh: quickstartZh } },
+  { kind: 'guide', label: 'Custom Python UDF Guide', sources: { en: customUdfs, zh: customUdfsZh } },
+  { kind: 'guide', label: 'AI Functions Guide', sources: { en: aiGuide, zh: aiGuideZh } },
+  { kind: 'guide', label: 'Embeddings at Scale Guide', sources: { en: embeddingsGuide, zh: embeddingsGuideZh } },
+  { kind: 'guide', label: 'GPU Inference Guide', sources: { en: gpuGuide, zh: gpuGuideZh } },
+  {
+    kind: 'guide',
+    label: 'Multimodal Ingest Guide',
+    sources: {
+      en: read('docs/data/guides/multimodal-ingest.mdx'),
+      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/multimodal-ingest.mdx'),
+    },
+    exactCodeParity: true,
+  },
+  {
+    kind: 'guide',
+    label: 'Multimodal Pipeline Guide',
+    sources: {
+      en: read('docs/data/guides/multimodal-pipeline.mdx'),
+      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/multimodal-pipeline.mdx'),
+    },
+    exactCodeParity: true,
+  },
+  {
+    kind: 'guide',
+    label: 'Structured Transformation Guide',
+    sources: {
+      en: read('docs/data/guides/structured-transformation.mdx'),
+      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/structured-transformation.mdx'),
+    },
+    predefinedNames: ['rel', 'con'],
+    exactCodeParity: true,
+  },
+  {
+    kind: 'guide',
+    label: 'Performance Tuning Guide',
+    sources: {
+      en: read('docs/data/guides/performance-tuning.mdx'),
+      zh: read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/performance-tuning.mdx'),
+    },
+    exactCodeParity: true,
+  },
+]
 const overview = read('docs/data/index.mdx')
 const overviewZh = read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/index.mdx')
 const registry = read('src/docs/registry.ts')
@@ -3097,6 +3500,237 @@ const embeddingGpuGuideSchemas = [
 for (const schema of embeddingGpuGuideSchemas) {
   assertBilingualGuideTask(schema)
 }
+
+assert.equal(
+  approvedBilingualDocumentationPairs.length,
+  16,
+  'Task 10 should keep an explicit registry of all approved bilingual documentation pairs',
+)
+for (const pair of approvedBilingualDocumentationPairs) {
+  assertBilingualDocumentationPair(pair)
+}
+
+const finalSweepChecks = [
+  ...[
+    'docs/data/guides/performance-tuning.mdx',
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/performance-tuning.mdx',
+    'docs/data/deploy/single-node.mdx',
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/deploy/single-node.mdx',
+  ].map((path) => [path, () => assertNoFictionalNativeRunnerBatchSize(read(path), path)]),
+  ['English AI Reference actor minimal examples', () => assertReferenceActorBackendComplete(aiReference, 'en', 'English AI Reference')],
+  ['Chinese AI Reference actor minimal examples', () => assertReferenceActorBackendComplete(aiReferenceZh, 'zh', 'Chinese AI Reference')],
+  [
+    'English sizing local actor recipe',
+    () => assertSizingLocalActorRecipe(
+      read('docs/data/deploy/sizing.mdx'),
+      '## Local model actor',
+      '## Ray task',
+      'English sizing',
+    ),
+  ],
+  [
+    'Chinese sizing local actor recipe',
+    () => assertSizingLocalActorRecipe(
+      read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/deploy/sizing.mdx'),
+      '## 本地模型 actor',
+      '## Ray task',
+      'Chinese sizing',
+    ),
+  ],
+]
+const finalSweepFailures = []
+for (const [label, check] of finalSweepChecks) {
+  try {
+    check()
+  } catch (error) {
+    finalSweepFailures.push(`${label}: ${error.message}`)
+  }
+}
+assert.deepEqual(
+  finalSweepFailures,
+  [],
+  `final public API sweep failures:\n${finalSweepFailures.join('\n')}`,
+)
+
+assert.deepEqual(
+  semanticApiHeadingTrace('## SQL Entry Point to Expression API (Recommended)'),
+  [{ level: 2, token: 'SQL' }],
+  'SQL Expression headings should normalize once, without a duplicate Expression API token',
+)
+
+const deletedReferenceEntry = udfReferenceZh.replace('#### `vane.func.batch`', '#### `vane.func.batch removed`')
+assert.throws(
+  () => assertReferencePublicApiParity(udfReference, deletedReferenceEntry, 'deleted-entry mutation'),
+  /public API entry lists/,
+  'Reference parity should reject a deleted or renamed public API entry',
+)
+const extraReferenceEntry = `${udfReferenceZh}\n#### \`fictional.public_api\`\n`
+assert.throws(
+  () => assertReferencePublicApiParity(udfReference, extraReferenceEntry, 'extra-entry mutation'),
+  /public API entry lists/,
+  'Reference parity should reject an extra public API entry',
+)
+
+for (const [placeholder, target, check] of [
+  ['TODO', udfReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TODO Reference mutation')],
+  ['TBD', aiReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TBD Reference mutation')],
+  ['your_function_here', quickstart, (source) => assertGuideExamplesSafe(source, 'your_function_here Guide mutation')],
+  ['example_alias', customUdfs, (source) => assertGuideExamplesSafe(source, 'example_alias Guide mutation')],
+]) {
+  const mutation = target.replace('import vane\n', `import vane\n${placeholder}\n`)
+  assert.notEqual(mutation, target, `${placeholder} mutation should change an executable block`)
+  assert.throws(
+    () => check(mutation),
+    /unresolved placeholder/,
+    `scoped placeholder guards should reject ${placeholder}`,
+  )
+}
+
+const conceptWithPlaceholderSnippet = {
+  kind: 'concept',
+  label: 'Concept placeholder scope probe',
+  sources: {
+    en: udfConcept.replace('```python\n', '```python\nTODO\n'),
+    zh: udfConceptZh.replace('```python\n', '```python\nTODO\n'),
+  },
+}
+assert.doesNotThrow(
+  () => assertBilingualDocumentationPair(conceptWithPlaceholderSnippet),
+  'placeholder checks should never scan illustrative Concept snippets',
+)
+
+const missingReferenceConnect = aiReference.replace(
+  'con = vane.connect()\n',
+  '',
+)
+assert.notEqual(missingReferenceConnect, aiReference, 'missing-connect mutation should remove setup')
+assert.throws(
+  () => assertReferenceExamplesSafe(missingReferenceConnect, 'en', 'missing-connect mutation'),
+  /con\.sql receiver should be assigned before use/,
+  'Reference minimal examples should require block-local connection setup',
+)
+
+const cumulativeGuideProbe = [
+  '```python',
+  'import vane',
+  'con = vane.connect()',
+  'rel = con.sql("SELECT 1 AS id")',
+  '```',
+  '```python',
+  'result = rel.select(vane.col("id"))',
+  '```',
+].join('\n')
+assert.doesNotThrow(
+  () => assertGuideExamplesSafe(cumulativeGuideProbe, 'cumulative Guide probe'),
+  'Guide setup should accumulate across executable code blocks',
+)
+const missingGuideRelation = cumulativeGuideProbe.replace(
+  'rel = con.sql("SELECT 1 AS id")\n',
+  '',
+)
+assert.throws(
+  () => assertGuideExamplesSafe(missingGuideRelation, 'missing Guide relation mutation'),
+  /rel\.select receiver should be assigned before use/,
+  'Guide task examples should reject a relation receiver without cumulative assignment',
+)
+
+const sqlStringReceiverProbe = [
+  '```python',
+  'import vane',
+  'con = vane.connect()',
+  'rel = con.sql("""',
+  "  SELECT 'fictional.select()' AS text",
+  '""")',
+  'result = rel.select(vane.col("text"))',
+  '```',
+].join('\n')
+assert.doesNotThrow(
+  () => assertGuideExamplesSafe(sqlStringReceiverProbe, 'triple-quoted SQL probe'),
+  'defined-name checks should strip triple-quoted SQL strings',
+)
+
+const aiReferenceRenamedResponse = aiReference.replace(
+  'class Decision(BaseModel):',
+  'class RenamedDecision(BaseModel):',
+)
+assert.throws(
+  () => assertReferenceExamplesSafe(aiReferenceRenamedResponse, 'en', 'AI Reference response mutation'),
+  /return_format class Decision should be defined or imported before use/,
+  'AI Reference should reject a renamed response class still used by return_format',
+)
+
+const emptyHeadingGuideEn = '## Setup\n```python\nimport vane\nvane.configure(runner="local")\n```'
+const emptyHeadingGuideZh = '## 设置\n```python\nimport vane\ncon = vane.connect()\ncon.sql("SELECT 1")\n```'
+assert.throws(
+  () => assertBilingualDocumentationPair({
+    kind: 'guide',
+    label: 'empty API-heading Guide mutation',
+    sources: { en: emptyHeadingGuideEn, zh: emptyHeadingGuideZh },
+  }),
+  /primary API call order/,
+  'Guides with no API headings should still require matching primary API call order',
+)
+
+const nativeRunnerMutation = '```python\nimport vane\nvane.configure(runner="native")\n```'
+assert.throws(
+  () => assertNoRemovedNativeRunner(nativeRunnerMutation, 'native runner mutation'),
+  /public runner name/,
+  'Guide executable blocks should reject the removed native runner name',
+)
+assert.throws(
+  () => assertNoFictionalNativeRunnerBatchSize(
+    'export VANE_NATIVE_RUNNER_BATCH_SIZE=4096',
+    'fictional native batch environment mutation',
+  ),
+  /unregistered native-runner environment variable/,
+  'Public docs should reject the fictional native runner batch-size environment variable',
+)
+
+const validActorReferenceProbe = [
+  '#### `rel.prompt`',
+  '**Minimal example**',
+  '```python',
+  'result = rel.prompt(',
+  '    "text",',
+  '    execution_backend="subprocess_actor",',
+  '    actor_number=1,',
+  '    gpus=0.0,',
+  ')',
+  '```',
+  '**Restrictions and errors**',
+].join('\n')
+const incompleteActorReferenceMutation = validActorReferenceProbe
+  .replace('    actor_number=1,\n', '')
+  .replace('    gpus=0.0,\n', '')
+assert.throws(
+  () => assertReferenceActorBackendComplete(
+    incompleteActorReferenceMutation,
+    'en',
+    'incomplete actor Reference mutation',
+  ),
+  /requires positive actor_number/,
+  'Reference minimal calls should reject an incomplete explicit actor backend',
+)
+
+const validSizingProbe = [
+  '## Local model actor',
+  '```python',
+  'execution_backend="subprocess_actor"',
+  'actor_number=1',
+  'gpus=0.0',
+  '```',
+  '## Ray task',
+].join('\n')
+assert.throws(
+  () => assertSizingLocalActorRecipe(
+    validSizingProbe.replace('gpus=0.0\n', ''),
+    '## Local model actor',
+    '## Ray task',
+    'sizing mutation',
+  ),
+  /local CPU actor recipe gpus/,
+  'Sizing should require explicit gpus=0.0 in the local actor recipe',
+)
 
 const quickstartOrderMutation = quickstart
   .replace('## 2. Select candidates with SQL', '## __QUICKSTART_ORDER_SWAP__')
