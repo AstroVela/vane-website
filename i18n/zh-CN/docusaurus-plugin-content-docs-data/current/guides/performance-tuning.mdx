@@ -38,12 +38,12 @@ native runner 会流式处理 Arrow 记录 batch。Ray runner 会在需要时初
 
 请使用有代表性的数据调优。
 
-## Actor 有状态复用
+## Actor-backed 复用
 
 模型推理使用 actor backend：
 
-- `subprocess_actor` 用于本地有状态复用。
-- `ray_actor` 用于分布式有状态复用。
+- `subprocess_actor` 用于本地模型或客户端复用。
+- `ray_actor` 用于分布式模型或客户端复用。
 
 轻量无状态工作负载使用 task backend：
 
@@ -56,9 +56,11 @@ native runner 会流式处理 Arrow 记录 batch。Ray runner 会在需要时初
 
 - `cpus`
 - `gpus`
-- `concurrency`
+- `actor_number`，用于 actor-backed 可调用类
 
-Ray 使用资源请求进行放置。增大 `concurrency` 前，请确认 Ray 集群暴露了匹配的资源。
+Actor backend 要求传入可调用类、正整数 `actor_number` 和显式的非负 `gpus` 值；仅使用 CPU 的 actor 请设置 `gpus=0.0`。Ray 使用资源请求进行放置，因此增大 `actor_number` 前，请确认 Ray 集群暴露了匹配的资源。本地 subprocess 会继承可见 GPU，但不会预留或隔离 GPU。
+
+Expression `vane.func` 使用 task backend。有状态 `vane.cls` v1 要求 `actor_number=1`；它的可变状态是 query-scoped、actor-local 且 ephemeral 的，因此不能作为扩容参数。AI provider 的 `concurrency` 是面向 provider 的选项，会映射为 AI actor 数量；对于 prompt provider，`max_api_concurrency` 控制每个 actor 内的请求并发。Relation actor pool 直接使用 `actor_number`。
 
 ## Ray 扫描任务分组
 
@@ -114,10 +116,12 @@ export VANE_NATIVE_RUNNER_BATCH_SIZE=4096
 - 输入字节
 - batch size
 - backend
-- 并发度
+- actor 数或 provider 并发度
 - 每个 actor 的 GPU 数
 - 耗时
 - 输出行
 - 失败次数
 
 benchmark 工作负载可以作为由环境变量驱动的性能实验参考，但 benchmark 专用文件位置、存储端点和模型默认值不是通用部署默认值。
+
+调优 Expression 基数、状态或 GPU 资源前，请阅读 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。

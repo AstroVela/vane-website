@@ -6,6 +6,8 @@ Use Vane Data for deduplication and cleaning when you want SQL filtering, Python
 
 Vane Data does not provide a built-in MinHash or data-quality framework. It gives you relation management, SQL, UDF execution, and write paths; the cleaning and deduplication logic remains explicit Python or SQL code.
 
+The examples below use Python Relation UDFs because they return multiple columns or change row shape. For one typed, row-preserving result beside existing columns, prefer the Expression API: use a registered SQL alias when the stage belongs in SQL, or use Python `vane.func` or `vane.func.batch(..., row_preserving=True)` when composing the projection in Python. See the [UDF API Reference](/docs/data/reference/udf-api).
+
 ## Pipeline shape
 
 A typical text-cleaning pipeline follows this shape:

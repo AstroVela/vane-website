@@ -6,6 +6,8 @@ title: 结构化转换
 
 Vane Data 不提供内置 MinHash 或数据质量框架。它提供 relation 管理、SQL、UDF 执行和写出路径；清洗与去重逻辑仍然是显式 Python 或 SQL 代码。
 
+下面使用 Python Relation UDF，是因为它们会返回多列或改变行形态。如果只需在现有列旁增加一个有类型、保持行数的结果，请优先使用 Expression API：当该阶段属于 SQL pipeline 时，使用已注册的 SQL alias；在 Python 中组合 projection 时，使用 `vane.func` 或 `vane.func.batch(..., row_preserving=True)`。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
+
 ## Pipeline 形态
 
 典型文本清洗 pipeline 如下：

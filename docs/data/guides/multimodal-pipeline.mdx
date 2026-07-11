@@ -115,6 +115,8 @@ classified = with_bytes.map_batches(
     },
     batch_size=16,
     execution_backend="subprocess_actor",
+    gpus=0.0,
+    actor_number=1,
 )
 ```
 
@@ -150,7 +152,9 @@ curated = con.sql("""
     from classified_media
 """)
 
-curated.write_parquet("output/classified_media/")
+output_path = Path("output/classified_media/part-00000.parquet")
+output_path.parent.mkdir(parents=True, exist_ok=True)
+curated.write_parquet(str(output_path))
 ```
 
 ## Move to Ray
@@ -178,11 +182,13 @@ classified = with_bytes.map_batches(
     batch_size=16,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
 Every Ray worker must be able to import the UDF class and access the same storage, credentials, model files, and Python dependencies.
+
+The multi-column stages in this guide should remain Python Relation UDFs. For a later one-column, row-preserving enrichment, prefer the Expression API so IDs and source metadata can stay in the same projection. Use a registered SQL alias when that stage belongs in SQL, or a Python expression when Python composition is clearer. See the [UDF API Reference](/docs/data/reference/udf-api).
 
 ## Practical checks
 

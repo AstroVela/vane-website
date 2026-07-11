@@ -38,12 +38,12 @@ Large batches:
 
 Tune with representative data.
 
-## Actor reuse
+## Actor-backed reuse
 
 Use actor backends for model inference:
 
-- `subprocess_actor` for local stateful reuse.
-- `ray_actor` for distributed stateful reuse.
+- `subprocess_actor` for local model or client reuse.
+- `ray_actor` for distributed model or client reuse.
 
 Use task backends for light stateless work:
 
@@ -56,9 +56,11 @@ Use task backends for light stateless work:
 
 - `cpus`
 - `gpus`
-- `concurrency`
+- `actor_number` for actor-backed callable classes
 
-Ray uses resource requests for placement. Make sure the Ray cluster advertises matching resources before increasing `concurrency`.
+An actor backend requires a callable class, a positive `actor_number`, and an explicit non-negative `gpus` value; use `gpus=0.0` for CPU-only actors. Ray uses resource requests for placement, so make sure the Ray cluster advertises matching resources before increasing `actor_number`. A local subprocess inherits visible GPUs but does not reserve or isolate them.
+
+Expression `vane.func` uses a task backend. Stateful `vane.cls` v1 requires `actor_number=1`; its mutable state is query-scoped, actor-local, and ephemeral, so it is not a scale-out control. AI provider `concurrency` is a provider-facing option that maps to the AI actor count; for prompt providers, `max_api_concurrency` controls request concurrency inside each actor. Relation actor pools use `actor_number` directly.
 
 ## Ray scan task grouping
 
@@ -114,10 +116,12 @@ Keep a simple run record:
 - input bytes
 - batch size
 - backend
-- concurrency
+- actor number or provider concurrency
 - GPUs per actor
 - elapsed time
 - output rows
 - failure count
 
 Benchmark workloads can be useful references for environment-driven performance experiments, but benchmark-specific file locations, storage endpoints, and model defaults are not general deployment defaults.
+
+Read the [UDF API Reference](/docs/data/reference/udf-api) before tuning Expression cardinality, state, or GPU resources.

@@ -1,8 +1,196 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 const read = (path) => readFileSync(path, 'utf8')
 const stripTags = (value) => value.replace(/<[^>]+>/g, '')
+const collectMdxEntries = (directory) => readdirSync(directory, { withFileTypes: true })
+  .flatMap((entry) => {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) {
+      return path.includes('/examples/') ? [] : collectMdxEntries(path)
+    }
+    return entry.isFile() && path.endsWith('.mdx') ? [{ path, source: read(path) }] : []
+  })
+
+const documentationCorpusEntries = () => [
+  'docs/data/concepts',
+  'docs/data/guides',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides',
+].flatMap(collectMdxEntries)
+
+const assertParquetOutputLifecycle = (source, message) => {
+  assert.doesNotMatch(
+    source,
+    /\.write_parquet\(["'][^"'\n]+\/["']\)/,
+    `${message}: write_parquet requires an explicit file path`,
+  )
+  const outputBlock = codeBlockContaining(source, /output_path\s*=\s*Path\(/, `${message} output`)
+  assert.match(
+    outputBlock,
+    /output_path\.parent\.mkdir\(parents=True, exist_ok=True\)/,
+    `${message}: create output parent before writing`,
+  )
+  assertSubstringOrder(
+    outputBlock,
+    [
+      'output_path = Path("output/classified_media/part-00000.parquet")',
+      'output_path.parent.mkdir(parents=True, exist_ok=True)',
+      'curated.write_parquet(str(output_path))',
+    ],
+    `${message} output lifecycle`,
+  )
+}
+
+const proseClauses = (source) => markdownLines(source)
+  .map(({ text }) => text)
+  .join('\n')
+  .split(/(?:[!?。！？；;，,]\s*|\.(?:\s+|$)|\bbut\b|但)/i)
+  .map((clause) => clause.trim())
+  .filter(Boolean)
+
+const hasEnglishNegation = (clause) => /\b(?:not|never|no|neither|without|does not|do not|doesn't|don't)\b/i.test(clause)
+const hasChineseNegation = (clause) => /并非|并不|(?:并)?未(?=提供|公开|暴露|支持|具有|有|分为|保证|创建|形成)|不是|没有|从不|不要|不会|不应|不应该|不为|不提供|不公开|不暴露|不支持|不具有|无需|无须/.test(clause)
+
+const assertNoAffirmativeClause = (clauses, patterns, isNegated, message) => {
+  const offending = clauses.find((clause) => (
+    patterns.some((pattern) => pattern.test(clause)) && !isNegated(clause)
+  ))
+  assert.equal(offending, undefined, message)
+}
+
+const callSlices = (source, marker) => {
+  const calls = []
+  let cursor = 0
+
+  while (cursor < source.length) {
+    const markerIndex = source.indexOf(marker, cursor)
+    if (markerIndex === -1) break
+    const openIndex = source.indexOf('(', markerIndex + marker.length)
+    if (openIndex === -1) break
+
+    let depth = 0
+    let quote = null
+    let escaped = false
+    let endIndex = -1
+    for (let index = openIndex; index < source.length; index += 1) {
+      const char = source[index]
+      if (quote) {
+        if (escaped) {
+          escaped = false
+        } else if (char === '\\') {
+          escaped = true
+        } else if (char === quote) {
+          quote = null
+        }
+        continue
+      }
+      if (char === '"' || char === "'") {
+        quote = char
+      } else if (char === '(') {
+        depth += 1
+      } else if (char === ')') {
+        depth -= 1
+        if (depth === 0) {
+          endIndex = index + 1
+          break
+        }
+      }
+    }
+
+    if (endIndex === -1) break
+    calls.push(source.slice(markerIndex, endIndex))
+    cursor = endIndex
+  }
+
+  return calls
+}
+
+const hasTopLevelCallKeyword = (call, keyword) => {
+  const openIndex = call.indexOf('(')
+  let parenDepth = 1
+  let braceDepth = 0
+  let bracketDepth = 0
+  let quote = null
+  let escaped = false
+
+  for (let index = openIndex + 1; index < call.length; index += 1) {
+    const char = call[index]
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char === '(') parenDepth += 1
+    else if (char === ')') parenDepth -= 1
+    else if (char === '{') braceDepth += 1
+    else if (char === '}') braceDepth -= 1
+    else if (char === '[') bracketDepth += 1
+    else if (char === ']') bracketDepth -= 1
+
+    if (parenDepth === 1 && braceDepth === 0 && bracketDepth === 0) {
+      const previous = index === 0 ? '' : call[index - 1]
+      const keywordPattern = new RegExp(`^${escapeRegExp(keyword)}\\s*=`)
+      if (!/[A-Za-z0-9_]/.test(previous) && keywordPattern.test(call.slice(index))) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+const assertNoCorpusContradictions = (path, source) => {
+  const clauses = proseClauses(source)
+  assertNoAffirmativeClause(clauses, [
+    /\b(?:has|exposes|provides|offers|defines|uses)\s+three\s+(?:(?:parallel|peer|top-level|complementary)\s+)?(?:APIs?|API models?|surfaces?)\b/i,
+  ], hasEnglishNegation, `${path}: three peer API models`)
+  assertNoAffirmativeClause(clauses, [
+    /(?:有|提供|公开|暴露|包含|分为)\s*三(?:个|种)[^。\n]{0,30}(?:同级|并列|平行|顶层|互补)[^。\n]{0,30}(?:API|模型)/,
+  ], hasChineseNegation, `${path}: three peer API models`)
+  assertNoAffirmativeClause(clauses, [
+    /\b(?:every|all)\s+(?:UDF(?: and AI)?|AI(?: and UDF)?|function|task|workflow)s?[^.\n]{0,80}\b(?:must|should)\s+(?:start|begin|use)[^.\n]{0,40}\bRelation API\b/i,
+    /\bRelation API\b[^.\n]{0,80}\b(?:is|should be|must be)\b[^.\n]{0,40}\b(?:default|starting point|first choice)\b[^.\n]{0,80}\b(?:every|all)\b/i,
+  ], hasEnglishNegation, `${path}: Relation-first for every task`)
+  assertNoAffirmativeClause(clauses, [
+    /(?:所有|每个)[^。\n]{0,30}(?:UDF|AI|任务|工作流)[^。\n]{0,50}(?:都)?(?:必须|应该)[^。\n]{0,20}(?:从|使用)[^。\n]{0,20}Relation API(?:[^。\n]{0,10}开始)?/,
+    /Relation API[^。\n]{0,50}(?:是|应该是|必须是)[^。\n]{0,30}(?:默认|起点|首选)[^。\n]{0,60}(?:所有|每个)/,
+  ], hasChineseNegation, `${path}: Relation-first for every task`)
+  assertNoAffirmativeClause(clauses, [
+    /\b(?:exposes|provides|supports|has|offers)\s+(?:a\s+)?direct SQL (?:Relation(?: API)?|table[- ]function(?: API| entry point)?)/i,
+    /\bRelation API\b[^.\n]{0,40}\b(?:directly\s+)?(?:exposes|provides|supports|offers)\b[^.\n]{0,50}\b(?:SQL Relation|SQL table[- ]function)\b/i,
+    /\bSQL\b[^.\n]{0,30}\b(?:directly\s+)?(?:exposes|provides|supports|offers)\b[^.\n]{0,50}\b(?:Relation API|table[- ]function)\b/i,
+  ], hasEnglishNegation, `${path}: direct SQL Relation API`)
+  assertNoAffirmativeClause(clauses, [
+    /(?:提供|公开|暴露|支持|具有)[^。\n]{0,40}直接的? SQL (?:Relation(?: API)?|表函数|table[- ]function)/i,
+    /Relation API[^。\n]{0,40}(?:直接)?(?:提供|公开|暴露|支持)[^。\n]{0,40}SQL (?:Relation|表函数|table[- ]function)/i,
+    /SQL[^。\n]{0,30}(?:直接)?(?:提供|公开|暴露|支持)[^。\n]{0,40}(?:Relation API|表函数|table[- ]function)/i,
+  ], hasChineseNegation, `${path}: direct SQL Relation API`)
+  for (const block of fencedCodeBlocks(source)) {
+    for (const call of callSlices(block, '.map_batches')) {
+      const actorBackend = /execution_backend\s*=\s*["'](?:subprocess_actor|ray_actor)["']/.test(call)
+      assert.ok(
+        !(actorBackend && hasTopLevelCallKeyword(call, 'concurrency')),
+        `${path}: Relation actor pool concurrency`,
+      )
+    }
+  }
+  assertNoAffirmativeClause(clauses, [
+    /vane\.cls(?=[^.\n]{0,180}\b(?:global|durable|persistent|checkpointed|exactly-once)\b)(?=[^.\n]{0,180}\b(?:state|across queries|guarantee|semantics)\b)[^.\n]{0,180}/i,
+  ], hasEnglishNegation, `${path}: durable vane.cls state`)
+  assertNoAffirmativeClause(clauses, [
+    /vane\.cls(?=[^。\n]{0,180}(?:全局|持久|永久|checkpointed|exactly-once))(?=[^。\n]{0,180}(?:状态|跨(?:越)?\s*query|保证|语义))[^。\n]{0,180}/i,
+  ], hasChineseNegation, `${path}: durable vane.cls state`)
+}
 
 const markdownLines = (source) => {
   const lines = []
@@ -3070,9 +3258,128 @@ assert.throws(
   'Embedding heading guards should reject Python Expression before SQL',
 )
 
+const documentationCorpus = documentationCorpusEntries()
+assert.ok(
+  documentationCorpus.some(({ path }) => path.endsWith('/guides/performance-tuning.mdx')),
+  'Corpus traversal should include supporting Guide pages',
+)
+assert.ok(
+  documentationCorpus.some(({ path }) => path.includes('/zh-CN/') && path.endsWith('/concepts/udfs.mdx')),
+  'Corpus traversal should include Chinese Concept pages',
+)
+for (const { path, source } of documentationCorpus) {
+  assertNoCorpusContradictions(path, source)
+}
+
+assert.throws(
+  () => assertNoCorpusContradictions(
+    'mutation.mdx',
+    'Vane exposes three parallel API models for SQL, Expression, and Relation.',
+  ),
+  /three peer API models/,
+  'Corpus guards should reject three peer API models',
+)
+assert.throws(
+  () => assertNoCorpusContradictions(
+    'mutation.mdx',
+    'Every UDF and AI task should start with the Relation API.',
+  ),
+  /Relation-first for every task/,
+  'Corpus guards should reject Relation-first guidance for every task',
+)
+assert.throws(
+  () => assertNoCorpusContradictions(
+    'mutation.mdx',
+    'Vane provides a direct SQL Relation API and SQL table-function entry point.',
+  ),
+  /direct SQL Relation API/,
+  'Corpus guards should reject a direct SQL Relation API claim',
+)
+assert.throws(
+  () => assertNoCorpusContradictions(
+    'mutation.mdx',
+    '```python\nout = rel.map_batches(Model, execution_backend="ray_actor", concurrency=4)\n```',
+  ),
+  /Relation actor pool concurrency/,
+  'Corpus guards should reject Relation actor concurrency',
+)
+assert.throws(
+  () => assertNoCorpusContradictions(
+    'mutation.mdx',
+    '`vane.cls` state is global, durable, checkpointed, and exactly-once.',
+  ),
+  /durable vane.cls state/,
+  'Corpus guards should reject durable vane.cls state claims',
+)
+assert.throws(
+  () => assertNoCorpusContradictions('mutation.mdx', 'Vane 提供三种同级 API 模型。'),
+  /three peer API models/,
+  'Corpus guards should reject Chinese three-peer API model claims',
+)
+assert.throws(
+  () => assertNoCorpusContradictions('mutation.mdx', '所有 UDF 和 AI 任务都应该从 Relation API 开始。'),
+  /Relation-first for every task/,
+  'Corpus guards should reject Chinese Relation-first guidance for every task',
+)
+assert.throws(
+  () => assertNoCorpusContradictions('mutation.mdx', 'Vane 提供直接的 SQL Relation API。'),
+  /direct SQL Relation API/,
+  'Corpus guards should reject a Chinese direct SQL Relation API claim',
+)
+assert.throws(
+  () => assertNoCorpusContradictions('mutation.mdx', '`vane.cls` 状态是全局持久状态。'),
+  /durable vane.cls state/,
+  'Corpus guards should reject Chinese durable vane.cls state claims',
+)
+for (const [source, label] of [
+  ['Not every UDF task should start with the Relation API.', 'negated English Relation guidance'],
+  ['Vane never offers a direct SQL Relation API.', 'negated English SQL Relation guidance'],
+  ['Do not assume `vane.cls` state is global or durable.', 'negated English vane.cls state'],
+  ['并非所有 UDF 任务都应该从 Relation API 开始。', 'negated Chinese Relation guidance'],
+  ['Vane 从不提供直接的 SQL Relation API。', 'negated Chinese SQL Relation guidance'],
+  ['Vane 并未提供三种同级 API 模型。', 'Chinese three-model guidance negated with 并未'],
+  ['Vane 未提供直接的 SQL Relation API。', 'Chinese SQL Relation guidance negated with 未'],
+  ['不要假设 `vane.cls` 状态是全局持久状态。', 'negated Chinese vane.cls state'],
+  ['```python\nout = rel.map_batches(Model, execution_backend="ray_actor", actor_number=2)\nprovider = VLLMProviderOptions(concurrency=2)\n```', 'separate provider concurrency'],
+]) {
+  assert.doesNotThrow(
+    () => assertNoCorpusContradictions('valid.mdx', source),
+    `Corpus guards should accept ${label}`,
+  )
+}
+for (const [source, label] of [
+  ['Vane 不要求额外插件，但提供直接的 SQL Relation API。', 'unrelated Chinese negation'],
+  ['Vane 并未要求额外插件而是提供直接的 SQL Relation API。', 'unrelated Chinese 并未 negation'],
+  ['`vane.cls` provides persistent state across queries.', 'persistent state across queries'],
+  ['Relation API directly exposes a SQL table-function entry point.', 'Relation-first SQL table function'],
+]) {
+  assert.throws(
+    () => assertNoCorpusContradictions('mutation.mdx', source),
+    /direct SQL Relation API|durable vane\.cls state/,
+    `Corpus guards should reject ${label}`,
+  )
+}
+
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
 assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
+
+const task9OutputPaths = [
+  'docs/data/guides/multimodal-pipeline.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/multimodal-pipeline.mdx',
+]
+for (const path of task9OutputPaths) {
+  assertParquetOutputLifecycle(read(path), path)
+}
+const missingOutputParentMutation = read(task9OutputPaths[0]).replace(
+  'output_path.parent.mkdir(parents=True, exist_ok=True)\n',
+  '',
+)
+assert.throws(
+  () => assertParquetOutputLifecycle(missingOutputParentMutation, 'missing output parent mutation'),
+  /create output parent/,
+  'Task 9 output guards should require parent directory creation',
+)
 
 for (const [path, kind] of [
   ['docs/data/guides/multimodal-ingest.mdx', 'udf'],
@@ -3107,8 +3414,9 @@ const enterprise = stripTags(read('src/pages/EnterpriseAgentUseCase.tsx'))
 const training = stripTags(read('src/pages/TrainingUseCase.tsx'))
 const useCases = stripTags(read('src/pages/useCasesData.ts'))
 
-assert.match(home, /vane\.ai\.(prompt|embed)/, 'Homepage hero should use a real AI expression API')
-assert.match(home, /vane\.col\(/, 'Homepage hero should use public expression helpers')
+assert.match(home, /con\.sql\([\s\S]*SELECT id, text,[\s\S]*ai_embed\([\s\S]*AS embedding/i, 'Homepage hero should lead with a SQL ai_embed projection and retain source fields')
+assert.doesNotMatch(home, /vane\.ai\.(?:prompt|embed)\(|vane\.col\(/, 'Homepage hero should not make Python Expression the primary spelling')
+assert.doesNotMatch(home, /\.write_parquet\(["'][^"'\n]+\/["']\)/, 'Homepage hero should write to an explicit Parquet file')
 assert.doesNotMatch(home, /from vane\.ai import describe|vane\.read\(/, 'Homepage hero should reject fictional APIs')
 assert.match(enterprise, /ai_prompt\(/, 'Enterprise use case should demonstrate SQL ai_prompt')
 assert.doesNotMatch(enterprise, /append_column\(/, 'Enterprise use case should not manually recombine AI output')

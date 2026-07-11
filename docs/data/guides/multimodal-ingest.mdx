@@ -155,11 +155,13 @@ out = rel.map_batches(
     batch_size=64,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
 Replace `decode_batch` and `ModelBatch` with your own function or callable class. Return stable IDs from each UDF when later stages need to join model outputs back to source records. Every Ray worker must be able to import the callable and access the same storage, model files, and credentials.
+
+Use the Python Relation API for the multi-column decoding and model stages shown here. If a later step adds exactly one typed, row-preserving result beside source columns, prefer the Expression API: use a registered SQL alias when that step belongs in SQL, or use Python `vane.func` or `vane.func.batch(..., row_preserving=True)` when composing the projection in Python. See the [UDF API Reference](/docs/data/reference/udf-api).
 
 ## Practical checks
 
