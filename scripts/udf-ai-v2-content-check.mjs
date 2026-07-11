@@ -768,7 +768,8 @@ const conceptSchemas = [
           en: { mustMatch: [
             [/rel\.embed_text[^.\n]{0,100}(?:built-in )?chunk(?:ing)?[^.\n]{0,60}max_chunk_chars/i, 'keep built-in Relation chunking'],
             [/rel\.classify_text[^.\n]{0,100}(?:built-in )?classification/i, 'keep built-in Relation classification'],
-            [/rel\.prompt[^.\n]{0,180}(?:return_format|image_columns)/i, 'keep structured or multimodal prompt capability'],
+            [/rel\.prompt[^.\n]{0,180}return_format/i, 'keep structured prompt output'],
+            [/rel\.prompt[^.\n]{0,180}image_columns/i, 'keep multimodal prompt input'],
             [/rel\.prompt[^.\n]{0,220}(?:output_column|named (?:Relation )?output)/i, 'keep named Relation output'],
             [/Relation methods?(?=[^.\n]{0,180}execution_backend)(?=[^.\n]{0,180}(?:actor_number|actor controls?))/i, 'keep explicit Relation backend and actor controls'],
             [/built-in classification[^.\n]{0,80}requires? Relation API/i, 'identify classification as Relation-only'],
@@ -776,7 +777,8 @@ const conceptSchemas = [
           zh: { mustMatch: [
             [/rel\.embed_text[^。\n]{0,100}(?:内置分块[^。\n]{0,60}max_chunk_chars|max_chunk_chars[^。\n]{0,60}内置分块)/i, '保留 Relation 内置分块'],
             [/rel\.classify_text[^。\n]{0,100}内置分类/i, '保留 Relation 内置分类'],
-            [/rel\.prompt[^。\n]{0,180}(?:return_format|image_columns)/i, '保留结构化或多模态 prompt 能力'],
+            [/rel\.prompt[^。\n]{0,180}return_format/i, '保留结构化 prompt 输出'],
+            [/rel\.prompt[^。\n]{0,180}image_columns/i, '保留多模态 prompt 输入'],
             [/rel\.prompt[^。\n]{0,220}(?:output_column|命名 Relation 输出)/i, '保留命名的 Relation 输出'],
             [/Relation 方法(?=[^。\n]{0,180}execution_backend)(?=[^。\n]{0,180}(?:actor_number|actor 控制))/i, '保留显式 Relation backend 和 actor 控制'],
             [/内置分类[^。\n]{0,80}需要 Relation API/i, '明确分类是 Relation-only 能力'],
