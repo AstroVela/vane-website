@@ -98,6 +98,16 @@ export const DOCS_PAGES = {
     title: 'Performance Tuning',
     titleZh: '性能调优',
   },
+  'reference/udf-api': {
+    source: 'docs/data/reference/udf-api.mdx',
+    title: 'UDF API Reference',
+    titleZh: 'UDF API 参考',
+  },
+  'reference/ai-api': {
+    source: 'docs/data/reference/ai-api.mdx',
+    title: 'AI Function API',
+    titleZh: 'AI Function API',
+  },
   examples: {
     source: 'docs/data/examples/index.mdx',
     title: 'Examples',
@@ -205,6 +215,7 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   'Data Transformation': '数据转换',
   'AI & Inference': 'AI 与推理',
   Optimization: '优化',
+  Reference: 'API 参考',
   Examples: '示例',
   Deploy: '部署',
   Contributing: '贡献',
