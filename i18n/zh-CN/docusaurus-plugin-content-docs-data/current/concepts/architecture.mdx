@@ -2,87 +2,104 @@
 title: 架构
 ---
 
-Vane Data 是一个多模态原生数据引擎。它提供兼容 DuckDB 的 SQL 与 Python 接口，在 relation 层支持 Python 和 AI 操作，并且可以在本地或通过 Ray 执行选定工作。
+Vane Data 是多模态原生数据引擎。它把兼容 DuckDB 的 SQL、Python 表达式、由 Python 和 AI 完成的表结构转换，以及本地或 Ray 执行组合在同一套惰性关系计划中。
 
-设计目标很简单：让 pipeline 保持表格形态，同时让 SQL、Python 库、模型推理和分布式执行处在同一个 workflow 中。
+公开架构只有两种语义 API 模型：**Expression API** 和 **Relation API**。SQL 与 Python 是 Expression 的两种入口，并不是另外两个顶层模型。
 
 ## 系统视图
 
-一个 Vane Data pipeline 有四个用户可见层：
+各层会把“操作返回什么”与“操作在哪里、如何运行”分开：
 
-1. API 层：`import vane`、`vane.connect()`、兼容 DuckDB 的 SQL、relation 方法、UDF 和 AI Function。
-2. relation pipeline：SQL 操作、投影、过滤、连接、UDF 阶段和写出都组合为 relation 步骤。
-3. 执行 runner：本地执行用于开发和单节点任务；Ray runner 负责分发适合的扫描、写出和 UDF 工作。
-4. UDF 运行时：Python 函数和可调用类通过任务或 actor backend 运行。
+```text
+公开入口                                   语义 API 模型            规划后的操作
+SQL Expression（推荐）───────────────┐
+Python Expression ───────────────────┴──> Expression API ──┐
+Python Relation 方法 ────────────────────> Relation API ────┴──> 共享的逻辑/物理规划
+                                                                         │
+                                                                  本地或 Ray 执行模式
+                                                                         │
+                                                                   task/actor 执行
+```
 
-这种分层让 pipeline 可以先从本地开始；当数据量、模型吞吐量或资源放置需要时，再把选定工作迁移到 Ray。
+两种模型都处在表格形态的处理流程中。普通 SQL 仍负责扫描、过滤、连接、投影和周围的写出。语义模型决定自定义操作是贡献一个投影结果，还是负责一次表结构转换；后续层再决定具体执行方式。
 
-## 公开用户接口
+## 公开 API 模型
 
-主要公开入口如下：
+先根据输出契约选择公开模型，再选择入口和执行控制。
 
-- `import vane`
-- `vane.connect()`
-- `vane.configure(...)`
-- `vane.current_config()`
-- `vane.env`
-- 通过 `con.sql(...)` 和 `con.execute(...)` 使用兼容 DuckDB 的 SQL
-- 兼容 DuckDB 的 relation API
-- `rel.map_batches(...)`
-- `rel.flat_map(...)`
-- `rel.map(...)`
-- `rel.embed_text(...)`
-- `rel.classify_text(...)`
-- `rel.prompt(...)`
+### Expression API 的 SQL 入口（推荐）
 
-为了兼容已有代码，DuckDB 风格的 import 仍然可用；但新的 Vane Data 项目应优先使用 `import vane`。
+当一个有类型的结果需要放在每个输入行旁边时，SQL Expression 是 `SELECT` 投影的默认路径。
 
-## runner 模式
+- `vane.attach_function(...)` 为兼容的 Python UDF 注册 SQL 别名，`vane.detach_function(...)` 则移除该别名。
+- 注册后的别名可以在 SQL 中作为投影表达式调用。
+- SQL `ai_prompt(...)` 和 `ai_embed(...)` 通过同一模型增加一个 AI 结果列。
 
-Vane Data 有两种主要执行模式。
+注册只是控制 Expression 的 SQL 入口，并不是第三种 API 模型。在同一投影中保留标识和源字段，可以直接看出保持行数的契约，也能追溯结果来源。
 
-本地模式：
+### Expression API 的 Python 入口
 
-- 在本地进程和本机上运行。
-- 适合作为开发、测试、轻量 SQL 和单节点 UDF 任务的起点。
-- 支持 SQL、relation 操作和本地 UDF backend。
+Python Expression 是同一个投影模型的另一种语法。`vane.col(...)`、`vane.lit(...)` 和 `vane.sql_expr(...)` 可为 `vane.func`、`vane.func.batch`、`vane.cls`、`vane.cls.batch`、`vane.ai.prompt` 与 `vane.ai.embed` 构建输入表达式。
 
-Ray 模式：
+通常可组合的形式与 SQL Expression 相同：每一输入行生成一个有类型的结果。Python 批量 Expression 另有范围明确的基数变化例外；它的放置与输出规则应查阅 API 参考。
 
-- 通过 `vane.configure(runner="ray")` 或 `VANE_RUNNER=ray` 选择。
-- 使用 Ray 执行分布式扫描、分布式写出、分布式 UDF，以及基于 actor 的模型 worker。
-- 要求每个 worker 都能访问 pipeline 所需的相同 Python 依赖、存储系统、模型文件和凭证。
+### Relation API
 
-如果当前进程已经初始化 Ray，runner 选择可能会与该环境相互影响。为了让生产脚本行为可预测，请在创建连接和运行 pipeline 前显式配置目标 runner。
+Relation API 是负责表结构的专用模型。自定义 Relation 方法包括 `rel.map_batches(...)`、`rel.flat_map(...)` 和 `rel.map(...)`。AI Relation 方法包括 `rel.prompt(...)`、`rel.embed_text(...)` 和 `rel.classify_text(...)`，用于结构化或多模态输出、内置分块或分类，以及显式的 Relation 执行控制等能力。
+
+Vane 不提供直接的 SQL Relation 或 SQL 表函数 API。SQL 可以在 Python Relation 调用之前生成输入关系，也可以在之后继续消费结果；表结构方法本身目前仍属于 Python Relation API。
+
+## 共享规划与执行
+
+所有公开形式都会构建惰性的关系工作。注册的 UDF 别名和 SQL AI 调用会降为与 Python Expression 相同的逻辑投影执行模型，而不是各自维护一套 SQL 运行时。Relation 算子则负责其声明的表结构输出与基数契约。
+
+| 公开形式 | 逻辑契约 | 执行归属 |
+| --- | --- | --- |
+| 注册的 SQL 别名、`ai_prompt`、`ai_embed` | Expression 投影 | 共享的投影执行层 |
+| `vane.func` / `vane.cls` / `vane.ai` 表达式 | Expression 投影 | 共享的投影执行层 |
+| Python `rel.*` UDF 与 AI 方法 | Relation 转换 | Relation 算子负责表结构 |
+
+逻辑规划会保留这一区别。物理规划随后选择本地或 Ray 的 task/actor 执行方式，但不会改变公开输出模型。
+
+## 执行模式
+
+Vane Data 有两种主要执行模式：
+
+| 模式 | 适用场景 | 执行行为 |
+| --- | --- | --- |
+| 本地 | 开发、测试、轻量 SQL 和单节点 UDF 任务 | 关系处理在驱动进程内运行；Python UDF 和 AI 处理则由同一主机上的 `subprocess_task` 或 `subprocess_actor` 工作进程执行 |
+| Ray | 分布式扫描与写出、分布式 UDF、提高模型吞吐量或显式放置资源 | 分发适合的工作，并使用 Ray task 或 actor 执行方式 |
+
+可通过 `vane.configure(runner="ray")` 或 `VANE_RUNNER=ray` 选择 Ray。如果 Ray 已经初始化，所在进程的环境可能影响执行模式选择，因此生产脚本应在创建连接和执行处理流程之前明确配置预期模式。
 
 ## UDF 执行层
 
-Python UDF 是 relation 操作。它们接收表格形态的输入，运行用户代码，并返回声明好的输出列。
+执行层以有类型的 Arrow 批次在关系算子与 Python 可调用对象之间传递数据。任务后端运行没有长期状态的函数；actor 后端会在每个 actor 中构造一个可调用类实例，并在多个批次之间复用。多个 actor 因而各自拥有独立的模型、客户端或缓存实例。
 
-根据可调用对象形态和资源需求选择 backend：
-
-| Backend | 可调用对象形态 | 适用场景 |
+| 后端 | 可调用对象形态 | 典型用途 |
 | --- | --- | --- |
-| `subprocess_task` | Python 函数 | 本地无状态 batch 转换 |
-| `subprocess_actor` | 可调用类 | 本地模型或客户端复用 |
+| `subprocess_task` | Python 函数 | 本地无状态批转换 |
+| `subprocess_actor` | 可调用类 | 在本地复用模型或客户端 |
 | `ray_task` | Python 函数 | 分布式无状态转换 |
-| `ray_actor` | 可调用类 | 分布式模型复用或 GPU 支持的推理 |
+| `ray_actor` | 可调用类 | 分布式复用模型或进行 GPU 推理 |
 
-任务 backend 适用于没有长期状态的函数。actor backend 适用于需要构造一次并跨 batch 复用的类。
+对于 Expression 工作，当前执行模式会把逻辑上的 task 或 actor 需求映射到本地或 Ray 后端。Relation 方法可以提供显式后端控制，因为 Relation 算子负责完整的表处理阶段。精确的资源、状态和后端限制请查阅 API 参考。
 
-## AI Function 层
+## AI Provider 生命周期
 
-AI Function 是基于同一 UDF 执行模型构建的 relation 方法：
+AI 配置以可序列化的 provider 描述对象跨越规划边界，而不是把已经创建的客户端或模型放进计划。实际对象会延迟到工作进程上创建：
 
-- `embed_text` 生成 embedding 输出列。
-- `classify_text` 生成标签输出列。
-- `prompt` 从文本或多模态提示词生成响应输出列。
+```text
+Provider/选项 -> 计划中的可序列化描述 -> 工作进程处理首个批次 -> 实际客户端/模型 -> actor 内复用
+```
 
-由 provider 支持的常见操作可以使用 AI Function。当你需要完全控制模型加载、batch 处理、输出 schema 或 provider 行为时，使用自定义 UDF。
+这样不会为最终未执行的工作初始化 provider，也能把初始化成本摊到同一 actor 处理的后续批次上。SQL 与 Python AI Expression 使用执行模式选出的 actor 后端；Relation AI 还可以提供显式的 Relation 执行控制。
+
+Provider 请求是 SQL 事务之外的外部副作用。重试可能重复已经完成的请求，回滚也无法撤销它，因此处理流程应保留稳定标识，并在重复会造成影响时使用幂等的下游处理。
 
 ## 配置模型
 
-代码配置：
+代码配置与环境配置选择的是同一个公开 `runner` 设置：
 
 ```python
 import vane
@@ -90,33 +107,35 @@ import vane
 vane.configure(runner="ray")
 ```
 
-环境配置：
-
 ```bash
 export VANE_RUNNER=ray
 ```
 
-`vane.configure(...)` 会通过进程环境应用已注册的 `VANE_*` 设置。使用 `vane.current_config()` 或 `vane.env.as_dict()` 查看公开配置快照。
+`vane.configure(...)` 通过进程环境应用已注册的 `VANE_*` 设置。可以用 `vane.current_config()` 或 `vane.env.as_dict()` 查看公开配置快照。请在创建连接或启动可能到达工作进程的任务之前完成进程配置。
 
-## worker 环境
+## 工作进程环境
 
-Ray worker 执行任何工作时，都需要与 driver 保持一致的运行时上下文。实践中，请确认 worker 可以访问：
+每个工作进程都必须具备其执行工作所需的运行环境：
 
-- UDF 和 AI provider 使用的 Python 模块。
-- 对象存储凭证和端点设置。
-- 模型文件或模型下载位置。
-- 相关 `VANE_*`、`AWS_*`、`S3FS_*`、`DUCKDB_*`、`PYTHONPATH` 和 `RAY_ADDRESS` 环境变量值。
+- UDF 与 AI provider 使用的 Python 模块。
+- 对象存储凭据和端点设置。
+- 模型文件或工作进程可访问的模型下载位置。
+- 相关的 `VANE_*`、`AWS_*`、`S3FS_*`、`DUCKDB_*`、`PYTHONPATH` 和 `RAY_ADDRESS` 环境值。
 
-在创建连接或运行 pipeline 之前设置所需环境。
+AI 凭据应放在工作进程环境中，因为 provider 客户端会在那里创建。SQL AI 选项会拒绝类似凭据的字段；不应把 API 密钥、令牌或机密值嵌入计划。
 
 ## 数据流动
 
-常见数据路径：
+常见数据路径遵循同样的分层：
 
-- SQL 将本地或远程数据读取为兼容 DuckDB 的 relation。
-- relation 将 Arrow batch 流式传入 Python UDF。
-- `map_batches` 处理 Arrow 表，并返回声明好的输出列。当下游阶段仍然需要输入列时，也要从 UDF 中返回这些输入列。
-- Ray 模式可以通过 Ray worker 物化分区。
-- 写出会根据 runner 和目标，选择兼容 DuckDB 的 relation 写出路径或 Vane Data 的 relation 写出路径。
+- SQL 把本地或远程数据扫描为兼容 DuckDB 的关系，并通过普通过滤与投影减少数据量。
+- Expression 执行把所需参数列送入 UDF 或 AI 工作进程，再把有类型的结果与周围的投影组合。
+- Relation 方法接收 Arrow 批次，并返回声明的表输出。如果后续阶段仍需要源列，Relation 操作必须把它们纳入输出契约。
+- Ray 模式可以通过 Ray 工作进程物化和移动分区。
+- 写出会根据执行模式与目标使用兼容 DuckDB 或 Vane Data 的关系写出路径。
 
-把过滤和列投影放在昂贵的 Python 或模型阶段之前。这样可以减少进入 Python 的数据量；在 Ray 模式下，也可以减少集群内的数据移动。
+应把过滤与列投影放在昂贵的 Python 或模型阶段之前。这样既能减少进入 Python 的数据量，也能在 Ray 下减少集群内的数据移动。SQL 可以在 Python Relation 阶段前后继续使用，但这不会把该阶段变成 SQL Relation API。
+
+## 文档边界与后续阅读
+
+本页解释两种公开模型为何共享执行层，同时保留不同的输出契约。精确签名、默认值和限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)与 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。从初始化到输出的完整任务请使用[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)和 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions)。

@@ -167,6 +167,104 @@ const assertSubstringOrder = (source, values, message) => {
   }
 }
 
+const assertHeadingPatternOrder = (source, patterns, message) => {
+  const headings = markdownLines(source).filter(({ text }) => /^#{2,6} /.test(text))
+  let cursor = -1
+  for (const pattern of patterns) {
+    const next = headings.findIndex(({ text }, index) => index > cursor && pattern.test(text))
+    assert.ok(next > cursor, `${message}: expected heading matching ${pattern}`)
+    cursor = next
+  }
+}
+
+const collapseWrappedMarkdown = (source) => source.replace(/([^\n])\n(?=[^\n])/g, '$1 ')
+
+const assertPatterns = (source, patterns = [], message) => {
+  for (const pattern of patterns) assert.match(source, pattern, `${message}: missing ${pattern}`)
+}
+
+const assertRejects = (source, patterns = [], message) => {
+  for (const pattern of patterns) assert.doesNotMatch(source, pattern, `${message}: rejects ${pattern}`)
+}
+
+const fencedCodeLanguages = (source) =>
+  fencedCodeBlocks(source).map((block) => block.match(/^```([^\n]*)/)?.[1] ?? '')
+
+const executableCodeBlocks = (source) =>
+  fencedCodeBlocks(source).filter((block) => !block.startsWith('```text\n'))
+
+const assertRelatedExamples = (source, schema, message) => {
+  const blocks = fencedCodeBlocks(source)
+  assert.deepEqual(fencedCodeLanguages(source), schema.languages, `${message}: fenced example order`)
+  assertPatterns(blocks.join('\n'), schema.require, `${message} examples`)
+  if (schema.order) assertSubstringOrder(blocks.join('\n'), schema.order, `${message} examples`)
+  schema.check?.(blocks, message)
+}
+
+const assertSqlVsPythonLifecycle = (blocks, message) => {
+  assert.equal(blocks.length, 3, `${message}: SQL, Python, and Relation examples`)
+  const alias = blocks[0].match(/alias="([a-z_]\w*)"/)?.[1]
+  assert.ok(alias, `${message}: SQL example should define an alias`)
+  assertSubstringOrder(
+    blocks[0],
+    ['vane.attach_function(', `${alias}(text)`, 'projected.explain()', `vane.detach_function("${alias}"`],
+    `${message} alias lifecycle`,
+  )
+  assert.match(blocks[0], /import vane[\s\S]*con = vane\.connect\(\)[\s\S]*def normalize_text/)
+  assert.match(blocks[1], /import vane[\s\S]*source = con\.sql\([\s\S]*@vane\.func[\s\S]*source\.select\(/)
+  assert.match(blocks[2], /import vane[\s\S]*rel = con\.sql\([\s\S]*rel\.classify_text\([\s\S]*FROM classified/)
+}
+
+const assertExecutionConceptExamples = (blocks, message) => {
+  assert.match(blocks[0], /import vane[\s\S]*con = vane\.connect\(\)[\s\S]*source = con\.sql\(/, `${message}: define shared source`)
+  assert.match(blocks[1], /def normalize_text[\s\S]*vane\.attach_function\([\s\S]*normalize_text_sql\(text\)/, `${message}: define registered alias`)
+  assert.match(blocks[4], /def split_terms[\s\S]*source\.flat_map\(/, `${message}: define Relation callable`)
+}
+
+const assertRelatedConceptSchema = (schema) => {
+  const locales = ['en', 'zh']
+  const headingLevels = (source) => markdownLines(source)
+    .map(({ text }) => text)
+    .filter((line) => /^#{2,6} /.test(line))
+    .map((heading) => heading.match(/^#+/)?.[0].length)
+
+  assert.deepEqual(
+    headingLevels(schema.sources.en),
+    headingLevels(schema.sources.zh),
+    `${schema.label}: bilingual heading-level parity`,
+  )
+
+  for (const locale of locales) {
+    const source = schema.sources[locale]
+    const normalized = collapseWrappedMarkdown(source)
+    const message = `${locale === 'en' ? 'English' : 'Chinese'} ${schema.label}`
+    assertConceptRole(source, message)
+    assertNoInternalSymbols(source, message)
+    assertHeadingPatternOrder(source, schema.entryOrder[locale], `${message} entry order`)
+    assertPatterns(normalized, schema.document[locale].require, message)
+    assertRejects(normalized, schema.document[locale].reject, message)
+    for (const sectionSchema of schema.sections) {
+      const body = collapseWrappedMarkdown(
+        conceptSection(source, sectionSchema.heading[locale], `${message} ${sectionSchema.id}`),
+      )
+      assertPatterns(body, sectionSchema.require[locale], `${message} ${sectionSchema.id}`)
+      assertRejects(body, sectionSchema.reject?.[locale], `${message} ${sectionSchema.id}`)
+    }
+    assertRelatedExamples(source, schema.examples, message)
+  }
+
+  assert.deepEqual(
+    fencedCodeLanguages(schema.sources.zh),
+    fencedCodeLanguages(schema.sources.en),
+    `${schema.label}: bilingual fenced-block parity`,
+  )
+  assert.deepEqual(
+    executableCodeBlocks(schema.sources.zh),
+    executableCodeBlocks(schema.sources.en),
+    `${schema.label}: bilingual executable examples`,
+  )
+}
+
 const assertConceptRole = (source, message) => {
   const lines = markdownLines(source)
   const headings = lines
@@ -377,6 +475,15 @@ const paths = {
   udfConceptZh: 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/udfs.mdx',
   aiConceptZh:
     'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
+  architecture: 'docs/data/concepts/architecture.mdx',
+  architectureZh:
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/architecture.mdx',
+  executionModel: 'docs/data/concepts/execution-model.mdx',
+  executionModelZh:
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/execution-model.mdx',
+  sqlVsPython: 'docs/data/concepts/sql-vs-python.mdx',
+  sqlVsPythonZh:
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/sql-vs-python.mdx',
 }
 
 for (const path of Object.values(paths)) {
@@ -391,9 +498,12 @@ const udfConcept = read(paths.udfConcept)
 const aiConcept = read(paths.aiConcept)
 const udfConceptZh = read(paths.udfConceptZh)
 const aiConceptZh = read(paths.aiConceptZh)
-const architecture = read('docs/data/concepts/architecture.mdx')
-const executionModel = read('docs/data/concepts/execution-model.mdx')
-const sqlVsPython = read('docs/data/concepts/sql-vs-python.mdx')
+const architecture = read(paths.architecture)
+const architectureZh = read(paths.architectureZh)
+const executionModel = read(paths.executionModel)
+const executionModelZh = read(paths.executionModelZh)
+const sqlVsPython = read(paths.sqlVsPython)
+const sqlVsPythonZh = read(paths.sqlVsPythonZh)
 const customUdfs = read('docs/data/guides/custom-python-udfs.mdx')
 const aiGuide = read('docs/data/guides/ai-functions.mdx')
 const embeddingsGuide = read('docs/data/guides/embeddings-at-scale.mdx')
@@ -517,6 +627,8 @@ const aiSharedRuntimeRequirementsZh = [
   '30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。',
   'Provider SDK 的 retry 和 backoff 限制可能不同。',
 ]
+const relMapRowWiseEn =
+  /(?:rel\.map\b[^.\n]{0,100}(?:row-wise scalar|(?:applies?|runs?|uses?)[^.\n]{0,40}scalar logic[^.\n]{0,30}(?:one row at a time|per[- ]?row)?)[^.\n]{0,100}(?:not|rather than|unlike)[^.\n]{0,50}(?:pandas )?batch|(?:row-wise|per[- ]?row) scalar[^.\n]{0,50}rel\.map\b[^.\n]{0,80}(?:not|rather than|unlike)[^.\n]{0,50}(?:pandas )?batch|(?:unlike|rather than|not)[^.\n]{0,60}(?:pandas )?batch(?: transform)?[^.\n]{0,120}rel\.map\b[^.\n]{0,100}(?:row-wise scalar|per[- ]?row scalar|(?:applies?|runs?|uses?)[^.\n]{0,30}scalar logic[^.\n]{0,30}(?:one row at a time|per[- ]?row)))/i
 const conceptSchemas = [
   {
     id: 'udf',
@@ -605,7 +717,7 @@ const conceptSchemas = [
             [/(?:no direct|does not (?:expose|provide)|is unavailable)[^.\n]{0,60}\bSQL\b[^.\n]{0,50}\b(?:Relation|table[- ]function) API/i, 'deny a direct SQL Relation API'],
             [/rel\.map_batches/i, 'name rel.map_batches'],
             [/rel\.flat_map/i, 'name rel.flat_map'],
-            [/rel\.map\b[^.\n]{0,80}row-wise scalar[^.\n]{0,80}(?:not|rather than)[^.\n]{0,40}(?:pandas )?batch/i, 'keep rel.map row-wise scalar rather than batch-shaped'],
+            [relMapRowWiseEn, 'keep rel.map row-wise scalar rather than batch-shaped'],
           ], mustNotMatch: [[/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i, 'describe rel.map as pandas batch processing']] },
           zh: { mustMatch: [
             [/(?:表形|表状|表转换)/, '把 Relation 用于表形输出'],
@@ -852,6 +964,301 @@ const conceptSchemas = [
   },
 ]
 
+const relatedRoleRules = {
+  en: [
+    /(?=[\s\S]*(?:exact|precise)[^.\n]{0,80}(?:signatures|parameters|defaults|restrictions))(?=[\s\S]*\/docs\/data\/reference\/udf-api)(?=[\s\S]*\/docs\/data\/reference\/ai-api)/i,
+    /(?=[\s\S]*complete[^.\n]{0,50}tasks)(?=[\s\S]*\/docs\/data\/guides\/custom-python-udfs)(?=[\s\S]*\/docs\/data\/guides\/ai-functions)/i,
+  ],
+  zh: [
+    /(?=[\s\S]*精确[^。\n]{0,80}(?:签名|参数|默认值|限制))(?=[\s\S]*\/zh-CN\/docs\/data\/reference\/udf-api)(?=[\s\S]*\/zh-CN\/docs\/data\/reference\/ai-api)/i,
+    /(?=[\s\S]*完整[^。\n]{0,50}任务)(?=[\s\S]*\/zh-CN\/docs\/data\/guides\/custom-python-udfs)(?=[\s\S]*\/zh-CN\/docs\/data\/guides\/ai-functions)/i,
+  ],
+}
+
+const relatedCommonRules = {
+  en: {
+    require: [
+      /does not (?:expose|provide) a direct SQL (?:Relation|table[- ]function)/i,
+      /SQL can(?=[\s\S]{0,260}(?:input relation|before a Python Relation call))(?=[\s\S]{0,400}(?:consume|inspect|aggregate|write)[\s\S]{0,100}(?:result|output|returned relation))/i,
+      ...relatedRoleRules.en,
+    ],
+    reject: [
+      /(?:exposes|provides|supports|has) a direct SQL (?:Relation|table[- ]function) API/i,
+      /three complementary API surfaces|(?:has|exposes|provides|offers) three[^.\n]{0,60}API (?:models|surfaces)/i,
+    ],
+  },
+  zh: {
+    require: [
+      /不提供[^。\n]{0,30}直接的? SQL (?:Relation|表函数|table[- ]function)/i,
+      /SQL 可以(?=[\s\S]{0,260}(?:输入 relation|Relation 调用之前))(?=[\s\S]{0,400}(?:消费|检查|聚合|写出)[\s\S]{0,100}(?:结果|输出|返回的 relation))/i,
+      ...relatedRoleRules.zh,
+    ],
+    reject: [
+      /(?<!不)(?:提供|公开|支持|具有)[^。\n]{0,30}直接的? SQL (?:Relation|表函数|table[- ]function) API/i,
+      /三(?:个|种)互补的? API (?:模型|表面)|(?<!不)(?:有|提供|公开|暴露)三(?:个|种)[^。\n]{0,60}API (?:模型|表面)/i,
+    ],
+  },
+}
+
+const relatedConceptSchemas = [
+  {
+    id: 'architecture',
+    label: 'Architecture Concepts',
+    sources: { en: architecture, zh: architectureZh },
+    entryOrder: {
+      en: [/^### SQL Entry Point to Expression API/, /^### Python Entry Point to Expression API$/, /^### Relation API$/],
+      zh: [/^### Expression API 的 SQL 入口/, /^### Expression API 的 Python 入口$/, /^### Relation API$/],
+    },
+    document: {
+      en: { require: [...relatedCommonRules.en.require, /two semantic API models[^.\n]{0,100}Expression API[^.\n]{0,80}Relation API/i, /SQL and Python are entry points into Expression[^.\n]{0,100}not two additional top-level models/i], reject: relatedCommonRules.en.reject },
+      zh: { require: [...relatedCommonRules.zh.require, /只有两种语义 API 模型[^。\n]{0,100}Expression API[^。\n]{0,80}Relation API/, /SQL 与 Python 是 Expression 的两种入口[^。\n]{0,100}不是另外两个顶层模型/], reject: relatedCommonRules.zh.reject },
+    },
+    sections: [
+      {
+        id: 'SQL entry',
+        heading: { en: /^### SQL Entry Point to Expression API/, zh: /^### Expression API 的 SQL 入口/ },
+        require: {
+          en: [/(?=[\s\S]*SQL Expression is the default)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*registered SQL alias)(?=[\s\S]*ai_prompt)(?=[\s\S]*ai_embed)/i],
+          zh: [/(?=[\s\S]*SQL Expression 是[^。\n]{0,80}默认)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*SQL 别名)(?=[\s\S]*ai_prompt)(?=[\s\S]*ai_embed)/i],
+        },
+      },
+      {
+        id: 'Python entry',
+        heading: { en: /^### Python Entry Point to Expression API$/, zh: /^### Expression API 的 Python 入口$/ },
+        require: {
+          en: [/Python Expression[^.\n]{0,120}alternate syntax[^.\n]{0,100}same projection model/i, /(?=[\s\S]*vane\.col)(?=[\s\S]*vane\.func)(?=[\s\S]*vane\.ai\.prompt)/i],
+          zh: [/Python Expression[^。\n]{0,120}(?:另一种语法|同一个投影模型)/i, /(?=[\s\S]*vane\.col)(?=[\s\S]*vane\.func)(?=[\s\S]*vane\.ai\.prompt)/i],
+        },
+      },
+      {
+        id: 'Relation contract',
+        heading: { en: /^### Relation API$/, zh: /^### Relation API$/ },
+        require: {
+          en: [/(?=[\s\S]*Relation API[^.\n]{0,100}(?:specialized|table shape))(?=[\s\S]*rel\.map_batches)(?=[\s\S]*rel\.prompt)/i],
+          zh: [/(?=[\s\S]*Relation API[^。\n]{0,100}(?:专用|表结构))(?=[\s\S]*rel\.map_batches)(?=[\s\S]*rel\.prompt)/i],
+        },
+      },
+      {
+        id: 'shared lowering',
+        heading: { en: /^## Shared planning and execution$/, zh: /^## 共享规划与执行$/ },
+        require: {
+          en: [/(?=[\s\S]*lazy relational work)(?=[\s\S]*Registered UDF aliases and SQL AI calls[^.\n]{0,180}lowered[^.\n]{0,180}Python Expression)(?=[\s\S]*Relation operators?[^.\n]{0,160}cardinality contract)(?=[\s\S]*Logical planning[\s\S]{0,180}Physical planning[^.\n]{0,180}local or Ray task\/actor)/i],
+          zh: [/(?=[\s\S]*惰性的关系工作)(?=[\s\S]*注册的 UDF 别名和 SQL AI 调用[^。\n]{0,180}降为[^。\n]{0,180}Python Expression)(?=[\s\S]*Relation 算子[^。\n]{0,160}基数契约)(?=[\s\S]*逻辑规划[\s\S]{0,180}物理规划[^。\n]{0,180}本地或 Ray 的 task\/actor)/i],
+        },
+        reject: { en: [/(?:Registered UDF aliases|SQL AI calls) (?:maintain|use|have) separate SQL runtimes?/i], zh: [/注册的 UDF 别名(?:会|将|各自)?(?:维护|使用|拥有)独立的 SQL 运行时/] },
+      },
+      {
+        id: 'runner modes',
+        heading: { en: /^## Runner modes$/, zh: /^## 执行模式$/ },
+        require: {
+          en: [/(?=[\s\S]*Local[\s\S]{0,360}relational work in the driver process[\s\S]{0,220}subprocess_)(?=[\s\S]*Ray[\s\S]{0,300}Ray task or actor)/i],
+          zh: [/(?=[\s\S]*本地[\s\S]{0,360}关系处理在驱动进程内运行[\s\S]{0,220}subprocess_)(?=[\s\S]*Ray[\s\S]{0,300}Ray task 或 actor)/i],
+        },
+      },
+      {
+        id: 'UDF execution',
+        heading: { en: /^## UDF execution layer$/, zh: /^## UDF 执行层$/ },
+        require: {
+          en: [/(?=[\s\S]*typed Arrow batches)(?=[\s\S]*one callable-class instance per actor[^.\n]{0,160}reuse)(?=[\s\S]*Multiple actors[^.\n]{0,120}independent)/i],
+          zh: [/(?=[\s\S]*有类型的 Arrow 批次)(?=[\s\S]*每个 actor 中构造一个可调用类实例[^。\n]{0,160}复用)(?=[\s\S]*多个 actor[^。\n]{0,120}独立)/i],
+        },
+      },
+      {
+        id: 'provider lifecycle',
+        heading: { en: /^## AI provider lifecycle$/, zh: /^## AI Provider 生命周期$/ },
+        require: {
+          en: [/(?=[\s\S]*serializable provider descriptor)(?=[\s\S]*Instantiation is lazy and worker-side)(?=[\s\S]*first batch[\s\S]{0,140}client\/model[\s\S]{0,100}actor reuse)/i],
+          zh: [/(?=[\s\S]*可序列化的 provider 描述对象)(?=[\s\S]*延迟[^。\n]{0,100}工作进程上创建)(?=[\s\S]*首个批次[\s\S]{0,140}客户端\/模型[\s\S]{0,100}actor 内复用)/i],
+        },
+      },
+      {
+        id: 'worker environment',
+        heading: { en: /^## Worker environment$/, zh: /^## 工作进程环境$/ },
+        require: {
+          en: [/(?=[\s\S]*Every worker needs)(?=[\s\S]*Python modules)(?=[\s\S]*credentials)(?=[\s\S]*Model files)(?=[\s\S]*AI credentials belong in this worker environment)/i],
+          zh: [/(?=[\s\S]*每个工作进程都必须)(?=[\s\S]*Python 模块)(?=[\s\S]*凭据)(?=[\s\S]*模型文件)(?=[\s\S]*AI 凭据应放在工作进程环境中)/i],
+        },
+      },
+      {
+        id: 'data movement',
+        heading: { en: /^## Data movement$/, zh: /^## 数据流动$/ },
+        require: {
+          en: [/(?=[\s\S]*Expression execution[^.\n]{0,180}argument columns)(?=[\s\S]*Relation methods receive Arrow batches)(?=[\s\S]*filters and column projections before expensive Python or model stages)/i],
+          zh: [/(?=[\s\S]*Expression 执行[^。\n]{0,180}参数列)(?=[\s\S]*Relation 方法接收 Arrow 批次)(?=[\s\S]*过滤与列投影放在昂贵的 Python 或模型阶段之前)/i],
+        },
+      },
+    ],
+    examples: {
+      languages: ['text', 'text', 'python', 'bash'],
+      order: ['SQL Expression', 'Python Expression', 'Relation API'],
+      require: [/```python\nimport vane\n\nvane\.configure\(runner="ray"\)/, /```bash\nexport VANE_RUNNER=ray/],
+    },
+  },
+  {
+    id: 'execution',
+    label: 'Execution Model Concepts',
+    sources: { en: executionModel, zh: executionModelZh },
+    entryOrder: {
+      en: [/^## SQL Expression is the default projection path$/, /^## Python Expression is alternate syntax$/, /^## Relation API executes table-shaped stages$/],
+      zh: [/^## SQL Expression 是默认 projection 路径$/, /^## Python Expression 是另一种语法$/, /^## Relation API 执行表形阶段$/],
+    },
+    document: {
+      en: { require: [...relatedCommonRules.en.require, /SQL Expression[\s\S]{0,140}by default[\s\S]{0,140}Python Expression is alternate syntax[\s\S]{0,100}same typed[\s\S]{0,40}projection model/i, /two top-level output models[\s\S]{0,100}Expression and Relation[\s\S]{0,100}SQL is an entry point[\s\S]{0,60}not another model/i, /(?=[\s\S]*\/docs\/data\/concepts\/udfs)(?=[\s\S]*\/docs\/data\/concepts\/ai-functions)/], reject: relatedCommonRules.en.reject },
+      zh: { require: [...relatedCommonRules.zh.require, /projection 工作默认先经由 SQL Expression[\s\S]{0,140}Python Expression 是同一个有类型 projection 模型的另一种语法/i, /顶层输出模型只有 Expression 和 Relation[\s\S]{0,100}SQL 是入口[\s\S]{0,60}不是另一个模型/i, /(?=[\s\S]*\/zh-CN\/docs\/data\/concepts\/udfs)(?=[\s\S]*\/zh-CN\/docs\/data\/concepts\/ai-functions)/], reject: relatedCommonRules.zh.reject },
+    },
+    sections: [
+      {
+        id: 'lazy plan',
+        heading: { en: /^## Relations and lazy plans frame execution$/, zh: /^## Relation 与惰性计划构成执行上下文$/ },
+        require: {
+          en: [/(?=[\s\S]*Creating one records work[^.\n]{0,180}without immediately)(?=[\s\S]*lazy plan[^.\n]{0,180}retain filters, source columns, and Python or AI transformations[^.\n]{0,120}fetch or write consumer materializes)/i],
+          zh: [/(?=[\s\S]*创建 relation 只会记录工作[^。\n]{0,180}不会立即)(?=[\s\S]*惰性计划[^。\n]{0,180}保留 filter[^。\n]{0,180}Python 或 AI 转换[^。\n]{0,120}fetch 或 write consumer 将其物化)/i],
+        },
+      },
+      {
+        id: 'SQL projection',
+        heading: { en: /^## SQL Expression is the default projection path$/, zh: /^## SQL Expression 是默认 projection 路径$/ },
+        require: {
+          en: [/(?=[\s\S]*adds one typed result column[^.\n]{0,140}preserves one output row)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*lowers it to the shared Expression execution path)(?=[\s\S]*ai_prompt[\s\S]{0,100}ai_embed[^.\n]{0,100}same projection path)/i],
+          zh: [/(?=[\s\S]*增加一个有类型的结果列[^。\n]{0,140}每一输入行\s*对应一输出行)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*共享的 Expression 执行路径)(?=[\s\S]*ai_prompt[\s\S]{0,100}ai_embed[^。\n]{0,100}同一条 projection 路径)/i],
+        },
+      },
+      {
+        id: 'Python alternate',
+        heading: { en: /^## Python Expression is alternate syntax$/, zh: /^## Python Expression 是另一种语法$/ },
+        require: {
+          en: [/(?=[\s\S]*same typed projection model)(?=[\s\S]*row_preserving=False[^.\n]{0,120}change cardinality[^.\n]{0,140}sole top-level projection)(?=[\s\S]*Registered SQL aliases[^.\n]{0,120}row-preserving in v1)/i],
+          zh: [/(?=[\s\S]*同一个有类型的 projection 模型)(?=[\s\S]*row_preserving=False[^。\n]{0,120}改变基数[^。\n]{0,140}唯一的顶层 projection)(?=[\s\S]*注册的 SQL alias[^。\n]{0,120}v1 中仍然保持行数)/i],
+        },
+      },
+      {
+        id: 'Relation stage',
+        heading: { en: /^## Relation API executes table-shaped stages$/, zh: /^## Relation API 执行表形阶段$/ },
+        require: {
+          en: [/(?=[\s\S]*owns table shape[^.\n]{0,180}changes cardinality)(?=[\s\S]*Relation stage[^.\n]{0,160}columns and row count defined)(?=[\s\S]*rel\.map_batches)/i, relMapRowWiseEn],
+          zh: [/(?=[\s\S]*负责表形[^。\n]{0,180}改变基数)(?=[\s\S]*Relation 阶段[^。\n]{0,160}由该阶段定义的列与行数)(?=[\s\S]*rel\.map_batches)/i, /rel\.map[^。\n]{0,100}逐行 scalar[^。\n]{0,100}不是 pandas batch/i],
+        },
+        reject: { en: [/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i], zh: [/rel\.map`?\s*(?:是|作为)\s*pandas batch/i] },
+      },
+      {
+        id: 'materialization and Arrow',
+        heading: { en: /^## Materialization starts work$/, zh: /^## 物化开始执行$/ },
+        require: {
+          en: [/(?=[\s\S]*consumer requests data or writes it)(?=[\s\S]*show\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*At materialization[^.\n]{0,220}active runner)/i],
+          zh: [/(?=[\s\S]*consumer 请求数据或写出结果)(?=[\s\S]*show\(\))(?=[\s\S]*write_parquet)(?=[\s\S]*物化时[^。\n]{0,220}active runner)/i],
+        },
+      },
+      {
+        id: 'Arrow boundary',
+        heading: { en: /^## Arrow batches connect SQL and Python$/, zh: /^## Arrow batch 连接 SQL 与 Python$/ },
+        require: {
+          en: [/(?=[\s\S]*Arrow batches are the typed data boundary)(?=[\s\S]*Expression worker produces exactly one typed result column)(?=[\s\S]*Relation worker[\s\S]{0,220}(?:several columns|different number of rows))/i],
+          zh: [/(?=[\s\S]*Arrow batch[^。\n]{0,180}有类型数据边界)(?=[\s\S]*Expression worker 只生成一个有类型的结果列)(?=[\s\S]*Relation worker[\s\S]{0,220}(?:多列|不同的行数))/i],
+        },
+      },
+      {
+        id: 'local and Ray',
+        heading: { en: /^## Local execution$/, zh: /^## 本地执行$/ },
+        require: {
+          en: [/(?=[\s\S]*local runner[^.\n]{0,140}relational work on the local machine[^.\n]{0,140}subprocess workers)(?=[\s\S]*subprocess_actor[^.\n]{0,140}one actor)/i],
+          zh: [/(?=[\s\S]*local runner[^。\n]{0,140}关系工作留在本机[^。\n]{0,140}subprocess worker)(?=[\s\S]*subprocess_actor[^。\n]{0,140}一个 actor)/i],
+        },
+      },
+      {
+        id: 'scheduling',
+        heading: { en: /^## Scheduling tasks, actors, and AI workers$/, zh: /^## Task、Actor 与 AI worker 调度$/ },
+        require: {
+          en: [/(?=[\s\S]*subprocess_task)(?=[\s\S]*subprocess_actor)(?=[\s\S]*ray_task)(?=[\s\S]*ray_actor)(?=[\s\S]*Actor reuse[^.\n]{0,140}not durable or shared state)(?=[\s\S]*provider descriptors?[\s\S]{0,180}lazily[^.\n]{0,100}within its actor)/i],
+          zh: [/(?=[\s\S]*subprocess_task)(?=[\s\S]*subprocess_actor)(?=[\s\S]*ray_task)(?=[\s\S]*ray_actor)(?=[\s\S]*Actor 复用[^。\n]{0,140}不是持久或共享状态)(?=[\s\S]*provider descriptor[\s\S]{0,180}延迟创建[^。\n]{0,100}actor 内复用)/i],
+        },
+      },
+      {
+        id: 'streaming',
+        heading: { en: /^## Streaming, blocking, and backpressure$/, zh: /^## 流式、阻塞与背压$/ },
+        require: {
+          en: [/(?=[\s\S]*pass Arrow batches[^.\n]{0,120}as they become ready)(?=[\s\S]*Backpressure bounds[^.\n]{0,140}(?:in-flight batches|ready output)[\s\S]{0,180}upstream work wait)/i],
+          zh: [/(?=[\s\S]*Arrow batch[^。\n]{0,140}就绪[^。\n]{0,100}向下游传递)(?=[\s\S]*背压[^。\n]{0,140}(?:正在处理的 batch|就绪的输出量)[\s\S]{0,180}上游等待)/i],
+        },
+      },
+      {
+        id: 'failure and effects',
+        heading: { en: /^## Failure boundaries and external effects$/, zh: /^## 失败边界与外部副作用$/ },
+        require: {
+          en: [/(?=[\s\S]*losing its[\s\S]{0,50}single actor fails the query[\s\S]{0,140}rather than recreating[^.\n]{0,100}empty state)(?=[\s\S]*external UDF effects[\s\S]{0,160}outside the SQL transaction[\s\S]{0,120}not exactly-once)(?=[\s\S]*stable identifiers[\s\S]{0,220}idempotent)/i],
+          zh: [/(?=[\s\S]*失去它的单个 actor[\s\S]{0,100}query[\s\S]{0,50}失败[\s\S]{0,140}而不是用空状态重新创建)(?=[\s\S]*UDF 外部副作用[\s\S]{0,160}SQL transaction 边界之外[\s\S]{0,120}不提供[\s\S]{0,50}exactly-once)(?=[\s\S]*稳定标识符[\s\S]{0,220}幂等)/i],
+        },
+        reject: { en: [/Actor loss recreates an actor with empty state/i], zh: [/actor 丢失会用空状态重新创建 actor/i] },
+      },
+    ],
+    examples: {
+      languages: ['python', 'python', 'python', 'python', 'python', 'python', 'bash'],
+      order: ['source = con.sql(', 'def normalize_text', 'vane.attach_function(', 'normalize_text_sql(text)', 'ai_prompt(text)', 'python_enriched = source.select(', 'def split_terms', 'terms = source.flat_map(', 'vane.configure(runner="ray")', 'export VANE_RUNNER=ray'],
+      check: assertExecutionConceptExamples,
+    },
+  },
+  {
+    id: 'sql-vs-python',
+    label: 'SQL vs Python Concepts',
+    sources: { en: sqlVsPython, zh: sqlVsPythonZh },
+    entryOrder: {
+      en: [/^### SQL Entry Point \(Recommended\)$/, /^### Python Entry Point$/, /^## Relation API$/],
+      zh: [/^### SQL 入口（推荐）$/, /^### Python 入口$/, /^## Relation API$/],
+    },
+    document: {
+      en: { require: [...relatedCommonRules.en.require, /SQL and Python are two entry points to the \*{0,2}Expression API\*{0,2}[^.\n]{0,160}\*{0,2}Relation API\*{0,2}[^.\n]{0,120}specialized escape hatch/i, /single pipeline can use all of them/i, /(?=[\s\S]*\/docs\/data\/concepts\/udfs)(?=[\s\S]*\/docs\/data\/concepts\/ai-functions)(?=[\s\S]*\/docs\/data\/concepts\/execution-model)/], reject: [...relatedCommonRules.en.reject, /pipeline must choose (?:either )?SQL or Python/i] },
+      zh: { require: [...relatedCommonRules.zh.require, /SQL 与 Python 是 \*{0,2}Expression API\*{0,2} 的两个入口[^。\n]{0,160}\*{0,2}Relation API\*{0,2}[^。\n]{0,120}专用路径/i, /一条 pipeline 可以同时使用它们/i, /(?=[\s\S]*\/zh-CN\/docs\/data\/concepts\/udfs)(?=[\s\S]*\/zh-CN\/docs\/data\/concepts\/ai-functions)(?=[\s\S]*\/zh-CN\/docs\/data\/concepts\/execution-model)/], reject: [...relatedCommonRules.zh.reject, /pipeline 必须在 SQL 与 Python 之间二选一/i] },
+    },
+    sections: [
+      {
+        id: 'output model choice',
+        heading: { en: /^## Choose the Output Model Before the Syntax$/, zh: /^## 先选择输出模型，再选择语法$/ },
+        require: {
+          en: [/(?=[\s\S]*Ask what the stage must produce[\s\S]{0,200}choose Expression[\s\S]{0,200}choose Relation)(?=[\s\S]*Expression API — SQL \(recommended\)[\s\S]{0,520}Expression API — Python[\s\S]{0,520}Relation API — Python Relation method)/i],
+          zh: [/(?=[\s\S]*首先判断该阶段必须产生什么[\s\S]{0,200}选择 Expression[\s\S]{0,200}选择 Relation)(?=[\s\S]*Expression API — SQL（推荐）[\s\S]{0,520}Expression API — Python[\s\S]{0,520}Relation API — Python Relation 方法)/i],
+        },
+      },
+      {
+        id: 'SQL default',
+        heading: { en: /^### SQL Entry Point \(Recommended\)$/, zh: /^### SQL 入口（推荐）$/ },
+        require: {
+          en: [/(?=[\s\S]*Registered UDF aliases, `ai_prompt`, and `ai_embed`[^.\n]{0,120}SQL `SELECT` projections)(?=[\s\S]*recommended default[^.\n]{0,160}stable IDs and source fields)/i],
+          zh: [/(?=[\s\S]*注册的 UDF alias、`ai_prompt` 和 `ai_embed`[^。\n]{0,120}SQL `SELECT` projection)(?=[\s\S]*推荐默认使用[^。\n]{0,160}稳定 ID、源字段)/i],
+        },
+      },
+      {
+        id: 'Python alternate',
+        heading: { en: /^### Python Entry Point$/, zh: /^### Python 入口$/ },
+        require: {
+          en: [/(?=[\s\S]*Use Python Expression[^.\n]{0,160}Python callables or typed configuration objects)(?=[\s\S]*row_preserving=False[^.\n]{0,120}change cardinality[^.\n]{0,140}sole top-level projection)(?=[\s\S]*SQL aliases[^.\n]{0,120}row-preserving in v1)/i],
+          zh: [/(?=[\s\S]*相同的 projection[^。\n]{0,160}Python callable 或有类型的配置对象[^。\n]{0,160}使用 Python Expression)(?=[\s\S]*row_preserving=False[^。\n]{0,120}改变基数[^。\n]{0,140}唯一的顶层 projection)(?=[\s\S]*SQL alias[^。\n]{0,120}v1 中[^。\n]{0,80}保持行数)/i],
+        },
+      },
+      {
+        id: 'Relation specialization',
+        heading: { en: /^## Relation API$/, zh: /^## Relation API$/ },
+        require: {
+          en: [/(?=[\s\S]*owns table shape[^.\n]{0,160}(?:multi-column output|cardinality change))(?=[\s\S]*rel\.embed_text)(?=[\s\S]*rel\.classify_text)(?=[\s\S]*rel\.prompt)/i, relMapRowWiseEn],
+          zh: [/(?=[\s\S]*控制表形[^。\n]{0,160}(?:多列输出|基数变化))(?=[\s\S]*rel\.embed_text)(?=[\s\S]*rel\.classify_text)(?=[\s\S]*rel\.prompt)/i, /rel\.map[^。\n]{0,100}逐行 scalar[^。\n]{0,100}不是 pandas batch/i],
+        },
+        reject: { en: [/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i], zh: [/rel\.map`?\s*(?:是|作为)\s*pandas batch/i] },
+      },
+      {
+        id: 'mixed pipeline',
+        heading: { en: /^## One Pipeline, Not Competing Workloads$/, zh: /^## 同一条 Pipeline，而非互斥的工作负载$/ },
+        require: {
+          en: [/(?=[\s\S]*SQL can create, join, and filter[^.\n]{0,120}before a Python Relation call[\s\S]{0,200}inspect, aggregate, or write)(?=[\s\S]*Built-in classification is Relation-only)/i],
+          zh: [/(?=[\s\S]*SQL 可以[^。\n]{0,120}Python Relation 调用之前[^。\n]{0,140}创建、连接并过滤[\s\S]{0,200}检查、聚合或写出)(?=[\s\S]*内置分类是 Relation 专属能力)/i],
+        },
+      },
+    ],
+    examples: {
+      languages: ['python', 'python', 'python'],
+      order: ['vane.attach_function(', 'normalize_text_sql(text)', 'projected.explain()', 'vane.detach_function(', 'source = con.sql(', 'source.select(', 'rel = con.sql(', 'rel.classify_text(', 'FROM classified'],
+      check: assertSqlVsPythonLifecycle,
+    },
+  },
+]
+
 const [udfConceptSchema, aiConceptSchema] = conceptSchemas
 const udfActorRules = udfConceptSchema.sections.find(({ id }) => id === 'actor reuse and state').invariants
 const udfRelationRules = udfConceptSchema.sections.find(({ id }) => id === 'Relation API').invariants
@@ -890,6 +1297,7 @@ for (const [rules, label, accurate, inversions] of highRiskConceptProbes) {
 
 for (const [rules, label, paraphrase] of [
   [udfRelationRules.en, 'English UDF Relation', 'Relation can change cardinality. Public methods include `rel.map_batches`, `rel.flat_map`, and `rel.map`; `rel.map` is the row-wise scalar Relation API, not a pandas batch transform. It supports table-shaped, multi-column output. Vane exposes no direct SQL Relation or table-function API.'],
+  [udfRelationRules.en, 'English UDF Relation per-row wording', 'Relation can change cardinality. Public methods include `rel.map_batches`, `rel.flat_map`, and `rel.map`. Unlike a pandas batch transform, `rel.map` applies scalar logic one row at a time. It supports table-shaped, multi-column output. Vane exposes no direct SQL Relation or table-function API.'],
   [udfRelationRules.zh, 'Chinese UDF Relation', 'Relation 可以改变基数。公开方法包括 `rel.map_batches`、`rel.flat_map` 和 `rel.map`；`rel.map` 是逐行 scalar Relation API，而非 pandas batch 处理。它支持表形、多列输出。Vane 不提供直接的 SQL Relation 或 table-function API。'],
   [aiLifecycleRules.en, 'English AI lifecycle', 'Plans carry serializable provider descriptors. Workers instantiate the selected client or model on first use, and each actor retains it across batches. The active runner decides whether that actor is local or Ray-backed.'],
   [aiLifecycleRules.zh, 'Chinese AI lifecycle', '执行计划携带可序列化的 Provider descriptor。worker 在首次使用时实例化所选客户端或模型，每个 actor 会跨 batch 保留它。active runner 决定该 actor 是由 local 还是 Ray backend 承载。'],
@@ -939,6 +1347,34 @@ assert.throws(
   ),
   /canonical top-level API models/,
   'API-model guards should reject an extra top-level API model',
+)
+assert.throws(
+  () => assertHeadingPatternOrder(
+    '### Python Entry Point\n### SQL Entry Point (Recommended)\n## Relation API',
+    [/^### .*SQL/i, /^### .*Python/i, /^## .*Relation API/i],
+    'related Concept entry-order mutation probe',
+  ),
+  /expected heading matching/,
+  'related Concept entry-order guards should reject Python before SQL',
+)
+assert.throws(
+  () => assertRejects('Actor loss recreates an actor with empty state.', [/Actor loss recreates an actor with empty state/i], 'actor-loss mutation probe'),
+  /rejects/,
+  'Execution guards should reject rebuilding empty actor state',
+)
+assert.throws(
+  () => assertRejects('`rel.map` is a pandas batch transform.', [/rel\.map`?\s+is\s+(?:a\s+)?(?:pandas )?batch/i], 'rel.map mutation probe'),
+  /rejects/,
+  'Relation guards should reject stale pandas-batch semantics',
+)
+const earlyDetachSqlVsPython = sqlVsPython.replace(
+  '    plan = projected.explain()\nfinally:\n    vane.detach_function("normalize_text_sql", connection=con)',
+  '    vane.detach_function("normalize_text_sql", connection=con)\n    plan = projected.explain()\nfinally:\n    pass',
+)
+assert.throws(
+  () => assertRelatedExamples(earlyDetachSqlVsPython, relatedConceptSchemas[2].examples, 'early-detach mutation probe'),
+  /examples|alias lifecycle/,
+  'SQL vs Python guards should consume lazy alias work before detach',
 )
 assert.throws(
   () => assertReferenceIntroduction(
@@ -1402,11 +1838,14 @@ assert.match(aiReferenceZh, /环境变量[\s\S]*(凭据|API key)/, 'Chinese AI r
 for (const schema of conceptSchemas) {
   assertConceptSchema(schema)
 }
+for (const schema of relatedConceptSchemas) {
+  assertRelatedConceptSchema(schema)
+}
 
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
 assert.match(aiGuide, /vane\.ai\.(embed|prompt)[\s\S]*\.alias\(/, 'AI guide should demonstrate expression projection')
-assert.match(quickstart, /vane\.ai\.prompt[\s\S]*\.alias\("ai_review_note"\)/, 'Quickstart should preserve source columns with an AI expression')
+assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
 assert.match(embeddingsGuide, /vane\.ai\.embed[\s\S]*vane\.col[\s\S]*\.alias\("embedding"\)/, 'Embedding guide should demonstrate expression embedding')
 
 for (const [path, kind] of [
