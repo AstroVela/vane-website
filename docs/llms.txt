@@ -20,6 +20,8 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/guides/gpu-inference: GPU Inference.
 - /docs/data/guides/embeddings-at-scale: Embeddings at Scale.
 - /docs/data/guides/performance-tuning: Performance Tuning.
+- /docs/data/reference/udf-api: UDF API Reference.
+- /docs/data/reference/ai-api: AI Function API Reference.
 - /docs/data/examples: Examples.
 - /docs/data/examples/training-data-pipeline: Training Data Pipeline.
 - /docs/data/examples/insurance-document-audit: Insurance Document Audit.

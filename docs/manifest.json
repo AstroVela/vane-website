@@ -171,6 +171,24 @@
       }
     },
     {
+      "slug": "reference/udf-api",
+      "title": "UDF API Reference",
+      "source": "docs/data/reference/udf-api.mdx",
+      "route": "/docs/data/reference/udf-api",
+      "frontmatter": {
+        "title": "UDF API Reference"
+      }
+    },
+    {
+      "slug": "reference/ai-api",
+      "title": "AI Function API Reference",
+      "source": "docs/data/reference/ai-api.mdx",
+      "route": "/docs/data/reference/ai-api",
+      "frontmatter": {
+        "title": "AI Function API Reference"
+      }
+    },
+    {
       "slug": "examples",
       "title": "Examples",
       "source": "docs/data/examples/index.mdx",
@@ -375,6 +393,21 @@
               "route": "/docs/data/guides/performance-tuning"
             }
           ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
+      "items": [
+        {
+          "slug": "reference/udf-api",
+          "label": "UDF API Reference",
+          "route": "/docs/data/reference/udf-api"
+        },
+        {
+          "slug": "reference/ai-api",
+          "label": "AI Function API Reference",
+          "route": "/docs/data/reference/ai-api"
         }
       ]
     },
