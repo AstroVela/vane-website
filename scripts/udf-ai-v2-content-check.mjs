@@ -45,6 +45,19 @@ const section = (source, heading, nextHeading) => {
   return source.slice(start, end)
 }
 
+const assertReferenceIntroduction = (source, firstHeading, requirements, message) => {
+  const end = exactLineIndex(source, firstHeading)
+  assert.notEqual(end, -1, `${message}: missing exact first heading ${firstHeading}`)
+  const introduction = source.slice(0, end)
+
+  for (const requirement of requirements) {
+    assert.ok(
+      introduction.includes(requirement),
+      `${message}: introduction should include exact text ${requirement}`,
+    )
+  }
+}
+
 const assertEntryTemplate = (source, entries, labels, message) => {
   const expectedHeadings = entries.map((entry) => `#### \`${entry}\``)
   const actualHeadings = markdownLines(source)
@@ -149,6 +162,16 @@ const referenceLabelsZh = [
   '**限制与错误**',
   '**相关页面**',
 ]
+const udfIntroductionRequirements = [
+  'public UDF signatures, parameters, returns, and call restrictions',
+  'For complete tasks, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs).',
+  'For execution semantics and design reasons, see [UDF Concepts](/docs/data/concepts/udfs).',
+]
+const udfIntroductionRequirementsZh = [
+  '公开 UDF 的签名、参数、返回值和调用限制',
+  '完整任务请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)',
+  '执行语义和设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)',
+]
 
 assert.throws(
   () => assertOrdered(
@@ -177,6 +200,20 @@ assert.throws(
   ),
   /canonical top-level API models/,
   'API-model guards should reject an extra top-level API model',
+)
+assert.throws(
+  () => assertReferenceIntroduction(
+    [
+      'This Reference is lookup material for public UDF signatures, parameters, returns, and call restrictions.',
+      '## Expression API',
+      ...udfIntroductionRequirements.slice(1),
+    ].join('\n'),
+    '## Expression API',
+    udfIntroductionRequirements,
+    'reference-introduction probe',
+  ),
+  /introduction should include exact text/,
+  'Reference role guards should reject Guide and Concept links that occur only after the introduction',
 )
 
 assertOrdered(
@@ -214,36 +251,35 @@ assert.equal(
 assert.doesNotMatch(udfReference, /three (parallel |complementary )?(APIs|API surfaces|surfaces)/i)
 assert.doesNotMatch(udfReferenceZh, /三(?:个|种)(?:并列|平行|互补)?(?:的)?(?: API|API|接口|表面)/)
 
-assert.match(
+assertReferenceIntroduction(
   udfReference,
-  /signatures[\s\S]*parameters[\s\S]*returns[\s\S]*(?:restrictions|constraints)/i,
-  'UDF reference should define its signature-and-restriction lookup role',
+  '## Expression API',
+  udfIntroductionRequirements,
+  'UDF reference',
 )
-assert.match(
-  udfReference,
-  /(?:complete|end-to-end) tasks?[\s\S]*\/docs\/data\/guides\/custom-python-udfs/i,
-  'UDF reference should link complete tasks to the Guide',
-)
-assert.match(
-  udfReference,
-  /(?:execution|design)[\s\S]*\/docs\/data\/concepts\/udfs/i,
-  'UDF reference should link execution and design explanations to Concepts',
-)
-assert.match(
+assertReferenceIntroduction(
   udfReferenceZh,
-  /签名[\s\S]*参数[\s\S]*返回值[\s\S]*(?:限制|约束)/,
-  'Chinese UDF reference should define its signature-and-restriction lookup role',
+  '## Expression API',
+  udfIntroductionRequirementsZh,
+  'Chinese UDF reference',
 )
-assert.match(
-  udfReferenceZh,
-  /(?:完整|端到端)任务[\s\S]*\/zh-CN\/docs\/data\/guides\/custom-python-udfs/,
-  'Chinese UDF reference should link complete tasks to the Guide',
-)
-assert.match(
-  udfReferenceZh,
-  /(?:执行|设计)[\s\S]*\/zh-CN\/docs\/data\/concepts\/udfs/,
-  'Chinese UDF reference should link execution and design explanations to Concepts',
-)
+
+for (const [source, name, sqlHeading, pythonHeading] of [
+  [udfReference, 'UDF reference', '### SQL Entry Point (Recommended)', '### Python Entry Point'],
+  [udfReferenceZh, 'Chinese UDF reference', '### SQL 入口（推荐）', '### Python 入口'],
+]) {
+  const sqlEntries = section(source, sqlHeading, pythonHeading)
+  const registeredAliasEntry = section(
+    sqlEntries,
+    '#### `registered_alias(...args)`',
+    '#### `vane.detach_function`',
+  )
+  assert.match(
+    registeredAliasEntry,
+    /10\.0::DOUBLE AS amount/,
+    `${name} registered-alias example should type its DOUBLE input explicitly`,
+  )
+}
 
 assertEntryTemplate(
   section(udfReference, '### SQL Entry Point (Recommended)', '### Python Entry Point'),

@@ -156,7 +156,7 @@ vane.attach_function(
 try:
     rows = con.sql(
         "SELECT order_id, amount, add_tax(amount) AS total "
-        "FROM (VALUES (1, 10.0)) AS orders(order_id, amount)"
+        "FROM (SELECT 1 AS order_id, 10.0::DOUBLE AS amount) AS orders"
     ).fetchall()
 finally:
     vane.detach_function("add_tax", connection=con)
