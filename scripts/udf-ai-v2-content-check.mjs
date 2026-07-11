@@ -68,17 +68,6 @@ const section = (source, heading, nextHeading) => {
   return source.slice(start, end)
 }
 
-const sectionMatching = (source, headingPattern, nextHeadingPattern) => {
-  const lines = markdownLines(source)
-  const start = lines.find(({ text }) => headingPattern.test(text))?.offset ?? -1
-  assert.notEqual(start, -1, `missing section heading matching ${headingPattern}`)
-  const end = nextHeadingPattern
-    ? lines.find(({ text, offset }) => offset > start && nextHeadingPattern.test(text))?.offset
-    : source.length
-  assert.ok(end > start, `invalid section boundary for ${headingPattern}`)
-  return source.slice(start, end)
-}
-
 const assertReferenceIntroduction = (source, firstHeading, requirements, message) => {
   const end = exactLineIndex(source, firstHeading)
   assert.notEqual(end, -1, `${message}: missing exact first heading ${firstHeading}`)
@@ -227,76 +216,86 @@ const assertConceptRole = (source, message) => {
   )
 }
 
-const assertNoLegacyConceptClaims = (udfSource, aiSource, message) => {
-  assert.doesNotMatch(
-    udfSource,
-    /(?:Vane(?: Data)?\s+exposes\s+three\s+relation-level\s+UDF APIs?|Vane Data\s*(?:暴露|提供)(?:了)?\s*三(?:个|种)\s*relation\s*级别的?\s*UDF API)/i,
-    `${message} should reject the legacy three-relation UDF claim`,
-  )
-  assert.doesNotMatch(
-    aiSource,
-    /(?:AI Functions?\s+turn\s+common model operations into relation methods?|AI Function\s*(?:将|把)\s*常见模型操作\s*(?:封装|转换|变成)(?:为)?\s*relation\s*方法)/i,
-    `${message} should reject the legacy relation-method AI claim`,
-  )
-}
-
-const assertConceptRoleLinks = (
+const assertConceptInvariants = (
   source,
-  referencePath,
-  guidePath,
-  referenceCue,
-  guideCue,
+  { mustMatch = [], mustNotMatch = [] } = {},
   message,
 ) => {
-  assert.match(
-    source,
-    new RegExp(`${referenceCue}[^\\n]*\\(${escapeRegExp(referencePath)}\\)`, 'i'),
-    `${message} should send exact signatures to its matching Reference`,
-  )
-  assert.match(
-    source,
-    new RegExp(`${guideCue}[^\\n]*\\(${escapeRegExp(guidePath)}\\)`, 'i'),
-    `${message} should send complete tasks to its matching Guide`,
-  )
-}
-
-const assertConceptHeadingParity = (source, translatedSource, semantics, message) => {
-  const headings = (value) =>
-    markdownLines(value)
-      .map(({ text }) => text)
-      .filter((line) => /^#{2,3} /.test(line))
-
-  const sourceHeadings = headings(source)
-  const translatedHeadings = headings(translatedSource)
-  assert.deepEqual(
-    sourceHeadings.map((heading) => heading.match(/^#+/)?.[0].length),
-    translatedHeadings.map((heading) => heading.match(/^#+/)?.[0].length),
-    `${message} should use matching heading levels in both languages`,
-  )
-
-  let sourceCursor = -1
-  let translatedCursor = -1
-  for (const [token, sourcePattern, translatedPattern] of semantics) {
-    const nextSource = sourceHeadings.findIndex(
-      (heading, index) => index > sourceCursor && sourcePattern.test(heading),
-    )
-    const nextTranslated = translatedHeadings.findIndex(
-      (heading, index) => index > translatedCursor && translatedPattern.test(heading),
-    )
-    assert.ok(nextSource > sourceCursor, `${message} should place ${token} in semantic order`)
-    assert.ok(
-      nextTranslated > translatedCursor,
-      `${message} should place translated ${token} in semantic order`,
-    )
-    sourceCursor = nextSource
-    translatedCursor = nextTranslated
-  }
-}
-
-const assertConceptTokens = (source, requirements, message) => {
-  for (const [pattern, description] of requirements) {
+  for (const [pattern, description] of mustMatch) {
     assert.match(source, pattern, `${message} should ${description}`)
   }
+  for (const [pattern, description] of mustNotMatch) {
+    assert.doesNotMatch(source, pattern, `${message} should not ${description}`)
+  }
+}
+
+const conceptSection = (source, headingPattern, message) => {
+  const lines = markdownLines(source)
+  const startIndex = lines.findIndex(({ text }) => headingPattern.test(text))
+  assert.notEqual(startIndex, -1, `${message}: missing heading matching ${headingPattern}`)
+
+  const start = lines[startIndex]
+  const level = start.text.match(/^#+/)?.[0].length ?? 6
+  const next = lines.find(
+    ({ text }, index) =>
+      index > startIndex &&
+      /^#{2,6}\s+/.test(text) &&
+      (text.match(/^#+/)?.[0].length ?? 6) <= level,
+  )
+  return source.slice(start.offset, next?.offset ?? source.length)
+}
+
+const assertConceptSchema = (schema) => {
+  const locales = ['en', 'zh']
+  const headingsByLocale = Object.fromEntries(
+    locales.map((locale) => [
+      locale,
+      markdownLines(schema.sources[locale])
+        .map(({ text }) => text)
+        .filter((line) => /^#{2,3} /.test(line)),
+    ]),
+  )
+  assert.deepEqual(
+    headingsByLocale.en.map((heading) => heading.match(/^#+/)?.[0].length),
+    headingsByLocale.zh.map((heading) => heading.match(/^#+/)?.[0].length),
+    `${schema.label} should use matching bilingual heading levels`,
+  )
+
+  for (const locale of locales) {
+    const source = schema.sources[locale]
+    const localeSchema = schema.locales[locale]
+    const message = `${localeSchema.label} Concepts`
+    assertApiModels(source, ['## Expression API', '## Relation API'], message)
+    assertConceptRole(source, message)
+
+    let cursor = -1
+    for (const sectionSchema of schema.sections) {
+      const headingPattern = sectionSchema.heading[locale]
+      const heading = markdownLines(source).find(
+        ({ text, offset }) => offset > cursor && headingPattern.test(text),
+      )
+      assert.ok(heading, `${message} should place ${sectionSchema.id} in semantic order`)
+      cursor = heading.offset
+      assertConceptInvariants(
+        conceptSection(source, headingPattern, `${message} ${sectionSchema.id}`),
+        sectionSchema.invariants?.[locale],
+        `${message} ${sectionSchema.id}`,
+      )
+    }
+
+    const firstHeading = schema.sections[0].heading[locale]
+    const introductionEnd = markdownLines(source).find(({ text }) => firstHeading.test(text))?.offset
+    assert.ok(introductionEnd > 0, `${message} should begin with its semantic introduction`)
+    assertConceptInvariants(source.slice(0, introductionEnd), localeSchema.intro, `${message} introduction`)
+    assertConceptInvariants(source, localeSchema.document, message)
+    schema.assertExample(source, message)
+  }
+
+  assert.deepEqual(
+    fencedCodeBlocks(schema.sources.zh),
+    fencedCodeBlocks(schema.sources.en),
+    `${schema.label} should contain identical bilingual illustrative snippets`,
+  )
 }
 
 const assertUdfConceptExampleOrder = (source, message) => {
@@ -363,8 +362,8 @@ const assertAiConceptExampleOrder = (source, message) => {
   )
   assert.match(
     relationBlock,
-    /source\.(?:prompt|embed_text|classify_text)\(/,
-    `${message} final example should use a Relation-only AI capability`,
+    /(?:source\.classify_text\(|source\.embed_text\([^)]*\bmax_chunk_chars\s*=|source\.prompt\([^)]*\b(?:return_format|image_columns|output_column|execution_backend)\s*=)/,
+    `${message} final example should demonstrate a Relation-only AI capability`,
   )
 }
 
@@ -427,6 +426,7 @@ const udfSqlEntries = [
   'registered_alias(...args)',
   'vane.detach_function',
 ]
+
 const udfPythonEntries = [
   'vane.col',
   'vane.lit',
@@ -517,25 +517,295 @@ const aiSharedRuntimeRequirementsZh = [
   '30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。',
   'Provider SDK 的 retry 和 backoff 限制可能不同。',
 ]
-const udfConceptHeadingSemantics = [
-  ['Expression API', /^## .*Expression API/i, /^## .*Expression API/i],
-  ['recommended SQL entry point', /^### .*SQL.*(?:Recommended|Default)/i, /^### .*SQL.*(?:推荐|默认)/],
-  ['Python entry point', /^### .*Python/i, /^### .*Python/i],
-  ['Relation API', /^## .*Relation API/i, /^## .*Relation API/i],
-  ['shared planning and execution', /^## .*Planning.*Execution/i, /^## .*规划.*执行/],
-  ['actor reuse and state', /^## .*Actor.*(?:State|Mutable)/i, /^## .*Actor.*状态/i],
-  ['state, failure, and effects', /^## .*State.*Failure.*Effects/i, /^## .*状态.*失败.*副作用/],
-  ['model choice', /^## .*Choosing.*Model/i, /^## .*选择.*模型/],
+const conceptSchemas = [
+  {
+    id: 'udf',
+    label: 'UDF Concepts',
+    sources: { en: udfConcept, zh: udfConceptZh },
+    assertExample: assertUdfConceptExampleOrder,
+    locales: {
+      en: {
+        label: 'UDF',
+        intro: {
+          mustMatch: [
+            [/two (?:semantic output|output|semantic) models/i, 'identify exactly two semantic models'],
+            [/Expression API[\s\S]*Relation API/i, 'name Expression before Relation'],
+            [/(?:not|rather than)[^\n]*(?:three|third)/i, 'reject a third syntax model'],
+          ],
+        },
+        document: {
+          mustMatch: [
+            [/(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?))/i, 'reject a direct SQL Relation API'],
+            [/(?:signatures?|parameters?|lookup facts?)[^\n]*\(\/docs\/data\/reference\/udf-api\)/i, 'link lookup facts to UDF Reference'],
+            [/(?:complete (?:task|workflow)|end-to-end workflow)[^\n]*\(\/docs\/data\/guides\/custom-python-udfs\)/i, 'link complete tasks to the UDF Guide'],
+          ],
+          mustNotMatch: [
+            [/Vane(?: Data)?\s+exposes\s+three\s+relation-level\s+UDF APIs?/i, 'restore the legacy three-relation UDF claim'],
+            [/\b(?:has|exposes|provides|offers|defines|uses)\s+three\s+(?:parallel\s+|peer\s+|top-level\s+)?(?:APIs?|models?|surfaces?)/i, 'describe three peer API models'],
+            [/\b(?:exposes|provides|supports|has)\s+(?:a\s+)?direct SQL (?:Relation|table[- ]function) API/i, 'claim a direct SQL Relation API'],
+          ],
+        },
+      },
+      zh: {
+        label: 'Chinese UDF',
+        intro: {
+          mustMatch: [
+            [/两种(?:语义输出|输出|语义)模型/, '指出两种语义模型'],
+            [/Expression API[\s\S]*Relation API/, '先介绍 Expression 再介绍 Relation'],
+            [/(?:不是|并非|而非)[^\n]*三(?:个|种)/, '否定第三种语法模型'],
+          ],
+        },
+        document: {
+          mustMatch: [
+            [/(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)/, '否定直接的 SQL Relation API'],
+            [/(?:签名|参数|查阅信息)[^\n]*\(\/zh-CN\/docs\/data\/reference\/udf-api\)/, '把查阅事实链接到 UDF Reference'],
+            [/(?:完整任务|完整工作流|端到端工作流)[^\n]*\(\/zh-CN\/docs\/data\/guides\/custom-python-udfs\)/, '把完整任务链接到 UDF Guide'],
+          ],
+          mustNotMatch: [
+            [/Vane Data\s*(?:暴露|提供)(?:了)?\s*三(?:个|种)\s*relation\s*级别的?\s*UDF API/i, '恢复旧的三个 Relation UDF 声明'],
+            [/(?<!不)(?:有|提供|公开|暴露|包含|分为)\s*三(?:个|种)[^。\n]*(?:API|模型|入口|表面)/, '把三种入口写成同级 API 模型'],
+            [/(?<!不)(?:提供|公开|支持|具有)[^。\n]*直接的? SQL (?:Relation|table[- ]function) API/, '声称存在直接的 SQL Relation API'],
+          ],
+        },
+      },
+    },
+    sections: [
+      {
+        id: 'Expression API',
+        heading: { en: /^## .*Expression API/i, zh: /^## .*Expression API/i },
+        invariants: {
+          en: {
+            mustMatch: [
+              [/(?:one typed (?:output column|projection result)[^.\n]{0,80}(?:row-preserving|preserves? (?:input )?rows?)|(?:row-preserving|preserves? (?:input )?rows?)[^.\n]{0,80}one typed (?:output column|projection result))/i, 'define the normal typed row-preserving projection'],
+              [/row_preserving=False[^.\n]{0,100}(?:change cardinality|change (?:the )?row count)[\s\S]{0,180}(?:sole|only) top-level projection/i, 'limit the Python batch cardinality exception'],
+              [/(?:SQL aliases?[^.\n]{0,80}(?:remain|are|stay) row-preserving[^.\n]{0,30}\bv1\b|SQL aliases?[^.\n]{0,80}\bv1\b[^.\n]{0,30}row-preserving)/i, 'keep SQL aliases row-preserving in v1'],
+            ],
+            mustNotMatch: [[/SQL aliases?[^.\n]{0,80}(?:may|can|are allowed to)[^.\n]{0,30}(?:change cardinality|change (?:the )?row count|drop rows)/i, 'let SQL aliases change cardinality']],
+          },
+          zh: {
+            mustMatch: [
+              [/(?:一个有类型|单个有类型)[^。\n]{0,40}(?:输出列|projection)[^。\n]{0,60}(?:保持行数|保留行数)/, '定义通常有类型且保持行数的 projection'],
+              [/row_preserving=False[^。\n]{0,80}(?:改变基数|改变行数)[^。\n]{0,120}(?:唯一|单独)[^。\n]{0,20}顶层 projection/, '限定 Python batch 的基数例外'],
+              [/(?:SQL alias[^。\n]{0,60}(?:始终|仍然|继续)?保持行数[^。\n]{0,20}v1|SQL alias[^。\n]{0,60}v1[^。\n]{0,20}(?:始终|仍然|继续)?保持行数)/, '保持 SQL alias 在 v1 中的行数'],
+            ],
+            mustNotMatch: [[/SQL alias[^。\n]{0,80}(?:可以|能够|允许)[^。\n]{0,30}(?:改变基数|改变行数|删除行)/, '允许 SQL alias 改变基数']],
+          },
+        },
+      },
+      { id: 'SQL entry point', heading: { en: /^### .*SQL.*(?:Recommended|Default)/i, zh: /^### .*SQL.*(?:推荐|默认)/ } },
+      { id: 'Python entry point', heading: { en: /^### .*Python/i, zh: /^### .*Python/i } },
+      {
+        id: 'Relation API',
+        heading: { en: /^## .*Relation API/i, zh: /^## .*Relation API/i },
+        invariants: {
+          en: { mustMatch: [
+            [/(?:table[- ]shaped|table transformation)[^.\n]{0,100}(?:multi(?:ple)?[- ]columns?|several columns)[^.\n]{0,100}(?:cardinality change|changes? cardinality)/i, 'reserve Relation for table shape, multiple columns, and cardinality change'],
+            [/(?:no direct|does not (?:expose|provide)|is unavailable)[^.\n]{0,60}\bSQL\b[^.\n]{0,50}\b(?:Relation|table[- ]function) API/i, 'deny a direct SQL Relation API'],
+          ] },
+          zh: { mustMatch: [
+            [/(?:表形|表状|表转换)[^。\n]{0,80}(?:多列|多个列)[^。\n]{0,80}(?:改变基数|基数变化)/, '把 Relation 用于表形、多列和基数变化'],
+            [/(?:不提供|未提供|没有|不可用)[^。\n]{0,60}SQL[^。\n]{0,50}(?:Relation|table[- ]function) API/, '否定直接的 SQL Relation API'],
+          ] },
+        },
+      },
+      {
+        id: 'shared planning and execution',
+        heading: { en: /^## .*Planning.*Execution/i, zh: /^## .*规划.*执行/ },
+      },
+      {
+        id: 'actor reuse and state',
+        heading: { en: /^## .*Actor.*(?:State|Mutable)/i, zh: /^## .*Actor.*状态/i },
+      },
+      {
+        id: 'state, failure, and effects',
+        heading: { en: /^## .*State.*Failure.*Effects/i, zh: /^## .*状态.*失败.*副作用/ },
+        invariants: {
+          en: {
+            mustMatch: [
+              [/\b(?:not|never|cannot|can't)\b[^.\n]{0,80}\b(?:checkpoint(?:ed|ing)?|restor(?:e|ed|able|ation))\b/i, 'deny checkpoint or restoration'],
+              [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bglobal state\b/i, 'deny global state'],
+              [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bkeyed state\b/i, 'deny keyed state'],
+              [/\b(?:not|no|without)\b[^.\n]{0,80}\bexactly-once\b/i, 'deny exactly-once semantics'],
+              [/(?:external|side) effects?[^.\n]{0,140}(?:\b(?:not|never|cannot|can't)\b[^.\n]{0,60}\b(?:rolled back|transactional)\b|\boutside\b[^.\n]{0,30}\btransactions?\b)/i, 'deny transactional UDF effects'],
+            ],
+            mustNotMatch: [
+              [/\b(?:state|it)\b[^.\n]{0,80}\b(?:is|can be|will be|may be)\s+(?:checkpointed|restored|restorable)\b/i, 'claim state is checkpointed or restorable'],
+              [/\b(?:state|it)\b[^.\n]{0,80}\b(?:is|provides?|supports?|offers?)\s+(?:a\s+)?global state\b/i, 'claim state is global'],
+              [/\b(?:state|it)\b[^.\n]{0,80}\b(?:is|provides?|supports?|offers?)\s+(?:a\s+)?keyed state\b/i, 'claim state is keyed'],
+              [/\b(?:state|it)\b[^.\n]{0,100}\b(?:is|provides?|offers?|supports?|guarantees?|has)\s+(?:an?\s+)?exactly-once\b/i, 'claim exactly-once semantics'],
+              [/(?:external|side) effects?[^.\n]{0,120}(?:\b(?:are|become|remain|will be|can be)\s+(?:fully\s+)?(?:transactional|rolled back)\b|\b(?:participate in|are part of|are covered by|occur inside|happen inside)\s+(?:SQL\s+)?transactions?\b)/i, 'claim UDF effects are transactional or rolled back'],
+            ],
+          },
+          zh: {
+            mustMatch: [
+              [/(?:不会|不能|无法|不可|没有|不支持)[^。\n]{0,80}(?:checkpoint|恢复|还原)/i, '否定 checkpoint 或恢复'],
+              [/(?:不是|并非|没有|不提供|不支持)[^。\n]{0,100}global state/i, '否定 global state'],
+              [/(?:不是|并非|没有|不提供|不支持)[^。\n]{0,100}keyed state/i, '否定 keyed state'],
+              [/(?:不提供|不保证|不支持|没有)[^。\n]{0,60}exactly-once/i, '否定 exactly-once 语义'],
+              [/(?:外部副作用|side effect)[^。\n]{0,140}(?:(?:不会|不能|无法|不被)[^。\n]{0,60}(?:回滚|事务化)|(?:事务之外|不属于[^。\n]{0,30}事务))/i, '否定 UDF 副作用的事务性'],
+            ],
+            mustNotMatch: [
+              [/(?:状态|它)[^。\n]{0,80}(?<!不)(?:会|可以|能够)(?:被)?[^。\n]{0,30}(?:checkpoint|恢复|还原)/i, '声称状态会被 checkpoint 或恢复'],
+              [/(?<!不)(?:是|提供|支持|具有)[^。\n]{0,30}global state/i, '声称状态是 global state'],
+              [/(?<!不)(?:是|提供|支持|具有)[^。\n]{0,30}keyed state/i, '声称状态是 keyed state'],
+              [/(?<!不)(?:提供|保证|支持|具有|是)[^。\n]{0,30}exactly-once/i, '声称提供 exactly-once 语义'],
+              [/(?:外部副作用|side effect)[^。\n]{0,120}(?:(?<!不)(?:会|可以|能够)(?:被)?[^。\n]{0,30}回滚|(?:具有事务性|是事务性的|在 (?:SQL )?事务之?内|(?<!不)属于[^。\n]{0,30}事务))/i, '声称 UDF 副作用会回滚或具有事务性'],
+            ],
+          },
+        },
+      },
+      { id: 'model choice', heading: { en: /^## .*Choosing.*Model/i, zh: /^## .*选择.*模型/ } },
+    ],
+  },
+  {
+    id: 'ai',
+    label: 'AI Function Concepts',
+    sources: { en: aiConcept, zh: aiConceptZh },
+    assertExample: assertAiConceptExampleOrder,
+    locales: {
+      en: {
+        label: 'AI Function',
+        intro: { mustMatch: [
+          [/two (?:semantic output|output|semantic) models/i, 'identify exactly two semantic models'],
+          [/Expression API[\s\S]*Relation API/i, 'name Expression before Relation'],
+          [/(?:not|rather than)[^\n]*(?:three|third)/i, 'reject a third syntax model'],
+        ] },
+        document: {
+          mustMatch: [
+            [/(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?))/i, 'reject a direct SQL Relation API'],
+            [/(?:signatures?|parameters?|lookup facts?)[^\n]*\(\/docs\/data\/reference\/ai-api\)/i, 'link lookup facts to AI Reference'],
+            [/(?:complete (?:task|workflow)|end-to-end workflow)[^\n]*\(\/docs\/data\/guides\/ai-functions\)/i, 'link complete tasks to the AI Guide'],
+          ],
+          mustNotMatch: [
+            [/AI Functions?\s+turn\s+common model operations into relation methods?/i, 'restore the legacy Relation-method AI claim'],
+            [/\b(?:has|exposes|provides|offers|defines|uses)\s+three\s+(?:parallel\s+|peer\s+|top-level\s+)?(?:APIs?|models?|surfaces?)/i, 'describe three peer API models'],
+            [/\b(?:exposes|provides|supports|has)\s+(?:a\s+)?direct SQL (?:Relation|table[- ]function) API/i, 'claim a direct SQL Relation API'],
+          ],
+        },
+      },
+      zh: {
+        label: 'Chinese AI Function',
+        intro: { mustMatch: [
+          [/两种(?:语义输出|输出|语义)模型/, '指出两种语义模型'],
+          [/Expression API[\s\S]*Relation API/, '先介绍 Expression 再介绍 Relation'],
+          [/(?:不是|并非|而非)[^\n]*三(?:个|种)/, '否定第三种语法模型'],
+        ] },
+        document: {
+          mustMatch: [
+            [/(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)/, '否定直接的 SQL Relation API'],
+            [/(?:签名|参数|查阅信息)[^\n]*\(\/zh-CN\/docs\/data\/reference\/ai-api\)/, '把查阅事实链接到 AI Reference'],
+            [/(?:完整任务|完整工作流|端到端工作流)[^\n]*\(\/zh-CN\/docs\/data\/guides\/ai-functions\)/, '把完整任务链接到 AI Guide'],
+          ],
+          mustNotMatch: [
+            [/AI Function\s*(?:将|把)\s*常见模型操作\s*(?:封装|转换|变成)(?:为)?\s*relation\s*方法/i, '恢复旧的 Relation 方法 AI 声明'],
+            [/(?<!不)(?:有|提供|公开|暴露|包含|分为)\s*三(?:个|种)[^。\n]*(?:API|模型|入口|表面)/, '把三种入口写成同级 API 模型'],
+            [/(?<!不)(?:提供|公开|支持|具有)[^。\n]*直接的? SQL (?:Relation|table[- ]function) API/, '声称存在直接的 SQL Relation API'],
+          ],
+        },
+      },
+    },
+    sections: [
+      {
+        id: 'Expression API',
+        heading: { en: /^## .*Expression API/i, zh: /^## .*Expression API/i },
+      },
+      { id: 'SQL entry point', heading: { en: /^### .*SQL.*(?:Recommended|Default)/i, zh: /^### .*SQL.*(?:推荐|默认)/ } },
+      { id: 'Python entry point', heading: { en: /^### .*Python/i, zh: /^### .*Python/i } },
+      {
+        id: 'Relation API',
+        heading: { en: /^## .*Relation API/i, zh: /^## .*Relation API/i },
+      },
+      {
+        id: 'provider and runner lifecycle',
+        heading: { en: /^## .*Provider.*Runner.*Lifecycle/i, zh: /^## .*Provider.*Runner.*生命周期/i },
+        invariants: {
+          en: { mustMatch: [
+            [/provider descriptors?[^.\n]{0,80}(?:cross|pass)[^.\n]{0,30}(?:execution[- ]plan|plan(?:ning)?) boundary[\s\S]{0,240}(?:lazily|on demand)[^.\n]{0,50}workers?[^.\n]{0,100}(?:reuse|reused)/i, 'cross the plan boundary and lazily reuse worker resources'],
+            [/active runner[^.\n]{0,100}\blocal\b[^.\n]{0,100}\bRay\b/i, 'contrast active-runner local and Ray execution'],
+          ] },
+          zh: { mustMatch: [
+            [/Provider descriptor[^。\n]{0,80}(?:跨越|穿过)[^。\n]{0,30}执行计划[\s\S]{0,240}(?:延迟|按需)[^。\n]{0,50}worker[^。\n]{0,100}复用/i, '说明 descriptor 跨越执行计划并在 worker 延迟复用资源'],
+            [/active runner[^。\n]{0,100}local[^。\n]{0,100}Ray/i, '对比 active runner 的 local 与 Ray 执行'],
+          ] },
+        },
+      },
+      {
+        id: 'credentials and effects',
+        heading: { en: /^## .*Credentials.*Effects/i, zh: /^## .*凭据.*副作用/ },
+        invariants: {
+          en: {
+            mustMatch: [
+              [/credentials?[^.\n]{0,80}\b(?:belong|live|reside|are stored|must be|should be)\b[^.\n]{0,30}\b(?:in|on)\s+(?:the\s+)?worker(?:-side)?(?:\s+(?:environment|runtime))?\b/i, 'place credentials in the worker environment'],
+              [/(?:provider calls?|provider effects?|external effects?)[^.\n]{0,140}\b(?:outside|not part of|not covered by)\b[^.\n]{0,40}\b(?:SQL\s+)?transactions?\b/i, 'place provider effects outside transactions'],
+              [/\b(?:not|no|without)\b[^.\n]{0,80}\bexactly-once\b/i, 'deny exactly-once provider calls'],
+            ],
+            mustNotMatch: [
+              [/credentials?[^.\n]{0,80}\b(?:do not|don't|must not|should not|cannot|can't)\b[^.\n]{0,50}\bworker(?:-side)?(?:\s+(?:environment|runtime))?\b/i, 'reject credentials in the worker environment'],
+              [/credentials?[^.\n]{0,100}\b(?:belong|live|are stored|must be|should be)\b[^.\n]{0,30}\b(?:driver|coordinator|SQL plan)\b/i, 'place credentials on the driver or in SQL'],
+              [/provider calls?[^.\n]{0,120}(?:\b(?:are|occur|happen)\s+(?:fully\s+)?(?:inside|within|part of|covered by)\s+(?:SQL\s+)?transactions?\b|\b(?:are|become|remain)\s+(?:fully\s+)?transactional\b|\b(?:can|will|may) be rolled back by (?:SQL\s+)?transactions?\b)/i, 'claim provider calls are transactional or rolled back'],
+              [/provider calls?[^.\n]{0,100}\b(?:are|provide|offer|support|guarantee)\s+(?:an?\s+)?exactly-once\b/i, 'claim exactly-once provider calls'],
+            ],
+          },
+          zh: {
+            mustMatch: [
+              [/凭据[^。\n]{0,30}(?<!不)(?:应放在|应该放在|必须放在|位于|存放在)\s*worker(?:-side)?(?: 环境| 运行时| 侧)?/i, '把凭据放在 worker 环境'],
+              [/(?:Provider 调用|外部副作用)[^。\n]{0,120}(?:事务之外|不属于[^。\n]{0,30}事务)/i, '把 Provider 副作用放在事务之外'],
+              [/(?:不提供|不保证|不支持|没有)[^。\n]{0,60}exactly-once/i, '否定 exactly-once Provider 调用'],
+            ],
+            mustNotMatch: [
+              [/凭据[^。\n]{0,40}(?:不应|不应该|不能|不可|不宜)[^。\n]{0,30}worker(?:-side)?(?: 环境| 运行时| 侧)?/i, '否定把凭据放在 worker 环境'],
+              [/凭据[^。\n]{0,80}(?<!不)(?:应|可以|能够|必须)[^。\n]{0,30}(?:driver|coordinator|SQL plan)/i, '把凭据放到 driver 或 SQL'],
+              [/Provider 调用[^。\n]{0,100}(?:在 (?:SQL )?事务之?内|(?<!不)属于[^。\n]{0,30}事务|(?:会|可以|能够)被[^。\n]{0,30}(?:SQL )?事务回滚|具有事务性|是事务性的)/i, '声称 Provider 调用具有事务性或会被回滚'],
+              [/(?:Provider 调用[^。\n]{0,100}(?<!不)(?:提供|保证|支持)[^。\n]{0,30}|Provider 调用(?:是|具有)\s*)exactly-once/i, '声称 Provider 调用提供 exactly-once'],
+            ],
+          },
+        },
+      },
+      { id: 'model choice', heading: { en: /^## .*Choosing.*Model/i, zh: /^## .*选择.*模型/ } },
+    ],
+  },
 ]
-const aiConceptHeadingSemantics = [
-  ['Expression API', /^## .*Expression API/i, /^## .*Expression API/i],
-  ['recommended SQL entry point', /^### .*SQL.*(?:Recommended|Default)/i, /^### .*SQL.*(?:推荐|默认)/],
-  ['Python entry point', /^### .*Python/i, /^### .*Python/i],
-  ['Relation API', /^## .*Relation API/i, /^## .*Relation API/i],
-  ['provider and runner lifecycle', /^## .*Provider.*Runner.*Lifecycle/i, /^## .*Provider.*Runner.*生命周期/i],
-  ['credentials and effects', /^## .*Credentials.*Effects/i, /^## .*凭据.*副作用/],
-  ['model choice', /^## .*Choosing.*Model/i, /^## .*选择.*模型/],
+
+const [udfConceptSchema, aiConceptSchema] = conceptSchemas
+const udfStateRules = udfConceptSchema.sections.find(
+  ({ id }) => id === 'state, failure, and effects',
+).invariants
+const aiEffectsRules = aiConceptSchema.sections.find(
+  ({ id }) => id === 'credentials and effects',
+).invariants
+
+const highRiskConceptProbes = [
+  [udfStateRules.en, 'English UDF state', 'State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'External side effects are transactional.']],
+  [udfStateRules.zh, 'Chinese UDF state', '状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', '外部副作用会被事务回滚。']],
+  [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
+  [aiEffectsRules.zh, 'Chinese AI effects', '凭据位于 worker 运行时。Provider 调用发生在 SQL 事务之外，不提供 exactly-once。', ['凭据不应放在 worker 环境。', '凭据应放在 driver。', 'Provider 调用在 SQL 事务之内。', 'Provider 调用可以被 SQL 事务回滚。', 'Provider 调用提供 exactly-once。']],
 ]
+
+for (const [rules, label, accurate, inversions] of highRiskConceptProbes) {
+  assert.doesNotThrow(
+    () => assertConceptInvariants(accurate, rules, `${label} synonym probe`),
+    `${label} guards should accept accurate synonymous wording`,
+  )
+  for (const inversion of inversions) {
+    assert.throws(
+      () => assertConceptInvariants(`${accurate} ${inversion}`, rules, `${label} polarity probe`),
+      /should not/,
+      `${label} guards should reject the inverted claim: ${inversion}`,
+    )
+  }
+}
+
+for (const schema of conceptSchemas) {
+  for (const sectionSchema of schema.sections.filter(({ invariants }) => invariants)) {
+    for (const locale of ['en', 'zh']) {
+      assert.throws(
+        () => assertConceptInvariants(`## ${sectionSchema.id}`, sectionSchema.invariants[locale], `${schema.id} ${sectionSchema.id} deletion probe`),
+        /should/,
+        `${schema.id} ${sectionSchema.id} should reject a retained heading with gutted prose`,
+      )
+    }
+  }
+}
 
 assert.throws(
   () => assertOrdered(
@@ -668,57 +938,48 @@ assert.throws(
   /end-to-end numbered tutorial/,
   'Concept role guards should reject an ordered tutorial',
 )
-assert.throws(
-  () => assertConceptRole('## 1. Register the alias', 'Concept-numeric-heading probe'),
-  /numbered step heading/,
-  'Concept role guards should reject a numeric step heading',
-)
-assert.throws(
-  () => assertConceptRole('## Step 1: Register the alias', 'Concept-step-heading probe'),
-  /numbered step heading/,
-  'Concept role guards should reject an English numbered step heading',
-)
-assert.throws(
-  () => assertConceptRole('## 第一步：注册 alias', 'Chinese Concept-step-heading probe'),
-  /numbered step heading/,
-  'Concept role guards should reject a Chinese numbered step heading',
-)
-assert.throws(
-  () => assertNoLegacyConceptClaims(
-    'Vane exposes three relation-level UDF APIs.',
-    '',
-    'English legacy UDF probe',
-  ),
-  /legacy three-relation UDF claim/,
-  'Concept guards should reject the exact legacy English UDF claim',
-)
-assert.throws(
-  () => assertNoLegacyConceptClaims(
-    '',
-    'AI Functions turn common model operations into relation methods.',
-    'English legacy AI probe',
-  ),
-  /legacy relation-method AI claim/,
-  'Concept guards should reject the exact legacy English AI claim',
-)
-assert.throws(
-  () => assertNoLegacyConceptClaims(
-    'Vane Data 暴露了三个 relation 级别的 UDF API。',
-    '',
-    'Chinese legacy UDF probe',
-  ),
-  /legacy three-relation UDF claim/,
-  'Concept guards should reject the legacy Chinese UDF claim',
-)
-assert.throws(
-  () => assertNoLegacyConceptClaims(
-    '',
-    'Vane Data AI Function 将常见模型操作封装为 relation 方法。',
-    'Chinese legacy AI probe',
-  ),
-  /legacy relation-method AI claim/,
-  'Concept guards should reject the legacy Chinese AI claim',
-)
+for (const [heading, label] of [['## 1. Register the alias', 'numeric'], ['## Step 1: Register the alias', 'English'], ['## 第一步：注册 alias', 'Chinese']]) {
+  assert.throws(
+    () => assertConceptRole(heading, `${label} Concept-step-heading probe`),
+    /numbered step heading/,
+    `Concept role guards should reject a ${label} numbered step heading`,
+  )
+}
+for (const [source, rules, label, expected] of [
+  ['Vane exposes three relation-level UDF APIs.', udfConceptSchema.locales.en.document.mustNotMatch, 'English legacy UDF', /legacy three-relation UDF claim|restore the legacy/],
+  ['AI Functions turn common model operations into relation methods.', aiConceptSchema.locales.en.document.mustNotMatch, 'English legacy AI', /legacy Relation-method AI claim|restore the legacy/],
+  ['Vane Data 暴露了三个 relation 级别的 UDF API。', udfConceptSchema.locales.zh.document.mustNotMatch, 'Chinese legacy UDF', /旧的三个 Relation UDF 声明/],
+  ['Vane Data AI Function 将常见模型操作封装为 relation 方法。', aiConceptSchema.locales.zh.document.mustNotMatch, 'Chinese legacy AI', /旧的 Relation 方法 AI 声明/],
+]) {
+  assert.throws(
+    () => assertConceptInvariants(source, { mustNotMatch: rules }, `${label} probe`),
+    expected,
+    `Concept guards should reject the exact ${label} claim`,
+  )
+}
+for (const bareCall of ['source.prompt("prompt")', 'source.embed_text("prompt")']) {
+  assert.throws(
+    () => assertAiConceptExampleOrder(
+      [
+        '```python',
+        'import vane',
+        'con = vane.connect()',
+        'source = con.sql("SELECT 1 AS document_id, \'prompt\' AS prompt")',
+        'reviewed = con.sql("SELECT document_id, prompt, ai_prompt(prompt) FROM source")',
+        '```',
+        '```python',
+        'projected = source.select(vane.ai.prompt(vane.col("prompt")))',
+        '```',
+        '```python',
+        `bare = ${bareCall}`,
+        '```',
+      ].join('\n'),
+      'bare Relation AI mutation probe',
+    ),
+    /Relation-only AI capability/,
+    `AI Concept example guards should reject a bare Relation call: ${bareCall}`,
+  )
+}
 
 assertOrdered(
   udfReference,
@@ -1033,290 +1294,8 @@ for (const type of ['OpenAIProviderOptions', 'GoogleProviderOptions', 'VLLMProvi
 assert.match(udfReferenceZh, /查询作用域[\s\S]*actor 内[\s\S]*(临时|非持久)/, 'Chinese UDF reference should explain the state scope')
 assert.match(aiReferenceZh, /环境变量[\s\S]*(凭据|API key)/, 'Chinese AI reference should explain credential handling')
 
-assertNoLegacyConceptClaims(udfConcept, aiConcept, 'English core Concepts')
-assertNoLegacyConceptClaims(udfConceptZh, aiConceptZh, 'Chinese core Concepts')
-
-assertConceptHeadingParity(
-  udfConcept,
-  udfConceptZh,
-  udfConceptHeadingSemantics,
-  'bilingual UDF Concepts',
-)
-assertConceptHeadingParity(
-  aiConcept,
-  aiConceptZh,
-  aiConceptHeadingSemantics,
-  'bilingual AI Function Concepts',
-)
-
-for (const [source, name, introPattern, defaultPattern, noDirectPattern, threeModelPattern] of [
-  [
-    udfConcept,
-    'UDF Concepts',
-    /two (?:semantic output|output|semantic) models[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:not|rather than)[^\n]*(?:three|third)/i,
-    /SQL[\s\S]*(?:recommended|default)[\s\S]*entry point/i,
-    /(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?)|SQL[^\n]*(?:Relation|table[- ]functions?)[^\n]*(?:unavailable|not (?:exposed|provided)))/i,
-    /\bthree\s+(?:(?:parallel|peer|complementary|top-level)\s+)*(?:APIs?|API models?|API surfaces?|surfaces?)\b/i,
-  ],
-  [
-    udfConceptZh,
-    'Chinese UDF Concepts',
-    /两种(?:语义输出|输出|语义)模型[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:不是|并非|而非)[^\n]*三(?:个|种)/,
-    /SQL[\s\S]*(?:推荐|默认)[\s\S]*入口/,
-    /(?:(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)|SQL[^\n]*(?:Relation|table[- ]function)[^\n]*(?:不提供|未提供|不可用))/,
-    /三(?:个|种)(?:(?:顶层|并列|平行|互补|同级)的?)?\s*(?:API(?:\s*模型|\s*入口|\s*表面)?|接口|入口|模型)/,
-  ],
-  [
-    aiConcept,
-    'AI Function Concepts',
-    /two (?:semantic output|output|semantic) models[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:not|rather than)[^\n]*(?:three|third)/i,
-    /SQL[\s\S]*(?:recommended|default)[\s\S]*entry point/i,
-    /(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?)|SQL[^\n]*(?:Relation|table[- ]functions?)[^\n]*(?:unavailable|not (?:exposed|provided)))/i,
-    /\bthree\s+(?:(?:parallel|peer|complementary|top-level)\s+)*(?:APIs?|API models?|API surfaces?|surfaces?)\b/i,
-  ],
-  [
-    aiConceptZh,
-    'Chinese AI Function Concepts',
-    /两种(?:语义输出|输出|语义)模型[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:不是|并非|而非)[^\n]*三(?:个|种)/,
-    /SQL[\s\S]*(?:推荐|默认)[\s\S]*入口/,
-    /(?:(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)|SQL[^\n]*(?:Relation|table[- ]function)[^\n]*(?:不提供|未提供|不可用))/,
-    /三(?:个|种)(?:(?:顶层|并列|平行|互补|同级)的?)?\s*(?:API(?:\s*模型|\s*入口|\s*表面)?|接口|入口|模型)/,
-  ],
-]) {
-  assertApiModels(source, ['## Expression API', '## Relation API'], name)
-  assertConceptRole(source, name)
-  const expressionStart = exactLineIndex(source, '## Expression API')
-  assert.match(
-    source.slice(0, expressionStart),
-    introPattern,
-    `${name} should open with the canonical two-model explanation`,
-  )
-  assert.match(
-    section(source, '## Expression API', '## Relation API'),
-    defaultPattern,
-    `${name} should make SQL the recommended default inside Expression API`,
-  )
-  assert.match(
-    source,
-    noDirectPattern,
-    `${name} should explicitly reject a direct SQL Relation or table-function API`,
-  )
-  const affirmativeClaims = source
-    .split('\n')
-    .filter((line) => !/(?:\b(?:does not|do not|not|no|rather than|without)\b|不是|并非|而非|不提供|未提供|没有)/i.test(line))
-    .join('\n')
-  assert.doesNotMatch(
-    affirmativeClaims,
-    threeModelPattern,
-    `${name} should not describe three peer API models`,
-  )
-}
-
-for (const [source, referencePath, guidePath, referenceCue, guideCue, name] of [
-  [
-    udfConcept,
-    '/docs/data/reference/udf-api',
-    '/docs/data/guides/custom-python-udfs',
-    '(?:signatures?|parameters?|lookup facts?)',
-    '(?:complete (?:task|workflow)|end-to-end workflow)',
-    'UDF Concepts',
-  ],
-  [
-    udfConceptZh,
-    '/zh-CN/docs/data/reference/udf-api',
-    '/zh-CN/docs/data/guides/custom-python-udfs',
-    '(?:签名|参数|查阅信息)',
-    '(?:完整任务|完整工作流|端到端工作流)',
-    'Chinese UDF Concepts',
-  ],
-  [
-    aiConcept,
-    '/docs/data/reference/ai-api',
-    '/docs/data/guides/ai-functions',
-    '(?:signatures?|parameters?|lookup facts?)',
-    '(?:complete (?:task|workflow)|end-to-end workflow)',
-    'AI Function Concepts',
-  ],
-  [
-    aiConceptZh,
-    '/zh-CN/docs/data/reference/ai-api',
-    '/zh-CN/docs/data/guides/ai-functions',
-    '(?:签名|参数|查阅信息)',
-    '(?:完整任务|完整工作流|端到端工作流)',
-    'Chinese AI Function Concepts',
-  ],
-]) {
-  assertConceptRoleLinks(
-    source,
-    referencePath,
-    guidePath,
-    referenceCue,
-    guideCue,
-    name,
-  )
-}
-
-assertUdfConceptExampleOrder(udfConcept, 'UDF Concepts')
-assertUdfConceptExampleOrder(udfConceptZh, 'Chinese UDF Concepts')
-assertAiConceptExampleOrder(aiConcept, 'AI Function Concepts')
-assertAiConceptExampleOrder(aiConceptZh, 'Chinese AI Function Concepts')
-assert.deepEqual(
-  fencedCodeBlocks(udfConceptZh),
-  fencedCodeBlocks(udfConcept),
-  'bilingual UDF Concepts should contain identical illustrative snippets',
-)
-assert.deepEqual(
-  fencedCodeBlocks(aiConceptZh),
-  fencedCodeBlocks(aiConcept),
-  'bilingual AI Function Concepts should contain identical illustrative snippets',
-)
-
-const udfExpressionConcept = sectionMatching(udfConcept, /^## .*Expression API/i, /^## .*Relation API/i)
-const udfRelationConcept = sectionMatching(udfConcept, /^## .*Relation API/i, /^## .*Planning.*Execution/i)
-const udfReuseConcept = sectionMatching(udfConcept, /^## .*Actor.*(?:State|Mutable)/i, /^## .*State.*Failure.*Effects/i)
-const udfStateConcept = sectionMatching(udfConcept, /^## .*State.*Failure.*Effects/i, /^## .*Choosing.*Model/i)
-const udfExpressionConceptZh = sectionMatching(udfConceptZh, /^## .*Expression API/i, /^## .*Relation API/i)
-const udfRelationConceptZh = sectionMatching(udfConceptZh, /^## .*Relation API/i, /^## .*规划.*执行/)
-const udfReuseConceptZh = sectionMatching(udfConceptZh, /^## .*Actor.*状态/i, /^## .*状态.*失败.*副作用/)
-const udfStateConceptZh = sectionMatching(udfConceptZh, /^## .*状态.*失败.*副作用/, /^## .*选择.*模型/)
-
-assertConceptTokens(udfExpressionConcept, [
-  [/`?SELECT`? projection/i, 'explain projection placement'],
-  [/row-preserving/i, 'explain normal row preservation'],
-  [/row_preserving=False/i, 'name the Python batch exception'],
-  [/change cardinality/i, 'explain that the exception can change cardinality'],
-  [/sole top-level projection/i, 'limit the exception to the sole top-level projection'],
-  [/SQL aliases?/i, 'cover registered SQL aliases'],
-  [/v1/i, 'scope SQL alias row preservation to v1'],
-], 'UDF Expression concept')
-assertConceptTokens(udfRelationConcept, [
-  [/table-shaped/i, 'explain table-shaped output'],
-  [/multi-column/i, 'explain multi-column output'],
-  [/cardinality/i, 'explain cardinality change'],
-  [/rel\.map_batches/i, 'name rel.map_batches'],
-  [/rel\.flat_map/i, 'name rel.flat_map'],
-  [/rel\.map\b/i, 'name rel.map'],
-  [/row-wise scalar/i, 'describe rel.map as row-wise scalar'],
-], 'UDF Relation concept')
-assertConceptTokens(udfReuseConcept, [
-  [/actor-backed/i, 'explain actor-backed reuse'],
-  [/callable/i, 'identify callable reuse'],
-  [/model/i, 'identify model reuse'],
-  [/client/i, 'identify client reuse'],
-  [/vane\.cls/i, 'contrast vane.cls'],
-  [/(?:narrower|mutable-state)/i, 'identify the narrower mutable-state contract'],
-], 'UDF actor-reuse concept')
-assertConceptTokens(udfStateConcept, [
-  [/query-scoped/i, 'scope state to the query'],
-  [/actor-local/i, 'scope state to the actor'],
-  [/ephemeral/i, 'mark state ephemeral'],
-  [/checkpoint/i, 'reject checkpointing'],
-  [/global state/i, 'reject global state'],
-  [/keyed state/i, 'reject keyed state'],
-  [/exactly-once/i, 'reject exactly-once semantics'],
-  [/actor loss/i, 'explain actor loss'],
-  [/query fail/i, 'explain query failure'],
-  [/external effects/i, 'identify external effects'],
-  [/not rolled back/i, 'reject transactional rollback'],
-  [/no stable global row order/i, 'reject stable global row order'],
-], 'UDF state and failure concept')
-assert.match(udfConcept, /Arrow batches/i, 'UDF Concepts should explain Arrow batches')
-
-assertConceptTokens(udfExpressionConceptZh, [
-  [/`?SELECT`? projection/i, '解释 projection 位置'],
-  [/(?:保持行数|row-preserving)/, '解释通常的行数保持语义'],
-  [/row_preserving=False/, '指出 Python batch 例外'],
-  [/(?:改变基数|改变行数)/, '说明例外可以改变基数'],
-  [/(?:唯一|单独).*顶层 projection/, '限制例外只能作为唯一顶层 projection'],
-  [/SQL alias/i, '涵盖注册的 SQL alias'],
-  [/v1/i, '把 SQL alias 行数语义限定在 v1'],
-], 'Chinese UDF Expression concept')
-assertConceptTokens(udfRelationConceptZh, [
-  [/(?:表形|表状)/, '解释表形输出'],
-  [/多列/, '解释多列输出'],
-  [/基数/, '解释基数变化'],
-  [/rel\.map_batches/, '提及 rel.map_batches'],
-  [/rel\.flat_map/, '提及 rel.flat_map'],
-  [/rel\.map\b/, '提及 rel.map'],
-  [/逐行 scalar/, '准确描述 rel.map'],
-], 'Chinese UDF Relation concept')
-assertConceptTokens(udfReuseConceptZh, [
-  [/actor-backed/i, '解释 actor-backed 复用'],
-  [/callable/i, '提及 callable 复用'],
-  [/model/i, '提及 model 复用'],
-  [/client/i, '提及 client 复用'],
-  [/vane\.cls/i, '对比 vane.cls'],
-  [/(?:更窄|可变状态)/, '指出更窄的可变状态契约'],
-], 'Chinese UDF actor-reuse concept')
-assertConceptTokens(udfStateConceptZh, [
-  [/query-scoped/i, '限定 query scope'],
-  [/actor-local/i, '限定 actor scope'],
-  [/ephemeral/i, '说明状态是临时的'],
-  [/checkpoint/i, '否定 checkpoint'],
-  [/global state/i, '否定 global state'],
-  [/keyed state/i, '否定 keyed state'],
-  [/exactly-once/i, '否定 exactly-once'],
-  [/actor 丢失/, '解释 actor 丢失'],
-  [/query 失败/, '解释 query 失败'],
-  [/外部副作用/, '指出外部副作用'],
-  [/回滚/, '解释回滚边界'],
-  [/没有稳定的全局行顺序/, '否定稳定的全局行顺序'],
-], 'Chinese UDF state and failure concept')
-assert.match(udfConceptZh, /Arrow batch/i, 'Chinese UDF Concepts should explain Arrow batches')
-
-for (const [source, name, expressionPattern, relationPattern, lifecyclePattern, effectsPattern, requirements] of [
-  [aiConcept, 'AI Function Concepts', /^## .*Expression API/i, /^## .*Relation API/i, /^## .*Provider.*Runner.*Lifecycle/i, /^## .*Credentials.*Effects/i, [
-    [/Python Expression/i, 'explain Python Expression'],
-    [/(?:equivalent|same)/i, 'make Python semantically equivalent'],
-    [/row-preserving/i, 'preserve rows in Expression'],
-  ]],
-  [aiConceptZh, 'Chinese AI Function Concepts', /^## .*Expression API/i, /^## .*Relation API/i, /^## .*Provider.*Runner.*生命周期/i, /^## .*凭据.*副作用/, [
-    [/Python Expression/i, '解释 Python Expression'],
-    [/(?:等价|相同)/, '说明 Python 语义等价'],
-    [/(?:保持行数|row-preserving)/, '说明 Expression 保持行数'],
-  ]],
-]) {
-  const expression = sectionMatching(source, expressionPattern, relationPattern)
-  const relation = sectionMatching(source, relationPattern, lifecyclePattern)
-  const lifecycle = sectionMatching(source, lifecyclePattern, effectsPattern)
-  const effects = sectionMatching(source, effectsPattern, /^## .*(?:Choosing.*Model|选择.*模型)/i)
-  assertConceptTokens(expression, requirements, `${name} Expression concept`)
-  assertConceptTokens(relation, [
-    [/max_chunk_chars/, 'cover built-in chunking'],
-    [/classify_text/, 'cover built-in classification'],
-    [/return_format/, 'cover structured prompts'],
-    [/image_columns/, 'cover multimodal prompts'],
-    [/output_column/, 'cover named Relation output'],
-    [/execution_backend/, 'cover explicit Relation backends'],
-    [/actor_number/, 'cover explicit actor controls'],
-    [/(?:built-in classification|内置分类)/i, 'identify the Relation-only example capability'],
-    [/(?:requires? Relation API|需要 Relation API)/i, 'require Relation API for that capability'],
-  ], `${name} Relation concept`)
-  assertConceptTokens(lifecycle, [
-    [/provider descriptors?/i, 'explain provider descriptors'],
-    [/(?:plan boundary|plan 边界)/i, 'cross the plan boundary'],
-    [/(?:lazily|延迟|懒)/i, 'instantiate lazily'],
-    [/worker/i, 'instantiate on workers'],
-    [/(?:reuse|复用|重用)/i, 'reuse clients or models'],
-    [/actor/i, 'scope reuse within actors'],
-    [/active runner/i, 'explain active-runner selection'],
-    [/local/i, 'explain local execution'],
-    [/Ray/i, 'explain Ray execution'],
-    [/(?:provider defaults|Provider 默认值)/i, 'leave provider defaults in Reference'],
-    [/Reference|参考/i, 'link lifecycle lookup facts to Reference'],
-  ], `${name} provider lifecycle concept`)
-  assertConceptTokens(effects, [
-    [/(?:credentials|凭据)/i, 'place credentials with workers'],
-    [/worker (?:environment|环境)/i, 'name the worker environment'],
-    [/SQL/i, 'explain the SQL boundary'],
-    [/(?:rejects?|拒绝)/i, 'reject SQL credential fields'],
-    [/(?:external effects|外部副作用)/i, 'identify external effects'],
-    [/(?:transactions?|事务)/i, 'explain transaction boundaries'],
-    [/exactly-once/i, 'reject exactly-once calls'],
-    [/(?:stable IDs|稳定 ID)/i, 'recommend stable IDs'],
-    [/(?:reviewable|可审查)/i, 'recommend reviewable outputs'],
-    [/(?:idempotent|幂等)/i, 'recommend idempotent writes'],
-  ], `${name} credentials and effects concept`)
+for (const schema of conceptSchemas) {
+  assertConceptSchema(schema)
 }
 
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')

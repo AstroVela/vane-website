@@ -35,7 +35,7 @@ reviewed = con.sql("""
 """)
 ```
 
-SQL 调用仍属于 Expression API。它的 provider options 是常量 planning 输入，`document_id` 和 `prompt` 则继续作为普通 relation 列流动。
+SQL 调用仍属于 Expression API。它的 provider options 是常量规划输入，`document_id` 和 `prompt` 则继续作为普通 relation 列流动。
 
 ### Python 入口
 
@@ -74,13 +74,13 @@ Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以在 Rela
 
 ## Provider 与 Runner 生命周期
 
-Provider descriptor 会跨越 plan 边界，而不会把 live client 或 model 放进 plan。所选 client 或 model 会延迟到 worker 才实例化并复用，复用范围是每个 actor；这样既不会为没有执行的行初始化资源，也能在多个 batch 之间摊薄 setup 成本。
+Provider descriptor 会跨越执行计划边界，而不会把客户端或模型放进执行计划。所选客户端或模型会延迟到 worker 才实例化并复用，复用范围是每个 actor；这样既不会为没有执行的行初始化资源，也能在多个 batch 之间摊薄 setup 成本。
 
-对于 SQL 和 Python Expression，active runner 会在 query planning 时选择 actor backend：local 执行使用 subprocess actor，Ray run 使用 Ray actor。Relation 方法还可以显式选择 backend。Provider 默认值和精确参数应留在 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，而不是放进这里的概念性生命周期说明。
+对于 SQL 和 Python Expression，active runner 会在查询规划阶段选择 actor backend：local 执行使用 subprocess actor，Ray run 使用 Ray actor。Relation 方法还可以显式选择 backend。Provider 默认值和精确参数应留在 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，而不是放进这里的概念性生命周期说明。
 
 ## 凭据与外部副作用
 
-凭据应放在 worker 环境中，因为 provider client 是在 worker 上创建的。SQL option binding 会拒绝类似凭据的字段，因此 API key、token 和 secret 不应嵌入 SQL plan。
+凭据应放在 worker 环境中，因为 provider 客户端是在 worker 上创建的。SQL option binding 会拒绝类似凭据的字段，因此 API key、token 和 secret 不应嵌入 SQL 执行计划。
 
 Provider 调用是在 SQL 事务之外发生的外部副作用，不提供 exactly-once：失败或 retry 的 query 可能重复 request，transaction rollback 也无法撤销已经完成的 provider 调用。请让稳定 ID 随 projection 一起传递，保留可审查的输入与输出，并在重复调用会造成影响时使用幂等的下游写入。
 
