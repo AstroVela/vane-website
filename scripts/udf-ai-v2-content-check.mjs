@@ -179,7 +179,8 @@ const assertSubstringOrder = (source, values, message) => {
 }
 
 const assertConceptRole = (source, message) => {
-  const headings = markdownLines(source)
+  const lines = markdownLines(source)
+  const headings = lines
     .map(({ text }) => text)
     .filter((line) => /^#{2,6} /.test(line))
   const catalogHeadings = headings.filter((heading) =>
@@ -193,14 +194,49 @@ const assertConceptRole = (source, message) => {
     `${message} should not contain signature or parameter-catalog headings`,
   )
 
-  const tutorialHeadings = headings.filter((heading) =>
-    /(?:tutorial|walkthrough|step[- ]by[- ]step|教程|分步操作|完整流程)/i.test(heading),
+  const numberedStepHeadings = headings.filter((heading) =>
+    /^#{2,6}\s+(?:\d+[.)]\s+|Step\s+\d+\b|第\s*(?:\d+|[一二三四五六七八九十]+)\s*步|步骤\s*(?:\d+|[一二三四五六七八九十]+))/i.test(
+      heading,
+    ),
   )
-  assert.deepEqual(tutorialHeadings, [], `${message} should not contain a tutorial section`)
-  const numberedSteps = markdownLines(source).filter(({ text }) => /^\s*\d+\.\s+/.test(text))
-  assert.ok(
-    numberedSteps.length < 3,
+  assert.deepEqual(
+    numberedStepHeadings,
+    [],
+    `${message} should not contain a numbered step heading`,
+  )
+
+  const tutorialHeadingPattern =
+    /^#{2,6}\s+.*(?:tutorial|walkthrough|step[- ]by[- ]step|workflow|教程|分步操作|完整流程|工作流|操作流程)/i
+  const hasProceduralTutorial = lines.some(({ text }, index) => {
+    if (!tutorialHeadingPattern.test(text)) return false
+
+    const level = text.match(/^#+/)?.[0].length ?? 6
+    const end = lines.findIndex(
+      ({ text: candidate }, candidateIndex) =>
+        candidateIndex > index &&
+        /^#{2,6}\s+/.test(candidate) &&
+        (candidate.match(/^#+/)?.[0].length ?? 6) <= level,
+    )
+    const sectionLines = lines.slice(index + 1, end === -1 ? undefined : end)
+    return sectionLines.filter(({ text: line }) => /^\s*\d+[.)]\s+/.test(line)).length >= 3
+  })
+  assert.equal(
+    hasProceduralTutorial,
+    false,
     `${message} should not contain an end-to-end numbered tutorial`,
+  )
+}
+
+const assertNoLegacyConceptClaims = (udfSource, aiSource, message) => {
+  assert.doesNotMatch(
+    udfSource,
+    /(?:Vane(?: Data)?\s+exposes\s+three\s+relation-level\s+UDF APIs?|Vane Data\s*(?:暴露|提供)(?:了)?\s*三(?:个|种)\s*relation\s*级别的?\s*UDF API)/i,
+    `${message} should reject the legacy three-relation UDF claim`,
+  )
+  assert.doesNotMatch(
+    aiSource,
+    /(?:AI Functions?\s+turn\s+common model operations into relation methods?|AI Function\s*(?:将|把)\s*常见模型操作\s*(?:封装|转换|变成)(?:为)?\s*relation\s*方法)/i,
+    `${message} should reject the legacy relation-method AI claim`,
   )
 }
 
@@ -623,10 +659,65 @@ assert.throws(
   /signature or parameter-catalog headings/,
   'Concept role guards should reject a parameter catalog',
 )
+assert.doesNotThrow(
+  () => assertConceptRole('## Design Reasons\n1. Stable rows\n2. Explicit shape\n3. Clear failures', 'Concept-reasons probe'),
+  'Concept role guards should allow a non-procedural ordered reasons list',
+)
 assert.throws(
-  () => assertConceptRole('## Execution\n1. Configure\n2. Run\n3. Write', 'Concept-tutorial probe'),
+  () => assertConceptRole('## End-to-End Tutorial\n1. Configure\n2. Run\n3. Write', 'Concept-tutorial probe'),
   /end-to-end numbered tutorial/,
   'Concept role guards should reject an ordered tutorial',
+)
+assert.throws(
+  () => assertConceptRole('## 1. Register the alias', 'Concept-numeric-heading probe'),
+  /numbered step heading/,
+  'Concept role guards should reject a numeric step heading',
+)
+assert.throws(
+  () => assertConceptRole('## Step 1: Register the alias', 'Concept-step-heading probe'),
+  /numbered step heading/,
+  'Concept role guards should reject an English numbered step heading',
+)
+assert.throws(
+  () => assertConceptRole('## 第一步：注册 alias', 'Chinese Concept-step-heading probe'),
+  /numbered step heading/,
+  'Concept role guards should reject a Chinese numbered step heading',
+)
+assert.throws(
+  () => assertNoLegacyConceptClaims(
+    'Vane exposes three relation-level UDF APIs.',
+    '',
+    'English legacy UDF probe',
+  ),
+  /legacy three-relation UDF claim/,
+  'Concept guards should reject the exact legacy English UDF claim',
+)
+assert.throws(
+  () => assertNoLegacyConceptClaims(
+    '',
+    'AI Functions turn common model operations into relation methods.',
+    'English legacy AI probe',
+  ),
+  /legacy relation-method AI claim/,
+  'Concept guards should reject the exact legacy English AI claim',
+)
+assert.throws(
+  () => assertNoLegacyConceptClaims(
+    'Vane Data 暴露了三个 relation 级别的 UDF API。',
+    '',
+    'Chinese legacy UDF probe',
+  ),
+  /legacy three-relation UDF claim/,
+  'Concept guards should reject the legacy Chinese UDF claim',
+)
+assert.throws(
+  () => assertNoLegacyConceptClaims(
+    '',
+    'Vane Data AI Function 将常见模型操作封装为 relation 方法。',
+    'Chinese legacy AI probe',
+  ),
+  /legacy relation-method AI claim/,
+  'Concept guards should reject the legacy Chinese AI claim',
 )
 
 assertOrdered(
@@ -941,6 +1032,9 @@ for (const type of ['OpenAIProviderOptions', 'GoogleProviderOptions', 'VLLMProvi
 
 assert.match(udfReferenceZh, /查询作用域[\s\S]*actor 内[\s\S]*(临时|非持久)/, 'Chinese UDF reference should explain the state scope')
 assert.match(aiReferenceZh, /环境变量[\s\S]*(凭据|API key)/, 'Chinese AI reference should explain credential handling')
+
+assertNoLegacyConceptClaims(udfConcept, aiConcept, 'English core Concepts')
+assertNoLegacyConceptClaims(udfConceptZh, aiConceptZh, 'Chinese core Concepts')
 
 assertConceptHeadingParity(
   udfConcept,
