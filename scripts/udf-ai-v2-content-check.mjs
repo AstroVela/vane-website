@@ -556,12 +556,74 @@ const codeBlockContaining = (source, pattern, message) => {
   return block
 }
 
-const assertNoCredentialSqlFields = (block, message) => {
-  assert.doesNotMatch(
-    block,
-    /(?:\b(?:api_key|access_token|auth_token|bearer_token|token|password|secret|secret_key|authorization)\s*:=|["'](?:api_key|access_token|auth_token|bearer_token|token|password|secret|secret_key|authorization)["']\s*:)/i,
-    `${message}: SQL options should not contain credential-like fields`,
+const inlineCredentialKeys = new Set([
+  'accesskey',
+  'accesskeyid',
+  'accesstoken',
+  'apikey',
+  'apikeyid',
+  'apitoken',
+  'authorization',
+  'authtoken',
+  'bearertoken',
+  'clientsecret',
+  'clientsecretvalue',
+  'credential',
+  'credentials',
+  'password',
+  'passwd',
+  'privatekey',
+  'secret',
+  'secretkey',
+  'token',
+])
+
+const normalizedOptionKey = (key) => String(key).toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const isInlineCredentialKey = (key) => {
+  const normalized = normalizedOptionKey(key)
+  return [...inlineCredentialKeys].some(
+    (sensitive) => normalized === sensitive || normalized.endsWith(sensitive),
   )
+}
+
+const assertNoInlineCredentialObjectKeys = (value, message, path = 'options') => {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      assertNoInlineCredentialObjectKeys(item, message, `${path}[${index}]`)
+    })
+    return
+  }
+  if (!value || typeof value !== 'object') return
+
+  for (const [key, item] of Object.entries(value)) {
+    assert.equal(
+      isInlineCredentialKey(key),
+      false,
+      `${message}: SQL options should not contain credential-like fields at ${path}.${key}`,
+    )
+    assertNoInlineCredentialObjectKeys(item, message, `${path}.${key}`)
+  }
+}
+
+const assertNoCredentialSqlFields = (block, message) => {
+  const sqlKeys = [
+    ...block.matchAll(/(?:(["'])([^"']+)\1|([A-Za-z_][A-Za-z0-9_-]*))\s*:=/g),
+  ].map((match) => match[2] ?? match[3])
+  for (const key of sqlKeys) {
+    assert.equal(
+      isInlineCredentialKey(key),
+      false,
+      `${message}: SQL options should not contain credential-like fields at options.${key}`,
+    )
+  }
+
+  for (const match of block.matchAll(
+    /\b(?:engine_args_json|generate_args_json)\s*:=\s*'((?:''|[^'])*)'/gi,
+  )) {
+    const value = JSON.parse(match[1].replace(/''/g, "'"))
+    assertNoInlineCredentialObjectKeys(value, message)
+  }
 }
 
 const assertQuickstartTask = (source, locale, message) => {
@@ -1012,21 +1074,47 @@ const assertEmbeddingGuideTask = (source, locale, message) => {
   )
   assertExplicitParquetFileWrites(source, message)
 
-  const normalized = collapseWrappedMarkdown(source)
-  const requirements = locale === 'en'
-    ? [
-        /SQL `concurrency`[^.\n]{0,100}(?:maps|map)[^.\n]{0,80}(?:AI )?actor count/i,
-        /\bIt is not a per-row option/i,
-        /no direct SQL Relation or table-function API/i,
-        /helper does not promise to retain[^.\n]{0,160}`document_id`/i,
-      ]
-    : [
-        /SQL `concurrency`[^。\n]{0,100}(?:映射|对应)[^。\n]{0,80}actor 数/i,
-        /它不是逐行 option/i,
-        /不为[^。\n]{0,100}直接的 SQL Relation 或 table-function API/i,
-        /helper 不承诺保留[^。\n]{0,160}`document_id`/i,
-      ]
-  assertPatterns(normalized, requirements, `${message} concurrency and capability boundary`)
+  const concurrencyHeading = locale === 'en'
+    ? /^## .*Batch.*Concurrency.*Worker/i
+    : /^## .*Batch.*并发.*Worker/i
+  const concurrencySection = collapseWrappedMarkdown(
+    conceptSection(source, concurrencyHeading, `${message} concurrency section`),
+  )
+  assertPatterns(
+    concurrencySection,
+    locale === 'en'
+      ? [/SQL `concurrency`/, /AI actor count/i, /per-row option/i, /max_api_concurrency/]
+      : [/SQL `concurrency`/, /AI actor 数/i, /逐行 option/i, /max_api_concurrency/],
+    `${message} concurrency boundary`,
+  )
+
+  const relationHeading = locale === 'en'
+    ? /^## .*Relation Embedding.*(?:Long-Text|Chunking)/i
+    : /^## (?=.*Relation Embedding)(?=.*长文本分块).*$/i
+  const relationSection = collapseWrappedMarkdown(
+    conceptSection(source, relationHeading, `${message} Relation embedding section`),
+  )
+  assertPatterns(
+    relationSection,
+    locale === 'en'
+      ? [
+          /max_chunk_chars/,
+          /chunk_overlap_chars/,
+          /SQL Relation/,
+          /table-function API/,
+          /does not promise to retain/i,
+          /document_id/,
+        ]
+      : [
+          /max_chunk_chars/,
+          /chunk_overlap_chars/,
+          /SQL Relation/,
+          /table-function API/,
+          /不承诺保留/,
+          /document_id/,
+        ],
+    `${message} Relation capability boundary`,
+  )
 }
 
 const assertGpuGuideTask = (source, locale, message) => {
@@ -1096,31 +1184,72 @@ const assertGpuGuideTask = (source, locale, message) => {
   )
   assertExplicitParquetFileWrites(source, message)
 
-  const normalized = collapseWrappedMarkdown(source)
-  const requirements = locale === 'en'
-    ? [
-        /SQL `concurrency=N` and typed `VLLMProviderOptions\(concurrency=N\)`[^.\n]{0,100}outer AI UDF `actor_number=N`/i,
-        /raw provider-options dict[^.\n]{0,180}`concurrency`[^.\n]{0,100}`use_ray=True`[^.\n]{0,180}inner native vLLM pool/i,
-        /SQL's same-name `concurrency` field is outer-only/i,
-        /rel\.prompt` only when[^.\n]{0,240}(?:structured output|multimodal)[^.\n]{0,240}(?:backend|actor-pool)/i,
-        /does not expose a direct SQL Relation API or SQL table function/i,
-      ]
-    : [
-        /SQL `concurrency=N` 与 typed `VLLMProviderOptions\(concurrency=N\)`[^。\n]{0,100}外层 AI UDF 的 `actor_number=N`/i,
-        /raw provider-options dict[^。\n]{0,180}`concurrency`[^。\n]{0,100}`use_ray=True`[^。\n]{0,180}内层原生 vLLM pool/i,
-        /SQL 中的同名 `concurrency` 字段只配置外层/i,
-        /只有任务需要[^。\n]{0,260}(?:结构化输出|多模态)[^。\n]{0,260}(?:backend|actor-pool)[^。\n]{0,80}才使用 `rel\.prompt`/i,
-        /不提供直接 SQL Relation API 或 SQL table function/i,
-      ]
-  assertPatterns(normalized, requirements, `${message} concurrency and capability boundary`)
+  const scaleHeading = locale === 'en'
+    ? /^## .*Scale.*Resource Layers/i
+    : /^## .*扩展.*资源层/i
+  const scaleSection = collapseWrappedMarkdown(
+    conceptSection(source, scaleHeading, `${message} resource-layer section`),
+  )
+  assertPatterns(
+    scaleSection,
+    locale === 'en'
+      ? [
+          /SQL `concurrency=N`/,
+          /VLLMProviderOptions\(concurrency=N\)/,
+          /outer AI UDF/,
+          /actor_number=N/,
+          /raw provider-options dict/,
+          /use_ray=True/,
+          /inner native vLLM pool/,
+          /outer-only/,
+        ]
+      : [
+          /SQL `concurrency=N`/,
+          /VLLMProviderOptions\(concurrency=N\)/,
+          /外层 AI UDF/,
+          /actor_number=N/,
+          /raw provider-options dict/,
+          /use_ray=True/,
+          /内层原生 vLLM pool/,
+          /只配置外层/,
+        ],
+    `${message} outer and inner concurrency boundary`,
+  )
+
+  const relationHeading = locale === 'en'
+    ? /^## .*Relation Prompting.*Advanced Capabilities/i
+    : /^## .*Relation.*高级能力/i
+  const relationSection = collapseWrappedMarkdown(
+    conceptSection(source, relationHeading, `${message} Relation prompt section`),
+  )
+  assertPatterns(
+    relationSection,
+    locale === 'en'
+      ? [
+          /rel\.prompt/,
+          /structured output/i,
+          /image_columns/,
+          /execution_backend/,
+          /actor_number/,
+          /direct SQL Relation API/,
+          /SQL table function/,
+        ]
+      : [
+          /rel\.prompt/,
+          /结构化输出/,
+          /image_columns/,
+          /execution_backend/,
+          /actor_number/,
+          /直接 SQL Relation API/,
+          /SQL table function/,
+        ],
+    `${message} Relation capability boundary`,
+  )
 }
 
-const assertBilingualGuideTask = ({ label, sources, check }) => {
-  assert.deepEqual(
-    fencedCodeBlocks(sources.zh),
-    fencedCodeBlocks(sources.en),
-    `${label}: bilingual fenced-code parity`,
-  )
+const assertBilingualGuideTask = (schema) => {
+  const { label, sources, check } = schema
+  assertBilingualGuideStructure(schema)
   for (const locale of ['en', 'zh']) {
     check(
       sources[locale],
@@ -2710,18 +2839,74 @@ for (const schema of guideSchemas) {
   }
 }
 
-for (const schema of [
+const embeddingGpuGuideSchemas = [
   {
+    id: 'embeddings-at-scale',
     label: 'Embeddings at Scale Guide',
     sources: { en: embeddingsGuide, zh: embeddingsGuideZh },
+    headings: {
+      en: [
+        /^## (?=.*\bSQL\b)(?=.*\bEmbedding\b).*$/i,
+        /^## .*Vector (?:Shape|Dimensions?).*Normalization/i,
+        /^## .*Batch.*Concurrency.*Worker/i,
+        /^## .*Python Expression/i,
+        /^## .*Transformers.*(?:Local|Ray)/i,
+        /^## .*Outputs.*(?:Reviewable|Idempotent)/i,
+        /^## .*Relation Embedding.*(?:Long-Text|Chunking)/i,
+        /^## .*Custom Relation UDF.*Table-Shaped/i,
+      ],
+      zh: [
+        /^## (?=.*SQL)(?=.*Embedding).*$/i,
+        /^## .*向量.*归一化/,
+        /^## .*Batch.*并发.*Worker/i,
+        /^## .*Python Expression/i,
+        /^## (?=.*Transformers)(?=.*(?:本地|Ray)).*$/i,
+        /^## .*输出.*(?:审查|幂等)/,
+        /^## (?=.*Relation Embedding)(?=.*长文本分块).*$/i,
+        /^## .*自定义 Relation UDF.*表形/i,
+      ],
+    },
     check: assertEmbeddingGuideTask,
   },
   {
+    id: 'gpu-inference',
     label: 'GPU Inference Guide',
     sources: { en: gpuGuide, zh: gpuGuideZh },
+    headings: {
+      en: [
+        /^## .*Prepare.*Candidate Slice/i,
+        /^## (?=.*\bSQL\b)(?=.*\bvLLM\b)(?=.*\bGeneration\b).*$/i,
+        /^## .*Validate.*(?:Review|Write)/i,
+        /^## .*Python Expression/i,
+        /^## .*Scale.*Resource Layers/i,
+        /^### .*Local.*Ray.*Execution/i,
+        /^### .*Reuse.*(?:Actors?|Engines?)/i,
+        /^### .*Prefixes?.*Caches?/i,
+        /^### .*Batch Size.*Concurrency/i,
+        /^## .*Operate.*(?:Model Calls|Writes)/i,
+        /^## .*Relation Prompting.*Advanced Capabilities/i,
+        /^## .*Next Steps/i,
+      ],
+      zh: [
+        /^## .*候选切片/,
+        /^## (?=.*SQL)(?=.*vLLM)(?=.*生成).*$/i,
+        /^## .*校验.*(?:审查|写出)/,
+        /^## .*Python Expression/i,
+        /^## .*扩展.*资源层/,
+        /^### .*本地.*Ray.*执行/,
+        /^### .*复用.*(?:actor|engine)/i,
+        /^### .*前缀.*缓存/,
+        /^### .*batch size.*并发/i,
+        /^## .*安全运维.*(?:模型调用|写出)/,
+        /^## .*Relation.*高级能力/i,
+        /^## .*后续/,
+      ],
+    },
     check: assertGpuGuideTask,
   },
-]) {
+]
+
+for (const schema of embeddingGpuGuideSchemas) {
   assertBilingualGuideTask(schema)
 }
 
@@ -2842,6 +3027,47 @@ assert.throws(
   ),
   /write_parquet file path/,
   'GPU guide guards should reject a directory-only write_parquet destination',
+)
+
+for (const [label, block] of [
+  [
+    'client_secret struct field',
+    "```sql\nSELECT ai_prompt(prompt, struct_pack(client_secret := 'inline'))\n```",
+  ],
+  [
+    'hf_token struct field',
+    "```sql\nSELECT ai_prompt(prompt, struct_pack(hf_token := 'inline'))\n```",
+  ],
+  [
+    'nested registry-token JSON field',
+    "```sql\nSELECT ai_prompt(prompt, struct_pack(engine_args_json := '{\"registry\": {\"registry-token\": \"inline\"}}'))\n```",
+  ],
+  [
+    'nested private_key JSON field',
+    "```sql\nSELECT ai_prompt(prompt, struct_pack(engine_args_json := '{\"auth\": {\"private_key\": \"inline\"}}'))\n```",
+  ],
+]) {
+  assert.throws(
+    () => assertNoCredentialSqlFields(block, `${label} mutation`),
+    /credential-like fields/,
+    `SQL credential guards should reject ${label}`,
+  )
+}
+
+const embeddingsHeadingOrderMutation = embeddingsGuide
+  .replace('## Complete a Hosted Embedding Run with SQL', '## __EMBEDDING_HEADING_SWAP__')
+  .replace('## Use Python Expression as an Alternate', '## Complete a Hosted Embedding Run with SQL')
+  .replace('## __EMBEDDING_HEADING_SWAP__', '## Use Python Expression as an Alternate')
+assert.throws(
+  () => {
+    const schema = embeddingGpuGuideSchemas.find(({ id }) => id === 'embeddings-at-scale')
+    assertBilingualGuideStructure({
+      ...schema,
+      sources: { en: embeddingsHeadingOrderMutation, zh: embeddingsGuideZh },
+    })
+  },
+  /semantic heading/,
+  'Embedding heading guards should reject Python Expression before SQL',
 )
 
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
