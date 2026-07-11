@@ -68,6 +68,17 @@ const section = (source, heading, nextHeading) => {
   return source.slice(start, end)
 }
 
+const sectionMatching = (source, headingPattern, nextHeadingPattern) => {
+  const lines = markdownLines(source)
+  const start = lines.find(({ text }) => headingPattern.test(text))?.offset ?? -1
+  assert.notEqual(start, -1, `missing section heading matching ${headingPattern}`)
+  const end = nextHeadingPattern
+    ? lines.find(({ text, offset }) => offset > start && nextHeadingPattern.test(text))?.offset
+    : source.length
+  assert.ok(end > start, `invalid section boundary for ${headingPattern}`)
+  return source.slice(start, end)
+}
+
 const assertReferenceIntroduction = (source, firstHeading, requirements, message) => {
   const end = exactLineIndex(source, firstHeading)
   assert.notEqual(end, -1, `${message}: missing exact first heading ${firstHeading}`)
@@ -157,11 +168,180 @@ const assertNoInternalSymbols = (source, message) => {
   )
 }
 
+const assertSubstringOrder = (source, values, message) => {
+  let cursor = -1
+
+  for (const value of values) {
+    const next = source.indexOf(value, cursor + 1)
+    assert.ok(next > cursor, `${message}: expected ${value} after the previous item`)
+    cursor = next
+  }
+}
+
+const assertConceptRole = (source, message) => {
+  const headings = markdownLines(source)
+    .map(({ text }) => text)
+    .filter((line) => /^#{2,6} /.test(line))
+  const catalogHeadings = headings.filter((heading) =>
+    /(?:signatures?|parameter(?: catalog)?s?|option fields?|签名|参数(?:目录|清单)?|选项字段)/i.test(
+      heading,
+    ),
+  )
+  assert.deepEqual(
+    catalogHeadings,
+    [],
+    `${message} should not contain signature or parameter-catalog headings`,
+  )
+
+  const tutorialHeadings = headings.filter((heading) =>
+    /(?:tutorial|walkthrough|step[- ]by[- ]step|教程|分步操作|完整流程)/i.test(heading),
+  )
+  assert.deepEqual(tutorialHeadings, [], `${message} should not contain a tutorial section`)
+  const numberedSteps = markdownLines(source).filter(({ text }) => /^\s*\d+\.\s+/.test(text))
+  assert.ok(
+    numberedSteps.length < 3,
+    `${message} should not contain an end-to-end numbered tutorial`,
+  )
+}
+
+const assertConceptRoleLinks = (
+  source,
+  referencePath,
+  guidePath,
+  referenceCue,
+  guideCue,
+  message,
+) => {
+  assert.match(
+    source,
+    new RegExp(`${referenceCue}[^\\n]*\\(${escapeRegExp(referencePath)}\\)`, 'i'),
+    `${message} should send exact signatures to its matching Reference`,
+  )
+  assert.match(
+    source,
+    new RegExp(`${guideCue}[^\\n]*\\(${escapeRegExp(guidePath)}\\)`, 'i'),
+    `${message} should send complete tasks to its matching Guide`,
+  )
+}
+
+const assertConceptHeadingParity = (source, translatedSource, semantics, message) => {
+  const headings = (value) =>
+    markdownLines(value)
+      .map(({ text }) => text)
+      .filter((line) => /^#{2,3} /.test(line))
+
+  const sourceHeadings = headings(source)
+  const translatedHeadings = headings(translatedSource)
+  assert.deepEqual(
+    sourceHeadings.map((heading) => heading.match(/^#+/)?.[0].length),
+    translatedHeadings.map((heading) => heading.match(/^#+/)?.[0].length),
+    `${message} should use matching heading levels in both languages`,
+  )
+
+  let sourceCursor = -1
+  let translatedCursor = -1
+  for (const [token, sourcePattern, translatedPattern] of semantics) {
+    const nextSource = sourceHeadings.findIndex(
+      (heading, index) => index > sourceCursor && sourcePattern.test(heading),
+    )
+    const nextTranslated = translatedHeadings.findIndex(
+      (heading, index) => index > translatedCursor && translatedPattern.test(heading),
+    )
+    assert.ok(nextSource > sourceCursor, `${message} should place ${token} in semantic order`)
+    assert.ok(
+      nextTranslated > translatedCursor,
+      `${message} should place translated ${token} in semantic order`,
+    )
+    sourceCursor = nextSource
+    translatedCursor = nextTranslated
+  }
+}
+
+const assertConceptTokens = (source, requirements, message) => {
+  for (const [pattern, description] of requirements) {
+    assert.match(source, pattern, `${message} should ${description}`)
+  }
+}
+
+const assertUdfConceptExampleOrder = (source, message) => {
+  const blocks = fencedCodeBlocks(source)
+  assert.ok(blocks.length >= 3, `${message} should contain the SQL, Python, and Relation snippets`)
+
+  const sqlBlock = blocks[0]
+  const relationBlock = blocks.at(-1)
+  assert.match(sqlBlock, /```python\nimport vane\b/, `${message} SQL example should import vane`)
+  assert.match(sqlBlock, /con = vane\.connect\(\)/, `${message} SQL example should define con`)
+  assert.match(sqlBlock, /source = con\.sql\(/, `${message} SQL example should define source`)
+  const callable = sqlBlock.match(/def ([a-z_]\w*)\([^)]*\):/)?.[1]
+  const alias = sqlBlock.match(/alias="([a-z_]\w*)"/)?.[1]
+  assert.ok(callable, `${message} SQL example should define its callable`)
+  assert.ok(alias, `${message} SQL example should define its registered alias`)
+  assertSubstringOrder(
+    sqlBlock,
+    [`def ${callable}`, 'vane.attach_function(', 'SELECT', `${alias}(text)`, 'vane.detach_function('],
+    `${message} SQL-first UDF path`,
+  )
+  assert.match(
+    sqlBlock,
+    new RegExp(`vane\\.detach_function\\("${escapeRegExp(alias)}"`),
+    `${message} SQL example should detach the alias it registered`,
+  )
+  const pythonPattern = new RegExp(`${escapeRegExp(callable)}\\(vane\\.col\\("text"\\)\\)`)
+  const pythonIndex = blocks.findIndex((block, index) => index > 0 && pythonPattern.test(block))
+  assert.ok(
+    pythonIndex > 0 && pythonIndex < blocks.length - 1,
+    `${message} should place its Python Expression example between SQL and Relation`,
+  )
+  assert.match(
+    relationBlock,
+    /source\.(?:map_batches|flat_map|map)\(/,
+    `${message} final example should call the Relation API`,
+  )
+}
+
+const assertAiConceptExampleOrder = (source, message) => {
+  const blocks = fencedCodeBlocks(source)
+  assert.ok(blocks.length >= 3, `${message} should contain the SQL, Python, and Relation snippets`)
+
+  const sqlBlock = blocks[0]
+  const relationBlock = blocks.at(-1)
+  assert.match(sqlBlock, /```python\nimport vane\b/, `${message} SQL example should import vane`)
+  assert.match(sqlBlock, /con = vane\.connect\(\)/, `${message} SQL example should define con`)
+  assert.match(sqlBlock, /source = con\.sql\(/, `${message} SQL example should define source`)
+  assert.match(
+    sqlBlock,
+    /SELECT[\s\S]*document_id,[\s\S]*prompt,[\s\S]*ai_(?:prompt|embed)\(/,
+    `${message} first example should preserve stable source fields around a SQL AI call`,
+  )
+  assert.doesNotMatch(
+    sqlBlock,
+    /vane\.ai\.|\brel\.(?:prompt|embed_text|classify_text)\(/,
+    `${message} first example should stay on the SQL Expression entry point`,
+  )
+  const pythonIndex = blocks.findIndex(
+    (block, index) => index > 0 && /vane\.ai\.(?:prompt|embed)\(/.test(block),
+  )
+  assert.ok(
+    pythonIndex > 0 && pythonIndex < blocks.length - 1,
+    `${message} should place Python Expression AI between SQL and Relation`,
+  )
+  assert.match(
+    relationBlock,
+    /source\.(?:prompt|embed_text|classify_text)\(/,
+    `${message} final example should use a Relation-only AI capability`,
+  )
+}
+
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
   udfReferenceZh: 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/reference/udf-api.mdx',
   aiReferenceZh: 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/reference/ai-api.mdx',
+  udfConcept: 'docs/data/concepts/udfs.mdx',
+  aiConcept: 'docs/data/concepts/ai-functions.mdx',
+  udfConceptZh: 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/udfs.mdx',
+  aiConceptZh:
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
 }
 
 for (const path of Object.values(paths)) {
@@ -172,8 +352,10 @@ const udfReference = read(paths.udfReference)
 const aiReference = read(paths.aiReference)
 const udfReferenceZh = read(paths.udfReferenceZh)
 const aiReferenceZh = read(paths.aiReferenceZh)
-const udfConcept = read('docs/data/concepts/udfs.mdx')
-const aiConcept = read('docs/data/concepts/ai-functions.mdx')
+const udfConcept = read(paths.udfConcept)
+const aiConcept = read(paths.aiConcept)
+const udfConceptZh = read(paths.udfConceptZh)
+const aiConceptZh = read(paths.aiConceptZh)
 const architecture = read('docs/data/concepts/architecture.mdx')
 const executionModel = read('docs/data/concepts/execution-model.mdx')
 const sqlVsPython = read('docs/data/concepts/sql-vs-python.mdx')
@@ -299,6 +481,25 @@ const aiSharedRuntimeRequirementsZh = [
   '30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。',
   'Provider SDK 的 retry 和 backoff 限制可能不同。',
 ]
+const udfConceptHeadingSemantics = [
+  ['Expression API', /^## .*Expression API/i, /^## .*Expression API/i],
+  ['recommended SQL entry point', /^### .*SQL.*(?:Recommended|Default)/i, /^### .*SQL.*(?:推荐|默认)/],
+  ['Python entry point', /^### .*Python/i, /^### .*Python/i],
+  ['Relation API', /^## .*Relation API/i, /^## .*Relation API/i],
+  ['shared planning and execution', /^## .*Planning.*Execution/i, /^## .*规划.*执行/],
+  ['actor reuse and state', /^## .*Actor.*(?:State|Mutable)/i, /^## .*Actor.*状态/i],
+  ['state, failure, and effects', /^## .*State.*Failure.*Effects/i, /^## .*状态.*失败.*副作用/],
+  ['model choice', /^## .*Choosing.*Model/i, /^## .*选择.*模型/],
+]
+const aiConceptHeadingSemantics = [
+  ['Expression API', /^## .*Expression API/i, /^## .*Expression API/i],
+  ['recommended SQL entry point', /^### .*SQL.*(?:Recommended|Default)/i, /^### .*SQL.*(?:推荐|默认)/],
+  ['Python entry point', /^### .*Python/i, /^### .*Python/i],
+  ['Relation API', /^## .*Relation API/i, /^## .*Relation API/i],
+  ['provider and runner lifecycle', /^## .*Provider.*Runner.*Lifecycle/i, /^## .*Provider.*Runner.*生命周期/i],
+  ['credentials and effects', /^## .*Credentials.*Effects/i, /^## .*凭据.*副作用/],
+  ['model choice', /^## .*Choosing.*Model/i, /^## .*选择.*模型/],
+]
 
 assert.throws(
   () => assertOrdered(
@@ -416,6 +617,16 @@ assert.throws(
   () => assertNoInternalSymbols('请调用 _duckdb 内部 builder', 'internal-symbol mutation probe'),
   /internal protocol symbols/,
   'internal-symbol guards should reject internal API exposure in translated prose',
+)
+assert.throws(
+  () => assertConceptRole('## Parameters\n1. Configure\n2. Run', 'Concept-role probe'),
+  /signature or parameter-catalog headings/,
+  'Concept role guards should reject a parameter catalog',
+)
+assert.throws(
+  () => assertConceptRole('## Execution\n1. Configure\n2. Run\n3. Write', 'Concept-tutorial probe'),
+  /end-to-end numbered tutorial/,
+  'Concept role guards should reject an ordered tutorial',
 )
 
 assertOrdered(
@@ -731,8 +942,289 @@ for (const type of ['OpenAIProviderOptions', 'GoogleProviderOptions', 'VLLMProvi
 assert.match(udfReferenceZh, /查询作用域[\s\S]*actor 内[\s\S]*(临时|非持久)/, 'Chinese UDF reference should explain the state scope')
 assert.match(aiReferenceZh, /环境变量[\s\S]*(凭据|API key)/, 'Chinese AI reference should explain credential handling')
 
-assert.doesNotMatch(udfConcept, /exposes three relation-level UDF APIs/i, 'UDF concept should not claim a relation-only API surface')
-assert.doesNotMatch(aiConcept, /turn common model operations into relation methods/i, 'AI concept should not claim a relation-only API surface')
+assertConceptHeadingParity(
+  udfConcept,
+  udfConceptZh,
+  udfConceptHeadingSemantics,
+  'bilingual UDF Concepts',
+)
+assertConceptHeadingParity(
+  aiConcept,
+  aiConceptZh,
+  aiConceptHeadingSemantics,
+  'bilingual AI Function Concepts',
+)
+
+for (const [source, name, introPattern, defaultPattern, noDirectPattern, threeModelPattern] of [
+  [
+    udfConcept,
+    'UDF Concepts',
+    /two (?:semantic output|output|semantic) models[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:not|rather than)[^\n]*(?:three|third)/i,
+    /SQL[\s\S]*(?:recommended|default)[\s\S]*entry point/i,
+    /(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?)|SQL[^\n]*(?:Relation|table[- ]functions?)[^\n]*(?:unavailable|not (?:exposed|provided)))/i,
+    /\bthree\s+(?:(?:parallel|peer|complementary|top-level)\s+)*(?:APIs?|API models?|API surfaces?|surfaces?)\b/i,
+  ],
+  [
+    udfConceptZh,
+    'Chinese UDF Concepts',
+    /两种(?:语义输出|输出|语义)模型[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:不是|并非|而非)[^\n]*三(?:个|种)/,
+    /SQL[\s\S]*(?:推荐|默认)[\s\S]*入口/,
+    /(?:(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)|SQL[^\n]*(?:Relation|table[- ]function)[^\n]*(?:不提供|未提供|不可用))/,
+    /三(?:个|种)(?:(?:顶层|并列|平行|互补|同级)的?)?\s*(?:API(?:\s*模型|\s*入口|\s*表面)?|接口|入口|模型)/,
+  ],
+  [
+    aiConcept,
+    'AI Function Concepts',
+    /two (?:semantic output|output|semantic) models[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:not|rather than)[^\n]*(?:three|third)/i,
+    /SQL[\s\S]*(?:recommended|default)[\s\S]*entry point/i,
+    /(?:(?:no direct|does not (?:expose|provide)|is unavailable)[^\n]*SQL[^\n]*(?:Relation|table[- ]functions?)|SQL[^\n]*(?:Relation|table[- ]functions?)[^\n]*(?:unavailable|not (?:exposed|provided)))/i,
+    /\bthree\s+(?:(?:parallel|peer|complementary|top-level)\s+)*(?:APIs?|API models?|API surfaces?|surfaces?)\b/i,
+  ],
+  [
+    aiConceptZh,
+    'Chinese AI Function Concepts',
+    /两种(?:语义输出|输出|语义)模型[\s\S]*Expression API[\s\S]*Relation API[\s\S]*(?:不是|并非|而非)[^\n]*三(?:个|种)/,
+    /SQL[\s\S]*(?:推荐|默认)[\s\S]*入口/,
+    /(?:(?:不提供|未提供|没有|不可用)[^\n]*SQL[^\n]*(?:Relation|table[- ]function)|SQL[^\n]*(?:Relation|table[- ]function)[^\n]*(?:不提供|未提供|不可用))/,
+    /三(?:个|种)(?:(?:顶层|并列|平行|互补|同级)的?)?\s*(?:API(?:\s*模型|\s*入口|\s*表面)?|接口|入口|模型)/,
+  ],
+]) {
+  assertApiModels(source, ['## Expression API', '## Relation API'], name)
+  assertConceptRole(source, name)
+  const expressionStart = exactLineIndex(source, '## Expression API')
+  assert.match(
+    source.slice(0, expressionStart),
+    introPattern,
+    `${name} should open with the canonical two-model explanation`,
+  )
+  assert.match(
+    section(source, '## Expression API', '## Relation API'),
+    defaultPattern,
+    `${name} should make SQL the recommended default inside Expression API`,
+  )
+  assert.match(
+    source,
+    noDirectPattern,
+    `${name} should explicitly reject a direct SQL Relation or table-function API`,
+  )
+  const affirmativeClaims = source
+    .split('\n')
+    .filter((line) => !/(?:\b(?:does not|do not|not|no|rather than|without)\b|不是|并非|而非|不提供|未提供|没有)/i.test(line))
+    .join('\n')
+  assert.doesNotMatch(
+    affirmativeClaims,
+    threeModelPattern,
+    `${name} should not describe three peer API models`,
+  )
+}
+
+for (const [source, referencePath, guidePath, referenceCue, guideCue, name] of [
+  [
+    udfConcept,
+    '/docs/data/reference/udf-api',
+    '/docs/data/guides/custom-python-udfs',
+    '(?:signatures?|parameters?|lookup facts?)',
+    '(?:complete (?:task|workflow)|end-to-end workflow)',
+    'UDF Concepts',
+  ],
+  [
+    udfConceptZh,
+    '/zh-CN/docs/data/reference/udf-api',
+    '/zh-CN/docs/data/guides/custom-python-udfs',
+    '(?:签名|参数|查阅信息)',
+    '(?:完整任务|完整工作流|端到端工作流)',
+    'Chinese UDF Concepts',
+  ],
+  [
+    aiConcept,
+    '/docs/data/reference/ai-api',
+    '/docs/data/guides/ai-functions',
+    '(?:signatures?|parameters?|lookup facts?)',
+    '(?:complete (?:task|workflow)|end-to-end workflow)',
+    'AI Function Concepts',
+  ],
+  [
+    aiConceptZh,
+    '/zh-CN/docs/data/reference/ai-api',
+    '/zh-CN/docs/data/guides/ai-functions',
+    '(?:签名|参数|查阅信息)',
+    '(?:完整任务|完整工作流|端到端工作流)',
+    'Chinese AI Function Concepts',
+  ],
+]) {
+  assertConceptRoleLinks(
+    source,
+    referencePath,
+    guidePath,
+    referenceCue,
+    guideCue,
+    name,
+  )
+}
+
+assertUdfConceptExampleOrder(udfConcept, 'UDF Concepts')
+assertUdfConceptExampleOrder(udfConceptZh, 'Chinese UDF Concepts')
+assertAiConceptExampleOrder(aiConcept, 'AI Function Concepts')
+assertAiConceptExampleOrder(aiConceptZh, 'Chinese AI Function Concepts')
+assert.deepEqual(
+  fencedCodeBlocks(udfConceptZh),
+  fencedCodeBlocks(udfConcept),
+  'bilingual UDF Concepts should contain identical illustrative snippets',
+)
+assert.deepEqual(
+  fencedCodeBlocks(aiConceptZh),
+  fencedCodeBlocks(aiConcept),
+  'bilingual AI Function Concepts should contain identical illustrative snippets',
+)
+
+const udfExpressionConcept = sectionMatching(udfConcept, /^## .*Expression API/i, /^## .*Relation API/i)
+const udfRelationConcept = sectionMatching(udfConcept, /^## .*Relation API/i, /^## .*Planning.*Execution/i)
+const udfReuseConcept = sectionMatching(udfConcept, /^## .*Actor.*(?:State|Mutable)/i, /^## .*State.*Failure.*Effects/i)
+const udfStateConcept = sectionMatching(udfConcept, /^## .*State.*Failure.*Effects/i, /^## .*Choosing.*Model/i)
+const udfExpressionConceptZh = sectionMatching(udfConceptZh, /^## .*Expression API/i, /^## .*Relation API/i)
+const udfRelationConceptZh = sectionMatching(udfConceptZh, /^## .*Relation API/i, /^## .*规划.*执行/)
+const udfReuseConceptZh = sectionMatching(udfConceptZh, /^## .*Actor.*状态/i, /^## .*状态.*失败.*副作用/)
+const udfStateConceptZh = sectionMatching(udfConceptZh, /^## .*状态.*失败.*副作用/, /^## .*选择.*模型/)
+
+assertConceptTokens(udfExpressionConcept, [
+  [/`?SELECT`? projection/i, 'explain projection placement'],
+  [/row-preserving/i, 'explain normal row preservation'],
+  [/row_preserving=False/i, 'name the Python batch exception'],
+  [/change cardinality/i, 'explain that the exception can change cardinality'],
+  [/sole top-level projection/i, 'limit the exception to the sole top-level projection'],
+  [/SQL aliases?/i, 'cover registered SQL aliases'],
+  [/v1/i, 'scope SQL alias row preservation to v1'],
+], 'UDF Expression concept')
+assertConceptTokens(udfRelationConcept, [
+  [/table-shaped/i, 'explain table-shaped output'],
+  [/multi-column/i, 'explain multi-column output'],
+  [/cardinality/i, 'explain cardinality change'],
+  [/rel\.map_batches/i, 'name rel.map_batches'],
+  [/rel\.flat_map/i, 'name rel.flat_map'],
+  [/rel\.map\b/i, 'name rel.map'],
+  [/row-wise scalar/i, 'describe rel.map as row-wise scalar'],
+], 'UDF Relation concept')
+assertConceptTokens(udfReuseConcept, [
+  [/actor-backed/i, 'explain actor-backed reuse'],
+  [/callable/i, 'identify callable reuse'],
+  [/model/i, 'identify model reuse'],
+  [/client/i, 'identify client reuse'],
+  [/vane\.cls/i, 'contrast vane.cls'],
+  [/(?:narrower|mutable-state)/i, 'identify the narrower mutable-state contract'],
+], 'UDF actor-reuse concept')
+assertConceptTokens(udfStateConcept, [
+  [/query-scoped/i, 'scope state to the query'],
+  [/actor-local/i, 'scope state to the actor'],
+  [/ephemeral/i, 'mark state ephemeral'],
+  [/checkpoint/i, 'reject checkpointing'],
+  [/global state/i, 'reject global state'],
+  [/keyed state/i, 'reject keyed state'],
+  [/exactly-once/i, 'reject exactly-once semantics'],
+  [/actor loss/i, 'explain actor loss'],
+  [/query fail/i, 'explain query failure'],
+  [/external effects/i, 'identify external effects'],
+  [/not rolled back/i, 'reject transactional rollback'],
+  [/no stable global row order/i, 'reject stable global row order'],
+], 'UDF state and failure concept')
+assert.match(udfConcept, /Arrow batches/i, 'UDF Concepts should explain Arrow batches')
+
+assertConceptTokens(udfExpressionConceptZh, [
+  [/`?SELECT`? projection/i, '解释 projection 位置'],
+  [/(?:保持行数|row-preserving)/, '解释通常的行数保持语义'],
+  [/row_preserving=False/, '指出 Python batch 例外'],
+  [/(?:改变基数|改变行数)/, '说明例外可以改变基数'],
+  [/(?:唯一|单独).*顶层 projection/, '限制例外只能作为唯一顶层 projection'],
+  [/SQL alias/i, '涵盖注册的 SQL alias'],
+  [/v1/i, '把 SQL alias 行数语义限定在 v1'],
+], 'Chinese UDF Expression concept')
+assertConceptTokens(udfRelationConceptZh, [
+  [/(?:表形|表状)/, '解释表形输出'],
+  [/多列/, '解释多列输出'],
+  [/基数/, '解释基数变化'],
+  [/rel\.map_batches/, '提及 rel.map_batches'],
+  [/rel\.flat_map/, '提及 rel.flat_map'],
+  [/rel\.map\b/, '提及 rel.map'],
+  [/逐行 scalar/, '准确描述 rel.map'],
+], 'Chinese UDF Relation concept')
+assertConceptTokens(udfReuseConceptZh, [
+  [/actor-backed/i, '解释 actor-backed 复用'],
+  [/callable/i, '提及 callable 复用'],
+  [/model/i, '提及 model 复用'],
+  [/client/i, '提及 client 复用'],
+  [/vane\.cls/i, '对比 vane.cls'],
+  [/(?:更窄|可变状态)/, '指出更窄的可变状态契约'],
+], 'Chinese UDF actor-reuse concept')
+assertConceptTokens(udfStateConceptZh, [
+  [/query-scoped/i, '限定 query scope'],
+  [/actor-local/i, '限定 actor scope'],
+  [/ephemeral/i, '说明状态是临时的'],
+  [/checkpoint/i, '否定 checkpoint'],
+  [/global state/i, '否定 global state'],
+  [/keyed state/i, '否定 keyed state'],
+  [/exactly-once/i, '否定 exactly-once'],
+  [/actor 丢失/, '解释 actor 丢失'],
+  [/query 失败/, '解释 query 失败'],
+  [/外部副作用/, '指出外部副作用'],
+  [/回滚/, '解释回滚边界'],
+  [/没有稳定的全局行顺序/, '否定稳定的全局行顺序'],
+], 'Chinese UDF state and failure concept')
+assert.match(udfConceptZh, /Arrow batch/i, 'Chinese UDF Concepts should explain Arrow batches')
+
+for (const [source, name, expressionPattern, relationPattern, lifecyclePattern, effectsPattern, requirements] of [
+  [aiConcept, 'AI Function Concepts', /^## .*Expression API/i, /^## .*Relation API/i, /^## .*Provider.*Runner.*Lifecycle/i, /^## .*Credentials.*Effects/i, [
+    [/Python Expression/i, 'explain Python Expression'],
+    [/(?:equivalent|same)/i, 'make Python semantically equivalent'],
+    [/row-preserving/i, 'preserve rows in Expression'],
+  ]],
+  [aiConceptZh, 'Chinese AI Function Concepts', /^## .*Expression API/i, /^## .*Relation API/i, /^## .*Provider.*Runner.*生命周期/i, /^## .*凭据.*副作用/, [
+    [/Python Expression/i, '解释 Python Expression'],
+    [/(?:等价|相同)/, '说明 Python 语义等价'],
+    [/(?:保持行数|row-preserving)/, '说明 Expression 保持行数'],
+  ]],
+]) {
+  const expression = sectionMatching(source, expressionPattern, relationPattern)
+  const relation = sectionMatching(source, relationPattern, lifecyclePattern)
+  const lifecycle = sectionMatching(source, lifecyclePattern, effectsPattern)
+  const effects = sectionMatching(source, effectsPattern, /^## .*(?:Choosing.*Model|选择.*模型)/i)
+  assertConceptTokens(expression, requirements, `${name} Expression concept`)
+  assertConceptTokens(relation, [
+    [/max_chunk_chars/, 'cover built-in chunking'],
+    [/classify_text/, 'cover built-in classification'],
+    [/return_format/, 'cover structured prompts'],
+    [/image_columns/, 'cover multimodal prompts'],
+    [/output_column/, 'cover named Relation output'],
+    [/execution_backend/, 'cover explicit Relation backends'],
+    [/actor_number/, 'cover explicit actor controls'],
+    [/(?:built-in classification|内置分类)/i, 'identify the Relation-only example capability'],
+    [/(?:requires? Relation API|需要 Relation API)/i, 'require Relation API for that capability'],
+  ], `${name} Relation concept`)
+  assertConceptTokens(lifecycle, [
+    [/provider descriptors?/i, 'explain provider descriptors'],
+    [/(?:plan boundary|plan 边界)/i, 'cross the plan boundary'],
+    [/(?:lazily|延迟|懒)/i, 'instantiate lazily'],
+    [/worker/i, 'instantiate on workers'],
+    [/(?:reuse|复用|重用)/i, 'reuse clients or models'],
+    [/actor/i, 'scope reuse within actors'],
+    [/active runner/i, 'explain active-runner selection'],
+    [/local/i, 'explain local execution'],
+    [/Ray/i, 'explain Ray execution'],
+    [/(?:provider defaults|Provider 默认值)/i, 'leave provider defaults in Reference'],
+    [/Reference|参考/i, 'link lifecycle lookup facts to Reference'],
+  ], `${name} provider lifecycle concept`)
+  assertConceptTokens(effects, [
+    [/(?:credentials|凭据)/i, 'place credentials with workers'],
+    [/worker (?:environment|环境)/i, 'name the worker environment'],
+    [/SQL/i, 'explain the SQL boundary'],
+    [/(?:rejects?|拒绝)/i, 'reject SQL credential fields'],
+    [/(?:external effects|外部副作用)/i, 'identify external effects'],
+    [/(?:transactions?|事务)/i, 'explain transaction boundaries'],
+    [/exactly-once/i, 'reject exactly-once calls'],
+    [/(?:stable IDs|稳定 ID)/i, 'recommend stable IDs'],
+    [/(?:reviewable|可审查)/i, 'recommend reviewable outputs'],
+    [/(?:idempotent|幂等)/i, 'recommend idempotent writes'],
+  ], `${name} credentials and effects concept`)
+}
+
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
 assert.match(aiGuide, /vane\.ai\.(embed|prompt)[\s\S]*\.alias\(/, 'AI guide should demonstrate expression projection')

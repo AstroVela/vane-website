@@ -2,184 +2,108 @@
 title: UDF
 ---
 
-Vane Data UDF 允许你在 relation pipeline 中运行 Python，同时保留显式 schema、batch 控制，并为后续迁移到分布式执行留出路径。
+Vane Data UDF 有两种语义输出模型：**Expression API** 和 **Relation API**。它们不是三种语法入口。SQL 与 Python 是同一个 Expression 模型的两种入口；Relation 则是处理表形工作的独立模型。
 
-当某个阶段需要 Python 库、模型状态、自定义解码、外部客户端或行展开时，就使用 UDF。关系型处理继续交给 SQL，只把 SQL 不适合处理的部分放进 UDF。
+这一区分关注 query stage 会产出什么。先根据输出契约选择模型，再选择语法与执行控制。
 
-## 公共 API
+## Expression API
 
-Vane Data 暴露了三个 relation 级别的 UDF API：
+Expression API 在 `SELECT` projection 中增加一个有类型的输出列，并且通常保持行数。SQL 是推荐的默认入口，因为它能在一条关系语句中同时清楚呈现过滤、projection、源列和 UDF 结果。
 
-| API | 形态 | 典型用途 |
-| --- | --- | --- |
-| `map_batches(function, schema=..., ...)` | Arrow batch 到 Arrow batch | 向量化转换、模型推理、解码 |
-| `flat_map(function, schema=..., ...)` | 一行输入到零行、一行或多行输出 | 分块、切分、展开嵌套记录 |
-| `map(map_function, return_type=..., ...)` | 逐行标量值 | 小型标量补充 |
+### SQL 入口（推荐）
 
-核心参数：
-
-- `schema`：会生成 relation 的 UDF 的输出列和类型。
-- `return_type`：`map` 的标量输出类型。
-- `batch_size`：每次 `map_batches` 调用处理的行数。
-- `execution_backend`：可调用对象运行的位置。
-- `cpus` 和 `gpus`：在支持的 backend 上声明资源请求。
-- `concurrency`：在支持的 backend 上声明执行器或 actor 数量。
-- `streaming_breaker`：高级的 `map_batches` 执行边界控制。
-
-不支持的关键字参数会在 relation 渲染之前被提前拒绝。
-
-## 执行 backend
-
-| Backend | 可调用对象形态 | 适用场景 |
-| --- | --- | --- |
-| `subprocess_task` | Python 函数 | 本地无状态 batch 转换 |
-| `subprocess_actor` | 可调用类 | 本地模型或客户端复用 |
-| `ray_task` | Python 函数 | 分布式无状态转换 |
-| `ray_actor` | 可调用类 | 分布式有状态推理、GPU 支持的模型 |
-
-向 task backend 传入函数。向 actor backend 传入类，而不是已经创建好的实例，这样 Vane Data 才能在执行器内构造并复用该对象。
-
-## Batch UDF 契约
-
-`map_batches` 接收 Arrow 数据，并返回 Arrow 数据。返回的 table 必须与声明的输出 schema 匹配。
+用 `vane.attach_function` 注册 Python callable，会为 Expression API 提供一个 SQL 名称；注册仍属于该模型。注册后的 alias 是一个 projection expression。SQL alias 在 v1 中始终保持行数。
 
 ```python
-import pyarrow as pa
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select *
-    from (
-        values
-            (1, 'hello'),
-            (2, 'vane data')
-    ) as t(id, text)
+source = con.sql("""
+    SELECT *
+    FROM (VALUES
+        (1, '  Hello  '),
+        (2, ' Vane Data ')
+    ) AS t(id, text)
 """)
 
-def add_features(batch: pa.Table) -> pa.Table:
-    values = batch.column("text").to_pylist()
-    return pa.table({
-        "length": [len(str(value)) for value in values],
-        "upper_text": [str(value).upper() for value in values],
-    })
+@vane.func(return_dtype="VARCHAR")
+def normalize_text(value):
+    return str(value).strip().lower()
 
-features = rel.map_batches(
-    add_features,
-    schema={
-        "length": "BIGINT",
-        "upper_text": "VARCHAR",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-
-features.show()
-```
-
-Batch UDF 通常适合模型和媒体工作负载，因为它可以摊薄 Python 开销，并让模型库一次处理多行数据。
-
-## 有状态类 UDF
-
-当初始化成本较高且需要跨 batch 复用时，使用 actor backend。
-
-```python
-import pyarrow as pa
-
-class EmbedBatch:
-    def __init__(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        text = batch.column("text").to_pylist()
-        embeddings = self.model.encode(text).tolist()
-        return pa.table({"embedding": embeddings})
-
-embedded = rel.map_batches(
-    EmbedBatch,
-    schema={"embedding": "FLOAT[]"},
-    batch_size=64,
-    execution_backend="subprocess_actor",
-    concurrency=2,
-)
-```
-
-这个 relation 会包含声明的 `embedding` 列。如果下游阶段需要把 embedding 结果 join 回输入行，也要让 UDF 返回源标识符。
-
-对于分布式 GPU 推理，使用相同的可调用类形态，并切换到 `ray_actor`：
-
-```python
-embedded = rel.map_batches(
-    EmbedBatch,
-    schema={"embedding": "FLOAT[]"},
-    batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
-```
-
-每个 Ray worker 都必须能够导入这个类，并访问所需的模型文件或凭据。
-
-## 一对多转换
-
-当一行输入可能产生零行、一行或多行输出时，使用 `flat_map`。
-
-```python
-def split_terms(row: dict) -> list[dict]:
-    return [{"term": term} for term in str(row["text"]).split()]
-
-terms = rel.flat_map(
-    split_terms,
-    schema={"term": "VARCHAR"},
-    execution_backend="subprocess_task",
-)
-```
-
-典型用途包括文档切分、URL 展开、嵌套记录规范化，以及通过返回空 list 完成过滤。
-
-## 标量转换
-
-对于不需要 batch UDF 的小型逐行标量补充，使用 `map`。
-
-```python
-def normalize_text(text: str) -> str:
-    return text.strip().lower()
-
-normalized = rel.project("text").map(
+vane.attach_function(
     normalize_text,
-    return_type="VARCHAR",
+    alias="normalize_text_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+normalized = con.sql("""
+    SELECT id, text, normalize_text_sql(text) AS normalized_text
+    FROM source
+""")
+normalized.show()
+vane.detach_function("normalize_text_sql", connection=con)
+```
+
+在 projection 中保留 `id` 和 `text`，可以直接看出保持行数的契约，并让普通 SQL 继续负责周围的表逻辑。
+
+### Python 入口
+
+Python Expression 是同一个 projection 模型的另一种语法。调用收到 `vane.col(...)` 时会构建 lazy expression，而不是立即执行 Python 函数：
+
+```python
+projected = source.select(
+    vane.col("id"),
+    vane.col("text"),
+    normalize_text(vane.col("text")).alias("normalized_text"),
+)
+```
+
+通常的契约是生成一个有类型、保持行数的输出列。Python batch Expression 有一个显式例外：`row_preserving=False` 可以改变基数，但它必须是唯一的顶层 projection，不能与 passthrough 列并列组合。这个例外不适用于注册的 SQL alias；SQL alias 在 v1 中仍然保持行数。
+
+## Relation API
+
+结果为表形输出时使用 Relation API，例如多列输出、完整表阶段或显式改变基数。当前方法包括 `rel.map_batches`、`rel.flat_map` 和 `rel.map`；`rel.map` 是逐行 scalar Relation API，不是 pandas batch 转换。
+
+例如，term 展开属于 Relation，因为一行输入可能生成多行输出：
+
+```python
+def split_terms(row):
+    return [
+        {"id": row["id"], "term": term}
+        for term in str(row["text"]).split()
+    ]
+
+terms = source.flat_map(
+    split_terms,
+    schema={"id": "BIGINT", "term": "VARCHAR"},
     execution_backend="subprocess_task",
 )
 ```
 
-对于模型调用、媒体解码，或任何能从向量化中受益的操作，优先使用 `map_batches`。
+Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以准备输入 relation，也可以消费 Relation 结果，但改变基数或生成表形结果的方法调用目前仍是 Python Relation API。
 
-## 资源与并发度
+## 共享规划与执行
 
-请区分以下控制项：
+两种模型使用同一个 lazy planning 与 execution layer。SQL alias 和 Python expression 会成为规划后的 projection 工作，Relation 方法会成为规划后的表阶段。执行以 Arrow batch 传递有类型的数据，因此 batching、worker placement 和资源选择不会改变语义输出模型。
 
-- `batch_size`：传给 `map_batches` 的每个 batch 的行数。
-- `gpus`：在支持的 backend 上，每次可调用对象执行的 GPU 资源请求。
-- `cpus`：在支持的 backend 上，每次可调用对象执行的 CPU 资源请求。
-- `concurrency`：在支持的 backend 上，执行器或 actor 的数量。
+正因为共享这一层，SQL 与 Python Expression 入口遵守相同的 projection 和行数保持规则。选择 Relation 的原因是它的表契约，而不仅仅是 callable 使用了 Python。
 
-如果瓶颈是模型吞吐量，先增大 `batch_size`，再提高并发度。当 worker 利用率不足且内存仍有余量时，再增加并发度。
+## Actor 复用与可变状态
 
-部分 backend 不支持所有资源或并发度选项。扩展规模前，请先用有代表性的样本验证配置。
+Actor-backed 执行会在每个 actor 内复用 callable instance，从而复用已经加载的 model、client 或 cache。这是生命周期和吞吐量工具；多个 actor 不会自动形成共享状态语义。
 
-## 流式行为
+`vane.cls` 和 `vane.cls.batch` 是范围更窄的 Expression UDF 可变状态契约。在 v1 中，它们使用 `actor_number=1`，让一个 actor instance 在单次 query 的多个 batch 之间携带状态。一般的 actor-backed callable 复用不应被描述成持久应用状态。
 
-`map_batches` 暴露 `streaming_breaker`，用于高级执行边界控制。除非你正在测量某个具体的 pipeline 行为或调试边界，否则保持未设置。
+## 状态、失败与副作用
 
-## Backend 选择
+可变的 `vane.cls` 状态是 query-scoped、actor-local 且 ephemeral 的。它不会 checkpoint，既不是 global state，也不是 keyed state，并且不提供 exactly-once 保证。对于有状态 Expression UDF，actor 丢失会让 query 失败，而不是用空状态重建 actor。
 
-按以下顺序推进：
+任何 UDF 产生的外部副作用都不会在 SQL transaction 或 query 失败时回滚，retry 还可能重复这些副作用。分布式 relation 执行也没有稳定的全局行顺序。因此，依赖状态的逻辑不应依赖输入顺序，外部写入应使用稳定标识和幂等处理。
 
-1. 先用 `subprocess_task` 或 `subprocess_actor` 在本地构建 UDF。
-2. 在有代表性的样本上验证 schema、行数和错误行为。
-3. 只有在分布式执行确实有帮助时，才把无状态函数切换到 `ray_task`。
-4. 只有在需要 actor 复用、GPU 或集群资源调度时，才把有状态模型类切换到 `ray_actor`。
-5. 使用接近生产的数据调优 batch size、资源请求和并发度。
+## 选择模型
+
+- 当一个有类型的结果需要保留在现有行旁边时，首先选择 SQL Expression。
+- 当 Python 组合方式更清楚且仍符合相同 projection 契约时，选择 Python Expression。
+- 当 callable 负责表形、多列或基数时，选择 Relation。
+
+精确签名和参数规则请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。包含 setup、校验和输出的完整任务请使用[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)。
