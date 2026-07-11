@@ -91,7 +91,7 @@ result = con.sql(
 
 **Restrictions and errors**
 
-The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only as a top-level value in a `SELECT projection`, not in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. Provider lookup, unsupported capabilities, and provider execution failures are reported when the expression is planned or evaluated.
+The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. Provider lookup, unsupported capabilities, and provider execution failures are reported when the expression is planned or evaluated.
 
 **Related pages**
 
@@ -164,7 +164,7 @@ result = con.sql(
 
 **Restrictions and errors**
 
-The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only as a top-level value in a `SELECT projection`, not in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. The provider must support text embedding, and a requested dimension must be valid for that provider and model.
+The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. The provider must support text embedding, and a requested dimension must be valid for that provider and model.
 
 **Related pages**
 
@@ -539,7 +539,7 @@ The option classes below are frozen public dataclasses. Their public fields and 
 - The active runner resolves Expression and SQL AI to a local subprocess actor or Ray actor. Relation methods may additionally set `execution_backend` explicitly.
 - Ray GPU resource requests reserve resources through the Ray scheduler. A local subprocess merely inherits the driver's visible GPUs: it provides no GPU reservation or isolation, and a nonzero GPU request emits a warning.
 - Each worker needs only the dependencies, model artifacts, network access, and credential environment variables required by the selected provider. Although Python provider option classes expose credential fields, worker environment configuration is preferred; SQL options reject credential-like fields recursively.
-- Expression and SQL calls belong only in a top-level `SELECT projection`; they are unsupported in `WHERE`, `GROUP BY`, `HAVING`, joins, aggregate arguments, `CASE`, `AND`, `OR`, and `COALESCE`.
+- Expression and SQL calls belong inside a `SELECT projection` and may be nested in ordinary projection expressions; they are unsupported in `WHERE`, `GROUP BY`, `HAVING`, joins, aggregate arguments, `CASE`, `AND`, `OR`, and `COALESCE`.
 - Provider and wrapper retries can repeat an external call. The 30-second exponential-backoff cap and 120-second `Retry-After` cap apply to Vane wrapper retry/backoff. Provider SDK retry and backoff limits may differ. External effects are not transactional and are not exactly-once; preserve stable identifiers and make downstream writes idempotent or reviewable.
 - Importing `vane` attaches the Relation AI methods dynamically. Complete public type-stub coverage is not yet available, so static type checkers may require local annotations even though these methods are public at runtime.
 

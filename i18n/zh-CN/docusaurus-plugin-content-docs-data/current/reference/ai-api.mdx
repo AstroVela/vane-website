@@ -91,7 +91,7 @@ result = con.sql(
 
 **限制与错误**
 
-第一个参数必须绑定为 `VARCHAR`；第二个参数必须可 fold。该函数只能作为 `SELECT projection` 中的顶层值，不能用在 predicate、grouping、join、aggregate argument 或 short-circuit expression 中。SQL AI 会递归拒绝类似凭据的字段，包括嵌套 key 和 JSON option bridge。凭据必须通过 `OPENAI_API_KEY` 等 worker 环境变量提供，绝不能放入 SQL options。Provider 查找、不受支持的能力和 provider 执行失败会在 expression 规划或求值时报错。
+第一个参数必须绑定为 `VARCHAR`；第二个参数必须可 fold。该函数只能位于 `SELECT projection` 内；它可以嵌套在普通 projection expression 中，但不能用在 predicate、grouping、join、aggregate argument 或 short-circuit expression 中。SQL AI 会递归拒绝类似凭据的字段，包括嵌套 key 和 JSON option bridge。凭据必须通过 `OPENAI_API_KEY` 等 worker 环境变量提供，绝不能放入 SQL options。Provider 查找、不受支持的能力和 provider 执行失败会在 expression 规划或求值时报错。
 
 **相关页面**
 
@@ -164,7 +164,7 @@ result = con.sql(
 
 **限制与错误**
 
-第一个参数必须绑定为 `VARCHAR`；第二个参数必须可 fold。该函数只能作为 `SELECT projection` 中的顶层值，不能用在 predicate、grouping、join、aggregate argument 或 short-circuit expression 中。SQL AI 会递归拒绝类似凭据的字段，包括嵌套 key 和 JSON option bridge。凭据必须通过 `OPENAI_API_KEY` 等 worker 环境变量提供，绝不能放入 SQL options。Provider 必须支持文本 embedding，并且请求的维度必须对该 provider 和 model 有效。
+第一个参数必须绑定为 `VARCHAR`；第二个参数必须可 fold。该函数只能位于 `SELECT projection` 内；它可以嵌套在普通 projection expression 中，但不能用在 predicate、grouping、join、aggregate argument 或 short-circuit expression 中。SQL AI 会递归拒绝类似凭据的字段，包括嵌套 key 和 JSON option bridge。凭据必须通过 `OPENAI_API_KEY` 等 worker 环境变量提供，绝不能放入 SQL options。Provider 必须支持文本 embedding，并且请求的维度必须对该 provider 和 model 有效。
 
 **相关页面**
 
@@ -539,7 +539,7 @@ result = rel.classify_text(
 - active runner 把 Expression 和 SQL AI 解析为 local subprocess actor 或 Ray actor。Relation method 还可以显式设置 `execution_backend`。
 - Ray GPU 资源请求会通过 Ray scheduler 预留资源。local subprocess 只继承 driver 可见的 GPU：它不提供 GPU reservation 或隔离，非零 GPU 请求会产生 warning。
 - 每个 worker 只需要所选 provider 实际要求的相应 dependency、model artifact、network access 和凭据环境变量。虽然 Python provider option class 公开了凭据字段，仍应优先使用 worker 环境配置；SQL options 会递归拒绝类似凭据的字段。
-- Expression 和 SQL 调用只能位于顶层 `SELECT projection`；不支持 `WHERE`、`GROUP BY`、`HAVING`、join、aggregate argument、`CASE`、`AND`、`OR` 和 `COALESCE`。
+- Expression 和 SQL 调用只能位于 `SELECT projection` 内，也可以嵌套在普通 projection expression 中；不支持 `WHERE`、`GROUP BY`、`HAVING`、join、aggregate argument、`CASE`、`AND`、`OR` 和 `COALESCE`。
 - Provider 和 wrapper retry 可能重复外部调用。30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。Provider SDK 的 retry 和 backoff 限制可能不同。外部副作用不具有事务性，也不提供 exactly-once；应保留稳定 ID，并使下游写出具有幂等性或可审查性。
 - 导入 `vane` 时会动态挂载 Relation AI method。当前尚无完整的 public type-stub 覆盖，因此即使这些 method 在运行时是公开接口，static type checker 仍可能需要本地注解。
 

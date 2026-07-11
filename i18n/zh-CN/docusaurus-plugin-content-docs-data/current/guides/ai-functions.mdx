@@ -117,7 +117,7 @@ prompted.to_table("ai_review_prompted")
 
 ### 需要检索时添加 Embedding
 
-如果审查产物不需要向量，可以跳过本节。如果需要，就在保留源数据与 prompt 输出的同时再增加一个 SQL Expression 列：
+本指南的任务会生成同时用于审查与检索的产物，因此后续的校验和写出流程假定 `embedding` 列存在。请在保留源数据与 prompt 输出的同时，再增加一个 SQL Expression 列：
 
 ```python
 reviewed = con.sql(
@@ -150,7 +150,7 @@ reviewed = con.sql(
 reviewed.to_table("ai_review_model_output")
 ```
 
-两个调用都是 `SELECT` projection 的顶层值。每个调用只增加一个有类型、保持行数的输出列；过滤、分组、join 与逐行变化的配置都应放在 AI expression 之外。
+两个调用都位于 `SELECT` projection 内，也可以嵌套在普通 projection expression 中。每个调用只增加一个有类型、保持行数的输出列；predicate、grouping、join、short-circuit 组合与逐行变化的配置都应放在 AI expression 之外。
 
 ### 校验并写入审查产物
 

@@ -1523,6 +1523,21 @@ const assertAiGuideTask = (source, locale, message) => {
         ],
     `${message} operational and role guidance`,
   )
+  const normalized = collapseWrappedMarkdown(source)
+  assertPatterns(
+    normalized,
+    locale === 'en'
+      ? [/workflow below assumes the `embedding` column is present/i]
+      : [/后续的校验和写出流程假定 `embedding` 列存在/],
+    `${message} embedding-dependent workflow`,
+  )
+  assertRejects(
+    normalized,
+    locale === 'en'
+      ? [/Skip this step when the review artifact does not need vectors/i]
+      : [/审查产物不需要向量时，可以跳过这一步/],
+    `${message} embedding-dependent workflow`,
+  )
 }
 
 const assertCodeBlockCallOrder = (source, calls, message) => {
@@ -3194,6 +3209,7 @@ for (const sqlSection of aiSqlSections) {
   assert.match(sqlSection, /constant `STRUCT`/, 'AI SQL entries should identify the constant STRUCT shape')
   assert.match(sqlSection, /bound once|只绑定一次/, 'AI SQL entries should reject row-varying options')
   assert.match(sqlSection, /SELECT projection/, 'AI SQL entries should document projection-only placement')
+  assert.doesNotMatch(sqlSection, /top-level value|顶层值/, 'AI SQL entries should allow ordinary nested projection composition')
   assert.match(sqlSection, /recursively rejects|递归拒绝/, 'AI SQL entries should document recursive credential rejection')
   assert.match(sqlSection, /worker environment variable|worker 环境变量/, 'AI SQL entries should route credentials through worker environment variables')
   for (const option of [
@@ -3914,6 +3930,34 @@ assert.throws(
   ),
   /structured and multimodal Relation prompt/,
   'AI Guide guards should reject a response model used before definition',
+)
+const aiOptionalEmbeddingMutation = aiGuide.replace(
+  "This guide's task produces a review artifact for both audit and retrieval, so the workflow below assumes the `embedding` column is present.",
+  'Skip this step when the review artifact does not need vectors.',
+)
+assert.notEqual(aiOptionalEmbeddingMutation, aiGuide, 'AI optional-embedding mutation should modify the Guide')
+assert.throws(
+  () => assertAiGuideTask(
+    aiOptionalEmbeddingMutation,
+    'en',
+    'AI Guide optional-embedding mutation',
+  ),
+  /embedding-dependent workflow/,
+  'AI Guide guards should reject an optional embedding step before embedding-dependent validation',
+)
+const aiTopLevelPlacementMutation = aiReference.replace(
+  'supported only inside a `SELECT projection`',
+  'supported only as a top-level value in a `SELECT projection`',
+)
+assert.notEqual(aiTopLevelPlacementMutation, aiReference, 'AI placement mutation should modify the Reference')
+assert.throws(
+  () => assert.doesNotMatch(
+    section(aiTopLevelPlacementMutation, '### SQL Entry Point (Recommended)', '### Python Entry Point'),
+    /top-level value|顶层值/,
+    'AI SQL entries should allow ordinary nested projection composition',
+  ),
+  /ordinary nested projection composition/,
+  'AI Reference guards should reject top-level-only projection wording',
 )
 
 const swapLiteralSegments = (source, first, second) => {

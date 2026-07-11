@@ -117,7 +117,7 @@ The second argument is one foldable constant `STRUCT`. Provider, model, executio
 
 ### Add Embeddings When Retrieval Is Part of the Task
 
-Skip this step when the review artifact does not need vectors. When it does, add one more SQL Expression column while retaining the source and prompt output:
+This guide's task produces a review artifact for both audit and retrieval, so the workflow below assumes the `embedding` column is present. Add one more SQL Expression column while retaining the source and prompt output:
 
 ```python
 reviewed = con.sql(
@@ -150,7 +150,7 @@ reviewed = con.sql(
 reviewed.to_table("ai_review_model_output")
 ```
 
-Both calls are top-level values in `SELECT` projections. Each adds one typed, row-preserving output column; filtering, grouping, joins, and row-varying configuration stay outside the AI expression.
+Both calls run inside `SELECT` projections and can be nested in ordinary projection expressions. Each adds one typed, row-preserving output column; predicates, grouping, joins, short-circuit composition, and row-varying configuration stay outside the AI expression.
 
 ### Validate and Write the Review Artifact
 
