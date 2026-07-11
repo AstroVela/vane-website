@@ -2,162 +2,444 @@
 title: 大规模 Embedding
 ---
 
-使用 Vane Data 构建 embedding pipeline，可以在一个 workflow 中完成 SQL 过滤、batch 模型执行和表输出。
+围绕可审查的表契约构建 embedding pipeline：筛选确定的候选切片，在 projection 中保留稳定 ID 和源字段，增加一个 embedding 列，校验物化结果，最后再写出。SQL Expression 是默认路径。下面的示例从已经准备好的 chunk 行开始，因此每个向量都有持久的 `(document_id, chunk_id)` key。
 
-常见形态如下：
+## 使用 SQL 完成 Hosted Embedding 任务
 
-1. 用 SQL 读取并过滤源行。
-2. 将长文本切成稳定的分块。
-3. 用 `rel.embed_text(...)` 或自定义 UDF 对分块做 embedding。
-4. 带着稳定的文档 ID 和分块 ID 写出 embedding。
+第一个 workflow 使用 hosted provider，并在介绍其他 API 前完成整个任务。`embedding_source` 和 `embedding_candidates` 不包含 provider 输出；`embedding_model_output` 只物化一次外部调用，供后续校验和写出使用。
 
-## 基本文本 embedding
+```python
+import math
+
+import vane
+
+con = vane.connect()
+
+source = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(chunk_id AS BIGINT) AS chunk_id,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(chunk_text AS VARCHAR) AS chunk_text
+    FROM read_parquet('data/document-chunks/*.parquet')
+    WHERE document_id IS NOT NULL
+      AND chunk_id IS NOT NULL
+      AND source_uri IS NOT NULL
+      AND chunk_text IS NOT NULL
+      AND length(trim(chunk_text)) > 0
+    """
+)
+source.to_table("embedding_source")
+
+candidates = con.sql(
+    """
+    SELECT
+        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
+        document_id,
+        chunk_id,
+        source_uri,
+        chunk_text
+    FROM embedding_source
+    ORDER BY document_id, chunk_id
+    LIMIT 1000
+    """
+)
+candidates.to_table("embedding_candidates")
+
+candidate_check = con.sql(
+    """
+    SELECT
+        count(*) AS row_count,
+        count(DISTINCT struct_pack(
+            document_id := document_id,
+            chunk_id := chunk_id
+        )) AS distinct_id_count,
+        count(*) FILTER (
+            WHERE document_id IS NULL OR chunk_id IS NULL
+        ) AS null_id_count,
+        count(*) FILTER (
+            WHERE source_uri IS NULL OR chunk_text IS NULL
+        ) AS null_source_count
+    FROM embedding_candidates
+    """
+).fetchone()
+expected_row_count, distinct_id_count, null_id_count, null_source_count = candidate_check
+assert expected_row_count > 0
+assert distinct_id_count == expected_row_count
+assert null_id_count == 0
+assert null_source_count == 0
+
+expected_ids = con.sql(
+    """
+    SELECT document_id, chunk_id
+    FROM embedding_candidates
+    ORDER BY document_id, chunk_id
+    """
+).fetchall()
+
+embedded = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        chunk_id,
+        source_uri,
+        chunk_text,
+        'openai'::VARCHAR AS embedding_provider,
+        'text-embedding-3-small'::VARCHAR AS embedding_model,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                dimensions := 512,
+                normalize := true,
+                batch_size := 64,
+                concurrency := 2,
+                on_error := 'raise'
+            )
+        ) AS embedding
+    FROM embedding_candidates
+    ORDER BY document_id, chunk_id
+    """
+)
+embedded.to_table("embedding_model_output")
+
+output_check = con.sql(
+    """
+    SELECT
+        count(*) AS row_count,
+        count(DISTINCT struct_pack(
+            document_id := document_id,
+            chunk_id := chunk_id
+        )) AS distinct_id_count,
+        count(*) FILTER (
+            WHERE document_id IS NULL OR chunk_id IS NULL
+        ) AS null_id_count,
+        count(*) FILTER (
+            WHERE source_uri IS NULL OR chunk_text IS NULL
+        ) AS null_source_count,
+        count(*) FILTER (WHERE embedding IS NULL) AS null_embedding_count
+    FROM embedding_model_output
+    """
+).fetchone()
+(
+    actual_row_count,
+    actual_distinct_id_count,
+    actual_null_id_count,
+    actual_null_source_count,
+    null_embedding_count,
+) = output_check
+assert actual_row_count == expected_row_count
+assert actual_distinct_id_count == expected_row_count
+assert actual_null_id_count == 0
+assert actual_null_source_count == 0
+assert null_embedding_count == 0
+
+actual_ids = con.sql(
+    """
+    SELECT document_id, chunk_id
+    FROM embedding_model_output
+    ORDER BY document_id, chunk_id
+    """
+).fetchall()
+assert actual_ids == expected_ids
+
+result = con.sql(
+    """
+    SELECT
+        run_id,
+        document_id,
+        chunk_id,
+        source_uri,
+        chunk_text,
+        embedding_provider,
+        embedding_model,
+        embedding
+    FROM embedding_model_output
+    ORDER BY document_id, chunk_id
+    """
+)
+expected_columns = [
+    "run_id",
+    "document_id",
+    "chunk_id",
+    "source_uri",
+    "chunk_text",
+    "embedding_provider",
+    "embedding_model",
+    "embedding",
+]
+expected_types = [
+    "VARCHAR",
+    "VARCHAR",
+    "BIGINT",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "FLOAT[512]",
+]
+assert list(result.columns) == expected_columns
+assert [str(dtype) for dtype in result.types] == expected_types
+
+for document_id, chunk_id, vector in con.sql(
+    """
+    SELECT document_id, chunk_id, embedding
+    FROM embedding_model_output
+    """
+).fetchall():
+    assert document_id is not None and chunk_id is not None
+    assert len(vector) == 512
+    assert all(math.isfinite(float(value)) for value in vector)
+    norm = math.sqrt(sum(float(value) ** 2 for value in vector))
+    assert math.isclose(norm, 1.0, rel_tol=1e-4, abs_tol=1e-4)
+
+result.write_parquet("output/embedding-run-2026-07-11-001/part-00000.parquet")
+```
+
+`ai_embed` 的第二个参数是一个 foldable constant `STRUCT`：provider、model、向量形态、归一化、batch、actor 数和错误策略只为整个任务绑定一次，不会变成列或逐行 option。SQL binding 会拒绝 credential-like 字段。请把 `OPENAI_API_KEY` 和 endpoint 所需的 secret 放在每个 worker 环境中，绝不要写入 SQL 文本或序列化 option。
+
+只有配合确定的 `ORDER BY`，这里的 `LIMIT` 才能得到稳定切片。完整校验通过后再扩大范围，不要用临时生成的行号替代稳定业务 key。
+
+## 选择向量形态与归一化
+
+未指定 `dimensions` 时，SQL 与 Python Expression 声明的类型是动态 `FLOAT[]`。只有所选 provider 和 model 支持目标维度时，才设置 `dimensions=N`；结果会成为固定的 `FLOAT[N]`，便于在建索引前拒绝 schema drift 和长度错误的向量。
+
+`normalize=true` 请求 L2 归一化。应根据检索距离度量和索引契约在任务级决定是否归一化，然后像完整 workflow 一样校验有限数值、精确长度和近似单位范数。Provider 请求成功并不等于输出契约正确。Provider、维度、归一化、retry 和错误 option 的准确说明请查阅 [AI Function API Reference](/zh-CN/docs/data/reference/ai-api)。
+
+## 调优 Batch、并发与 Worker
+
+- `batch_size` 控制一个 UDF batch 向 AI actor 传递多少输入行。OpenAI embedding 实现还可能在 token budget 内继续组织 API request。逐步增大 batch，直到内存、延迟或失败范围成为限制因素。
+- SQL `concurrency` 会映射为 AI actor 数；它不是逐行 option，也不表示一个 actor 会同时发送相同数量的 request。`max_api_concurrency` 等 request 级控制与具体 provider 和能力有关，不能假设每个 embedding provider 都会使用。
+- 增加 actor 可以提高吞吐，但也会加大 quota 压力、retry、成本，以及 task retry 后重复外部副作用的风险。先测量一个有界切片。
+- Active runner 会把 SQL 和 Python Expression actor 解析为 local subprocess 或 Ray actor。Local subprocess 会继承可见设备，但不会预留或隔离 GPU。需要调度、分布式扫描或 GPU 放置时，应在构造 relation 前配置 Ray。
+- 每个 worker 都需要 provider package、网络与存储访问、credential 环境变量；本地模型还需要相同的模型文件或下载权限。所有 worker 的模型和依赖版本应保持一致。
+
+如果需要运行 vLLM GPU 并校验 actor pool，请继续阅读 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference)。
+
+## 使用 Python Expression 作为备选
+
+当 typed 配置适合在 Python 中构造时，可以使用 Python Expression。它与 SQL workflow 具有相同的单列、保持行数的 projection 语义，也保留相同的 ID 和源字段。
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select id, text
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
-""")
+candidates = con.sql(
+    """
+    SELECT
+        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(chunk_id AS BIGINT) AS chunk_id,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(chunk_text AS VARCHAR) AS chunk_text
+    FROM read_parquet('data/document-chunks/*.parquet')
+    WHERE document_id IS NOT NULL
+      AND chunk_id IS NOT NULL
+      AND source_uri IS NOT NULL
+      AND chunk_text IS NOT NULL
+      AND length(trim(chunk_text)) > 0
+    ORDER BY document_id, chunk_id
+    LIMIT 1000
+    """
+)
 
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
+python_embedded = candidates.select(
+    vane.col("run_id"),
+    vane.col("document_id"),
+    vane.col("chunk_id"),
+    vane.col("source_uri"),
+    vane.col("chunk_text"),
+    vane.lit("openai").alias("embedding_provider"),
+    vane.lit("text-embedding-3-small").alias("embedding_model"),
+    vane.ai.embed(
+        vane.col("chunk_text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            concurrency=2,
+        ),
+        embedding_options=vane.ai.OpenAIEmbeddingOptions(
+            on_error="raise",
+        ),
+        dimensions=512,
+        normalize=True,
+    ).alias("embedding"),
 )
 ```
 
-`embed_text` 返回一个 relation，其中包含已配置的 embedding 输出列。这个高层辅助函数会把 embedding 写成 `FLOAT[]`；它不会自动带上 `id` 或 `text` 等源列。
+发布这个备选结果前，应执行 SQL workflow 中相同的行数、有序 key、null、类型、维度、有限数值、归一化和 run-specific 写出校验。把 AI 调用直接放在带 alias 的 `rel.select(...)` 内；不要按位置把仅有结果的列与源行手工组合。
 
-## 先切分长文本
+## 在本地或 Ray 上运行本地 Transformers
 
-除非你明确希望把整篇文档送入 embedding 模型，否则应创建边界清晰、ID 稳定的分块。
-
-```python
-import pyarrow as pa
-
-def chunk_rows(batch: pa.Table) -> pa.Table:
-    doc_ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    out_doc_id = []
-    out_chunk_id = []
-    out_text = []
-
-    for doc_id, text in zip(doc_ids, texts):
-        parts = [part.strip() for part in str(text).split(".") if part.strip()]
-        for idx, part in enumerate(parts):
-            out_doc_id.append(doc_id)
-            out_chunk_id.append(idx)
-            out_text.append(part)
-
-    return pa.table({
-        "id": out_doc_id,
-        "chunk_id": out_chunk_id,
-        "chunk_text": out_text,
-    })
-
-chunks = rel.map_batches(
-    chunk_rows,
-    schema={
-        "id": "BIGINT",
-        "chunk_id": "BIGINT",
-        "chunk_text": "VARCHAR",
-    },
-    batch_size=512,
-    execution_backend="subprocess_task",
-)
-```
-
-生产系统中，应使用能感知 tokenizer 的分块器，使其匹配模型上下文窗口，并保留足够的重叠区间以保证检索质量。
-
-## 使用本地 embedding 模型
-
-本地模型通常最适合 actor backend，因为模型初始化成本较高：
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
-)
-```
-
-当 provider 检测到可用 GPU 资源时，可能会向 UDF 执行层传递 GPU 资源请求。如果需要严格控制设备，或需要包含 ID 的完整输出行，请使用自定义 `map_batches` 可调用类返回标识符、文本和 embedding。
-
-## 使用托管 embedding API
-
-当你希望使用托管模型，并且可以接受 API 延迟和速率限制时，托管 provider 很有用：
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="openai",
-    model="text-embedding-3-small",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
-    concurrency=8,
-)
-```
-
-请谨慎调节 `batch_size` 和 `concurrency`。更高的并发度可以提升吞吐量，但也可能触发 `provider` 速率限制或放大重试。如果在辅助函数调用之后把 provider 输出与源列组合，请在该步骤中校验行数并保持稳定顺序。
-
-## 使用 Ray 处理更大任务
-
-本地路径正确后，再迁移到 Ray：
+离线或私有环境可以用本地 Transformers 模型重建同一个 Expression。默认 runner 使用 local subprocess actor；执行必须使用 Ray 时，请先配置 Ray，再创建连接和 relation。
 
 ```python
 import vane
 
 vane.configure(runner="ray")
+con = vane.connect()
+candidates = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(chunk_id AS BIGINT) AS chunk_id,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(chunk_text AS VARCHAR) AS chunk_text
+    FROM read_parquet('data/document-chunks/*.parquet')
+    WHERE chunk_text IS NOT NULL
+    ORDER BY document_id, chunk_id
+    LIMIT 1000
+    """
+)
 
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
+ray_embedded = candidates.select(
+    vane.col("document_id"),
+    vane.col("chunk_id"),
+    vane.col("source_uri"),
+    vane.col("chunk_text"),
+    vane.ai.embed(
+        vane.col("chunk_text"),
+        provider="transformers",
+        model="sentence-transformers/all-MiniLM-L6-v2",
+        provider_options={"batch_size": 64},
+        dimensions=384,
+        normalize=True,
+    ).alias("embedding"),
+)
+```
+
+模型会延迟实例化，并在其 actor 内跨 batch 复用。检测到 CUDA 时，Transformers provider 会请求 GPU 资源；Ray 可以预留该资源，而 local subprocess 不会。切换 runner 本身并不承诺增加模型 actor，因此扩容前需要校验实际 actor 数、GPU assignment、模型复用和输出契约。
+
+## 保持输出可审查并使下游写入幂等
+
+Hosted provider 调用是 SQL 事务之外的外部副作用，不提供 exactly-once。即使原查询没有发布表，retry 也可能重复 request 和计费。每个向量都应保留稳定 ID、源文本或持久源引用、provider/model/config 和 `run_id`，使输入与输出保持可审查，并让下游处理可以幂等。
+
+每次 provider run 写入独立路径。对于持久索引或表，按 `(run_id, document_id, chunk_id)` merge 或 replace；如果新 run 应覆盖旧 run，则使用带版本的业务 key。不要盲目 append retry 结果。候选表和物化后的模型输出表应彼此分离，避免校验时重新发起 provider 调用。
+
+## 仅为内置长文本分块使用 Relation Embedding
+
+当任务恰好需要 `max_chunk_chars` 和 `chunk_overlap_chars` 提供的内置分块，或者需要显式 Relation backend 与 actor pool 时，Python Relation helper 才适用。Vane 不为这个 helper 提供直接的 SQL Relation 或 table-function API。
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+long_text_source = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(text AS VARCHAR) AS source_text
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+    ORDER BY document_id
+    LIMIT 100
+    """
+)
+
+embedding_only = long_text_source.embed_text(
+    "source_text",
+    provider="openai",
+    model="text-embedding-3-small",
+    dimensions=512,
     output_column="embedding",
+    max_chunk_chars=2000,
+    chunk_overlap_chars=200,
+    batch_size=64,
+    actor_number=2,
+    num_gpus=0,
     execution_backend="ray_actor",
 )
 ```
 
-每个 Ray worker 都必须能够 import provider 库，并访问模型文件或 provider 凭证。
+这里的 `actor_number` 是显式 Relation UDF actor-pool 控制，与在 Expression 上配置 provider `concurrency` 不同；actor backend 必须与它匹配。Helper 会在内部切分每个输入，用文本长度加权平均合并 chunk 向量，再对合并结果归一化；即使请求了 provider 维度，其配置的输出列仍声明为动态 `FLOAT[]`。
 
-## 输出形态
+命名为 `embedding_only` 是有意的：helper 不承诺保留 `document_id`、`source_uri` 或 `source_text`，也不会让每个内部 chunk 分别成为输出行。绝不要按位置把结果重新连接到源行。稳定源列必须与每个向量同行时，使用 SQL 或 Python Expression；chunk 需要独立 ID 和行时，使用自定义预处理阶段。
 
-写出完整 relation，让下游检索和审计更直接：
+## 仅将自定义 Relation UDF 用于表形预处理
 
-- `document_id`
-- `chunk_id`
-- `chunk_text`
-- `embedding`
-- `source_uri`
-- 模型名和 provider
-- 需要时记录创建时间戳或 run ID
-
-使用 relation writer 写出结果：
+只有预处理必须改变基数或返回多列时才使用自定义 Relation UDF，例如把文档变成有持久 key 的 chunk 行。不要仅为了增加一个向量列，就用自定义 UDF 替代保持行数的 embedding Expression。
 
 ```python
-embedded_with_ids.write_parquet("output/embeddings/")
+import pyarrow as pa
+
+import vane
+
+con = vane.connect()
+source = con.sql(
+    """
+    SELECT
+        CAST(document_id AS VARCHAR) AS document_id,
+        CAST(source_uri AS VARCHAR) AS source_uri,
+        CAST(text AS VARCHAR) AS source_text
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE document_id IS NOT NULL
+      AND source_uri IS NOT NULL
+      AND text IS NOT NULL
+    """
+)
+
+
+def chunk_documents(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    source_texts = batch.column("source_text").to_pylist()
+    out_document_id = []
+    out_chunk_id = []
+    out_source_uri = []
+    out_chunk_text = []
+    out_chunker_version = []
+
+    for document_id, source_uri, source_text in zip(
+        document_ids,
+        source_uris,
+        source_texts,
+    ):
+        parts = [
+            part.strip()
+            for part in str(source_text).split(".")
+            if part.strip()
+        ]
+        for chunk_id, chunk_text in enumerate(parts):
+            out_document_id.append(document_id)
+            out_chunk_id.append(chunk_id)
+            out_source_uri.append(source_uri)
+            out_chunk_text.append(chunk_text)
+            out_chunker_version.append("sentence-v1")
+
+    return pa.table(
+        {
+            "document_id": pa.array(out_document_id, type=pa.string()),
+            "chunk_id": pa.array(out_chunk_id, type=pa.int64()),
+            "source_uri": pa.array(out_source_uri, type=pa.string()),
+            "chunk_text": pa.array(out_chunk_text, type=pa.string()),
+            "chunker_version": pa.array(
+                out_chunker_version,
+                type=pa.string(),
+            ),
+        }
+    )
+
+
+chunks = source.map_batches(
+    chunk_documents,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "BIGINT",
+        "source_uri": "VARCHAR",
+        "chunk_text": "VARCHAR",
+        "chunker_version": "VARCHAR",
+    },
+    batch_size=512,
+    execution_backend="subprocess_task",
+)
+chunks.to_table("embedding_chunks")
 ```
 
-`embedded_with_ids` 应包含上面列出的标识符和元数据列。它可以来自返回完整 schema 的自定义 embedding UDF，也可以来自 AI 辅助函数输出与源行的显式组合；组合前需要校验行数和顺序。
+这个示例刻意保持简单。生产 chunker 应感知 tokenizer，使 chunk size 与 overlap 符合模型契约，并对算法进行版本化。把 `embedding_chunks` 交给 SQL workflow 前，应校验 `(document_id, chunk_id)` 唯一且输出确定。
 
-对于分布式写出，请确保每个 worker 都能访问输出文件系统。
-
-## 调优清单
-
-- 在 embedding 前先过滤并投影。
-- 保持分块边界清晰且结果具有确定性。
-- 本地模型使用 actor backend。
-- 增大 `batch_size`，直到延迟或内存成为瓶颈。
-- 只有 worker 或 API quota 仍有余量时，才增大 `concurrency`。
-- 当扫描、推理或写入吞吐量超出单进程能力时使用 Ray。
-- 使用稳定的文档 ID 和分块 ID，使输出行保持确定性。
+如需了解完整的能力边界与执行语义，请先阅读 [AI Function Concepts](/zh-CN/docs/data/concepts/ai-functions)，再参考 [AI Functions Guide](/zh-CN/docs/data/guides/ai-functions) 构建更广泛的端到端任务，并通过 [GPU Inference](/zh-CN/docs/data/guides/gpu-inference) 了解 GPU 专项运行方式。

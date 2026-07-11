@@ -559,7 +559,7 @@ const codeBlockContaining = (source, pattern, message) => {
 const assertNoCredentialSqlFields = (block, message) => {
   assert.doesNotMatch(
     block,
-    /\b(?:api_key|token|password|secret|authorization)\s*:=/i,
+    /(?:\b(?:api_key|access_token|auth_token|bearer_token|token|password|secret|secret_key|authorization)\s*:=|["'](?:api_key|access_token|auth_token|bearer_token|token|password|secret|secret_key|authorization)["']\s*:)/i,
     `${message}: SQL options should not contain credential-like fields`,
   )
 }
@@ -921,6 +921,215 @@ const assertAiGuideTask = (source, locale, message) => {
   )
 }
 
+const assertCodeBlockCallOrder = (source, calls, message) => {
+  const blocks = fencedCodeBlocks(source)
+  const positions = calls.map(({ label, pattern }) => {
+    const index = blocks.findIndex((block) => pattern.test(block))
+    assert.notEqual(index, -1, `${message} call order: missing ${label}`)
+    return { label, index }
+  })
+
+  for (let index = 1; index < positions.length; index += 1) {
+    assert.ok(
+      positions[index].index > positions[index - 1].index,
+      `${message} call order: expected ${positions[index].label} after ${positions[index - 1].label}`,
+    )
+  }
+
+  return Object.fromEntries(positions.map(({ label, index }) => [label, blocks[index]]))
+}
+
+const assertExplicitParquetFileWrites = (source, message) => {
+  const calls = [
+    ...fencedCodeBlocks(source).join('\n').matchAll(/\.write_parquet\(\s*([^\n)]+?)\s*\)/g),
+  ]
+  assert.ok(calls.length > 0, `${message}: missing explicit write_parquet file path`)
+
+  for (const call of calls) {
+    const argument = call[1].trim()
+    const literal = argument.match(/^(["'])([^"']+)\1$/)
+    assert.ok(literal, `${message}: write_parquet file path should be one string literal`)
+    assert.doesNotMatch(
+      literal[2],
+      /\/$/,
+      `${message}: write_parquet file path should not be a directory ending in slash`,
+    )
+    assert.match(
+      literal[2],
+      /\.parquet$/i,
+      `${message}: write_parquet file path should name a parquet file`,
+    )
+  }
+}
+
+const assertSqlJsonBridge = (block, option, message) => {
+  const value = block.match(new RegExp(`\\b${option}\\s*:=\\s*'([^']+)'`))?.[1]
+  assert.ok(value, `${message}: ${option} should be a constant SQL string`)
+  assert.doesNotThrow(
+    () => JSON.parse(value),
+    `${message}: ${option} should contain valid JSON`,
+  )
+}
+
+const assertEmbeddingGuideTask = (source, locale, message) => {
+  const blocks = assertCodeBlockCallOrder(
+    source,
+    [
+      { label: 'SQL ai_embed', pattern: /(?:^|[^.\w])ai_embed\(/ },
+      { label: 'Python vane.ai.embed', pattern: /vane\.ai\.embed\(/ },
+      { label: 'Relation rel.embed_text', pattern: /\.embed_text\(/ },
+      { label: 'custom Relation UDF', pattern: /\.map_batches\(/ },
+    ],
+    message,
+  )
+
+  const sqlEmbedding = blocks['SQL ai_embed']
+  assert.match(
+    sqlEmbedding,
+    /ai_embed\(\s*[a-z_]\w*\s*,\s*struct_pack\(/,
+    `${message}: SQL ai_embed should use one constant struct_pack`,
+  )
+  assertNoCredentialSqlFields(sqlEmbedding, `${message} SQL ai_embed`)
+
+  const pythonEmbedding = blocks['Python vane.ai.embed']
+  assertPatterns(
+    pythonEmbedding,
+    [/\.select\(/, /vane\.ai\.embed\(/, /\.alias\("embedding"\)/],
+    `${message} Python Expression embedding`,
+  )
+
+  const relationEmbedding = blocks['Relation rel.embed_text']
+  assertPatterns(
+    relationEmbedding,
+    [
+      /\.embed_text\(/,
+      /max_chunk_chars\s*=\s*\d+/,
+      /chunk_overlap_chars\s*=\s*\d+/,
+      /actor_number\s*=\s*[1-9]\d*/,
+      /execution_backend\s*=\s*["'](?:subprocess|ray)_actor["']/,
+    ],
+    `${message} Relation embedding boundary`,
+  )
+  assertExplicitParquetFileWrites(source, message)
+
+  const normalized = collapseWrappedMarkdown(source)
+  const requirements = locale === 'en'
+    ? [
+        /SQL `concurrency`[^.\n]{0,100}(?:maps|map)[^.\n]{0,80}(?:AI )?actor count/i,
+        /\bIt is not a per-row option/i,
+        /no direct SQL Relation or table-function API/i,
+        /helper does not promise to retain[^.\n]{0,160}`document_id`/i,
+      ]
+    : [
+        /SQL `concurrency`[^。\n]{0,100}(?:映射|对应)[^。\n]{0,80}actor 数/i,
+        /它不是逐行 option/i,
+        /不为[^。\n]{0,100}直接的 SQL Relation 或 table-function API/i,
+        /helper 不承诺保留[^。\n]{0,160}`document_id`/i,
+      ]
+  assertPatterns(normalized, requirements, `${message} concurrency and capability boundary`)
+}
+
+const assertGpuGuideTask = (source, locale, message) => {
+  const blocks = assertCodeBlockCallOrder(
+    source,
+    [
+      { label: 'SQL ai_prompt', pattern: /(?:^|[^.\w])ai_prompt\(/ },
+      { label: 'Python vane.ai.prompt', pattern: /vane\.ai\.prompt\(/ },
+      {
+        label: 'advanced Relation rel.prompt',
+        pattern: /\.prompt\([\s\S]*\breturn_format\s*=/,
+      },
+    ],
+    message,
+  )
+
+  const sqlPrompt = blocks['SQL ai_prompt']
+  assert.match(
+    sqlPrompt,
+    /ai_prompt\(\s*[a-z_]\w*\s*,\s*struct_pack\(/,
+    `${message}: SQL ai_prompt should use one constant struct_pack`,
+  )
+  assert.match(
+    sqlPrompt,
+    /\bprovider\s*:=\s*'vllm'/,
+    `${message}: SQL ai_prompt should select vLLM with a constant option`,
+  )
+  assertSqlJsonBridge(sqlPrompt, 'engine_args_json', `${message} SQL ai_prompt`)
+  assertSqlJsonBridge(sqlPrompt, 'generate_args_json', `${message} SQL ai_prompt`)
+  assertNoCredentialSqlFields(sqlPrompt, `${message} SQL ai_prompt`)
+
+  const pythonPrompt = blocks['Python vane.ai.prompt']
+  assertPatterns(
+    pythonPrompt,
+    [
+      /vane\.ai\.VLLMProviderOptions\(/,
+      /vane\.ai\.VLLMPromptOptions\(/,
+      /vane\.ai\.prompt\(/,
+      /\.alias\("response_text"\)/,
+    ],
+    `${message} typed Python Expression prompt`,
+  )
+
+  const relationPrompt = blocks['advanced Relation rel.prompt']
+  assertPatterns(
+    relationPrompt,
+    [
+      /\.prompt\(/,
+      /actor_number["']?\s*:\s*[1-9]\d*/,
+      /gpus_per_actor["']?\s*:\s*[1-9]\d*(?:\.\d+)?/,
+      /return_format\s*=\s*\w+/,
+      /output_column\s*=\s*["'][^"']+["']/,
+      /execution_backend\s*=\s*["']ray_actor["']/,
+    ],
+    `${message} advanced Relation prompt`,
+  )
+
+  const reviewBlock = codeBlockContaining(
+    source,
+    /AS config_summary/,
+    `${message} review configuration summary`,
+  )
+  assertPatterns(
+    reviewBlock,
+    [/prompt_template_version/, /system_message/],
+    `${message} review configuration summary`,
+  )
+  assertExplicitParquetFileWrites(source, message)
+
+  const normalized = collapseWrappedMarkdown(source)
+  const requirements = locale === 'en'
+    ? [
+        /SQL `concurrency=N` and typed `VLLMProviderOptions\(concurrency=N\)`[^.\n]{0,100}outer AI UDF `actor_number=N`/i,
+        /raw provider-options dict[^.\n]{0,180}`concurrency`[^.\n]{0,100}`use_ray=True`[^.\n]{0,180}inner native vLLM pool/i,
+        /SQL's same-name `concurrency` field is outer-only/i,
+        /rel\.prompt` only when[^.\n]{0,240}(?:structured output|multimodal)[^.\n]{0,240}(?:backend|actor-pool)/i,
+        /does not expose a direct SQL Relation API or SQL table function/i,
+      ]
+    : [
+        /SQL `concurrency=N` 与 typed `VLLMProviderOptions\(concurrency=N\)`[^。\n]{0,100}外层 AI UDF 的 `actor_number=N`/i,
+        /raw provider-options dict[^。\n]{0,180}`concurrency`[^。\n]{0,100}`use_ray=True`[^。\n]{0,180}内层原生 vLLM pool/i,
+        /SQL 中的同名 `concurrency` 字段只配置外层/i,
+        /只有任务需要[^。\n]{0,260}(?:结构化输出|多模态)[^。\n]{0,260}(?:backend|actor-pool)[^。\n]{0,80}才使用 `rel\.prompt`/i,
+        /不提供直接 SQL Relation API 或 SQL table function/i,
+      ]
+  assertPatterns(normalized, requirements, `${message} concurrency and capability boundary`)
+}
+
+const assertBilingualGuideTask = ({ label, sources, check }) => {
+  assert.deepEqual(
+    fencedCodeBlocks(sources.zh),
+    fencedCodeBlocks(sources.en),
+    `${label}: bilingual fenced-code parity`,
+  )
+  for (const locale of ['en', 'zh']) {
+    check(
+      sources[locale],
+      locale,
+      `${locale === 'en' ? 'English' : 'Chinese'} ${label}`,
+    )
+  }
+}
+
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
@@ -969,7 +1178,13 @@ const aiGuideZh = read(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/ai-functions.mdx',
 )
 const embeddingsGuide = read('docs/data/guides/embeddings-at-scale.mdx')
+const embeddingsGuideZh = read(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/embeddings-at-scale.mdx',
+)
 const gpuGuide = read('docs/data/guides/gpu-inference.mdx')
+const gpuGuideZh = read(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/gpu-inference.mdx',
+)
 const quickstart = read('docs/data/quickstart/quickstart.mdx')
 const quickstartZh = read(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
@@ -2495,6 +2710,21 @@ for (const schema of guideSchemas) {
   }
 }
 
+for (const schema of [
+  {
+    label: 'Embeddings at Scale Guide',
+    sources: { en: embeddingsGuide, zh: embeddingsGuideZh },
+    check: assertEmbeddingGuideTask,
+  },
+  {
+    label: 'GPU Inference Guide',
+    sources: { en: gpuGuide, zh: gpuGuideZh },
+    check: assertGpuGuideTask,
+  },
+]) {
+  assertBilingualGuideTask(schema)
+}
+
 const quickstartOrderMutation = quickstart
   .replace('## 2. Select candidates with SQL', '## __QUICKSTART_ORDER_SWAP__')
   .replace('## 3. Define a raw scalar callable', '## 2. Select candidates with SQL')
@@ -2548,10 +2778,75 @@ assert.throws(
   'AI Guide guards should reject a response model used before definition',
 )
 
+const swapLiteralSegments = (source, first, second) => {
+  const placeholder = '__UDF_AI_V2_CONTENT_CHECK_SWAP__'
+  assert.doesNotMatch(source, new RegExp(placeholder), 'mutation placeholder should be unique')
+  return source.replace(first, placeholder).replace(second, first).replace(placeholder, second)
+}
+
+const embeddingsSqlBlock = codeBlockContaining(
+  embeddingsGuide,
+  /(?:^|[^.\w])ai_embed\(/,
+  'Embedding order mutation SQL block',
+)
+const embeddingsPythonBlock = codeBlockContaining(
+  embeddingsGuide,
+  /vane\.ai\.embed\(/,
+  'Embedding order mutation Python block',
+)
+const embeddingsOrderMutation = swapLiteralSegments(
+  embeddingsGuide,
+  embeddingsSqlBlock,
+  embeddingsPythonBlock,
+)
+assert.throws(
+  () => assertEmbeddingGuideTask(
+    embeddingsOrderMutation,
+    'en',
+    'Embedding order mutation',
+  ),
+  /call order/,
+  'Embedding guide guards should reject Python Expression before SQL ai_embed',
+)
+
+const gpuSqlBlock = codeBlockContaining(
+  gpuGuide,
+  /(?:^|[^.\w])ai_prompt\(/,
+  'GPU order mutation SQL block',
+)
+const gpuPythonBlock = codeBlockContaining(
+  gpuGuide,
+  /vane\.ai\.prompt\(/,
+  'GPU order mutation Python block',
+)
+const gpuOrderMutation = swapLiteralSegments(gpuGuide, gpuSqlBlock, gpuPythonBlock)
+assert.throws(
+  () => assertGpuGuideTask(
+    gpuOrderMutation,
+    'en',
+    'GPU order mutation',
+  ),
+  /call order/,
+  'GPU guide guards should reject Python Expression before SQL ai_prompt',
+)
+
+const gpuDirectoryWriteMutation = gpuGuide.replace(
+  'output/claims-vllm-2026-07-11-001/part-00000.parquet',
+  'output/claims-vllm-2026-07-11-001/',
+)
+assert.throws(
+  () => assertGpuGuideTask(
+    gpuDirectoryWriteMutation,
+    'en',
+    'GPU directory-write mutation',
+  ),
+  /write_parquet file path/,
+  'GPU guide guards should reject a directory-only write_parquet destination',
+)
+
 assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
 assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
-assert.match(embeddingsGuide, /vane\.ai\.embed[\s\S]*vane\.col[\s\S]*\.alias\("embedding"\)/, 'Embedding guide should demonstrate expression embedding')
 
 for (const [path, kind] of [
   ['docs/data/guides/multimodal-ingest.mdx', 'udf'],
@@ -2567,9 +2862,6 @@ for (const [path, kind] of [
   const source = read(path)
   assert.match(source, new RegExp(`/docs/data/reference/${kind}-api`), `${path} should link to the ${kind.toUpperCase()} API reference`)
 }
-
-assert.match(gpuGuide, /vane\.ai\.prompt[\s\S]*VLLMProviderOptions/, 'GPU guide should show expression-mode vLLM prompting')
-assert.match(gpuGuide, /return_format[\s\S]*image_columns[\s\S]*relation/i, 'GPU guide should retain relation-mode guidance for advanced prompts')
 
 assert.match(overview, /\/docs\/data\/reference\/udf-api/, 'Docs overview should link the UDF reference')
 assert.match(overview, /\/docs\/data\/reference\/ai-api/, 'Docs overview should link the AI reference')
