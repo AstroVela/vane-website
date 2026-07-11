@@ -8,6 +8,7 @@ const footer = readFileSync('src/components/Footer.tsx', 'utf8')
 const cta = readFileSync('src/components/Cta.tsx', 'utf8')
 const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
+const heroCode = home.match(/const HERO_CODE = `([\s\S]*?)`/)?.[1]?.replace(/<[^>]*>/g, '') ?? ''
 
 const mustIncludeInHome = [
   'The multimodal engine for AI pipelines and agents',
@@ -92,6 +93,12 @@ assert.doesNotMatch(siteLinks, /hello@vane\.ai/, 'siteLinks should not preserve 
 
 assert.doesNotMatch(home, /OLD_WAY|NEW_WAY|The old way|With Vane Data/, 'Home.tsx should not render the old/new comparison block')
 assert.doesNotMatch(home, /The Multimodal-Native AI Engine|Powering the AI learning and action loop|Four real-world AI workloads\. One multimodal engine\.|Enterprise multimodal data pipelines|Autonomous Driving — Physical AI training data|PB-scale multi-sensor drive logs/, 'Home.tsx should not include superseded positioning copy')
+
+assert.match(heroCode, /con\.sql\([\s\S]*read_parquet/, 'Homepage hero should load a relation through the public connection SQL API')
+assert.match(heroCode, /SELECT id, text,[\s\S]*ai_embed\([\s\S]*text,[\s\S]*struct_pack\([\s\S]*provider := 'openai'[\s\S]*model := 'text-embedding-3-small'[\s\S]*\) AS embedding[\s\S]*FROM read_parquet/, 'Homepage hero should lead with the SQL ai_embed expression while preserving source columns')
+assert.doesNotMatch(heroCode, /\.select\(|vane\.ai\.embed\(/, 'Homepage hero should not make the Python Expression spelling the primary embedding path')
+assert.match(heroCode, /write_parquet\(/, 'Homepage hero should use the public relation writer')
+assert.doesNotMatch(heroCode, /from vane\.ai import describe|\bdescribe\(|vane\.read\(|\.write\(/, 'Homepage hero should not use fictional convenience APIs')
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

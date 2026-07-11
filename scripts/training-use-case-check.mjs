@@ -19,6 +19,7 @@ const routes = readFileSync(routesPath, 'utf8')
 const footer = readFileSync('src/components/Footer.tsx', 'utf8')
 const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
+const pipelineCode = page.match(/const PIPELINE_CODE = `([\s\S]*?)`/)?.[1] ?? ''
 const heroShape = page.match(/function TrainingHeroShape\([^)]*\) \{[\s\S]*?\n\}/)?.[0] ?? ''
 const heroCss = css.match(/\.training-hero-art[\s\S]*?\.solution-hero-media/)?.[0] ?? ''
 const executionCss = css.match(/\.tl-execution\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
@@ -61,7 +62,8 @@ const mustIncludeInPage = [
   'Embedding + release',
   '# Select train records from the raw manifest.',
   '# Decode media and run captioning / labeling on Ray actors.',
-  '# Filter by quality, dedupe by content hash, then embed captions.',
+  '# Filter by quality and dedupe by content hash.',
+  '# Keep release columns beside a SQL embedding expression.',
   '# Publish a versioned training-data release.',
   'CaptionAndScore',
   'release_schema',
@@ -69,7 +71,8 @@ const mustIncludeInPage = [
   'labeled.to_table("labeled")',
   'row_number() over',
   'partition by content_hash',
-  'embed_text(',
+  'ai_embed(',
+  'caption_embedding',
   'CaptionAndScore is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns.',
   's3://dataset-releases/mm-v42/',
   'Build a reproducible multimodal training-data pipeline.',
@@ -113,7 +116,15 @@ assert.match(css, /\.training-hero-art[\s\S]*\.thg-stage[\s\S]*\.training-art-fl
 assert.match(css, /\.thg-stage\s*\{[\s\S]*width:\s*486px[\s\S]*transform:\s*scale\(var\(--thg-scale\)\)/, 'training hero art should scale as one fixed-coordinate stage')
 assert.doesNotMatch(heroShape, /training-shape-card|training-shape-row|training-shape-tags|training-art-rail|training-art-scan|training-art-heading|training-art-paths|training-art-node|node-manifest|node-udf|node-gate|Pipeline shape|Raw manifest|SQL filter \/ dedupe|Ray-backed release graph|release build|raw corpus -> mm-v42|SQL selection|Ray GPU UDF|SQL quality gate|Embeddings \+ release|mm-v42 Parquet|One Ray-backed graph turns raw multimodal records into a governed training release\./, 'training hero should not render the old table-like card, technical card map, or abstract graph visual')
 assert.doesNotMatch(heroCss, /training-shape-card|training-shape-row|training-shape-tags|training-art-rail|training-art-scan|training-art-heading|training-art-paths|training-art-node|node-manifest|node-udf|node-gate/, 'training hero CSS should not keep old card-map or abstract graph selectors')
-assert.match(page, /embed_text\(\s*"caption",[\s\S]*provider="transformers"[\s\S]*execution_backend="ray_actor"/, 'training page should embed captions with the Ray actor backend in the pipeline shape')
+assert.ok(pipelineCode, 'training page should define PIPELINE_CODE')
+const captionCall = pipelineCode.match(/labeled = raw\.map_batches\(([\s\S]*?)\n\)/)?.[0] ?? ''
+assert.match(captionCall, /CaptionAndScore/, 'training actor stage should bind CaptionAndScore')
+assert.match(captionCall, /execution_backend="ray_actor"/, 'CaptionAndScore should explicitly use a Ray actor backend')
+assert.match(captionCall, /gpus=1/, 'CaptionAndScore should use the public gpus resource parameter')
+assert.match(captionCall, /actor_number=[1-9]\d*/, 'CaptionAndScore should declare a positive actor pool')
+const releaseQuery = pipelineCode.match(/release = con\.sql\("""([\s\S]*?)"""\)/)?.[0] ?? ''
+assert.match(releaseQuery, /select id, uri,[\s\S]*caption,[\s\S]*ai_embed\([\s\S]*caption,[\s\S]*provider := 'transformers'[\s\S]*\) as caption_embedding[\s\S]*from curated/, 'training code should retain release columns in a SQL ai_embed projection')
+assert.doesNotMatch(pipelineCode, /vane\.ai\.embed\(|\.embed_text\(/, 'training marketing code should lead with SQL ai_embed rather than a Python-only enrichment path')
 assert.match(page, /<div className="training-code-layout">[\s\S]*<div className="training-code-copy">[\s\S]*className="training-code-steps"[\s\S]*className="training-code-note"[\s\S]*<div className="training-code-showcase">[\s\S]*<CodeWindow filename="training_data_release\.py" code=\{PIPELINE_CODE\} language="python" \/>/, 'training representative code should use a text-left code-right layout')
 assert.match(css, /\.training-code-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(280px,\s*0\.78fr\)\s*minmax\(0,\s*1\.22fr\)[\s\S]*\.training-code-copy\s*\{[\s\S]*max-width:\s*520px[\s\S]*\.training-code-showcase\s*\{[\s\S]*min-width:\s*0/, 'training representative code layout styles should give the copy and code balanced desktop columns')
 assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*\.training-code-layout,[\s\S]*grid-template-columns:\s*1fr/, 'training representative code layout should stack on tablet and mobile widths')

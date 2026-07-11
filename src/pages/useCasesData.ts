@@ -1,5 +1,5 @@
 /* Seven detailed use cases — Problem / Pipeline / Code / Input·Output / When /
-   Example. Code is pre-highlighted markup, copied verbatim from the prototype. */
+   Example. Code is pre-highlighted markup using the current public APIs. */
 import type {PixelIconName} from '../components/PixelIcon'
 
 export type UseCase = {
@@ -32,8 +32,8 @@ export const USE_CASES = [
     titleZh: '网页文本转嵌入',
     tag: 'embeddings',
     tagZh: 'embedding',
-    pipeline: ['read_parquet', 'filter SQL', 'chunk_text', 'embed_text', 'write_parquet'],
-    pipelineZh: ['read_parquet', 'SQL 过滤', 'chunk_text', 'embed_text', 'write_parquet'],
+    pipeline: ['read_parquet', 'filter SQL', 'chunk_text', 'SQL ai_embed', 'write_parquet'],
+    pipelineZh: ['read_parquet', 'SQL 过滤', 'chunk_text', 'SQL ai_embed', 'write_parquet'],
     problem:
       'Turning web-scale crawl dumps into clean, chunked embeddings usually means stitching SQL filtering, Python chunking, a GPU embedding model and Parquet output across separate systems.',
     problemZh:
@@ -47,8 +47,16 @@ export const USE_CASES = [
     filename: 'common_crawl.py',
     example: 'examples/common_crawl.py',
     code: `docs <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT url, text FROM read_parquet('s3://cc/*.parquet')"</span><span class="p">)</span>
-chunks <span class="p">=</span> docs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>chunk_text<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
-emb <span class="p">=</span> <span class="f">embed_text</span><span class="p">(</span>chunks<span class="p">,</span> <span class="s">"text"</span><span class="p">,</span> provider<span class="p">=</span><span class="s">"transformers"</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">64</span><span class="p">)</span>
+chunks <span class="p">=</span> docs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>chunk_text<span class="p">,</span> schema<span class="p">=</span>chunk_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
+chunks<span class="p">.</span><span class="f">to_table</span><span class="p">(</span><span class="s">"chunks"</span><span class="p">)</span>
+emb <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
+SELECT url, text,
+       ai_embed(text, struct_pack(
+           provider := 'transformers',
+           model := 'sentence-transformers/all-MiniLM-L6-v2'
+       )) AS embedding
+FROM chunks
+"""</span><span class="p">)</span>
 emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://corpus/embeddings/"</span><span class="p">)</span>`,
   },
   {
@@ -58,8 +66,8 @@ emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(
     titleZh: '语义搜索',
     tag: 'retrieval',
     tagZh: '检索',
-    pipeline: ['sql', 'embed_text', 'write index', 'cosine query'],
-    pipelineZh: ['SQL', 'embed_text', '写入索引', 'cosine query'],
+    pipeline: ['SQL ai_embed', 'write index', 'cosine query'],
+    pipelineZh: ['SQL ai_embed', '写入索引', 'cosine query'],
     problem:
       'You need an offline index of a large Q&A corpus and a way to match related records without standing up a vector DB just to experiment.',
     problemZh:
@@ -72,10 +80,16 @@ emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(
     whenZh: '在静态语料上原型验证检索或近重复匹配时使用。',
     filename: 'semantic_search.py',
     example: 'examples/semantic_search.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, title, body FROM read_parquet('s3://qa/*.parquet')"</span><span class="p">)</span>
-idx <span class="p">=</span> <span class="f">embed_text</span><span class="p">(</span>rel<span class="p">,</span> <span class="s">"body"</span><span class="p">,</span> provider<span class="p">=</span><span class="s">"transformers"</span><span class="p">)</span>
+    code: `idx <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
+SELECT id, title, body,
+       ai_embed(body, struct_pack(
+           provider := 'transformers',
+           model := 'sentence-transformers/all-MiniLM-L6-v2'
+       )) AS embedding
+FROM read_parquet('s3://qa/*.parquet')
+"""</span><span class="p">)</span>
 idx<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://index/qa/"</span><span class="p">)</span>
-hits <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id FROM 's3://index/qa/' ORDER BY cosine(vec,$q) LIMIT 10"</span><span class="p">)</span>`,
+hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execute</span><span class="p">(</span><span class="s">"SELECT id FROM 's3://index/qa/' ORDER BY list_cosine_similarity(embedding, ?::FLOAT[]) DESC LIMIT 10"</span><span class="p">, [</span>q<span class="p">]).</span><span class="f">fetchall</span><span class="p">()</span>`,
   },
   {
     id: 'dedupe',
@@ -99,9 +113,10 @@ hits <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</s
     filename: 'minhash_dedupe.py',
     example: 'examples/minhash_dedupe.py',
     code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, text FROM read_parquet('s3://raw/*.parquet')"</span><span class="p">)</span>
-sig <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>minhash<span class="p">,</span> num_perm<span class="p">=</span><span class="n">128</span><span class="p">)</span>
-buckets <span class="p">=</span> sig<span class="p">.</span><span class="f">flat_map</span><span class="p">(</span>lsh_bands<span class="p">,</span> bands<span class="p">=</span><span class="n">16</span><span class="p">)</span>
-buckets<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>keep_one_per_cluster<span class="p">).</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://clean/"</span><span class="p">)</span>`,
+sig <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>minhash_128<span class="p">,</span> schema<span class="p">=</span>signature_schema<span class="p">)</span>
+buckets <span class="p">=</span> sig<span class="p">.</span><span class="f">flat_map</span><span class="p">(</span>lsh_bands_16<span class="p">,</span> schema<span class="p">=</span>band_schema<span class="p">)</span>
+clean <span class="p">=</span> buckets<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>keep_one_per_cluster<span class="p">,</span> schema<span class="p">=</span>clean_schema<span class="p">)</span>
+clean<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://clean/"</span><span class="p">)</span>`,
   },
   {
     id: 'images',
@@ -124,9 +139,9 @@ buckets<span class="p">.</span><span class="f">map_batches</span><span class="p"
     whenZh: '给大型图像数据集打标签、过滤或抽取特征时使用。',
     filename: 'querying_images.py',
     example: 'examples/querying_images.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT path FROM read_parquet('s3://images/manifest.parquet')"</span><span class="p">)</span>
-imgs <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>decode_image<span class="p">,</span> batch_size<span class="p">=</span><span class="n">128</span><span class="p">)</span>
-feats <span class="p">=</span> imgs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">DetectFeatures</span><span class="p">,</span> num_gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">64</span><span class="p">)</span>
+    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, path FROM read_parquet('s3://images/manifest.parquet')"</span><span class="p">)</span>
+imgs <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>decode_image<span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">128</span><span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
+feats <span class="p">=</span> imgs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">DetectFeatures</span><span class="p">,</span> schema<span class="p">=</span>feature_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">4</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">64</span><span class="p">)</span>
 feats<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://features/"</span><span class="p">)</span>`,
   },
   {
@@ -152,7 +167,7 @@ feats<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     example: 'examples/image_generation.py',
     code: `prompts <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, prompt FROM read_parquet('s3://prompts.parquet')"</span><span class="p">)</span>
 images <span class="p">=</span> prompts<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>
-    <span class="t">Diffusion</span><span class="p">,</span> num_gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">16</span><span class="p">,</span> steps<span class="p">=</span><span class="n">30</span><span class="p">)</span>
+    <span class="t">Diffusion</span><span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">2</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">16</span><span class="p">)</span>
 images<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://generated/"</span><span class="p">)</span>`,
   },
   {
@@ -177,8 +192,10 @@ images<span class="p">.</span><span class="f">write_parquet</span><span class="p
     filename: 'multimodal_structured_outputs.py',
     example: 'examples/multimodal_structured_outputs.py',
     code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, image, question FROM 's3://docs/*.parquet'"</span><span class="p">)</span>
-ans <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">VLM</span><span class="p">,</span> schema<span class="p">=</span><span class="t">Receipt</span><span class="p">,</span> num_gpus<span class="p">=</span><span class="n">1</span><span class="p">)</span>
-graded <span class="p">=</span> ans<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Judge</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">)</span>
+ans <span class="p">=</span> rel<span class="p">.</span><span class="f">prompt</span><span class="p">(</span>
+    <span class="s">"question"</span><span class="p">,</span> image_columns<span class="p">=[</span><span class="s">"image"</span><span class="p">],</span> provider<span class="p">=</span><span class="s">"openai"</span><span class="p">,</span>
+    return_format<span class="p">=</span><span class="t">Receipt</span><span class="p">,</span> output_column<span class="p">=</span><span class="s">"receipt_json"</span><span class="p">)</span>
+graded <span class="p">=</span> ans<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Judge</span><span class="p">,</span> schema<span class="p">=</span>judge_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">)</span>
 graded<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://extracted/"</span><span class="p">)</span>`,
   },
   {
@@ -188,8 +205,8 @@ graded<span class="p">.</span><span class="f">write_parquet</span><span class="p
     titleZh: '语音 AI 分析',
     tag: 'audio',
     tagZh: '音频',
-    pipeline: ['audio sql', 'Transcribe', 'Summarize', 'embed_text'],
-    pipelineZh: ['audio SQL', 'Transcribe', 'Summarize', 'embed_text'],
+    pipeline: ['audio SQL', 'Transcribe', 'Summarize', 'SQL ai_embed'],
+    pipelineZh: ['audio SQL', 'Transcribe', 'Summarize', 'SQL ai_embed'],
     problem:
       'A voice-analytics pipeline chains transcription, summarization, captioning and embedding — each a different model, each needing batching on GPUs.',
     problemZh:
@@ -204,8 +221,17 @@ graded<span class="p">.</span><span class="f">write_parquet</span><span class="p
     example: 'examples/voice_ai_analytics.py',
     code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, audio FROM read_parquet('s3://calls/*.parquet')"</span><span class="p">)</span>
 out <span class="p">=</span> <span class="p">(</span>rel
-   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Transcribe</span><span class="p">,</span> num_gpus<span class="p">=</span><span class="n">1</span><span class="p">)</span>
-   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Summarize</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">))</span>
-<span class="f">embed_text</span><span class="p">(</span>out<span class="p">,</span> <span class="s">"summary"</span><span class="p">).</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/"</span><span class="p">)</span>`,
+   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Transcribe</span><span class="p">,</span> schema<span class="p">=</span>transcript_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">4</span><span class="p">)</span>
+   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Summarize</span><span class="p">,</span> schema<span class="p">=</span>summary_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">))</span>
+out<span class="p">.</span><span class="f">to_table</span><span class="p">(</span><span class="s">"transcribed"</span><span class="p">)</span>
+ready <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
+SELECT id, transcript, summary,
+       ai_embed(summary, struct_pack(
+           provider := 'transformers',
+           model := 'sentence-transformers/all-MiniLM-L6-v2'
+       )) AS embedding
+FROM transcribed
+"""</span><span class="p">)</span>
+ready<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/"</span><span class="p">)</span>`,
   },
 ] satisfies UseCase[]

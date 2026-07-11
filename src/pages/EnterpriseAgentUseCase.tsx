@@ -10,12 +10,7 @@ import EnterpriseContextAnimation from '../components/EnterpriseContextAnimation
 import { pickLocale, type SiteLocale, useSiteLocale } from '../siteI18n'
 import { ENTERPRISE_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
-const AUDIT_CODE = `from pydantic import BaseModel
-import vane
-
-class AuditResult(BaseModel):
-    status: str
-    reason: str
+const AUDIT_CODE = `import vane
 
 con = vane.connect()
 docs = con.sql("""
@@ -25,37 +20,30 @@ docs = con.sql("""
 """)
 docs.to_table("docs")
 
-rule_hits = con.sql("""
-    select document_id, claim_id, document_type, source_uri,
+reviewed = con.sql("""
+    select claim_id, document_id, document_type,
            case
              when lower(text) like '%missing signature%' then 'missing_signature'
              when lower(text) like '%expired%' then 'expired_reference'
-           end as rule_hit
+           end as rule_hit,
+           ai_prompt(
+               text,
+               struct_pack(
+                   provider := 'openai',
+                   model := 'gpt-4o-mini',
+                   system_message := 'Audit the insurance document for missing evidence. Return a concise review finding.',
+                   temperature := 0.0
+               )
+           ) as model_response,
+           source_uri
     from docs
-    where lower(text) like '%missing signature%'
-       or lower(text) like '%expired%'
 """)
-
-audit_only = docs.prompt(
-    "text",
-    provider="openai",
-    system_message="Audit the insurance document for missing evidence. Return JSON.",
-    return_format=AuditResult,
-    output_column="audit_json",
-    execution_backend="subprocess_actor",
-)
-
-docs_table = docs.to_arrow_table()
-audit_table = audit_only.to_arrow_table()
-if docs_table.num_rows != audit_table.num_rows:
-    raise ValueError("model output row count changed")
-
-audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
-audited.to_table("audited")
+reviewed.to_table("reviewed")
 
 final = con.sql("""
-    select claim_id, document_id, document_type, rule_hit, audit_json, source_uri
-    from audited join rule_hits using (document_id, claim_id, document_type, source_uri)
+    select claim_id, document_id, document_type, rule_hit, model_response, source_uri
+    from reviewed
+    where rule_hit is not null or model_response is not null
 """)`
 
 const INSURANCE_AUDIT_DOC = '/docs/data/examples/insurance-document-audit'
@@ -171,14 +159,14 @@ const HOW_CARDS: Array<{
   {
     title: 'Make source references part of the output',
     titleZh: '把来源引用保留到最终结果里',
-    copy: 'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
-    copyZh: 'AI Function 会返回配置好的输出列，显式保留文档 ID、规则命中、审计 JSON 和来源 URI。',
+    copy: 'SQL ai_prompt returns a scalar result; alias it in the projection, then keep document IDs, rule hits, the model response, and source URIs together in the same review row.',
+    copyZh: 'SQL ai_prompt 返回标量结果；在 projection 中为它设置别名，并在同一审查行保留文档 ID、规则命中、模型响应和来源 URI。',
     inputs: ['model output'],
     inputsZh: ['模型输出'],
     result: 'review row',
     resultZh: '证据追溯',
-    fields: 'document ID · rule hit · audit JSON · source URI',
-    fieldsZh: '文档 ID · 规则命中 · 审计 JSON · 来源 URI',
+    fields: 'document ID · rule hit · model response · source URI',
+    fieldsZh: '文档 ID · 规则命中 · 模型响应 · 来源 URI',
   },
   {
     title: 'Move to Ray after local validation',
@@ -233,10 +221,10 @@ const DOC_ROWS_ZH = [
 const PIPELINE_STAGES_EN = ['SQL rules', 'model review', 'audit rows']
 const PIPELINE_STAGES_ZH = ['SQL 规则', '模型推理', '文件处理']
 // The audit row's produced columns, straight from the final relation in
-// AUDIT_CODE (rule_hit, audit_json, source_uri) — keeps the figure honest to the
+// AUDIT_CODE (rule_hit, model_response, source_uri) — keeps the figure honest to the
 // code below and reinforces the page's source-reference / evidence-chain point.
-const AUDIT_OUTPUTS_EN = ['rule hit', 'audit JSON', 'source URI']
-const AUDIT_OUTPUTS_ZH = ['业务洞察', '决策建议', '证据链']
+const AUDIT_OUTPUTS_EN = ['rule hit', 'model response', 'source URI']
+const AUDIT_OUTPUTS_ZH = ['规则命中', '模型响应', '来源 URI']
 
 /* Real-example flow: a parsed document table feeds one Vane pipeline (SQL rules
    -> model review -> audit rows) that produces auditable outputs. Three equal-

@@ -14,6 +14,7 @@ const routes = readFileSync(routesPath, 'utf8')
 const footer = readFileSync('src/components/Footer.tsx', 'utf8')
 const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
+const auditCode = page.match(/const AUDIT_CODE = `([\s\S]*?)`/)?.[1] ?? ''
 
 const mustIncludeInPage = [
   'Enterprise Multimodal Data Infrastructure — Vane',
@@ -42,7 +43,7 @@ const mustIncludeInPage = [
   'UDF stages',
   'relation pipeline',
   'Make source references part of the output',
-  'AI Function 会返回配置好的输出列，显式保留文档 ID、规则命中、审计 JSON 和来源 URI。',
+  'SQL ai_prompt 返回标量结果；在 projection 中为它设置别名，并在同一审查行保留文档 ID、规则命中、模型响应和来源 URI。',
   'review row',
   'Move to Ray after local validation',
   'Validate locally first, then switch runner and UDF backends when distribution helps. The relation shape stays stable; worker storage, dependencies, and credentials still matter.',
@@ -56,25 +57,24 @@ const mustIncludeInPage = [
   'model review',
   'audit rows',
   'insurance_document_audit.py',
-  'from pydantic import BaseModel',
-  'class AuditResult(BaseModel):',
   'import vane',
   'const AUDIT_CODE',
   'const INSURANCE_AUDIT_DOC',
   '/docs/data/examples/insurance-document-audit',
   "read_parquet('data/insurance_documents/*.parquet')",
   "when lower(text) like '%missing signature%' then 'missing_signature'",
-  'audit_only = docs.prompt(',
-  'system_message="Audit the insurance document for missing evidence. Return JSON."',
-  'return_format=AuditResult',
-  'output_column="audit_json"',
-  'docs_table = docs.to_arrow_table()',
-  'audit_table = audit_only.to_arrow_table()',
-  'if docs_table.num_rows != audit_table.num_rows:',
-  'raise ValueError("model output row count changed")',
+  'reviewed = con.sql("""',
+  'ai_prompt(',
+  'struct_pack(',
+  "provider := 'openai'",
+  "model := 'gpt-4o-mini'",
+  "system_message := 'Audit the insurance document for missing evidence. Return a concise review finding.'",
+  'temperature := 0.0',
+  ') as model_response',
+  'reviewed.to_table("reviewed")',
   'final = con.sql("""',
-  'select claim_id, document_id, document_type, rule_hit, audit_json, source_uri',
-  'from audited join rule_hits using (document_id, claim_id, document_type, source_uri)',
+  'select claim_id, document_id, document_type, rule_hit, model_response, source_uri',
+  'from reviewed',
   'source_uri',
   'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
   'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
@@ -98,8 +98,8 @@ const mustIncludeInPage = [
   '保险审核流水线',
   '从理赔申请和原始理赔材料出发，在一条SQL流水线里完成非结构数据处理、模型推理和规则检查。',
   '原始材料',
-  '业务洞察',
-  '决策建议',
+  '规则命中',
+  '模型响应',
   '证据链',
   '文件处理',
   '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
@@ -115,6 +115,15 @@ assert.ok(motifCount >= 2, 'motif should be rendered in the hero and problem flo
 
 const codeWindowCount = page.match(/<CodeWindow/g)?.length ?? 0
 assert.equal(codeWindowCount, 1, 'enterprise page should contain exactly one CodeWindow')
+assert.ok(auditCode, 'enterprise page should define AUDIT_CODE')
+const forbiddenAuditCodePattern = /from pydantic import BaseModel|class AuditResult|docs\.prompt\(|return_format=|output_column\s*=|append_column\(|to_arrow_table\(/
+assert.doesNotMatch(auditCode, forbiddenAuditCodePattern, 'enterprise marketing code should use SQL AI projection without manual Arrow recombination')
+assert.throws(
+  () => assert.doesNotMatch(`${auditCode}\noutput_column="response"`, forbiddenAuditCodePattern),
+  'enterprise audit-code guard should reject an output_column mutation',
+)
+assert.match(auditCode, /select claim_id, document_id, document_type,[\s\S]*rule_hit,[\s\S]*ai_prompt\([\s\S]*as model_response,[\s\S]*source_uri[\s\S]*from docs/, 'enterprise SQL AI projection should alias the model response and retain business and source fields')
+assert.doesNotMatch(auditCode, /audit_json|Return JSON/, 'enterprise SQL sample should not promise schema-validated JSON without validation')
 assert.doesNotMatch(page, /enterprise-honesty|Vane Data does not ship a dedicated insurance workflow\.|This example shows the SQL and Relation API shape, not a production decision system\.|OCR, parsing, and policy-system extraction happen upstream or in explicit UDF stages\.|Vane Data 不自带专用保险工作流。|这个示例展示的是 SQL 和 Relation API 的形态，而不是生产决策系统。|OCR、解析和保单系统抽取发生在上游或显式 UDF 计算。/, 'enterprise page should not render or retain the explanatory note box copy in either locale')
 
 assert.match(page, /<section className="intro enterprise-hero">\s*<div className="wrap enterprise-hero-grid">\s*<div className="enterprise-hero-copy">[\s\S]*<h1 className="h1 enterprise-hero-title">\{copy\.heading\}<\/h1>[\s\S]*<p className="lead enterprise-hero-lead">[\s\S]*<div className="enterprise-hero-actions">\s*<Button solid to=\{INSURANCE_AUDIT_DOC\} arrow>\{copy\.runPipeline\}<\/Button>\s*<Button href=\{ENTERPRISE_DESIGN_PARTNER_MAILTO\} arrow>\{copy\.requestDemo\}<\/Button>\s*<\/div>\s*<div className="enterprise-hero-meta">[\s\S]*<div className="enterprise-hero-art">\s*<EnterpriseContextAnimation \/>\s*<\/div>/, 'enterprise hero should match the training two-column copy/action + right-rail visual pattern')

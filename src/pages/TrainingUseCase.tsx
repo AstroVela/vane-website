@@ -28,12 +28,12 @@ where split = 'train'
 # Decode media and run captioning / labeling on Ray actors.
 labeled = raw.map_batches(
     CaptionAndScore, schema=release_schema,
-    execution_backend="ray_actor", gpus=1, batch_size=64,
+    execution_backend="ray_actor", gpus=1, actor_number=4, batch_size=64,
 )
 labeled.to_table("labeled")
 
-# Filter by quality, dedupe by content hash, then embed captions.
-release = con.sql("""
+# Filter by quality and dedupe by content hash.
+curated = con.sql("""
 select * exclude rn
 from (
   select *, row_number() over (
@@ -43,11 +43,22 @@ from (
   where quality_score >= 0.8
 )
 where rn = 1
-""").embed_text(
-    "caption",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
+""")
+curated.to_table("curated")
+
+# Keep release columns beside a SQL embedding expression.
+release = con.sql("""
+select id, uri, media_type, content_hash, caption, quality_score,
+       ai_embed(
+           caption,
+           struct_pack(
+               provider := 'transformers',
+               model := 'sentence-transformers/all-MiniLM-L6-v2',
+               batch_size := 64
+           )
+       ) as caption_embedding
+from curated
+""")
 
 # Publish a versioned training-data release.
 release.write_parquet("s3://dataset-releases/mm-v42/")`

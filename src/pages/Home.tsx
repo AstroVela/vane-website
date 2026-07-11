@@ -13,21 +13,23 @@ import { pickLocale, useSiteLocale } from '../siteI18n'
 import { DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
 const HERO_CODE = `<span class="k">import</span> vane
-<span class="k">from</span> vane<span class="p">.</span>ai <span class="k">import</span> describe<span class="p">,</span> embed
 
 vane<span class="p">.</span><span class="f">configure</span><span class="p">(</span>runner<span class="p">=</span><span class="s">"ray"</span><span class="p">)</span>
-media <span class="p">=</span> vane<span class="p">.</span><span class="f">read</span><span class="p">(</span><span class="s">"media/*"</span><span class="p">)</span>
+con <span class="p">=</span> vane<span class="p">.</span><span class="f">connect</span><span class="p">()</span>
 
-media <span class="p">=</span> <span class="f">describe</span><span class="p">(</span>
-    media<span class="p">,</span>
-    columns<span class="p">=[</span><span class="s">"video"</span><span class="p">,</span> <span class="s">"audio"</span><span class="p">,</span> <span class="s">"text"</span><span class="p">],</span>
-    output<span class="p">=</span><span class="s">"understanding"</span><span class="p">,</span>
-    schema<span class="p">=[</span><span class="s">"summary"</span><span class="p">,</span> <span class="s">"objects"</span><span class="p">,</span>
-            <span class="s">"topics"</span><span class="p">,</span> <span class="s">"actions"</span><span class="p">],</span>
-<span class="p">)</span>
+media <span class="p">=</span> con<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
+    SELECT id, text,
+           ai_embed(
+               text,
+               struct_pack(
+                   provider := 'openai',
+                   model := 'text-embedding-3-small'
+               )
+           ) AS embedding
+    FROM read_parquet('media/*.parquet')
+"""</span><span class="p">)</span>
 
-media <span class="p">=</span> <span class="f">embed</span><span class="p">(</span>media<span class="p">,</span> <span class="s">"understanding.summary"</span><span class="p">)</span>
-media<span class="p">.</span><span class="f">write</span><span class="p">(</span><span class="s">"ai_ready_media"</span><span class="p">)</span><span class="cur"></span>`
+media<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"ai_ready_media/"</span><span class="p">)</span><span class="cur"></span>`
 
 const SCENARIOS: Array<{
   title: string
