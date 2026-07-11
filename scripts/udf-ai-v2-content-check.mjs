@@ -24,6 +24,29 @@ const markdownLines = (source) => {
   return lines
 }
 
+const fencedCodeBlocks = (source) => {
+  const blocks = []
+  let current = null
+
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    if (/^\s*```/.test(line)) {
+      if (current) {
+        current.push(line)
+        blocks.push(current.join('\n'))
+        current = null
+      } else {
+        current = [line]
+      }
+    } else if (current) {
+      current.push(line)
+    }
+  }
+
+  assert.equal(current, null, 'unclosed fenced code block')
+  return blocks
+}
+
 const exactLineIndex = (source, line, from = 0) =>
   markdownLines(source).find(({ text, offset }) => text === line && offset >= from)?.offset ?? -1
 
@@ -82,6 +105,31 @@ const assertApiModels = (source, models, message) => {
   assert.deepEqual(actualModels, models, `${message}: expected only the canonical top-level API models`)
 }
 
+const assertExactSignatures = (source, signatures, message) => {
+  for (const signature of signatures) {
+    assert.match(source, new RegExp(escapeRegExp(signature)), `${message} should include exact signature ${signature}`)
+  }
+}
+
+const assertExampleSetup = (source, entry, next, setupPattern, message) => {
+  const body = section(source, `#### \`${entry}\``, next ? `#### \`${next}\`` : undefined)
+  assert.match(
+    body,
+    /\*\*Minimal example\*\*[\s\S]*```python\nimport vane[\s\S]*con = vane\.connect\(\)/,
+    `${message} should define imports and a connection in its minimal example`,
+  )
+  assert.match(body, setupPattern, `${message} should define and preserve the setup its example uses`)
+}
+
+const assertNoInternalSymbols = (source, message) => {
+  assert.doesNotMatch(source, /vane\.function\b/, `${message} should use the final vane.func name`)
+  assert.doesNotMatch(
+    source,
+    /_duckdb|_create_vane_|expression_udf=true/,
+    `${message} should not expose internal protocol symbols`,
+  )
+}
+
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
@@ -108,9 +156,11 @@ const embeddingsGuide = read('docs/data/guides/embeddings-at-scale.mdx')
 const gpuGuide = read('docs/data/guides/gpu-inference.mdx')
 const quickstart = read('docs/data/quickstart/quickstart.mdx')
 const overview = read('docs/data/index.mdx')
+const overviewZh = read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current/index.mdx')
 const registry = read('src/docs/registry.ts')
 const sidebar = read('src/docs/sidebar.data.json')
 const localeLabels = read('i18n/zh-CN/docusaurus-plugin-content-docs-data/current.json')
+const packageJson = read('package.json')
 
 const publicApiCorpus = [
   udfReference,
@@ -142,6 +192,18 @@ const udfPythonEntries = [
   'vane.cls.batch',
 ]
 const udfRelationEntries = ['rel.map_batches', 'rel.flat_map', 'rel.map']
+const aiSqlEntries = ['ai_prompt', 'ai_embed']
+const aiPythonEntries = ['vane.ai.prompt', 'vane.ai.embed']
+const aiRelationEntries = ['rel.prompt', 'rel.embed_text', 'rel.classify_text']
+const aiExactSignatures = [
+  'ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR',
+  'ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]',
+  'vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None) -> Expression',
+  'vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, embedding_options=None, dimensions=None, normalize=None) -> Expression',
+  'rel.prompt(column, *, image_columns=None, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None, return_format=None, use_chat_completions=True, output_column="response", execution_backend=None, **options) -> Relation',
+  'rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_column="embedding", max_chunk_chars=None, chunk_overlap_chars=200, execution_backend=None, **options) -> Relation',
+  'rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation',
+]
 const referenceLabels = [
   '**Purpose**',
   '**Signature**',
@@ -171,6 +233,30 @@ const udfIntroductionRequirementsZh = [
   '公开 UDF 的签名、参数、返回值和调用限制',
   '完整任务请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)',
   '执行语义和设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)',
+]
+const aiIntroductionRequirements = [
+  'public AI Function signatures, parameters, returns, and call restrictions',
+  'For complete tasks, use the [AI Functions Guide](/docs/data/guides/ai-functions).',
+  'For execution semantics and design reasons, see [AI Function Concepts](/docs/data/concepts/ai-functions).',
+  'Vane has two AI API models.',
+]
+const aiIntroductionRequirementsZh = [
+  '公开 AI Function 的签名、参数、返回值和调用限制',
+  '完整任务请参阅 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions)',
+  '执行语义和设计原因请参阅 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)',
+  'Vane 有两种 AI API 模型。',
+]
+const aiOptionContracts = [
+  ['OpenAIProviderOptions', 'base_url=None, api_key=None, organization=None, timeout=None, concurrency=None, max_api_concurrency=None'],
+  ['OpenAIPromptOptions', 'use_chat_completions=None, max_output_tokens=None, max_tokens=None, temperature=None, on_error=None'],
+  ['OpenAIEmbeddingOptions', 'encoding_format="float", on_error=None'],
+  ['AnthropicProviderOptions', 'api_key=None, base_url=None, timeout=None, max_retries=None, concurrency=None, max_api_concurrency=None'],
+  ['AnthropicPromptOptions', 'max_tokens=None, temperature=None, top_p=None, top_k=None, stop_sequences=None, on_error=None'],
+  ['GoogleProviderOptions', 'api_key=None, concurrency=None, max_api_concurrency=None'],
+  ['GooglePromptOptions', 'max_output_tokens=None, temperature=None, top_p=None, top_k=None, on_error=None'],
+  ['GoogleEmbeddingOptions', 'task_type=None, title=None, on_error=None'],
+  ['VLLMProviderOptions', 'engine_args=None, concurrency=None, gpus_per_actor=None'],
+  ['VLLMPromptOptions', 'generate_args=None, max_tokens=None, temperature=None, on_error=None'],
 ]
 
 assert.throws(
@@ -214,6 +300,62 @@ assert.throws(
   ),
   /introduction should include exact text/,
   'Reference role guards should reject Guide and Concept links that occur only after the introduction',
+)
+assert.throws(
+  () => assertReferenceIntroduction(
+    [
+      'This Reference is lookup material for public AI Function signatures, parameters, returns, and call restrictions.',
+      '## Expression API',
+      ...aiIntroductionRequirements.slice(1),
+    ].join('\n'),
+    '## Expression API',
+    aiIntroductionRequirements,
+    'AI reference-introduction probe',
+  ),
+  /introduction should include exact text/,
+  'AI Reference role guards should reject Guide and Concept links that occur only after the introduction',
+)
+assert.throws(
+  () => assert.deepEqual(
+    fencedCodeBlocks('```python\nvalue = 1\n```'),
+    fencedCodeBlocks('```python\nvalue = 2\n```'),
+    'bilingual API references should contain identical fenced code blocks',
+  ),
+  /identical fenced code blocks/,
+  'bilingual code guards should reject a changed translated example',
+)
+assert.throws(
+  () => assertExactSignatures(
+    aiExactSignatures[4].replace('use_chat_completions=True', 'use_chat_completions=False'),
+    [aiExactSignatures[4]],
+    'signature mutation probe',
+  ),
+  /exact signature/,
+  'signature guards should reject a changed Relation default',
+)
+assert.throws(
+  () => assertExampleSetup(
+    [
+      '#### `ai_prompt`',
+      '**Minimal example**',
+      '```python',
+      'import vane',
+      'con = vane.connect()',
+      'result = con.sql("SELECT messages, ai_prompt(messages) FROM prompt_source")',
+      '```',
+    ].join('\n'),
+    'ai_prompt',
+    undefined,
+    /CREATE TEMP TABLE prompt_source[\s\S]*SELECT[\s\S]*document_id,[\s\S]*messages,[\s\S]*ai_prompt/,
+    'stable-column mutation probe',
+  ),
+  /define and preserve/,
+  'example guards should reject an SQL projection that drops its stable ID and source setup',
+)
+assert.throws(
+  () => assertNoInternalSymbols('请调用 _duckdb 内部 builder', 'internal-symbol mutation probe'),
+  /internal protocol symbols/,
+  'internal-symbol guards should reject internal API exposure in translated prose',
 )
 
 assertOrdered(
@@ -318,6 +460,171 @@ assertEntryTemplate(
   'Chinese UDF Relation API',
 )
 
+assertOrdered(
+  aiReference,
+  ['## Expression API', '### SQL Entry Point (Recommended)', '### Python Entry Point', '## Relation API'],
+  'AI reference',
+)
+assertOrdered(
+  aiReferenceZh,
+  ['## Expression API', '### SQL 入口（推荐）', '### Python 入口', '## Relation API'],
+  'Chinese AI reference',
+)
+assertApiModels(aiReference, ['## Expression API', '## Relation API'], 'AI reference')
+assertApiModels(aiReferenceZh, ['## Expression API', '## Relation API'], 'Chinese AI reference')
+assert.doesNotMatch(aiReference, /three (parallel |complementary )?(APIs|API surfaces|surfaces)/i)
+assert.doesNotMatch(aiReferenceZh, /三(?:个|种)(?:并列|平行|互补)?(?:的)?(?: API|API|接口|表面)/)
+assertReferenceIntroduction(
+  aiReference,
+  '## Expression API',
+  aiIntroductionRequirements,
+  'AI reference',
+)
+assertReferenceIntroduction(
+  aiReferenceZh,
+  '## Expression API',
+  aiIntroductionRequirementsZh,
+  'Chinese AI reference',
+)
+assertEntryTemplate(
+  section(aiReference, '### SQL Entry Point (Recommended)', '### Python Entry Point'),
+  aiSqlEntries,
+  referenceLabels,
+  'AI SQL entry point',
+)
+assertEntryTemplate(
+  section(aiReference, '### Python Entry Point', '## Relation API'),
+  aiPythonEntries,
+  referenceLabels,
+  'AI Python entry point',
+)
+assertEntryTemplate(
+  section(aiReference, '## Relation API', '## Shared AI Types and Constraints'),
+  aiRelationEntries,
+  referenceLabels,
+  'AI Relation API',
+)
+assertEntryTemplate(
+  section(aiReferenceZh, '### SQL 入口（推荐）', '### Python 入口'),
+  aiSqlEntries,
+  referenceLabelsZh,
+  'Chinese AI SQL entry point',
+)
+assertEntryTemplate(
+  section(aiReferenceZh, '### Python 入口', '## Relation API'),
+  aiPythonEntries,
+  referenceLabelsZh,
+  'Chinese AI Python entry point',
+)
+assertEntryTemplate(
+  section(aiReferenceZh, '## Relation API', '## AI 共享类型与限制'),
+  aiRelationEntries,
+  referenceLabelsZh,
+  'Chinese AI Relation API',
+)
+assert.deepEqual(
+  fencedCodeBlocks(aiReferenceZh),
+  fencedCodeBlocks(aiReference),
+  'bilingual AI references should contain identical fenced code blocks',
+)
+
+assert.match(aiReference, /^---\ntitle: AI Function API Reference\n---/)
+assert.match(aiReferenceZh, /^---\ntitle: AI Function API 参考\n---/)
+
+for (const [source, name] of [
+  [aiReference, 'AI reference'],
+  [aiReferenceZh, 'Chinese AI reference'],
+]) {
+  assertOrdered(
+    source,
+    [
+      '#### `ai_prompt`',
+      '#### `ai_embed`',
+      '#### `vane.ai.prompt`',
+      '#### `vane.ai.embed`',
+      '#### `rel.prompt`',
+      '#### `rel.embed_text`',
+      '#### `rel.classify_text`',
+    ],
+    `${name} API order`,
+  )
+  assertExactSignatures(source, aiExactSignatures, name)
+}
+
+const aiSqlSections = [
+  section(aiReference, '### SQL Entry Point (Recommended)', '### Python Entry Point'),
+  section(aiReferenceZh, '### SQL 入口（推荐）', '### Python 入口'),
+]
+for (const sqlSection of aiSqlSections) {
+  assert.match(sqlSection, /1 or 2 arguments|1 或 2 个参数/, 'AI SQL entries should document their arity')
+  assert.match(sqlSection, /foldable constant/, 'AI SQL entries should require foldable constant options')
+  assert.match(sqlSection, /constant `STRUCT`/, 'AI SQL entries should identify the constant STRUCT shape')
+  assert.match(sqlSection, /bound once|只绑定一次/, 'AI SQL entries should reject row-varying options')
+  assert.match(sqlSection, /SELECT projection/, 'AI SQL entries should document projection-only placement')
+  assert.match(sqlSection, /recursively rejects|递归拒绝/, 'AI SQL entries should document recursive credential rejection')
+  assert.match(sqlSection, /worker environment variable|worker 环境变量/, 'AI SQL entries should route credentials through worker environment variables')
+  for (const option of [
+    'actor_number',
+    'batch_size',
+    'max_retries',
+    'max_api_concurrency',
+    'num_gpus',
+    'gpus_per_actor',
+    'on_error',
+    'engine_args_json',
+    'generate_args_json',
+  ]) {
+    assert.match(sqlSection, new RegExp(option), `AI SQL entries should document ${option}`)
+  }
+  assert.match(sqlSection, /Decimal/, 'AI SQL entries should document Decimal normalization')
+  assert.match(sqlSection, /non-finite/, 'AI SQL entries should reject non-finite numeric options')
+}
+
+for (const [entry, next, setupPattern] of [
+  ['ai_prompt', 'ai_embed', /CREATE TEMP TABLE prompt_source[\s\S]*SELECT[\s\S]*document_id,[\s\S]*messages,[\s\S]*ai_prompt/],
+  ['ai_embed', 'vane.ai.prompt', /CREATE TEMP TABLE embedding_source[\s\S]*SELECT[\s\S]*document_id,[\s\S]*text,[\s\S]*ai_embed/],
+  ['vane.ai.prompt', 'vane.ai.embed', /rel = con\.sql[\s\S]*vane\.col\("document_id"\)[\s\S]*vane\.col\("messages"\)[\s\S]*vane\.ai\.prompt/],
+  ['vane.ai.embed', 'rel.prompt', /rel = con\.sql[\s\S]*vane\.col\("document_id"\)[\s\S]*vane\.col\("text"\)[\s\S]*vane\.ai\.embed/],
+  ['rel.prompt', 'rel.embed_text', /class Decision\(BaseModel\):[\s\S]*rel = con\.sql[\s\S]*return_format=Decision/],
+  ['rel.embed_text', 'rel.classify_text', /rel = con\.sql[\s\S]*rel\.embed_text/],
+  ['rel.classify_text', undefined, /rel = con\.sql[\s\S]*rel\.classify_text/],
+]) {
+  assertExampleSetup(aiReference, entry, next, setupPattern, entry)
+}
+assert.doesNotMatch(
+  section(aiReference, '### SQL Entry Point (Recommended)', '### Python Entry Point'),
+  /api_key\s*:=|token\s*:=|password\s*:=|secret\s*:=|authorization\s*:=/i,
+  'AI SQL examples should not contain credentials',
+)
+
+const relationPromptSections = [
+  section(aiReference, '#### `rel.prompt`', '#### `rel.embed_text`'),
+  section(aiReferenceZh, '#### `rel.prompt`', '#### `rel.embed_text`'),
+]
+for (const promptSection of relationPromptSections) {
+  for (const capability of ['return_format', 'image_columns', 'output_column', 'use_chat_completions', 'execution_backend']) {
+    assert.match(promptSection, new RegExp(capability), `rel.prompt should document ${capability}`)
+  }
+}
+
+for (const [source, name, sharedHeading] of [
+  [aiReference, 'AI reference', '## Shared AI Types and Constraints'],
+  [aiReferenceZh, 'Chinese AI reference', '## AI 共享类型与限制'],
+]) {
+  const shared = section(source, sharedHeading)
+  for (const [type, fields] of aiOptionContracts) {
+    assert.ok(
+      shared.includes(`| \`${type}\` | \`${fields}\` |`),
+      `${name} should document exact public fields/defaults for ${type}`,
+    )
+  }
+  assert.match(shared, /provider descriptor/, `${name} should document provider descriptors`)
+  assert.match(shared, /active runner/, `${name} should document active-runner backend resolution`)
+  assert.match(shared, /not exactly-once|不提供 exactly-once/, `${name} should document non-exactly-once external effects`)
+  assert.match(shared, /Ray[\s\S]*(GPU resource|GPU 资源)/, `${name} should document Ray GPU resource requests`)
+  assert.match(shared, /local subprocess[\s\S]*(no GPU reservation|GPU reservation)/, `${name} should document local GPU non-reservation`)
+}
+
 for (const name of [
   'vane.col',
   'vane.lit',
@@ -389,10 +696,16 @@ assert.match(gpuGuide, /return_format[\s\S]*image_columns[\s\S]*relation/i, 'GPU
 
 assert.match(overview, /\/docs\/data\/reference\/udf-api/, 'Docs overview should link the UDF reference')
 assert.match(overview, /\/docs\/data\/reference\/ai-api/, 'Docs overview should link the AI reference')
+assert.match(overview, /\[UDF API Reference\]\(\/docs\/data\/reference\/udf-api\)/, 'Docs overview should use the final UDF reference title')
+assert.match(overview, /\[AI Function API Reference\]\(\/docs\/data\/reference\/ai-api\)/, 'Docs overview should use the final AI reference title')
+assert.match(overviewZh, /\[UDF API 参考\]\(\/zh-CN\/docs\/data\/reference\/udf-api\)/, 'Chinese Docs overview should use the final UDF reference title')
+assert.match(overviewZh, /\[AI Function API 参考\]\(\/zh-CN\/docs\/data\/reference\/ai-api\)/, 'Chinese Docs overview should use the final AI reference title')
 assert.match(registry, /'reference\/udf-api'[\s\S]*'reference\/ai-api'/, 'Docs registry should include both references')
+assert.match(registry, /'reference\/ai-api':\s*{[\s\S]*?title:\s*'AI Function API Reference',[\s\S]*?titleZh:\s*'AI Function API 参考'/, 'Docs registry should use the final bilingual AI reference titles')
 assert.match(registry, /Reference:\s*'API 参考'/, 'Custom docs UI should localize the Reference group')
 assert.match(sidebar, /"group": "Reference"[\s\S]*"reference\/udf-api"[\s\S]*"reference\/ai-api"/, 'Sidebar should include the Reference group')
 assert.match(localeLabels, /category\.Reference[\s\S]*API 参考/, 'Docusaurus locale labels should translate the Reference group')
+assert.match(packageJson, /"udf-ai-v2:content:check": "node scripts\/udf-ai-v2-content-check\.mjs"/, 'package scripts should register the UDF/AI v2 content check')
 
 const home = stripTags(read('src/pages/Home.tsx'))
 const enterprise = stripTags(read('src/pages/EnterpriseAgentUseCase.tsx'))
@@ -409,6 +722,12 @@ assert.match(useCases, /vane\.ai\.(embed|prompt)|ai_(embed|prompt)\(/, 'Use-case
 
 assert.doesNotMatch(publicApiCorpus, /vane\.function\b/, 'Public docs should use the final vane.func name')
 assert.doesNotMatch(publicApiCorpus, /_duckdb\._VaneUDF|_create_vane_|expression_udf=true/, 'Public docs should not expose internal protocol symbols')
+for (const [source, name] of [
+  [aiReference, 'AI reference'],
+  [aiReferenceZh, 'Chinese AI reference'],
+]) {
+  assertNoInternalSymbols(source, name)
+}
 
 console.log('UDF/AI API v2 content contract passed.')
 

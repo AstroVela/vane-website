@@ -105,8 +105,8 @@ export const DOCS_PAGES = {
   },
   'reference/ai-api': {
     source: 'docs/data/reference/ai-api.mdx',
-    title: 'AI Function API',
-    titleZh: 'AI Function API',
+    title: 'AI Function API Reference',
+    titleZh: 'AI Function API 参考',
   },
   examples: {
     source: 'docs/data/examples/index.mdx',
