@@ -652,10 +652,13 @@ const conceptSchemas = [
         invariants: {
           en: {
             mustMatch: [
+              [/(?:query-scoped|scoped to (?:one|the) query)[^.\n]{0,80}(?:actor-local|local to (?:one|the) actor)[^.\n]{0,80}(?:ephemeral|temporary|non-durable)/i, 'scope mutable state to one query and actor'],
               [/\b(?:not|never|cannot|can't)\b[^.\n]{0,80}\b(?:checkpoint(?:ed|ing)?|restor(?:e|ed|able|ation))\b/i, 'deny checkpoint or restoration'],
               [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bglobal state\b/i, 'deny global state'],
               [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bkeyed state\b/i, 'deny keyed state'],
               [/\b(?:not|no|without)\b[^.\n]{0,80}\bexactly-once\b/i, 'deny exactly-once semantics'],
+              [/actor loss[^.\n]{0,80}(?:makes|causes)[^.\n]{0,30}(?:the )?query (?:fail|abort)[^.\n]{0,100}(?:rather than|instead of|without)[^.\n]{0,80}(?:(?:rebuild|recreat|restart)[^.\n]{0,30}(?:empty|fresh|initial) state|(?:empty|fresh|initial) state[^.\n]{0,30}(?:rebuild|recreat|restart))/i, 'fail the query instead of recreating empty state'],
+              [/(?:no[^.\n]{0,60}(?:stable|deterministic)[^.\n]{0,50}(?:global )?row (?:evaluation )?order|(?:does not|cannot|never) guarantee[^.\n]{0,60}(?:stable )?(?:global )?row (?:evaluation )?order)/i, 'deny stable global row evaluation order'],
               [/(?:external|side) effects?[^.\n]{0,140}(?:\b(?:not|never|cannot|can't)\b[^.\n]{0,60}\b(?:rolled back|transactional)\b|\boutside\b[^.\n]{0,30}\btransactions?\b)/i, 'deny transactional UDF effects'],
             ],
             mustNotMatch: [
@@ -663,15 +666,20 @@ const conceptSchemas = [
               [/\b(?:state|it)\b[^.\n]{0,80}\b(?:is|provides?|supports?|offers?)\s+(?:a\s+)?global state\b/i, 'claim state is global'],
               [/\b(?:state|it)\b[^.\n]{0,80}\b(?:is|provides?|supports?|offers?)\s+(?:a\s+)?keyed state\b/i, 'claim state is keyed'],
               [/\b(?:state|it)\b[^.\n]{0,100}\b(?:is|provides?|offers?|supports?|guarantees?|has)\s+(?:an?\s+)?exactly-once\b/i, 'claim exactly-once semantics'],
+              [/actor loss\s+(?:automatically\s+|transparently\s+)?(?:(?:rebuilds?|recreates?|restarts?)[^.\n]{0,40}(?:empty|fresh|initial) state|(?:uses? )?(?:empty|fresh|initial) state[^.\n]{0,40}(?:rebuild|recreat|restart))/i, 'transparently recreate empty state after actor loss'],
+              [/(?:distributed )?execution\s+(?:has|provides?|guarantees?|uses?)\s+(?:a\s+)?(?:stable|deterministic) (?:global )?row (?:evaluation )?order/i, 'claim stable global row evaluation order'],
               [/(?:external|side) effects?[^.\n]{0,120}(?:\b(?:are|become|remain|will be|can be)\s+(?:fully\s+)?(?:transactional|rolled back)\b|\b(?:participate in|are part of|are covered by|occur inside|happen inside)\s+(?:SQL\s+)?transactions?\b)/i, 'claim UDF effects are transactional or rolled back'],
             ],
           },
           zh: {
             mustMatch: [
+              [/(?:(?:query-scoped|限定在(?:单次|一个) query)[^。\n]{0,80}(?:actor-local|(?:单个|一个) actor 内)[^。\n]{0,80}(?:ephemeral|临时|非持久))/i, '把可变状态限定在单次 query 和单个 actor'],
               [/(?:不会|不能|无法|不可|没有|不支持)[^。\n]{0,80}(?:checkpoint|恢复|还原)/i, '否定 checkpoint 或恢复'],
               [/(?:不是|并非|没有|不提供|不支持)[^。\n]{0,100}global state/i, '否定 global state'],
               [/(?:不是|并非|没有|不提供|不支持)[^。\n]{0,100}keyed state/i, '否定 keyed state'],
               [/(?:不提供|不保证|不支持|没有)[^。\n]{0,60}exactly-once/i, '否定 exactly-once 语义'],
+              [/actor 丢失[^。\n]{0,80}(?:让|导致|使)[^。\n]{0,30}query (?:失败|中止)[^。\n]{0,100}(?:而不是|而非|不会)[^。\n]{0,80}(?:(?:空状态|初始状态)[^。\n]{0,30}(?:重建|重新创建)|(?:重建|重新创建)[^。\n]{0,30}(?:空状态|初始状态))/i, '让 query 失败而不是重建空状态'],
+              [/分布式[^。\n]{0,80}(?:没有|不保证)[^。\n]{0,50}(?:稳定的?)?全局行(?:求值)?顺序/, '否定稳定的全局行求值顺序'],
               [/(?:外部副作用|side effect)[^。\n]{0,140}(?:(?:不会|不能|无法|不被)[^。\n]{0,60}(?:回滚|事务化)|(?:事务之外|不属于[^。\n]{0,30}事务))/i, '否定 UDF 副作用的事务性'],
             ],
             mustNotMatch: [
@@ -679,6 +687,8 @@ const conceptSchemas = [
               [/(?<!不)(?:是|提供|支持|具有)[^。\n]{0,30}global state/i, '声称状态是 global state'],
               [/(?<!不)(?:是|提供|支持|具有)[^。\n]{0,30}keyed state/i, '声称状态是 keyed state'],
               [/(?<!不)(?:提供|保证|支持|具有|是)[^。\n]{0,30}exactly-once/i, '声称提供 exactly-once 语义'],
+              [/actor 丢失\s*(?:会|可以|能够)\s*(?:自动|透明地)?\s*(?:(?:用)?(?:空状态|初始状态)[^。\n]{0,20}(?:重建|重新创建)|(?:重建|重新创建)[^。\n]{0,20}(?:空状态|初始状态))/i, '在 actor 丢失后透明重建空状态'],
+              [/分布式执行\s*(?:会|可以|能够)?\s*(?:提供|保证|具有)\s*(?:稳定的?|确定的?)?全局行(?:求值)?顺序/, '声称提供稳定的全局行求值顺序'],
               [/(?:外部副作用|side effect)[^。\n]{0,120}(?:(?<!不)(?:会|可以|能够)(?:被)?[^。\n]{0,30}回滚|(?:具有事务性|是事务性的|在 (?:SQL )?事务之?内|(?<!不)属于[^。\n]{0,30}事务))/i, '声称 UDF 副作用会回滚或具有事务性'],
             ],
           },
@@ -758,13 +768,17 @@ const conceptSchemas = [
           en: { mustMatch: [
             [/rel\.embed_text[^.\n]{0,100}(?:built-in )?chunk(?:ing)?[^.\n]{0,60}max_chunk_chars/i, 'keep built-in Relation chunking'],
             [/rel\.classify_text[^.\n]{0,100}(?:built-in )?classification/i, 'keep built-in Relation classification'],
-            [/(?:rel\.prompt[^.\n]{0,180}(?:return_format[^.\n]{0,100}image_columns|image_columns[^.\n]{0,100}return_format)|Relation methods?[^.\n]{0,120}execution_backend)/i, 'keep structured/multimodal prompts or explicit Relation backends'],
+            [/rel\.prompt[^.\n]{0,180}(?:return_format|image_columns)/i, 'keep structured or multimodal prompt capability'],
+            [/rel\.prompt[^.\n]{0,220}(?:output_column|named (?:Relation )?output)/i, 'keep named Relation output'],
+            [/Relation methods?(?=[^.\n]{0,180}execution_backend)(?=[^.\n]{0,180}(?:actor_number|actor controls?))/i, 'keep explicit Relation backend and actor controls'],
             [/built-in classification[^.\n]{0,80}requires? Relation API/i, 'identify classification as Relation-only'],
           ] },
           zh: { mustMatch: [
             [/rel\.embed_text[^。\n]{0,100}(?:内置分块[^。\n]{0,60}max_chunk_chars|max_chunk_chars[^。\n]{0,60}内置分块)/i, '保留 Relation 内置分块'],
             [/rel\.classify_text[^。\n]{0,100}内置分类/i, '保留 Relation 内置分类'],
-            [/(?:rel\.prompt[^。\n]{0,180}(?:return_format[^。\n]{0,100}image_columns|image_columns[^。\n]{0,100}return_format)|Relation 方法[^。\n]{0,120}execution_backend)/i, '保留结构化/多模态 prompt 或显式 Relation backend'],
+            [/rel\.prompt[^。\n]{0,180}(?:return_format|image_columns)/i, '保留结构化或多模态 prompt 能力'],
+            [/rel\.prompt[^。\n]{0,220}(?:output_column|命名 Relation 输出)/i, '保留命名的 Relation 输出'],
+            [/Relation 方法(?=[^。\n]{0,180}execution_backend)(?=[^。\n]{0,180}(?:actor_number|actor 控制))/i, '保留显式 Relation backend 和 actor 控制'],
             [/内置分类[^。\n]{0,80}需要 Relation API/i, '明确分类是 Relation-only 能力'],
           ] },
         },
@@ -836,8 +850,8 @@ const aiEffectsRules = aiConceptSchema.sections.find(
 const highRiskConceptProbes = [
   [udfActorRules.en, 'English UDF actor reuse', 'Actor-backed execution reuses a callable instance, model, and client within each actor. `vane.cls` has the narrower mutable-state contract; in v1 it uses `actor_number=1` across one query. General actor-backed callable reuse does not provide durable application state and cannot create shared state.', ['Actor-backed callable reuse is durable application state.', 'Actor-backed callable reuse provides durable application state.', 'Actor-backed callable reuse creates shared state.', '`vane.cls` uses `actor_number=2` in v1.']],
   [udfActorRules.zh, 'Chinese UDF actor reuse', 'Actor-backed 执行会在 actor 内复用 callable instance、模型与客户端。`vane.cls` 是范围更窄的可变状态契约；在 v1 使用 `actor_number=1`，限于单次 query。一般 actor-backed callable 复用不会创建持久应用状态，也不能提供共享状态。', ['Actor-backed callable 复用是持久应用状态。', 'Actor-backed callable 复用提供持久应用状态。', 'Actor-backed callable 复用创建共享状态。', '`vane.cls` 在 v1 使用 `actor_number=2`。']],
-  [udfStateRules.en, 'English UDF state', 'State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'External side effects are transactional.']],
-  [udfStateRules.zh, 'Chinese UDF state', '状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', '外部副作用会被事务回滚。']],
+  [udfStateRules.en, 'English UDF state', 'State is scoped to one query, local to one actor, and ephemeral. State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. Actor loss makes the query fail instead of recreating an actor with empty state. Distributed execution does not guarantee global row evaluation order. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'Actor loss transparently recreates an actor with empty state.', 'Distributed execution guarantees a stable global row evaluation order.', 'External side effects are transactional.']],
+  [udfStateRules.zh, 'Chinese UDF state', '状态限定在单次 query、单个 actor 内，并且是临时的。状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。actor 丢失会导致 query 失败，而不是用空状态重建 actor。分布式执行不保证全局行求值顺序。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', 'actor 丢失会透明地用空状态重建 actor。', '分布式执行保证稳定的全局行求值顺序。', '外部副作用会被事务回滚。']],
   [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. SQL option binding rejects credential-like fields. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee. Carry stable IDs, retain reviewable inputs and outputs, and make downstream writes idempotent.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
   [aiEffectsRules.zh, 'Chinese AI effects', '凭据位于 worker 运行时。SQL option binding 拒绝类似凭据的字段。Provider 调用发生在 SQL 事务之外，不提供 exactly-once。保留稳定 ID 和可审查的输入输出，并让下游写入保持幂等。', ['凭据不应放在 worker 环境。', '凭据应放在 driver。', 'Provider 调用在 SQL 事务之内。', 'Provider 调用可以被 SQL 事务回滚。', 'Provider 调用提供 exactly-once。']],
 ]
