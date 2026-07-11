@@ -29,7 +29,7 @@ media <span class="p">=</span> con<span class="p">.</span><span class="f">sql</s
     FROM read_parquet('media/*.parquet')
 """</span><span class="p">)</span>
 
-media<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"ai_ready_media/"</span><span class="p">)</span><span class="cur"></span>`
+media<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"ai_ready_media.parquet"</span><span class="p">)</span><span class="cur"></span>`
 
 const SCENARIOS: Array<{
   title: string

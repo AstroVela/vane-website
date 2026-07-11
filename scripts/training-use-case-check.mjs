@@ -25,6 +25,19 @@ const heroCss = css.match(/\.training-hero-art[\s\S]*?\.solution-hero-media/)?.[
 const executionCss = css.match(/\.tl-execution\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
 const execMainCss = css.match(/\.tl-exec-main\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
 
+function assertExplicitParquetFileWrites(code, label) {
+  const calls = [...code.matchAll(/\.write_parquet\(\s*([^\n)]+?)\s*\)/g)]
+  assert.ok(calls.length > 0, `${label} should include a write_parquet call`)
+
+  for (const call of calls) {
+    const argument = call[1].trim()
+    const literal = argument.match(/^(["'])([^"']+)\1$/)
+    assert.ok(literal, `${label} write_parquet output should be one string literal`)
+    assert.doesNotMatch(literal[2], /\/$/, `${label} write_parquet output should not end in a slash`)
+    assert.match(literal[2], /\.parquet$/i, `${label} write_parquet output should name a .parquet file`)
+  }
+}
+
 const mustIncludeInPage = [
   'Multimodal training data pipelines for AI models — Vane',
   'Prepare images, video, audio, documents, tables, and sensor logs for multimodal model training. Run filtering, captioning, embedding, deduplication, auto-labeling, and dataset release packaging in one Ray-backed pipeline.',
@@ -74,7 +87,7 @@ const mustIncludeInPage = [
   'ai_embed(',
   'caption_embedding',
   'CaptionAndScore is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns.',
-  's3://dataset-releases/mm-v42/',
+  's3://dataset-releases/mm-v42/part-00000.parquet',
   'Build a reproducible multimodal training-data pipeline.',
   'Become a design partner',
   'Read the docs',
@@ -125,6 +138,17 @@ assert.match(captionCall, /actor_number=[1-9]\d*/, 'CaptionAndScore should decla
 const releaseQuery = pipelineCode.match(/release = con\.sql\("""([\s\S]*?)"""\)/)?.[0] ?? ''
 assert.match(releaseQuery, /select id, uri,[\s\S]*caption,[\s\S]*ai_embed\([\s\S]*caption,[\s\S]*provider := 'transformers'[\s\S]*\) as caption_embedding[\s\S]*from curated/, 'training code should retain release columns in a SQL ai_embed projection')
 assert.doesNotMatch(pipelineCode, /vane\.ai\.embed\(|\.embed_text\(/, 'training marketing code should lead with SQL ai_embed rather than a Python-only enrichment path')
+assertExplicitParquetFileWrites(pipelineCode, 'Training pipeline code')
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("s3://bucket/release/")', 'Training mutation'),
+  /should not end in a slash/,
+  'Training output guard should reject a trailing-slash directory',
+)
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("s3://bucket/release")', 'Training mutation'),
+  /should name a \.parquet file/,
+  'Training output guard should reject an extensionless destination',
+)
 assert.match(page, /<div className="training-code-layout">[\s\S]*<div className="training-code-copy">[\s\S]*className="training-code-steps"[\s\S]*className="training-code-note"[\s\S]*<div className="training-code-showcase">[\s\S]*<CodeWindow filename="training_data_release\.py" code=\{PIPELINE_CODE\} language="python" \/>/, 'training representative code should use a text-left code-right layout')
 assert.match(css, /\.training-code-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(280px,\s*0\.78fr\)\s*minmax\(0,\s*1\.22fr\)[\s\S]*\.training-code-copy\s*\{[\s\S]*max-width:\s*520px[\s\S]*\.training-code-showcase\s*\{[\s\S]*min-width:\s*0/, 'training representative code layout styles should give the copy and code balanced desktop columns')
 assert.match(css, /@media \(max-width: 900px\)\s*\{[\s\S]*\.training-code-layout,[\s\S]*grid-template-columns:\s*1fr/, 'training representative code layout should stack on tablet and mobile widths')

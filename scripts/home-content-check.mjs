@@ -10,6 +10,19 @@ const siteLinks = readFileSync('src/siteLinks.ts', 'utf8')
 const css = readFileSync('src/index.css', 'utf8')
 const heroCode = home.match(/const HERO_CODE = `([\s\S]*?)`/)?.[1]?.replace(/<[^>]*>/g, '') ?? ''
 
+function assertExplicitParquetFileWrites(code, label) {
+  const calls = [...code.matchAll(/\.write_parquet\(\s*([^\n)]+?)\s*\)/g)]
+  assert.ok(calls.length > 0, `${label} should include a write_parquet call`)
+
+  for (const call of calls) {
+    const argument = call[1].trim()
+    const literal = argument.match(/^(["'])([^"']+)\1$/)
+    assert.ok(literal, `${label} write_parquet output should be one string literal`)
+    assert.doesNotMatch(literal[2], /\/$/, `${label} write_parquet output should not end in a slash`)
+    assert.match(literal[2], /\.parquet$/i, `${label} write_parquet output should name a .parquet file`)
+  }
+}
+
 const mustIncludeInHome = [
   'The multimodal engine for AI pipelines and agents',
   'Run SQL, Python UDFs, embeddings, and batch model inference across documents, media, sensor data, and tables — locally or on Ray.',
@@ -98,6 +111,17 @@ assert.match(heroCode, /con\.sql\([\s\S]*read_parquet/, 'Homepage hero should lo
 assert.match(heroCode, /SELECT id, text,[\s\S]*ai_embed\([\s\S]*text,[\s\S]*struct_pack\([\s\S]*provider := 'openai'[\s\S]*model := 'text-embedding-3-small'[\s\S]*\) AS embedding[\s\S]*FROM read_parquet/, 'Homepage hero should lead with the SQL ai_embed expression while preserving source columns')
 assert.doesNotMatch(heroCode, /\.select\(|vane\.ai\.embed\(/, 'Homepage hero should not make the Python Expression spelling the primary embedding path')
 assert.match(heroCode, /write_parquet\(/, 'Homepage hero should use the public relation writer')
+assertExplicitParquetFileWrites(heroCode, 'Homepage hero code')
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("output/")', 'Homepage mutation'),
+  /should not end in a slash/,
+  'Homepage output guard should reject a trailing-slash directory',
+)
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("output")', 'Homepage mutation'),
+  /should name a \.parquet file/,
+  'Homepage output guard should reject an extensionless destination',
+)
 assert.doesNotMatch(heroCode, /from vane\.ai import describe|\bdescribe\(|vane\.read\(|\.write\(/, 'Homepage hero should not use fictional convenience APIs')
 
 function escapeRegExp(text) {

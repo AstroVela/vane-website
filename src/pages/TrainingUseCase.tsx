@@ -61,7 +61,7 @@ from curated
 """)
 
 # Publish a versioned training-data release.
-release.write_parquet("s3://dataset-releases/mm-v42/")`
+release.write_parquet("s3://dataset-releases/mm-v42/part-00000.parquet")`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>

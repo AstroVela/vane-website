@@ -57,7 +57,7 @@ SELECT url, text,
        )) AS embedding
 FROM chunks
 """</span><span class="p">)</span>
-emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://corpus/embeddings/"</span><span class="p">)</span>`,
+emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://corpus/embeddings/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
   {
     id: 'search',
@@ -88,8 +88,8 @@ SELECT id, title, body,
        )) AS embedding
 FROM read_parquet('s3://qa/*.parquet')
 """</span><span class="p">)</span>
-idx<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://index/qa/"</span><span class="p">)</span>
-hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execute</span><span class="p">(</span><span class="s">"SELECT id FROM 's3://index/qa/' ORDER BY list_cosine_similarity(embedding, ?::FLOAT[]) DESC LIMIT 10"</span><span class="p">, [</span>q<span class="p">]).</span><span class="f">fetchall</span><span class="p">()</span>`,
+idx<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://index/qa/v1/part-00000.parquet"</span><span class="p">)</span>
+hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execute</span><span class="p">(</span><span class="s">"SELECT id FROM read_parquet('s3://index/qa/v1/part-00000.parquet') ORDER BY list_cosine_similarity(embedding, ?::FLOAT[]) DESC LIMIT 10"</span><span class="p">, [</span>q<span class="p">]).</span><span class="f">fetchall</span><span class="p">()</span>`,
   },
   {
     id: 'dedupe',
@@ -116,7 +116,7 @@ hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execut
 sig <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>minhash_128<span class="p">,</span> schema<span class="p">=</span>signature_schema<span class="p">)</span>
 buckets <span class="p">=</span> sig<span class="p">.</span><span class="f">flat_map</span><span class="p">(</span>lsh_bands_16<span class="p">,</span> schema<span class="p">=</span>band_schema<span class="p">)</span>
 clean <span class="p">=</span> buckets<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>keep_one_per_cluster<span class="p">,</span> schema<span class="p">=</span>clean_schema<span class="p">)</span>
-clean<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://clean/"</span><span class="p">)</span>`,
+clean<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://clean/text/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
   {
     id: 'images',
@@ -142,7 +142,7 @@ clean<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, path FROM read_parquet('s3://images/manifest.parquet')"</span><span class="p">)</span>
 imgs <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>decode_image<span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">128</span><span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
 feats <span class="p">=</span> imgs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">DetectFeatures</span><span class="p">,</span> schema<span class="p">=</span>feature_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">4</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">64</span><span class="p">)</span>
-feats<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://features/"</span><span class="p">)</span>`,
+feats<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://features/images/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
   {
     id: 'imagegen',
@@ -168,7 +168,7 @@ feats<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     code: `prompts <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, prompt FROM read_parquet('s3://prompts.parquet')"</span><span class="p">)</span>
 images <span class="p">=</span> prompts<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>
     <span class="t">Diffusion</span><span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">2</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">16</span><span class="p">)</span>
-images<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://generated/"</span><span class="p">)</span>`,
+images<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://generated/images/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
   {
     id: 'multimodal',
@@ -196,7 +196,7 @@ ans <span class="p">=</span> rel<span class="p">.</span><span class="f">prompt</
     <span class="s">"question"</span><span class="p">,</span> image_columns<span class="p">=[</span><span class="s">"image"</span><span class="p">],</span> provider<span class="p">=</span><span class="s">"openai"</span><span class="p">,</span>
     return_format<span class="p">=</span><span class="t">Receipt</span><span class="p">,</span> output_column<span class="p">=</span><span class="s">"receipt_json"</span><span class="p">)</span>
 graded <span class="p">=</span> ans<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Judge</span><span class="p">,</span> schema<span class="p">=</span>judge_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">)</span>
-graded<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://extracted/"</span><span class="p">)</span>`,
+graded<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://extracted/receipts/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
   {
     id: 'voice',
@@ -232,6 +232,6 @@ SELECT id, transcript, summary,
        )) AS embedding
 FROM transcribed
 """</span><span class="p">)</span>
-ready<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/"</span><span class="p">)</span>`,
+ready<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/voice/v1/part-00000.parquet"</span><span class="p">)</span>`,
   },
 ] satisfies UseCase[]

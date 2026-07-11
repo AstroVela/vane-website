@@ -14,6 +14,34 @@ function stripHighlighting(code) {
   return code.replace(/<[^>]*>/g, '')
 }
 
+function assertExplicitParquetFileWrites(code, label) {
+  const calls = [...code.matchAll(/\.write_parquet\(\s*([^\n)]+?)\s*\)/g)]
+  assert.ok(calls.length > 0, `${label} should include a write_parquet call`)
+
+  for (const call of calls) {
+    const argument = call[1].trim()
+    const literal = argument.match(/^(["'])([^"']+)\1$/)
+    assert.ok(literal, `${label} write_parquet output should be one string literal`)
+    assert.doesNotMatch(literal[2], /\/$/, `${label} write_parquet output should not end in a slash`)
+    assert.match(literal[2], /\.parquet$/i, `${label} write_parquet output should name a .parquet file`)
+  }
+}
+
+function assertSemanticSearchReadsWrittenIndex(code, label) {
+  const write = code.match(/\bidx\.write_parquet\(\s*(["'])([^"']+)\1\s*\)/)
+  assert.ok(write, `${label} should write the semantic-search index with idx.write_parquet`)
+
+  const retrieval = code.match(/\bhits\s*=\s*[\s\S]*$/)?.[0] ?? ''
+  assert.ok(retrieval, `${label} should define the semantic-search retrieval query`)
+  const read = retrieval.match(/\bread_parquet\(\s*(["'])([^"']+)\1\s*\)/)
+  assert.ok(read, `${label} retrieval should explicitly read the index with read_parquet('...')`)
+  assert.equal(
+    read[2],
+    write[2],
+    `${label} retrieval read_parquet path should exactly match the preceding idx.write_parquet path`,
+  )
+}
+
 function extractUseCaseCode(id) {
   const records = [...data.matchAll(/^\s*id:\s*'([^']+)'/gm)]
   const index = records.findIndex((record) => record[1] === id)
@@ -78,6 +106,29 @@ assert.match(searchRetrieval, /hits\s*=\s*conn\.execute\(/, 'semantic search sho
 assert.match(searchRetrieval, /ORDER BY list_cosine_similarity\(embedding, \?::FLOAT\[\]\) DESC LIMIT 10/i, 'semantic search should order by DuckDB list cosine similarity with a typed placeholder')
 assert.match(searchRetrieval, /,\s*\[q\]\s*\)\.fetchall\(\)/, 'semantic search should bind q as a parameter and fetch the results')
 assert.doesNotMatch(searchRetrieval, /\$q|array_cosine_similarity|conn\.sql\(/, 'semantic search retrieval should not use an unbound named parameter, the wrong array function, or Relation SQL')
+assertSemanticSearchReadsWrittenIndex(useCaseCode.search, 'Semantic Search code sample')
+
+const mismatchedSearchReadMutation = useCaseCode.search.replace(
+  "read_parquet('s3://index/qa/v1/part-00000.parquet')",
+  "read_parquet('s3://index/qa/v2/part-00000.parquet')",
+)
+assert.notEqual(mismatchedSearchReadMutation, useCaseCode.search, 'Semantic Search v1-to-v2 mutation should apply')
+assert.throws(
+  () => assertSemanticSearchReadsWrittenIndex(mismatchedSearchReadMutation, 'Semantic Search mismatch mutation'),
+  /should exactly match/,
+  'Semantic Search guard should reject a retrieval path that changes v1 to v2',
+)
+
+const implicitSearchReadMutation = useCaseCode.search.replace(
+  "read_parquet('s3://index/qa/v1/part-00000.parquet')",
+  "'s3://index/qa/v1/part-00000.parquet'",
+)
+assert.notEqual(implicitSearchReadMutation, useCaseCode.search, 'Semantic Search read_parquet-removal mutation should apply')
+assert.throws(
+  () => assertSemanticSearchReadsWrittenIndex(implicitSearchReadMutation, 'Semantic Search read mutation'),
+  /should explicitly read the index with read_parquet/,
+  'Semantic Search guard should reject retrieval that removes read_parquet',
+)
 
 assert.match(useCaseCode.multimodal, /\.prompt\([\s\S]*image_columns=[\s\S]*return_format=/, 'Multimodal structured output should use the documented relation prompt surface')
 
@@ -90,7 +141,19 @@ for (const [id, callable] of [['images', 'DetectFeatures'], ['imagegen', 'Diffus
 
 for (const [id, code] of Object.entries(useCaseCode)) {
   assert.doesNotMatch(code, /num_gpus=/, `${id} should not use the stale num_gpus parameter`)
+  assertExplicitParquetFileWrites(code, `${id} code sample`)
 }
+
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("s3://bucket/output/")', 'Use-case mutation'),
+  /should not end in a slash/,
+  'Use-case output guard should reject a trailing-slash directory',
+)
+assert.throws(
+  () => assertExplicitParquetFileWrites('rel.write_parquet("s3://bucket/output")', 'Use-case mutation'),
+  /should name a \.parquet file/,
+  'Use-case output guard should reject an extensionless destination',
+)
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
