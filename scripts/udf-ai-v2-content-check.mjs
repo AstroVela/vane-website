@@ -601,16 +601,30 @@ const conceptSchemas = [
           en: { mustMatch: [
             [/(?:table[- ]shaped|table transformation)[^.\n]{0,100}(?:multi(?:ple)?[- ]columns?|several columns)[^.\n]{0,100}(?:cardinality change|changes? cardinality)/i, 'reserve Relation for table shape, multiple columns, and cardinality change'],
             [/(?:no direct|does not (?:expose|provide)|is unavailable)[^.\n]{0,60}\bSQL\b[^.\n]{0,50}\b(?:Relation|table[- ]function) API/i, 'deny a direct SQL Relation API'],
-          ] },
+            [/rel\.map_batches[^.\n]{0,100}rel\.flat_map[^.\n]{0,100}rel\.map\b/i, 'name the three public Relation methods'],
+            [/rel\.map\b[^.\n]{0,80}row-wise scalar[^.\n]{0,80}(?:not|rather than)[^.\n]{0,40}(?:pandas )?batch/i, 'keep rel.map row-wise scalar rather than batch-shaped'],
+          ], mustNotMatch: [[/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i, 'describe rel.map as pandas batch processing']] },
           zh: { mustMatch: [
             [/(?:表形|表状|表转换)[^。\n]{0,80}(?:多列|多个列)[^。\n]{0,80}(?:改变基数|基数变化)/, '把 Relation 用于表形、多列和基数变化'],
             [/(?:不提供|未提供|没有|不可用)[^。\n]{0,60}SQL[^。\n]{0,50}(?:Relation|table[- ]function) API/, '否定直接的 SQL Relation API'],
-          ] },
+            [/rel\.map_batches[^。\n]{0,100}rel\.flat_map[^。\n]{0,100}rel\.map\b/i, '列出三个公开 Relation 方法'],
+            [/rel\.map\b[^。\n]{0,80}逐行 scalar[^。\n]{0,80}(?:不是|而非)[^。\n]{0,40}pandas batch/i, '保持 rel.map 为逐行 scalar 而非 batch 处理'],
+          ], mustNotMatch: [[/rel\.map`?\s*(?:是|作为)\s*pandas batch/i, '把 rel.map 写成 pandas batch 处理']] },
         },
       },
       {
         id: 'shared planning and execution',
         heading: { en: /^## .*Planning.*Execution/i, zh: /^## .*规划.*执行/ },
+        invariants: {
+          en: { mustMatch: [
+            [/(?:lazy planning|deferred materialization)(?=[\s\S]{0,300}(?:planned|materialized) projection)(?=[\s\S]{0,300}(?:planned|materialized) table stage)/i, 'preserve the lazy projection/table-stage planning boundary'],
+            [/(?:execution|materialization)[^.\n]{0,120}(?:Arrow|Apache Arrow) (?:record )?batches?/i, 'execute typed data through Arrow batches'],
+          ] },
+          zh: { mustMatch: [
+            [/惰性(?:规划|计划)(?=[\s\S]{0,300}(?:规划后|物化后)的? (?:projection|投影))(?=[\s\S]{0,300}(?:规划后|物化后)的?表阶段)/, '保留惰性 projection 与表阶段的规划边界'],
+            [/(?:执行|物化)[^。\n]{0,120}(?:Arrow batch|Arrow 批次)/i, '通过 Arrow batch 执行有类型数据'],
+          ] },
+        },
       },
       {
         id: 'actor reuse and state',
@@ -724,12 +738,36 @@ const conceptSchemas = [
       {
         id: 'Expression API',
         heading: { en: /^## .*Expression API/i, zh: /^## .*Expression API/i },
+        invariants: {
+          en: { mustMatch: [
+            [/Python Expression[^.\n]{0,120}(?:equivalent|same)[^.\n]{0,80}(?:row-preserving|projection)/i, 'keep SQL and Python Expression semantically equivalent'],
+            [/one (?:typed )?(?:row-preserving|row preserving) (?:AI |model |output )?(?:column|projection (?:result|output))[^.\n]{0,80}(?:SELECT|projection)/i, 'produce one typed row-preserving projection output'],
+          ], mustNotMatch: [[/(?:changing from SQL to Python\s+(?:changes|alters)[^.\n]{0,40}(?:output model|projection semantics)|Python Expression\s+(?:has|uses)\s+(?:a\s+)?different[^.\n]{0,30}(?:output model|projection semantics))/i, 'give Python Expression different semantics']] },
+          zh: { mustMatch: [
+            [/Python Expression[^。\n]{0,120}(?:语义等价|相同)[^。\n]{0,80}(?:保持行数|projection)/, '保持 SQL 与 Python Expression 语义等价'],
+            [/在 `?SELECT`? projection 中[^。\n]{0,60}(?:生成|产生|增加)一个[^。\n]{0,50}(?:保持行数|保留行数)[^。\n]{0,30}(?:AI 列|结果列|projection 结果)/, '生成一个有类型且保持行数的 projection 输出'],
+          ], mustNotMatch: [[/(?:从 SQL 改成 Python(?:会|将)改变[^。\n]{0,30}(?:输出模型|projection 语义)|Python Expression(?:具有|使用)不同[^。\n]{0,30}(?:输出模型|projection 语义))/, '让 Python Expression 具有不同语义']] },
+        },
       },
       { id: 'SQL entry point', heading: { en: /^### .*SQL.*(?:Recommended|Default)/i, zh: /^### .*SQL.*(?:推荐|默认)/ } },
       { id: 'Python entry point', heading: { en: /^### .*Python/i, zh: /^### .*Python/i } },
       {
         id: 'Relation API',
         heading: { en: /^## .*Relation API/i, zh: /^## .*Relation API/i },
+        invariants: {
+          en: { mustMatch: [
+            [/rel\.embed_text[^.\n]{0,100}(?:built-in )?chunk(?:ing)?[^.\n]{0,60}max_chunk_chars/i, 'keep built-in Relation chunking'],
+            [/rel\.classify_text[^.\n]{0,100}(?:built-in )?classification/i, 'keep built-in Relation classification'],
+            [/(?:rel\.prompt[^.\n]{0,180}(?:return_format[^.\n]{0,100}image_columns|image_columns[^.\n]{0,100}return_format)|Relation methods?[^.\n]{0,120}execution_backend)/i, 'keep structured/multimodal prompts or explicit Relation backends'],
+            [/built-in classification[^.\n]{0,80}requires? Relation API/i, 'identify classification as Relation-only'],
+          ] },
+          zh: { mustMatch: [
+            [/rel\.embed_text[^。\n]{0,100}(?:内置分块[^。\n]{0,60}max_chunk_chars|max_chunk_chars[^。\n]{0,60}内置分块)/i, '保留 Relation 内置分块'],
+            [/rel\.classify_text[^。\n]{0,100}内置分类/i, '保留 Relation 内置分类'],
+            [/(?:rel\.prompt[^。\n]{0,180}(?:return_format[^。\n]{0,100}image_columns|image_columns[^。\n]{0,100}return_format)|Relation 方法[^。\n]{0,120}execution_backend)/i, '保留结构化/多模态 prompt 或显式 Relation backend'],
+            [/内置分类[^。\n]{0,80}需要 Relation API/i, '明确分类是 Relation-only 能力'],
+          ] },
+        },
       },
       {
         id: 'provider and runner lifecycle',
@@ -752,8 +790,10 @@ const conceptSchemas = [
           en: {
             mustMatch: [
               [/credentials?[^.\n]{0,80}\b(?:belong|live|reside|are stored|must be|should be)\b[^.\n]{0,30}\b(?:in|on)\s+(?:the\s+)?worker(?:-side)?(?:\s+(?:environment|runtime))?\b/i, 'place credentials in the worker environment'],
+              [/SQL(?: option)? binding[^.\n]{0,80}(?:rejects?|blocks?|forbids?)[^.\n]{0,50}credential[- ]like/i, 'reject credential-like SQL option fields'],
               [/(?:provider calls?|provider effects?|external effects?)[^.\n]{0,140}\b(?:outside|not part of|not covered by)\b[^.\n]{0,40}\b(?:SQL\s+)?transactions?\b/i, 'place provider effects outside transactions'],
               [/\b(?:not|no|without)\b[^.\n]{0,80}\bexactly-once\b/i, 'deny exactly-once provider calls'],
+              [/(?:stable (?:IDs?|identifiers?))[^.\n]{0,120}(?:reviewable|auditable)[^.\n]{0,160}(?:downstream[^.\n]{0,60}(?:idempotent|idempotency)|(?:idempotent|idempotency)[^.\n]{0,60}downstream)/i, 'preserve stable, reviewable, idempotent downstream handling'],
             ],
             mustNotMatch: [
               [/credentials?[^.\n]{0,80}\b(?:do not|don't|must not|should not|cannot|can't)\b[^.\n]{0,50}\bworker(?:-side)?(?:\s+(?:environment|runtime))?\b/i, 'reject credentials in the worker environment'],
@@ -765,8 +805,10 @@ const conceptSchemas = [
           zh: {
             mustMatch: [
               [/凭据[^。\n]{0,30}(?<!不)(?:应放在|应该放在|必须放在|位于|存放在)\s*worker(?:-side)?(?: 环境| 运行时| 侧)?/i, '把凭据放在 worker 环境'],
+              [/SQL(?: option)? binding[^。\n]{0,80}(?:拒绝|阻止|禁止)[^。\n]{0,50}(?:类似凭据|凭据类|credential-like)/i, '拒绝类似凭据的 SQL option 字段'],
               [/(?:Provider 调用|外部副作用)[^。\n]{0,120}(?:事务之外|不属于[^。\n]{0,30}事务)/i, '把 Provider 副作用放在事务之外'],
               [/(?:不提供|不保证|不支持|没有)[^。\n]{0,60}exactly-once/i, '否定 exactly-once Provider 调用'],
+              [/稳定(?:的)? (?:ID|标识)[^。\n]{0,120}(?:可审查|可审核)[^。\n]{0,160}(?:下游[^。\n]{0,60}幂等|幂等[^。\n]{0,60}下游)/, '保留稳定、可审查且幂等的下游处理'],
             ],
             mustNotMatch: [
               [/凭据[^。\n]{0,40}(?:不应|不应该|不能|不可|不宜)[^。\n]{0,30}worker(?:-side)?(?: 环境| 运行时| 侧)?/i, '否定把凭据放在 worker 环境'],
@@ -796,8 +838,8 @@ const highRiskConceptProbes = [
   [udfActorRules.zh, 'Chinese UDF actor reuse', 'Actor-backed 执行会在 actor 内复用 callable instance、模型与客户端。`vane.cls` 是范围更窄的可变状态契约；在 v1 使用 `actor_number=1`，限于单次 query。一般 actor-backed callable 复用不会创建持久应用状态，也不能提供共享状态。', ['Actor-backed callable 复用是持久应用状态。', 'Actor-backed callable 复用提供持久应用状态。', 'Actor-backed callable 复用创建共享状态。', '`vane.cls` 在 v1 使用 `actor_number=2`。']],
   [udfStateRules.en, 'English UDF state', 'State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'External side effects are transactional.']],
   [udfStateRules.zh, 'Chinese UDF state', '状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', '外部副作用会被事务回滚。']],
-  [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
-  [aiEffectsRules.zh, 'Chinese AI effects', '凭据位于 worker 运行时。Provider 调用发生在 SQL 事务之外，不提供 exactly-once。', ['凭据不应放在 worker 环境。', '凭据应放在 driver。', 'Provider 调用在 SQL 事务之内。', 'Provider 调用可以被 SQL 事务回滚。', 'Provider 调用提供 exactly-once。']],
+  [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. SQL option binding rejects credential-like fields. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee. Carry stable IDs, retain reviewable inputs and outputs, and make downstream writes idempotent.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
+  [aiEffectsRules.zh, 'Chinese AI effects', '凭据位于 worker 运行时。SQL option binding 拒绝类似凭据的字段。Provider 调用发生在 SQL 事务之外，不提供 exactly-once。保留稳定 ID 和可审查的输入输出，并让下游写入保持幂等。', ['凭据不应放在 worker 环境。', '凭据应放在 driver。', 'Provider 调用在 SQL 事务之内。', 'Provider 调用可以被 SQL 事务回滚。', 'Provider 调用提供 exactly-once。']],
 ]
 
 for (const [rules, label, accurate, inversions] of highRiskConceptProbes) {
