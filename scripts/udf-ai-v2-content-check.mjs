@@ -615,6 +615,22 @@ const conceptSchemas = [
       {
         id: 'actor reuse and state',
         heading: { en: /^## .*Actor.*(?:State|Mutable)/i, zh: /^## .*Actor.*状态/i },
+        invariants: {
+          en: {
+            mustMatch: [
+              [/actor[- ]backed[^.\n]{0,120}(?:reuse|reuses|retain|retains|keep|keeps)[^.\n]{0,80}(?:callable(?: instance)?|function object)[^.\n]{0,100}(?:model[^.\n]{0,60}client|client[^.\n]{0,60}model)/i, 'explain per-actor callable, model, and client reuse'],
+              [/vane\.cls(?:[^.\n]{0,40}vane\.cls\.batch)?[^.\n]{0,140}(?:narrower|limited|more tightly scoped)[^.\n]{0,40}mutable[- ]state contract[\s\S]{0,180}(?:\bv1\b[^.\n]{0,100}actor_number\s*=\s*1|actor_number\s*=\s*1[^.\n]{0,100}\bv1\b|(?:one|single) actor(?: instance)?[^.\n]{0,80}(?:one|single) query)/i, 'distinguish the narrower vane.cls state limit'],
+            ],
+            mustNotMatch: [[/actor[- ]backed[^.\n]{0,120}(?:callable )?reuse\s+(?:is|provides?|creates?|forms?|(?:can|will|does)\s+(?:provide|create|form))\s+(?:a\s+)?(?:durable|persistent|shared) (?:application )?state/i, 'treat general actor reuse as durable state'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, 'give vane.cls a multi-actor state limit']],
+          },
+          zh: {
+            mustMatch: [
+              [/Actor-backed[^。\n]{0,120}(?:复用|重用|保留)[^。\n]{0,80}(?:callable(?: instance)?|可调用对象)[^。\n]{0,100}(?:模型[^。\n]{0,60}客户端|客户端[^。\n]{0,60}模型)/i, '解释 actor 内 callable、模型和客户端的复用'],
+              [/vane\.cls(?:[^。\n]{0,40}vane\.cls\.batch)?[^。\n]{0,140}(?:范围更窄|更窄|受限|限制更严)[^。\n]{0,40}(?:可变状态契约|mutable-state contract)[\s\S]{0,180}(?:v1[^。\n]{0,100}actor_number\s*=\s*1|actor_number\s*=\s*1[^。\n]{0,100}v1|(?:一个|单个) actor(?: instance)?[^。\n]{0,80}(?:一次|单次) query)/i, '区分范围更窄的 vane.cls 状态限制'],
+            ],
+            mustNotMatch: [[/actor-backed[^。\n]{0,120}(?:callable )?复用\s*(?:(?:会|可以|能够)\s*)?(?:是|提供|创建|形成)[^。\n]{0,20}(?:持久|永久|共享)(?:应用)?状态/i, '把一般 actor 复用写成持久状态'], [/vane\.cls[\s\S]{0,180}actor_number\s*=\s*(?:0|[2-9]\d*)/i, '给 vane.cls 多 actor 状态限制']],
+          },
+        },
       },
       {
         id: 'state, failure, and effects',
@@ -767,6 +783,7 @@ const conceptSchemas = [
 ]
 
 const [udfConceptSchema, aiConceptSchema] = conceptSchemas
+const udfActorRules = udfConceptSchema.sections.find(({ id }) => id === 'actor reuse and state').invariants
 const udfStateRules = udfConceptSchema.sections.find(
   ({ id }) => id === 'state, failure, and effects',
 ).invariants
@@ -775,6 +792,8 @@ const aiEffectsRules = aiConceptSchema.sections.find(
 ).invariants
 
 const highRiskConceptProbes = [
+  [udfActorRules.en, 'English UDF actor reuse', 'Actor-backed execution reuses a callable instance, model, and client within each actor. `vane.cls` has the narrower mutable-state contract; in v1 it uses `actor_number=1` across one query. General actor-backed callable reuse does not provide durable application state and cannot create shared state.', ['Actor-backed callable reuse is durable application state.', 'Actor-backed callable reuse provides durable application state.', 'Actor-backed callable reuse creates shared state.', '`vane.cls` uses `actor_number=2` in v1.']],
+  [udfActorRules.zh, 'Chinese UDF actor reuse', 'Actor-backed 执行会在 actor 内复用 callable instance、模型与客户端。`vane.cls` 是范围更窄的可变状态契约；在 v1 使用 `actor_number=1`，限于单次 query。一般 actor-backed callable 复用不会创建持久应用状态，也不能提供共享状态。', ['Actor-backed callable 复用是持久应用状态。', 'Actor-backed callable 复用提供持久应用状态。', 'Actor-backed callable 复用创建共享状态。', '`vane.cls` 在 v1 使用 `actor_number=2`。']],
   [udfStateRules.en, 'English UDF state', 'State cannot be restored after failure. It is neither global state nor keyed state and offers no exactly-once guarantee. External side effects cannot be rolled back by a SQL transaction.', ['State can be restored after failure.', 'State is global state.', 'State is keyed state.', 'State guarantees exactly-once.', 'External side effects are transactional.']],
   [udfStateRules.zh, 'Chinese UDF state', '状态不能在失败后恢复。它不是 global state，也不是 keyed state，并且不提供 exactly-once。外部副作用不能由 SQL 事务回滚。', ['状态可以在失败后恢复。', '状态是 global state。', '状态是 keyed state。', '状态提供 exactly-once。', '外部副作用会被事务回滚。']],
   [aiEffectsRules.en, 'English AI effects', 'Credentials live in the worker-side runtime. Provider calls are external effects outside SQL transactions and provide no exactly-once guarantee.', ['Credentials should not live in the worker environment.', 'Credentials belong on the driver.', 'Provider calls are inside SQL transactions.', 'Provider calls can be rolled back by SQL transactions.', 'Provider calls guarantee exactly-once.']],
