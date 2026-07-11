@@ -538,12 +538,12 @@ result = rel.classify_text(
 ### Provider 生命周期与执行限制
 
 - 每个 query 都携带轻量 provider descriptor。真实 client 或 model 在 worker 上延迟实例化，并在该 actor 的后续 batch 中复用。
-- Provider option 未覆盖时，Expression 和 SQL AI 默认使用一个 actor、请求零个 GPU，batch size 为 `32`。Relation prompt fallback batch size 为 `1`。
+- Expression 和 SQL AI 的 fallback 值是一个 actor、请求零个 GPU 和 batch size `32`；Relation prompt 的 fallback batch size 是 `1`。这些值只是 framework fallback，仅在所选 provider descriptor 没有为对应字段提供值时使用。上表中的 Provider 默认值会覆盖这些 fallback。例如 embedding batch `64` 和 provider 选定的 GPU 资源。
 - active runner 把 Expression 和 SQL AI 解析为 local subprocess actor 或 Ray actor。Relation method 还可以显式设置 `execution_backend`。
 - Ray GPU 资源请求会通过 Ray scheduler 预留资源。local subprocess 只继承 driver 可见的 GPU：它不提供 GPU reservation 或隔离，非零 GPU 请求会产生 warning。
-- 每个 worker 都需要 provider dependency、model file、endpoint 访问能力和凭据环境变量。虽然 Python provider option class 公开了凭据字段，仍应优先使用 worker 环境配置；SQL options 会递归拒绝类似凭据的字段。
+- 每个 worker 只需要所选 provider 实际要求的相应 dependency、model artifact、network access 和凭据环境变量。虽然 Python provider option class 公开了凭据字段，仍应优先使用 worker 环境配置；SQL options 会递归拒绝类似凭据的字段。
 - Expression 和 SQL 调用只能位于顶层 `SELECT projection`；不支持 `WHERE`、`GROUP BY`、`HAVING`、join、aggregate argument、`CASE`、`AND`、`OR` 和 `COALESCE`。
-- Provider 和 wrapper retry 可能重复外部调用。Exponential retry sleep 上限为 30 秒，`Retry-After` sleep 上限为 120 秒；外部副作用不具有事务性，也不提供 exactly-once。应保留稳定 ID，并使下游写出具有幂等性或可审查性。
+- Provider 和 wrapper retry 可能重复外部调用。30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。Provider SDK 的 retry 和 backoff 限制可能不同。外部副作用不具有事务性，也不提供 exactly-once；应保留稳定 ID，并使下游写出具有幂等性或可审查性。
 - 导入 `vane` 时会动态挂载 Relation AI method。当前尚无完整的 public type-stub 覆盖，因此即使这些 method 在运行时是公开接口，static type checker 仍可能需要本地注解。
 
 配置和完整 workflow 请参阅 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions)。Provider 生命周期、位置和失败边界的设计原因请参阅 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。

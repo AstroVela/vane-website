@@ -105,10 +105,37 @@ const assertApiModels = (source, models, message) => {
   assert.deepEqual(actualModels, models, `${message}: expected only the canonical top-level API models`)
 }
 
-const assertExactSignatures = (source, signatures, message) => {
-  for (const signature of signatures) {
-    assert.match(source, new RegExp(escapeRegExp(signature)), `${message} should include exact signature ${signature}`)
-  }
+const assertEntrySignatures = (
+  source,
+  entrySignatures,
+  signatureLabel,
+  parametersLabel,
+  message,
+) => {
+  const entries = [...entrySignatures.keys()]
+
+  entries.forEach((entry, index) => {
+    const next = entries[index + 1]
+    const body = section(source, `#### \`${entry}\``, next ? `#### \`${next}\`` : undefined)
+    const signatureStart = exactLineIndex(body, signatureLabel)
+    assert.notEqual(signatureStart, -1, `${message}: ${entry} should contain ${signatureLabel}`)
+    const parametersStart = exactLineIndex(
+      body,
+      parametersLabel,
+      signatureStart + signatureLabel.length,
+    )
+    assert.ok(
+      parametersStart > signatureStart,
+      `${message}: ${entry} should place ${parametersLabel} after ${signatureLabel}`,
+    )
+
+    const signatureRegion = body.slice(signatureStart + signatureLabel.length, parametersStart)
+    const blocks = fencedCodeBlocks(signatureRegion)
+    assert.equal(blocks.length, 1, `${message}: ${entry} should contain exactly one fenced signature`)
+    const language = aiSqlEntries.includes(entry) ? 'sql' : 'python'
+    const expected = `\`\`\`${language}\n${entrySignatures.get(entry)}\n\`\`\``
+    assert.equal(blocks[0], expected, `${message}: ${entry} should contain its exact fenced signature`)
+  })
 }
 
 const assertExampleSetup = (source, entry, next, setupPattern, message) => {
@@ -195,15 +222,15 @@ const udfRelationEntries = ['rel.map_batches', 'rel.flat_map', 'rel.map']
 const aiSqlEntries = ['ai_prompt', 'ai_embed']
 const aiPythonEntries = ['vane.ai.prompt', 'vane.ai.embed']
 const aiRelationEntries = ['rel.prompt', 'rel.embed_text', 'rel.classify_text']
-const aiExactSignatures = [
-  'ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR',
-  'ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]',
-  'vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None) -> Expression',
-  'vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, embedding_options=None, dimensions=None, normalize=None) -> Expression',
-  'rel.prompt(column, *, image_columns=None, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None, return_format=None, use_chat_completions=True, output_column="response", execution_backend=None, **options) -> Relation',
-  'rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_column="embedding", max_chunk_chars=None, chunk_overlap_chars=200, execution_backend=None, **options) -> Relation',
-  'rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation',
-]
+const aiEntrySignatures = new Map([
+  ['ai_prompt', 'ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR'],
+  ['ai_embed', 'ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]'],
+  ['vane.ai.prompt', 'vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None) -> Expression'],
+  ['vane.ai.embed', 'vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, embedding_options=None, dimensions=None, normalize=None) -> Expression'],
+  ['rel.prompt', 'rel.prompt(column, *, image_columns=None, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None, return_format=None, use_chat_completions=True, output_column="response", execution_backend=None, **options) -> Relation'],
+  ['rel.embed_text', 'rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_column="embedding", max_chunk_chars=None, chunk_overlap_chars=200, execution_backend=None, **options) -> Relation'],
+  ['rel.classify_text', 'rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation'],
+])
 const referenceLabels = [
   '**Purpose**',
   '**Signature**',
@@ -257,6 +284,20 @@ const aiOptionContracts = [
   ['GoogleEmbeddingOptions', 'task_type=None, title=None, on_error=None'],
   ['VLLMProviderOptions', 'engine_args=None, concurrency=None, gpus_per_actor=None'],
   ['VLLMPromptOptions', 'generate_args=None, max_tokens=None, temperature=None, on_error=None'],
+]
+const aiSharedRuntimeRequirements = [
+  'These values are framework fallbacks only when the selected provider descriptor supplies no value for that field.',
+  'Provider defaults in the preceding table override these fallbacks.',
+  'Each worker needs only the dependencies, model artifacts, network access, and credential environment variables required by the selected provider.',
+  'The 30-second exponential-backoff cap and 120-second `Retry-After` cap apply to Vane wrapper retry/backoff.',
+  'Provider SDK retry and backoff limits may differ.',
+]
+const aiSharedRuntimeRequirementsZh = [
+  '这些值只是 framework fallback，仅在所选 provider descriptor 没有为对应字段提供值时使用。',
+  '上表中的 Provider 默认值会覆盖这些 fallback。',
+  '每个 worker 只需要所选 provider 实际要求的相应 dependency、model artifact、network access 和凭据环境变量。',
+  '30 秒 exponential-backoff 上限和 120 秒 `Retry-After` 上限仅适用于 Vane wrapper retry/backoff。',
+  'Provider SDK 的 retry 和 backoff 限制可能不同。',
 ]
 
 assert.throws(
@@ -325,13 +366,32 @@ assert.throws(
   'bilingual code guards should reject a changed translated example',
 )
 assert.throws(
-  () => assertExactSignatures(
-    aiExactSignatures[4].replace('use_chat_completions=True', 'use_chat_completions=False'),
-    [aiExactSignatures[4]],
-    'signature mutation probe',
+  () => assertEntrySignatures(
+    [
+      '#### `rel.prompt`',
+      '**Signature**',
+      '```python',
+      aiEntrySignatures.get('rel.prompt').replace(
+        'use_chat_completions=True',
+        'use_chat_completions=False',
+      ),
+      '```',
+      '**Parameters**',
+      'The wrong signature is inside the entry.',
+      '#### `unrelated`',
+      '**Signature**',
+      '```python',
+      aiEntrySignatures.get('rel.prompt'),
+      '```',
+      '**Parameters**',
+    ].join('\n'),
+    new Map([['rel.prompt', aiEntrySignatures.get('rel.prompt')]]),
+    '**Signature**',
+    '**Parameters**',
+    'entry-scoped signature mutation probe',
   ),
-  /exact signature/,
-  'signature guards should reject a changed Relation default',
+  /exact fenced signature/,
+  'entry-scoped signature guards should reject a wrong Relation default even when the correct signature appears elsewhere',
 )
 assert.throws(
   () => assertExampleSetup(
@@ -531,9 +591,9 @@ assert.deepEqual(
 assert.match(aiReference, /^---\ntitle: AI Function API Reference\n---/)
 assert.match(aiReferenceZh, /^---\ntitle: AI Function API 参考\n---/)
 
-for (const [source, name] of [
-  [aiReference, 'AI reference'],
-  [aiReferenceZh, 'Chinese AI reference'],
+for (const [source, name, signatureLabel, parametersLabel] of [
+  [aiReference, 'AI reference', '**Signature**', '**Parameters**'],
+  [aiReferenceZh, 'Chinese AI reference', '**签名**', '**参数**'],
 ]) {
   assertOrdered(
     source,
@@ -548,7 +608,7 @@ for (const [source, name] of [
     ],
     `${name} API order`,
   )
-  assertExactSignatures(source, aiExactSignatures, name)
+  assertEntrySignatures(source, aiEntrySignatures, signatureLabel, parametersLabel, name)
 }
 
 const aiSqlSections = [
@@ -607,9 +667,9 @@ for (const promptSection of relationPromptSections) {
   }
 }
 
-for (const [source, name, sharedHeading] of [
-  [aiReference, 'AI reference', '## Shared AI Types and Constraints'],
-  [aiReferenceZh, 'Chinese AI reference', '## AI 共享类型与限制'],
+for (const [source, name, sharedHeading, runtimeRequirements] of [
+  [aiReference, 'AI reference', '## Shared AI Types and Constraints', aiSharedRuntimeRequirements],
+  [aiReferenceZh, 'Chinese AI reference', '## AI 共享类型与限制', aiSharedRuntimeRequirementsZh],
 ]) {
   const shared = section(source, sharedHeading)
   for (const [type, fields] of aiOptionContracts) {
@@ -623,6 +683,9 @@ for (const [source, name, sharedHeading] of [
   assert.match(shared, /not exactly-once|不提供 exactly-once/, `${name} should document non-exactly-once external effects`)
   assert.match(shared, /Ray[\s\S]*(GPU resource|GPU 资源)/, `${name} should document Ray GPU resource requests`)
   assert.match(shared, /local subprocess[\s\S]*(no GPU reservation|GPU reservation)/, `${name} should document local GPU non-reservation`)
+  for (const requirement of runtimeRequirements) {
+    assert.ok(shared.includes(requirement), `${name} should include exact runtime qualification ${requirement}`)
+  }
 }
 
 for (const name of [
