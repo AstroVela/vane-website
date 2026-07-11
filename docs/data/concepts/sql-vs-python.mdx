@@ -47,19 +47,17 @@ try:
         SELECT
             document_id,
             text,
-            normalize_text_sql(text) AS normalized_text,
-            ai_prompt('Summarize: ' || text) AS summary,
-            ai_embed(text) AS embedding
+            normalize_text_sql(text) AS normalized_text
         FROM (VALUES
             (1, ' Refund requested ')
         ) AS documents(document_id, text)
     """)
-    plan = projected.explain()
+    rows = projected.fetchall()
 finally:
     vane.detach_function("normalize_text_sql", connection=con)
 ```
 
-Each custom or AI call adds one Expression result; the projection preserves `document_id` and `text` explicitly rather than hiding their relationship to the generated values.
+`fetchall()` materializes the projection while the alias is still attached. The result keeps `document_id` and `text` beside the custom Expression result; configured SQL AI calls use the same projection pattern.
 
 ### Python Entry Point
 
