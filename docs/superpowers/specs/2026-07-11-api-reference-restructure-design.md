@@ -1,225 +1,360 @@
-# UDF and AI API Reference Restructure Design
+# SQL-First UDF and AI Documentation Restructure Design
 
 ## Context
 
-The current `reference/udf-api` and `reference/ai-api` pages mix five different
-content types in the same flow: surface selection, runnable examples, function
-signatures, behavioral constraints, and execution-model explanation. Adjacent
-unlabelled code blocks make a signature look like a second example, while some
-examples rely on undefined objects such as `rel`, `con`, or a response model.
+The current UDF and AI documentation mixes API definitions, runnable examples,
+task guidance, conceptual explanation, and execution internals. It also presents
+SQL, Expression, and Relation as three parallel API surfaces. That model is
+misleading and makes the reference pages hard to scan.
 
-The result is not usable as a reference: readers cannot quickly answer what a
-function accepts, what it returns, or which rules apply to that function.
+The public API is more accurately described along two semantic models:
 
-## Goal
+1. **Expression API** — one typed output column produced through a projection.
+   Its normal composable form is row-preserving. It has a SQL entry point and a
+   Python entry point; the SQL entry point is the recommended default.
+2. **Relation API** — table-shaped or specialized transformations. These are
+   currently Python Relation methods.
 
-Make both pages strict API references. A reader landing on a function anchor
-must be able to identify its signature, parameters, return value, data contract,
-smallest complete call, and restrictions without reading unrelated sections.
+SQL can produce the input relation for a Relation API call and consume its
+output, but Vane does not currently expose a direct SQL table-function syntax
+for cardinality-changing Relation UDFs or the structured/multimodal Relation AI
+helpers. The documentation must not imply that such an API exists.
 
-Both pages use the same surface order:
+## Goals
 
-1. SQL API
-2. Expression API
-3. Relation API
+- Present Expression API and Relation API as the two top-level API models.
+- Make SQL Expression the first and most prominent path in Quickstart,
+  Reference, Guides, and Concepts.
+- Present Python Expression as the second entry point to the same row-preserving
+  model.
+- Use Relation API only when the task needs table reshaping, cardinality change,
+  built-in chunking/classification, structured or multimodal prompting, or an
+  explicit Relation execution backend.
+- Give Reference, Guides, and Concepts non-overlapping responsibilities.
+- Keep English and Chinese documents structurally equivalent.
 
-This order is a product/documentation decision and applies consistently to the
-UDF and AI Function references.
+## Non-Goals
 
-## Content Boundaries
+- Do not create a nonexistent SQL Relation API.
+- Do not force SQL Expression onto tasks whose required output contract is only
+  supported by Relation API.
+- Do not turn Concepts into API catalogs or Guides into signature references.
+- Do not expose internal `_duckdb` builders, payload fields, optimizer details,
+  or temporary names such as `vane.function`.
+- Do not modify Docs Examples in this work.
 
-The reference pages own:
+## Canonical API Model
 
-- public signatures and defaults;
-- parameter and return-value definitions;
-- input/output and cardinality contracts;
-- API-specific placement, state, resource, credential, and failure rules;
-- minimal complete examples that demonstrate call shape.
+```text
+Expression API (recommended)
+├── SQL entry point (default)
+│   ├── registered UDF aliases
+│   ├── ai_prompt
+│   └── ai_embed
+└── Python entry point
+    ├── vane.func / vane.func.batch
+    ├── vane.cls / vane.cls.batch
+    ├── vane.ai.prompt
+    └── vane.ai.embed
 
-The reference pages do not own:
+Relation API (specialized table transformations)
+├── rel.map_batches
+├── rel.flat_map
+├── rel.map
+├── rel.prompt
+├── rel.embed_text
+└── rel.classify_text
+```
 
-- task-oriented end-to-end workflows;
-- long tutorials or production recipes;
-- architectural motivation or internal execution implementation;
-- internal `_duckdb` builders, payload details, or temporary API names.
+The model is semantic, not merely syntactic:
 
-Task guidance stays in Guides. Mental models and execution rationale stay in
-Concepts. Each reference entry links to those pages instead of duplicating them.
+- Expression API participates in projection and normally preserves one output
+  row per input row. Python batch Expression with `row_preserving=False` is the
+  explicit exception: it may change cardinality but must be the only top-level
+  projection. SQL aliases remain row-preserving in v1.
+- Relation API returns the relation shape defined by the callable/helper and may
+  return only configured output columns or change cardinality.
+- `vane.attach_function` and `vane.detach_function` are Python registration
+  controls for the SQL Expression entry point; they are not a third API model.
 
-## Standard Function Entry
+## Document Responsibilities
 
-Every public function uses the same template:
+### API Reference
 
-1. **Purpose** — one sentence defining when this function is the correct API.
-2. **Signature** — a code block explicitly titled `Function signature` or
-   `函数签名`.
-3. **Parameters** — a table with name, accepted type, default/required status,
-   and precise meaning.
-4. **Returns** — the return object/type and output-column or cardinality shape.
-5. **Data contract / behavior** — only behavior needed to call the function
-   correctly.
-6. **Minimal complete example** — a code block explicitly titled
-   `Minimal example` or `最小完整示例`.
-7. **Restrictions and errors** — unsupported placement, conflicting options,
-   required schema, state, or resource rules specific to the function.
-8. **Related guide** — one targeted link when longer task guidance exists.
+Answers:
 
-Signature blocks and runnable examples are never adjacent without headings or
-labels. A minimal example includes its required imports and defines every local
-object it uses. When a type such as a Pydantic response model is required, the
-example defines that type.
+- What is the exact signature?
+- Which parameters are required and what are their defaults?
+- What does the call return?
+- What placement, type, cardinality, resource, state, or credential restrictions
+  apply?
 
-## UDF Reference Information Architecture
+Reference does not teach a complete workflow or explain architectural reasons.
 
-### 1. SQL API
+### Guides
+
+Answers:
+
+- How do I complete a real task?
+- What setup, data flow, validation, and output steps are required?
+- When must the task move from SQL Expression to Python Expression or Relation?
+
+Guides use complete task examples, with SQL Expression first whenever it can
+represent the required contract.
+
+### Concepts
+
+Answers:
+
+- Why are there Expression and Relation models?
+- Why is SQL Expression the default entry point?
+- How do SQL and Python Expression share execution semantics?
+- Why do cardinality, state, provider lifecycle, and side effects impose the
+  documented limits?
+
+Concepts use only short illustrative snippets. They do not repeat parameter
+tables or full tutorials.
+
+## Reference Structure
+
+Both reference pages begin with **Expression API**, with **SQL entry point**
+before **Python entry point**, followed by **Relation API**.
+
+Every public API receives the same entry template:
+
+1. Purpose
+2. Function signature
+3. Parameters
+4. Returns
+5. Call behavior or data contract
+6. Minimal complete example
+7. Restrictions and errors
+8. Related Guide or Concept link
+
+No API receives a special documentation structure. Function-specific behavior
+is documented inside the same standard template.
+
+Signature blocks and runnable examples are explicitly titled. A minimal example
+defines every import, connection, relation, callable, schema, and response model
+that it uses.
+
+### UDF Reference
+
+#### Expression API — SQL entry point (recommended)
 
 - `vane.attach_function`
+- calling the registered alias in a SQL `SELECT`
 - `vane.detach_function`
-- registered scalar, batch, actor-backed class, and instantiated stateful-class
-  object contracts
-- named-argument and replacement rules
+- registered-object compatibility matrix
+- named-argument, replacement, and connection-ownership rules
 
-`attach_function` and `detach_function` receive separate entries. The supported
-registered-object matrix follows the function entries as an exact compatibility
-table, not as tutorial prose.
+#### Expression API — Python entry point
 
-### 2. Expression API
-
-- helpers: `vane.col`, `vane.lit`, `vane.sql_expr`
+- `vane.col`
+- `vane.lit`
+- `vane.sql_expr`
 - `vane.func`
 - `vane.func.batch`
 - `vane.cls`
 - `vane.cls.batch`
 
-`vane.func.batch` explicitly documents the data path:
-
-```text
-inputs mapping
-  -> Arrow Table passed to fn (mapping keys become input column names)
-  -> fn returns an Arrow Table
-  -> schema declares exactly one returned column
-  -> the expression contributes that column to SELECT
-```
-
-The entry explains `row_preserving=True` and `False` as two output contracts,
-not merely two boolean values. Its complete example defines `rel`, imports
-`vane` and `pyarrow`, shows the exact worker input columns, and shows the final
-projection result.
-
-`vane.cls` and `vane.cls.batch` are separate entries. Shared state-lifecycle
-rules are summarized once after both definitions.
-
-### 3. Relation API
+#### Relation API
 
 - `rel.map_batches`
 - `rel.flat_map`
 - `rel.map`
 
-These APIs currently appear only in the selection table; the restructured page
-adds proper definitions so the page covers every surface it asks readers to
-choose. Each entry states whether source columns are preserved automatically and
-what its output schema/cardinality contract is.
+#### Shared UDF constraints
 
-### 4. Common UDF Rules
+- supported Expression/SQL output types;
+- projection and short-circuit placement;
+- row-preserving and cardinality-changing contracts;
+- state, actor failure, and external side effects;
+- Ray GPU requests and local GPU visibility;
+- Relation `actor_number` versus AI provider `concurrency`.
 
-- supported expression/SQL output types;
-- projection and short-circuit placement restrictions;
-- row-preserving versus cardinality-changing behavior;
-- state, failure, and external side-effect boundaries;
-- Ray GPU requests versus local GPU visibility;
-- relation `actor_number` versus AI provider `concurrency`.
+### AI Function Reference
 
-These are compact reference tables or callouts. They do not repeat execution
-architecture prose.
-
-## AI Reference Information Architecture
-
-### 1. SQL API
+#### Expression API — SQL entry point (recommended)
 
 - `ai_prompt`
 - `ai_embed`
-- constant `STRUCT` option contract
-- SQL credential-field rejection
+- constant `STRUCT` options
+- credential-field rejection
 
-The two SQL functions receive separate entries with independent parameter,
-return-type, option, and example sections.
-
-### 2. Expression API
+#### Expression API — Python entry point
 
 - `vane.ai.prompt`
 - `vane.ai.embed`
 
-Each entry explicitly says that it produces one row-preserving projection
-column and shows `.alias(...)`. Relation-only prompt parameters are listed in
-the `vane.ai.prompt` restrictions rather than left for readers to infer from an
-overload.
-
-### 3. Relation API
+#### Relation API
 
 - `rel.prompt`
 - `rel.embed_text`
 - `rel.classify_text`
 
-Each function gets its full signature. The page states that relation helpers
-return their configured output column instead of automatically retaining source
-columns. Structured/multimodal prompt options remain attached to `rel.prompt`.
+#### Shared AI types and constraints
 
-### 4. Provider Option Types
-
-Typed option classes are documented as type definitions with exact fields and
-defaults. Provider-level concurrency and request-level controls are separated.
-Dictionary extension behavior remains documented without turning the section
-into a provider tutorial.
-
-### 5. Common AI Rules
-
+- typed Provider and request-option classes with exact fields/defaults;
 - provider defaults by function;
-- worker-side lazy provider instantiation;
-- active-runner backend resolution for Expression and SQL AI;
-- projection placement restrictions;
+- worker-side lazy Provider instantiation;
+- active-runner backend resolution for SQL/Python Expression;
+- projection placement;
 - retries, external effects, and non-exactly-once behavior;
-- worker environment credential requirements.
+- worker environment credentials.
 
-## Bilingual Requirements
+## Concepts Restructure
 
-English and Chinese pages keep the same heading hierarchy, entry order, tables,
-code, and technical meaning. Public identifiers remain unchanged. Chinese prose
-may retain established terms such as Expression, projection, row-preserving,
-actor-local, and query scope when translation would make the contract less
-precise.
+### `concepts/udfs`
 
-## Scope and Generated Content
+- Introduce Expression and Relation as the only two top-level models.
+- Explain SQL alias registration and SQL projection first.
+- Explain Python Expression as the alternate entry point to the same
+  row-preserving model.
+- Explain Relation UDFs as the model for multi-column output and cardinality
+  change.
+- Explain shared execution, actor-backed reuse, and the narrower `vane.cls`
+  mutable-state contract.
 
-Documentation prose changes are limited to the two reference pages and their
-Chinese mirrors. Existing Guide and Concept pages may be linked but are not
-reorganized in this pass. Supporting checks and generated files may change.
-Docs Examples remain byte-for-byte unchanged.
+### `concepts/ai-functions`
 
-After source pages are stable, regenerate `docs/manifest.json`, `docs/llms.txt`,
-and `docs/llms-full.txt`.
+- Begin with SQL `ai_prompt`/`ai_embed` as the default user model.
+- Explain Python Expression and its equivalent row-preserving semantics.
+- Explain why chunking, classification, structured/multimodal prompts, and an
+  explicit Relation backend require Relation API.
+- Explain Provider descriptors, lazy worker instantiation, credential flow, and
+  external side-effect boundaries.
+
+### Related Concepts
+
+- `concepts/architecture`: order public surfaces and layers as SQL Expression,
+  Python Expression, then Relation; describe the shared execution layer.
+- `concepts/execution-model`: explain projection execution through SQL aliases
+  and SQL AI first, then Python Expression, then Relation operators.
+- `concepts/sql-vs-python`: explain that SQL and Python are two entry points to
+  Expression API rather than mutually exclusive pipeline models; Relation API
+  is the escape hatch for table-shaped work.
+
+## Guides Restructure
+
+### `guides/custom-python-udfs`
+
+Primary workflow:
+
+1. define a Python callable;
+2. register it with `vane.attach_function`;
+3. call the alias in a SQL `SELECT` pipeline;
+4. validate and write the result.
+
+Then show Python Expression as an alternate call form. Present Relation APIs
+last for multi-column output, row expansion, complete table stages, actor-backed
+models, and GPU resources.
+
+### `guides/ai-functions`
+
+Primary workflow uses SQL `ai_prompt` and `ai_embed` while retaining IDs and
+source fields in the projection. Python Expression follows. Relation API is
+used for structured/multimodal prompting, classification, built-in chunking,
+and explicit Relation backend selection.
+
+### `guides/embeddings-at-scale`
+
+- Hosted/default path: SQL `ai_embed`.
+- Python relation workflow: `vane.ai.embed` Expression.
+- Specialized path: Relation `embed_text` for built-in chunking or other
+  Relation-only controls; custom Relation UDFs for table-shaped preprocessing.
+
+### `guides/gpu-inference`
+
+- Basic vLLM batch prompt path: SQL `ai_prompt` with constant vLLM options.
+- Python projection path: `vane.ai.prompt` Expression.
+- Advanced path: Relation `prompt` for explicit backend/actor-pool controls and
+  structured or multimodal input.
+
+### Other Guides
+
+Multimodal ingest/pipeline, structured transformation, and performance tuning
+are not structurally rewritten. Only statements that directly contradict the
+canonical two-model or SQL-first guidance are corrected.
+
+## Quickstart Restructure
+
+The Quickstart becomes the clearest recommended-path demonstration:
+
+1. create a connection and source relation;
+2. filter/select candidates with SQL;
+3. define a small Python callable;
+4. register it as a SQL alias with `vane.attach_function`;
+5. call the alias in a SQL projection;
+6. optionally call SQL `ai_prompt`;
+7. validate and write the tabular result;
+8. link to Relation API for tasks that need table reshaping.
+
+Quickstart does not begin with `map_batches` or Python AI Expression when the
+same task can be expressed through SQL Expression.
+
+## Example Policy
+
+- The first complete UDF/AI example on an affected page uses SQL Expression
+  whenever that API can represent the required output contract.
+- A custom-UDF SQL example includes callable definition, registration, and SQL
+  invocation; it never references an undefined alias.
+- Python Expression is explicitly labeled as the alternate Python entry point.
+- A Relation example states the capability that requires Relation API.
+- Reference examples are minimal complete calls; Guide examples are complete
+  tasks; Concept snippets only illustrate a semantic point.
+- Examples do not contain undefined `con`, `rel`, callable, schema, alias, or
+  response-model names.
+- SQL is not used to imitate nonexistent Relation functionality.
+
+## Scope
+
+English pages and their Chinese mirrors:
+
+- `quickstart/quickstart`
+- `reference/udf-api`
+- `reference/ai-api`
+- `concepts/udfs`
+- `concepts/ai-functions`
+- `concepts/architecture`
+- `concepts/execution-model`
+- `concepts/sql-vs-python`
+- `guides/custom-python-udfs`
+- `guides/ai-functions`
+- `guides/embeddings-at-scale`
+- `guides/gpu-inference`
+
+Other Concept/Guide pages receive only targeted contradiction fixes. Marketing
+pages and Docs Examples are outside this restructure.
+
+After source content stabilizes, regenerate `docs/manifest.json`,
+`docs/llms.txt`, and `docs/llms-full.txt`.
 
 ## Verification
 
-- Extend the API v2 content contract to enforce SQL → Expression → Relation
-  heading order on both pages.
-- Assert that signature and minimal-example labels are present.
-- Assert that all required UDF and AI public functions have independent entries.
-- Assert that the `vane.func.batch` entry explains `inputs`, the Arrow input
-  table, one-column `schema`, and both `row_preserving` modes.
+- Extend the API v2 content contract to assert the canonical two-model language.
+- Assert Expression API precedes Relation API on both Reference pages.
+- Assert SQL entry point precedes Python entry point inside Expression sections.
+- Assert every public Reference entry follows the shared template and no API is
+  structurally singled out.
+- Assert Quickstart and the primary UDF/AI Guides lead with SQL Expression calls.
+- Assert SQL examples define required registrations/options and do not claim
+  Relation-only capabilities.
+- Assert English/Chinese heading and example order match.
 - Run docs lint, generated-content checks, API/content checks, lint, typecheck,
   and both-locale production build.
-- Prove both excluded Examples trees have an empty diff.
+- Prove the English and Chinese Docs Examples trees have an empty diff.
 
 ## Acceptance Criteria
 
-- A reader can tell whether a code block is a signature or an executable
-  example before reading it.
-- No minimal example contains an undefined `rel`, `con`, callable, schema, or
-  response model.
-- Every function entry answers purpose, inputs, return value, and restrictions
-  in the same order.
-- SQL API precedes Expression API, which precedes Relation API on both pages.
-- `vane.func.batch` explains its Arrow data contract without requiring source
-  inspection or a Guide.
-- The pages remain reference material rather than becoming duplicate tutorials
-  or implementation-design documents.
+- Readers see two API models, not three parallel surfaces.
+- SQL Expression is visibly the recommended default in navigation flow, prose,
+  and first examples.
+- Python Expression is presented as the equivalent Python entry point.
+- Relation API is presented as a specialized table-transformation model with
+  honest capability boundaries.
+- Reference, Guides, and Concepts each answer only their assigned questions.
+- All public API entries receive the same documentation treatment.
+- No complete example relies on undefined setup.
+- Chinese and English content communicate the same hierarchy and contracts.
+- Docs Examples remain byte-for-byte unchanged.
