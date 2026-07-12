@@ -5,7 +5,7 @@ const pagePath = 'src/pages/TrainingUseCase.tsx'
 const componentPath = 'src/components/TrainingDataFactoryAnimation.tsx'
 const docsPath = 'docs/data/examples/training-data-pipeline.mdx'
 const routesPath = 'src/plugins/vaneRoutes.ts'
-const imagePath = 'public/img/use-cases/hero-driving-intersection.webp'
+const imagePath = 'public/img/solutions/hero-driving-intersection.webp'
 
 assert.ok(existsSync(pagePath), `${pagePath} should exist`)
 assert.ok(existsSync(componentPath), `${componentPath} should exist`)
@@ -105,7 +105,7 @@ for (const text of mustIncludeInPage) {
   assert.match(page, new RegExp(escapeRegExp(text)), `${pagePath} should include "${text}"`)
 }
 
-assert.match(routes, /path:\s*routePath\('\/use-cases\/training'\)[\s\S]*TrainingUseCase\.tsx/, 'training route should render TrainingUseCase.tsx')
+assert.match(routes, /path:\s*routePath\('\/solutions\/training'\)[\s\S]*TrainingUseCase\.tsx/, 'training solution route should render TrainingUseCase.tsx')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(page, /TRAINING_DESIGN_PARTNER_MAILTO/, 'training page should use the centralized training design partner mailto')
 assert.match(siteLinks, /TRAINING_DESIGN_PARTNER_MAILTO/, 'siteLinks should define the training design partner mailto')

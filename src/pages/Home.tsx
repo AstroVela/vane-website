@@ -51,7 +51,7 @@ const SCENARIOS: Array<{
     summaryZh: '把图像、视频、音频、文档、表格和传感器日志加工成可发布、可追溯、可复现的训练数据集。',
     cta: 'Explore',
     ctaZh: '查看',
-    href: '/use-cases/training',
+    href: '/solutions/training',
     icon: 'multimodal',
   },
   {
@@ -63,7 +63,7 @@ const SCENARIOS: Array<{
     summaryZh: '把 PDF、图片、视频、日志、表单等转化成可信可追溯的Agent决策',
     cta: 'Explore',
     ctaZh: '查看',
-    href: '/use-cases/enterprise-agent',
+    href: '/solutions/enterprise-agent',
     icon: 'retrieval',
   },
   {

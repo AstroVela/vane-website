@@ -6,10 +6,10 @@ test('hash-only Link targets resolve against the current page', () => {
   const url = resolveLinkClickUrl({
     href: '/#code',
     to: '#code',
-    currentHref: 'https://vane.ai/use-cases/training?locale=test',
+    currentHref: 'https://vane.ai/solutions/training?locale=test',
   })
 
-  assert.equal(url.pathname, '/use-cases/training')
+  assert.equal(url.pathname, '/solutions/training')
   assert.equal(url.search, '?locale=test')
   assert.equal(url.hash, '#code')
 })
@@ -18,7 +18,7 @@ test('absolute internal Link targets resolve from the site origin', () => {
   const url = resolveLinkClickUrl({
     href: '/benchmarks',
     to: '/benchmarks',
-    currentHref: 'https://vane.ai/use-cases/training?locale=test',
+    currentHref: 'https://vane.ai/solutions/training?locale=test',
   })
 
   assert.equal(url.pathname, '/benchmarks')

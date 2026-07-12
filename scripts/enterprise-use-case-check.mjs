@@ -177,7 +177,7 @@ assert.doesNotMatch(css, /citation-return|color-scheme:\s*dark|neon|box-shadow:\
 assert.doesNotMatch(page, /What You Get|Not a verdict|WhatYouGetDiagram|enterprise-object-diagram/, 'enterprise page should not include the What You Get section')
 assert.doesNotMatch(page, /Claims, compliance and document review|claims teams|compliance teams|document review teams|Run the claims pipeline|Run the example pipeline|Have a stack of claims|Enterprise Multimodal Agent Infrastructure|WHERE confidence < 0\.8|finding \+ evidence|review task|case summary|claim summary|review_tasks|evidence · review · summary|Every finding comes with evidence|auditable findings|SQL → finding/, 'enterprise page should not include superseded claims-first copy outside the demo')
 
-assert.match(routes, /path:\s*routePath\('\/use-cases\/enterprise-agent'\)[\s\S]*EnterpriseAgentUseCase\.tsx/, 'enterprise-agent route should render EnterpriseAgentUseCase.tsx')
+assert.match(routes, /path:\s*routePath\('\/solutions\/enterprise-agent'\)[\s\S]*EnterpriseAgentUseCase\.tsx/, 'enterprise-agent solution route should render EnterpriseAgentUseCase.tsx')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(page, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'enterprise page should use the centralized enterprise design partner mailto')
 assert.match(siteLinks, /ENTERPRISE_DESIGN_PARTNER_MAILTO/, 'siteLinks should define the enterprise design partner mailto')

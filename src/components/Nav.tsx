@@ -229,7 +229,7 @@ export default function Nav({
               <div className="dd-pan mega-pan">
                 <div className="dd-card mega">
                   <div className="mega-grid">
-                    <Link className="mega-it" to="/use-cases/training" onClick={() => setMmOpen(false)}>
+                    <Link className="mega-it" to="/solutions/training" onClick={() => setMmOpen(false)}>
                       <span className="ic">
                         <PipelineIcon />
                       </span>
@@ -241,7 +241,7 @@ export default function Nav({
                         <span className="mg">{copy.trainingMeta}</span>
                       </span>
                     </Link>
-                    <Link className="mega-it" to="/use-cases/enterprise-agent" onClick={() => setMmOpen(false)}>
+                    <Link className="mega-it" to="/solutions/enterprise-agent" onClick={() => setMmOpen(false)}>
                       <span className="ic">
                         <AgentIcon />
                       </span>
@@ -391,15 +391,15 @@ export default function Nav({
         <div className="mobile-menu">
           <div className="wrap">
             <div className="mob-sec">
-              <Link className="mob-head" to="/use-cases" onClick={() => setMobOpen(false)}>
+              <Link className="mob-head" to="/solutions" onClick={() => setMobOpen(false)}>
                 {copy.solutions}
               </Link>
-              <Link className="mob-sub" to="/use-cases/training" onClick={() => setMobOpen(false)}>
+              <Link className="mob-sub" to="/solutions/training" onClick={() => setMobOpen(false)}>
                 {copy.mobileTraining}
               </Link>
               <Link
                 className="mob-sub"
-                to="/use-cases/enterprise-agent"
+                to="/solutions/enterprise-agent"
                 onClick={() => setMobOpen(false)}
               >
                 {copy.agentTitle}

@@ -36,8 +36,8 @@ const mustIncludeInHome = [
   'Turn PDFs, images, video, logs, forms, spreadsheets, and documents into auditable facts and agent-ready context — in SQL.',
   'Embodied AI — RL post-training',
   'Edge AI Agent',
-  '/use-cases/training',
-  '/use-cases/enterprise-agent',
+  '/solutions/training',
+  '/solutions/enterprise-agent',
   'Proof for real batch inference pipelines.',
   'One credible number, fully reproducible — vLLM batch inference over 66K rows on 2 GPUs, measuring the same GPU-feeding bottleneck behind multimodal AI pipelines.',
   '~20× vs Spark',
@@ -73,16 +73,16 @@ assert.match(nav, /把 PDF、图片、视频、日志、表单等转化成可信
 assert.doesNotMatch(nav, /为企业 Agent 提供可审计、可扩展的多模态数据后端。/, 'Nav should not keep the old Chinese enterprise backend description')
 assert.doesNotMatch(home, /把 PDF、图片、视频、日志、表单和表格整理成可追溯的事实，以及 Agent 可直接使用的上下文。/, 'Home should not keep the old Chinese enterprise scenario summary')
 assert.match(nav, /\{copy\.solutions\}[\s\S]*<span className="caret">▾<\/span>/, 'Desktop nav should render the localized solutions menu label')
-assert.match(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*\{copy\.solutions\}\s*<\/Link>/, 'Mobile nav should render the localized solutions menu label')
+assert.match(nav, /<Link className="mob-head" to="\/solutions"[\s\S]*>\s*\{copy\.solutions\}\s*<\/Link>/, 'Mobile nav should render the localized solutions menu label')
 assert.doesNotMatch(nav, />\s*Use Cases\s*<span className="caret">▾<\/span>/, 'Desktop nav should not label the solutions menu "Use Cases"')
-assert.doesNotMatch(nav, /<Link className="mob-head" to="\/use-cases"[\s\S]*>\s*Use Cases\s*<\/Link>/, 'Mobile nav should not label the solutions menu "Use Cases"')
+assert.doesNotMatch(nav, /<Link className="mob-head" to="\/solutions"[\s\S]*>\s*Use Cases\s*<\/Link>/, 'Mobile nav should not label the solutions menu "Use Cases"')
 assert.match(footer, /The multimodal engine for AI pipelines and agents\./, 'Footer should use the unified Vane positioning')
 assert.match(footer, /面向 AI 流水线与 Agents 的多模态原生引擎。在 Ray 上运行 SQL、Python UDF、embeddings 和模型推理。/, 'Footer should use the finalized Chinese home blurb')
 assert.match(footer, /Enterprise Multimodal Data/, 'Footer product nav should use the broader enterprise data label')
 assert.match(footer, /training:\s*'Multimodal Data Pipeline'/, 'Footer product nav should define the training solution label')
 assert.match(footer, /enterprise:\s*'Enterprise Multimodal Data'/, 'Footer product nav should define the broader enterprise data label')
-assert.match(footer, /to="\/use-cases\/training"[\s\S]*\{copy\.training\}/, 'Footer product nav should link the training solution directly')
-assert.match(footer, /to="\/use-cases\/enterprise-agent"[\s\S]*\{copy\.enterprise\}/, 'Footer product nav should link the enterprise solution directly')
+assert.match(footer, /to="\/solutions\/training"[\s\S]*\{copy\.training\}/, 'Footer product nav should link the training solution directly')
+assert.match(footer, /to="\/solutions\/enterprise-agent"[\s\S]*\{copy\.enterprise\}/, 'Footer product nav should link the enterprise solution directly')
 assert.match(cta, /Build your first AI pipeline on multimodal data\./, 'Default CTA should use the updated Home closing copy')
 assert.match(cta, /用多模态数据跑起第一条 AI 流水线/, 'Default CTA should use the finalized Chinese copy')
 assert.match(css, /h1,\s*h2,\s*h3\s*\{[\s\S]*font-family:\s*inherit;/, 'Bare headings should keep the pre-#10 inherited Vane mono font instead of Infima heading font')
@@ -97,7 +97,7 @@ assert.match(css, /\.term pre\.code\s*\{[\s\S]*background-color:\s*transparent;[
 
 assert.match(home, /scenario-soon-card/, 'Coming-soon workloads should render as compact cards below the featured row')
 assert.doesNotMatch(home, /scenario-card is-soon/, 'Coming-soon workloads should not render as full-size scenario cards')
-assert.doesNotMatch(home, /See all examples/, 'Home use-cases section should not render the extra examples CTA')
+assert.doesNotMatch(home, /See all examples/, 'Home solutions section should not render the extra examples CTA')
 assert.match(home, /DESIGN_PARTNER_MAILTO/, 'Home should use the centralized design partner mailto')
 assert.match(siteLinks, /CONTACT_EMAIL = 'pulse@astrovela\.ai'/, 'siteLinks should keep the canonical contact inbox')
 assert.match(siteLinks, /DESIGN_PARTNER_MAILTO/, 'siteLinks should define the generic design partner mailto')

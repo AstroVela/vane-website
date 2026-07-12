@@ -1122,7 +1122,7 @@ node --test tests/*.test.mjs
 npm run home:content:check
 npm run enterprise:content:check
 npm run training:content:check
-npm run use-cases:content:check
+npm run solutions:content:check
 npm run lint
 npm run typecheck
 npm run build
