@@ -2,348 +2,205 @@
 title: GPU 推理
 ---
 
-本指南先使用 SQL `ai_prompt` 完成一个可审查的 vLLM 文本生成任务，然后展示等价的 Python Expression 构造，最后才为高级能力使用专用 Relation helper。
+当你需要批量将多模态或文本数据交给本地或私有 LLM 推理时，请使用 GPU Inference。典型输入包括抽取后的文档、字幕、转写文本、标签，或前序 Vane 阶段准备好的提示词行。
 
-精确的签名、选项字段与返回类型见 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。Expression/Relation 边界与 worker 生命周期背后的原因见 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)和[执行模型](/zh-CN/docs/data/concepts/execution-model)。
+本指南聚焦 Vane 中用于 batch 提示词推理的 vLLM 路径。对于不依赖 vLLM 的通用 GPU 模型代码，请使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
 
-任务从来源到输出始终遵守以下契约：
+常见 workflow 如下：
 
 ```text
-select a keyed candidate slice -> generate one VARCHAR per row -> retain IDs and source -> validate -> review -> write
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
 ```
 
-当提示词需要在本机或自己的 Ray 环境中运行、模型初始化需要跨 batch 复用，或者 GPU 调度与提示词局部性需要专门验证时，请使用本指南。对于任意 GPU 模型代码，或需要保留来源字段的多列结果 schema，请使用[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。
+## 何时使用 GPU Inference
 
-## 1. 准备带稳定键的小型候选切片
+在以下场景中使用本指南：
 
-从真实数据、确定性顺序、稳定业务 ID，以及复现输出所需的来源字段开始。第一次运行的数据量应足够小，便于逐条审查。
+- 你有大量提示词，而不是少量交互式聊天请求。
+- 模型需要在本地或你自己的 Ray 环境中运行。
+- 模型或引擎初始化成本较高，需要跨 batch 复用。
+- 你需要验证 GPU actor 复用、多 GPU 调度，或基于 Ray 的 vLLM actor pool。
+- 相似提示词共享系统前缀或模板，而缓存局部性可能影响吞吐量。
+
+## Vane 中的 vLLM
+
+对于普通的保持行数提示词增强，优先使用 SQL Expression AI Function `ai_prompt(...)`：
+
+```sql
+select
+    case_id,
+    document_id,
+    ai_prompt(
+        prompt,
+        struct_pack(
+            provider := 'vllm',
+            model := 'Qwen/Qwen3-1.7B',
+            batch_size := 8
+        )
+    ) as response_text
+from gpu_prompts
+```
+
+`vane.ai.prompt(...)` 是同一 projection 模型的 Python Expression 备选入口。只有任务需要结构化或多模态输出、显式 Relation 执行控制等 Relation-only 能力时，才使用 Python Relation 方法 `rel.prompt(...)`。
+
+## 构建提示词 relation
+
+从一小段真实源行切片开始。将提示词文本与后续需要的标识符和元数据分开保留。
 
 ```python
 import vane
 
 con = vane.connect()
 
-source = con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(document_type AS VARCHAR) AS document_type,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/claims/documents/*.parquet')
-    """
-)
-source.to_table("gpu_inference_source")
-
-candidates = con.sql(
-    """
-    SELECT
-        'claims-vllm-2026-07-11-001'::VARCHAR AS run_id,
+prompts = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
-        (
-            'Extract the claim decision and one short factual reason: '
-            || source_text
-        )::VARCHAR AS prompt
-    FROM gpu_inference_source
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND document_type IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND source_text IS NOT NULL
-      AND trim(source_text) <> ''
-    ORDER BY document_type, case_id, document_id
-    LIMIT 50
-    """
-)
-candidates.to_table("gpu_inference_candidates")
+        document_type,
+        'Extract the claim decision and one short reason from this document: '
+            || text as prompt
+    from read_parquet('data/claims/documents/*.parquet')
+    where text is not null
+    order by case_id, document_id
+    limit 50
+""")
 
-expected_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-if not expected_keys:
-    raise ValueError("GPU inference candidate slice is empty")
-if len(set(expected_keys)) != len(expected_keys):
-    raise ValueError("(case_id, document_id) must be unique")
+prompts.to_table("gpu_prompts")
+prompt_table = prompts.to_arrow_table()
 ```
 
-`run_id` 标识本次配置与输出路径，`(case_id, document_id)` 标识业务行。绝不要把输出顺序当作身份契约。提示词模板、模型或重要引擎设置发生变化时，请使用新的 run ID，或记录明确的版本。
+推荐的输入列：
 
-## 2. 先用 SQL 运行基础本地 vLLM 生成
+| 列 | 作用 |
+| --- | --- |
+| `case_id`、`document_id`、`asset_id` 或其他稳定 key | 将响应关联回源系统。 |
+| `source_uri` 或源元数据 | 审查异常输出并复现失败。 |
+| `document_type`、`media_type`、类别、租户或任务类型 | 对提示词分组，并按来源分段比较输出质量。 |
+| `prompt` | 发送给 vLLM 的最终文本。 |
+| `system_prefix` 或模板 ID，如果使用 | 用于解释提示词分组和缓存局部性实验。 |
 
-推荐的第一次提示词调用是顶层 SQL projection。常量 `struct_pack` 选择 vLLM，并且只提供非敏感、整次 query 共用的配置。两个 JSON bridge 字段都是包含合法 JSON 的字符串；绑定时会转换成 provider 的 `engine_args` 和 `generate_args` 字典。
+第一次运行时保持提示词构造过程可复现。如果修改模板，请在输出中记录 `run_id` 或提示词版本。
+
+## 运行本地 vLLM 样例
+
+在引入 Ray actor pool 的复杂度前，先通过推荐的 SQL Expression 路径验证模型、提示词形态、输出长度和 GPU 内存行为。
 
 ```python
-local_prompted = con.sql(
-    """
-    SELECT
-        run_id,
+response_rows = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         ai_prompt(
             prompt,
             struct_pack(
                 provider := 'vllm',
                 model := 'Qwen/Qwen3-1.7B',
-                concurrency := 1,
                 batch_size := 8,
+                concurrency := 1,
                 gpus_per_actor := 1.0,
                 max_retries := 0,
                 on_error := 'log',
-                system_message := 'Return one concise factual business note.',
+                system_message := 'Return concise JSON-like business notes.',
                 engine_args_json := '{"max_model_len": 2048}',
-                generate_args_json := '{"sampling_params": {"temperature": 0.0, "max_tokens": 128}}'
+                generate_args_json := '{"sampling_params":{"temperature":0.0,"max_tokens":128}}'
             )
-        ) AS response_text
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_prompted.to_table("gpu_inference_model_output")
+        ) as response_text
+    from gpu_prompts
+    order by case_id, document_id
+""")
+
+response_rows.to_table("gpu_responses")
 ```
 
-`ai_prompt` 会在每个候选行旁返回一个 `VARCHAR`。它的选项必须是可折叠常量，不能逐行变化。SQL 会递归拒绝类似凭据的 key，包括 JSON bridge 内部的 key。本地 vLLM 推理通常不需要托管 provider 的 API key。如果下载模型需要受限模型仓库的 token，请把它放在 worker 环境中，而不是 SQL 中。
+options 参数是整条 query 共用的一个可折叠常量 `STRUCT`。使用本地 runner 时，Vane 会创建 subprocess actor，并在该 worker 中延迟初始化 vLLM engine，因此同一次运行的多个 batch 可以复用 engine。非零 `gpus_per_actor` 不会在本地预留或隔离 GPU；subprocess 只会继承 driver 可见的设备。第一次正确性检查不需要 Ray。
 
-使用默认本地 runner 时，Vane 会创建 subprocess actor，并在该 worker 上延迟初始化真正的 vLLM engine。actor 会在同一 query 的后续 batch 中复用该 engine。非零 `gpus_per_actor` 描述预期资源，但本地 subprocess 执行只会继承进程可见的设备：它不会预留或隔离 GPU，而且非零 GPU 请求会产生 warning。请在启动进程前设置设备可见性，并单独验证。
+## 保留 ID 并写出结果
 
-在物化该 query 前，本地 worker 必须具备兼容的 Vane、vLLM、PyTorch、CUDA 和驱动栈。如果 worker 不应访问外网，请预先放置准确的模型与 tokenizer artifact；否则只开放模型加载所需的 artifact endpoint。是否启用 `trust_remote_code` 或使用可变模型 revision 是单独的供应链决策，不应默认复制到样例中。
-
-## 3. 校验、审查并写出
-
-把容错失败转换成明确状态，保留模型，以及可供审计的提示词模板版本、system message 与关键生成设置摘要，并在写出前校验带 key 的数据契约。
+Expression 结果保留在同一个 SQL projection 中，因此稳定 ID 和源元数据无需按位置重新拼接 Arrow 数据。写出前应校验带 key 的结果。
 
 ```python
-local_review = con.sql(
-    """
-    SELECT
-        run_id,
+results = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         response_text,
-        'Qwen/Qwen3-1.7B'::VARCHAR AS model,
-        '{"prompt_template_version":"claims-decision-v1","system_message":"Return one concise factual business note.","max_model_len":2048,"temperature":0.0,"max_tokens":128}'::VARCHAR
-            AS config_summary,
-        CASE
-            WHEN response_text IS NULL OR trim(response_text) = ''
-                THEN 'prompt_error'
-            ELSE 'ready'
-        END::VARCHAR AS ai_status
-    FROM gpu_inference_model_output
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_review.to_table("gpu_inference_review")
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'error'
+            else 'ok'
+        end as status,
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'vLLM returned null or empty output'
+            else null
+        end as error_message,
+        'Qwen/Qwen3-1.7B' as model,
+        'claims-vllm-validation-001' as run_id
+    from gpu_responses
+    order by case_id, document_id
+""")
 
-validation = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(*) FILTER (
-            WHERE case_id IS NULL OR document_id IS NULL
-        ) AS null_key_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR source_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
-    FROM gpu_inference_review
-    """
-).fetchone()
-(
-    actual_row_count,
-    null_key_count,
-    null_source_count,
-    error_output_count,
-) = validation
+if results.count("*").fetchone()[0] != prompt_table.num_rows:
+    raise ValueError("vLLM output row count does not match prompt row count")
 
-actual_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_review
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-assert actual_row_count == len(expected_keys)
-assert actual_keys == expected_keys
-assert null_key_count == 0
-assert null_source_count == 0
-
-expected_columns = [
-    "run_id",
-    "case_id",
-    "document_id",
-    "document_type",
-    "source_uri",
-    "source_text",
-    "prompt",
-    "response_text",
-    "model",
-    "config_summary",
-    "ai_status",
-]
-assert list(local_review.columns) == expected_columns
-assert [str(dtype) for dtype in local_review.types] == ["VARCHAR"] * 11
-
-if error_output_count:
-    raise ValueError("Review prompt_error rows before scaling the run")
-
-local_review.write_parquet("output/claims-vllm-2026-07-11-001/part-00000.parquet")
-```
-
-`on_error := 'log'` 会把最终失败保留为空输出，而不是丢弃源行。诊断环境配置失败时请使用 `on_error := 'raise'`。不要把重试结果盲目 append 到持久表：应按 `(run_id, case_id, document_id)` merge 或 replace，或者写入新的可审查 run 目录。
-
-## 4. 将 Python Expression 作为备选
-
-当 projection 在 Python 中组装，或 typed vLLM 选项更容易在 Python 中构造时，请使用 Python Expression。它与 SQL 具有相同的保持行数模型，并且仍然只增加一个 `VARCHAR` 结果列。
-
-```python
-python_provider_options = vane.ai.VLLMProviderOptions(
-    engine_args={
-        "max_model_len": 2048,
-    },
-    concurrency=1,
-    gpus_per_actor=1,
-)
-python_prompt_options = vane.ai.VLLMPromptOptions(
-    generate_args={
-        "sampling_params": {
-            "temperature": 0.0,
-            "max_tokens": 128,
-        }
-    },
-    on_error="log",
-)
-
-python_prompted = candidates.select(
-    vane.col("run_id"),
-    vane.col("case_id"),
-    vane.col("document_id"),
-    vane.col("document_type"),
-    vane.col("source_uri"),
-    vane.col("source_text"),
-    vane.col("prompt"),
-    vane.ai.prompt(
-        vane.col("prompt"),
-        provider="vllm",
-        model="Qwen/Qwen3-1.7B",
-        provider_options=python_provider_options,
-        prompt_options=python_prompt_options,
-        system_message="Return one concise factual business note.",
-    ).alias("response_text"),
+results.write_parquet(
+    "output/claims-vllm-validation-001/part-00000.parquet"
 )
 ```
 
-如果选择这条备选路径，请应用与 SQL 结果相同的有序 key、行数、null/error、schema 和按 run 写出校验。AI Expression 应直接放在 `select(...)` 中并带 alias。它不是结构化、多模态或表形输出的入口。
+建议的输出列：
 
-## 5. 扩展执行时不要混淆资源层
+| 列 | 作用 |
+| --- | --- |
+| 业务 ID 列 | 将每个响应追溯到源行。 |
+| 来源元数据 | 复现并审查失败。 |
+| `prompt` 或提示词版本 | 解释模型看到了什么。 |
+| `response_text` | 生成的文本。 |
+| `status` | `ok`、`error`，或你定义的业务审核状态。 |
+| `error_message` | 用于审核的可空诊断列。 |
+| `model`、`run_id` 和配置摘要 | 比较不同运行，而无需猜测哪些设置发生了变化。 |
 
-### 本地与 Ray 执行
+对于更严格的结构化或多模态输出，请使用 Relation `prompt(...)` 路径，并在写出最终表前校验其声明的结果。
 
-使用能够回答当前问题的最小拓扑：
+## 本地 vLLM 与基于 Ray 的 vLLM
 
-| 形态 | 能够验证什么 | GPU 行为 |
+使用能够回答当前问题的最小执行形态。
+
+| 形态 | 适用场景 | 校验内容 |
 | --- | --- | --- |
-| 本地 SQL 或 Python Expression 样例 | 提示词质量、模型加载、engine 复用、输出长度和第一次内存检查。 | subprocess 继承可见设备。GPU 请求只是声明性的；非零时会产生 warning，且不提供预留或隔离。 |
-| Ray-backed Expression 或显式 Relation Ray actor pool | 分布式 import、actor 复用、placement 与多 GPU 容量。 | Ray scheduler 会按 actor 预留请求的资源。worker 仍需要兼容的依赖与模型 artifact。 |
-| 原生 vLLM Ray pool | vLLM 在可复用 engine actor 之间自行路由，以及可选的具名 pool 复用。 | 内层 pool 拥有自己的 actor 数和每 actor GPU 请求；容量规划必须计入这些资源。 |
+| 本地 vLLM 样例 | 提示词正确性、模型加载、输出质量，以及第一次 GPU 内存检查。 | 10-100 行、非空输出、预期输出格式，并确认没有每行重新加载模型。 |
+| Ray actor 执行 | 多 GPU 校验、actor 复用和更大的提示词 batch。 | Ray 能看到预期 GPU，worker 能导入 vLLM，并且每个 actor 都有模型文件和依赖。 |
+| 原生 vLLM Ray actor pool | 更大规模的 batch 推理，Vane 需要复用 vLLM actor 并在它们之间路由工作。 | actor pool 大小、GPU 分配、共享池复用、进行中负载分布和吞吐量。 |
 
-SQL `concurrency=N` 与 typed `VLLMProviderOptions(concurrency=N)` 都会映射成外层 AI UDF 的 `actor_number=N`。`gpus_per_actor=G` 是每个外层 actor 的资源请求。因此在 Ray 上，外层 pool 要满并行至少需要 `N * G` 个已声明的 GPU 资源。这里的外层并发不是 API 请求 semaphore，也不是 Relation 方法的 `execution_backend` selector。
-
-原生 vLLM Ray 执行是另一层 provider 拓扑。在 Python 中，raw provider-options dict 可以同时保留 provider-specific `concurrency` 与 `use_ray=True`；这里的并发配置内层原生 vLLM pool，而不是外层 AI UDF pool。`ray_actor_pool_name` 也属于内层拓扑，而且只有 pool name 并不会启用内层 Ray。SQL 中的同名 `concurrency` 字段只配置外层。不要假设外层 actor 的 GPU 预留会覆盖内层 Ray actor。请一次只引入一层，并在组合前检查 Ray placement。
-
-### 复用 actor 和 engine
-
-Provider descriptor 很轻量。每个执行 actor 会延迟构造一次自己的模型/client，并在该 actor 处理的 batch 间复用。它是 query scope 的执行复用，不是持久状态、checkpoint，也不保证后续 query 会找到同一个 engine。
-
-具名原生 vLLM pool 可以让多个分布式 executor 查找同一组 vLLM actor，并共享进行中负载跟踪。pool name、模型、engine argument、generation argument、依赖和模型 artifact 必须保持一致。使用同名 pool 却提供不同设置是运维错误，并不会自动升级模型。
-
-### 对相似前缀分组，并把缓存当作调优项
-
-当大量提示词共享同一系统指令或长模板时，如果不会改变业务含义，可以在推理前按任务类型分组。最终 artifact 仍须保留稳定 key，绝不能让执行分组变成 join 契约。
-
-vLLM engine 的 prefix cache 属于 engine/version 配置。原生 pool 路由还暴露 `do_prefix_routing`、`min_bucket_size`、`prefix_match_threshold` 和 `load_balance_threshold` 等 provider-specific 控制项。修改它们前先建立正确性与吞吐基线，并记录每项 override。它们不是通用 Relation UDF actor 控制项。
-
-### 联合调优 batch size 与并发度
-
-`batch_size` 控制传给 AI actor 的外层 Vane batch。增大 batch 可以改善 vLLM continuous batching，但也会提高 GPU 内存压力、延迟，以及一次失败影响的行数。只有在单 actor 已稳定，并且 Ray 集群有足够 GPU 与主机内存再加载一份模型时，才增加 actor 数。
-
-每次 benchmark 只改变一个变量：外层 batch size、外层 actor 数、vLLM engine limit 或原生 pool size。请分开测量 warm-up 与 steady state，因为加载权重和编译 kernel 可能主导小样本耗时。
-
-## 6. 安全运维模型调用与写出
-
-- **依赖与 artifact：** 每个被选中的 worker 都必须能 import 同一套兼容的 vLLM/PyTorch stack，并读取准确的模型、tokenizer、自定义代码 revision 与 cache path。调度前先预放置大型 artifact，或验证 worker 的网络访问。
-- **凭据与网络：** 本地 vLLM 通常不需要推理 API 凭据。受限模型仓库凭据应放在 worker 环境变量或平台 secret store 中，绝不要放入 SQL 或序列化选项。仅开放所需 artifact 地址的外连访问。
-- **重试与错误：** 本样例把 wrapper retry 设为零。如果启用重试，timeout 或 worker/query retry 都可能重复工作。`on_error="log"` 要求显式检查 null 与状态。
-- **副作用与身份：** 模型调用和模型下载都是外部副作用，不具备事务性或 exactly-once，rollback 也无法撤销已完成的工作。请保留稳定 ID 与 `run_id`，并让下游写入幂等或可审查。
-- **确定性：** `temperature=0` 可以改善可复现性，但无法让分布式 GPU 运行在模型、kernel 或依赖变化后仍具备 exactly-once 或逐字节相同的结果。
-
-## 7. 最后才使用 Relation 提示词高级能力
-
-只有任务需要 Relation-only 的结构化输出、受支持的多模态 `image_columns`、显式 Relation backend 或显式 Relation actor-pool 控制时，才使用 `rel.prompt`。它是 Python 表变换；Vane 不提供直接 SQL Relation API 或 SQL table function。精确的能力与输出边界见 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，设计原因见 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。
-
-下面的构造选择有效的 Ray actor backend，提供正数 `actor_number`，为每个外层 actor 请求一个 Ray GPU，并要求 vLLM 返回结构化结果：
+对于基于 Ray 的 vLLM 校验，请在构建分布式运行前配置 Ray，并保持模型选项与本地样例一致。下面的高级示例会显式选择 Relation backend 和原生 vLLM actor-pool 控制，因此有意使用 Relation 路径。
 
 ```python
 import vane
 
-claim_decision_schema = {
-    "type": "object",
-    "properties": {
-        "decision": {"type": "string"},
-        "reason": {"type": "string"},
-    },
-    "required": ["decision", "reason"],
-    "additionalProperties": False,
-}
-
-
 vane.configure(runner="ray")
-ray_con = vane.connect()
 
-advanced_candidates = ray_con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        (
-            'Return a structured claim decision and reason: '
-            || CAST(text AS VARCHAR)
-        )::VARCHAR AS prompt
-    FROM read_parquet('data/claims/documents/*.parquet')
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND text IS NOT NULL
-    ORDER BY case_id, document_id
-    LIMIT 20
-    """
-)
-
-ray_provider_options = {
-    "engine_args": {
+ray_response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=32,
+    concurrency=2,
+    gpus_per_actor=1,
+    execution_backend="ray_actor",
+    use_ray=True,
+    ray_actor_pool_name="claims-vllm-validation",
+    engine_args={
+        "trust_remote_code": True,
         "max_model_len": 2048,
     },
-    "actor_number": 2,
-    "gpus_per_actor": 1.0,
-    "batch_size": 8,
-}
-ray_prompt_options = vane.ai.VLLMPromptOptions(
     generate_args={
         "sampling_params": {
             "temperature": 0.0,
@@ -352,29 +209,91 @@ ray_prompt_options = vane.ai.VLLMPromptOptions(
     },
     on_error="log",
 )
-
-decision_only = advanced_candidates.prompt(
-    "prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    provider_options=ray_provider_options,
-    prompt_options=ray_prompt_options,
-    return_format=claim_decision_schema,
-    output_column="decision_json",
-    execution_backend="ray_actor",
-)
 ```
 
-这里的 `actor_number=2` 是外层 Relation UDF actor pool 大小，`gpus_per_actor=1.0` 会让 Ray 为每个 actor 预留一个 GPU 资源。因为没有设置 `use_ray`，每个 Ray UDF actor 拥有自己的本地 vLLM engine；本样例不会再创建第二层原生 vLLM Ray pool。如果明确选择原生 pool，请单独计算它的 actor 与资源。
+需要区分两层配置：
 
-内置 Relation helper 可能只返回配置的 `decision_json` 列。`_only` 名称明确提示了这条边界：不要按行位置把它与 `advanced_candidates` 拼回。只有下游不需要 key 时，才把它作为隔离的仅输出阶段。当发布的 artifact 必须保留 ID 与多个诊断列时，请继续使用 SQL/Python Expression，或者使用带显式 schema、保持行数的自定义 batch UDF。
+- `execution_backend` 控制 Vane 在哪里运行提示词 UDF 阶段。
+- `use_ray`、`concurrency`、`gpus_per_actor` 和 `ray_actor_pool_name` 等 vLLM 选项控制 vLLM 执行器和 actor pool 行为。
 
-只有 provider/model 组合支持所选 image 表示时，才添加 `image_columns=[...]`；发布前还要用 `claim_decision_schema` 校验结构化 JSON。SQL 可以在这次调用前准备输入，也可以在结果物化后检查结果，但这不会把 Python Relation helper 变成 SQL Relation API。
+开始时一次只改变一层。如果本地样例还不正确，Ray 会让失败更难诊断。
 
-## 后续步骤
+## Batch 缓存优化
 
-- [AI Function API 参考](/zh-CN/docs/data/reference/ai-api) — SQL、Python Expression、Relation、typed option、retry 与 GPU 的精确契约。
-- [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions) — 普通逐行增强与专用 Relation 变换具有不同边界的原因。
-- [AI 函数](/zh-CN/docs/data/guides/ai-functions) — 使用相同稳定 ID 与审查流程的完整托管 provider 任务。
-- [Ray 集群部署](/zh-CN/docs/data/deploy/ray-cluster)与[单节点部署](/zh-CN/docs/data/deploy/single-node) — worker 依赖、artifact、凭据与资源设置。
-- [性能调优](/zh-CN/docs/data/guides/performance-tuning) — 测量 batch size、actor 并行度、内存与 warm-up 行为。
+vLLM 吞吐量不只取决于 GPU 数量。对于 batch 推理运行，需要围绕引擎复用、有界 batch 和提示词局部性调优。
+
+### 复用 actor 和引擎
+
+避免每行或每个很小的 batch 都重新加载模型。对 vLLM 提示词使用 actor 式执行，并在一次运行中保持 `model`、`engine_args` 和依赖版本稳定。
+
+对于基于 Ray 的 vLLM，当多个分布式任务需要共享同一组 vLLM actor 时，使用具名 actor pool：
+
+```python
+ray_actor_pool_name="claims-vllm-validation"
+```
+
+本地代码支持具名 vLLM actor pool，并按池名称共享进行中请求跟踪。这使多个执行器可以看到每个 actor 的当前负载，并以更好的负载感知能力路由新的提示词 batch。它也能避免在分布式计划中反复创建相同 actor pool。
+
+### 对相似前缀分组
+
+当大量提示词共享同一个系统消息、任务模板或长前缀，并且分组不会改变本次运行的业务语义时，可以在推理前分组。
+
+```python
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        document_type,
+        source_uri,
+        case
+            when document_type = 'claim'
+                then 'You review insurance claim documents.'
+            when document_type = 'invoice'
+                then 'You review invoice support documents.'
+            else 'You review business documents.'
+        end as system_prefix,
+        'Return a short decision and reason: ' || text as prompt
+    from source_documents
+    where text is not null
+    order by document_type, case_id, document_id
+""")
+```
+
+当一个前缀适用于所有行时，使用 `system_message`。如果前缀按行变化，请将前缀放入提示词文本，或按任务类型拆分 relation。最终输出仍应以业务 ID 为 key，避免分组执行让审核变得含糊。
+
+原生 vLLM 执行器包含 `do_prefix_routing`、`min_bucket_size`、`prefix_match_threshold` 和 `load_balance_threshold` 等前缀路由控制项。请在已有基线后再把它们作为调优控制项使用。它们不是通用 UDF 路由选项。
+
+### 联合调优 batch 和并发度
+
+为 vLLM 提示词显式设置 `batch_size`。更大的 batch 可以改善 GPU 利用率和 vLLM continuous batching，但也可能增加延迟、内存压力和故障影响范围。
+
+只有在 GPU 和 actor 内存有余量时，才增加 `concurrency`。一个简单的容量检查是：
+
+```text
+required GPUs = concurrency * gpus_per_actor
+```
+
+如果 `concurrency=2` 且 `gpus_per_actor=1`，Ray 环境至少需要两个可用 GPU 才能实现完整并行。如果模型使用张量并行或其他 vLLM 引擎级 GPU 设置，请把它们纳入自己的容量估算。
+
+## 关键配置概念
+
+| 概念 | 出现位置 | 建议 |
+| --- | --- | --- |
+| `model` | `ai_prompt` options 或 `prompt(..., model=...)` | 使用你已在本地验证过的准确模型标识符。 |
+| `engine_args` | vLLM 引擎配置 | 放置模型加载和引擎级设置，例如上下文长度或信任设置。 |
+| `generate_args` | vLLM 生成请求 | 放置采样参数，通常位于 `sampling_params` 下。 |
+| `batch_size` | Vane UDF batch 和 vLLM 提交 | 从小值开始，然后增大到 GPU 利用率、延迟或内存成为瓶颈。 |
+| `concurrency` | Actor 或 vLLM 池大小 | 只有 worker 和 GPU 仍有余量时才增加。 |
+| `gpus_per_actor` | vLLM actor 的 Ray GPU 资源请求 | 与模型和引擎设置匹配。 |
+| `ray_actor_pool_name` | 原生 vLLM Ray actor pool | 在分布式运行中用于共享 actor 复用。 |
+| `on_error` | vLLM 执行器错误行为 | 调试时使用 `raise`；对于需要保留失败行以便审核的校验运行，使用 `log`。 |
+
+Vane 为原生 vLLM 引擎调度器应用面向吞吐量的默认值，你可以通过 `engine_args` 覆盖引擎级设置。除非明确知道自己在测试哪个设置，否则不要把完整的 vLLM 服务配置复制到校验运行中。
+
+## 边界
+
+本指南不是 vLLM 手册。它展示如何将 vLLM batch 推理放入以 Expression 为先的 Vane workflow，以及在扩大规模前需要验证什么。
+
+它也不是生产服务指南，不覆盖自动扩缩容、SLA、流量管理、在线请求路由或长期运行服务的运维。
+
+对于非 vLLM GPU 模型、自定义分词器、多模态预处理，或完整的自定义输出 schema，请使用 [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。对于托管 provider 的提示词调用和小型 AI 增强任务，请使用 [AI 函数](/zh-CN/docs/data/guides/ai-functions)。

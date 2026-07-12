@@ -2,348 +2,205 @@
 title: GPU Inference
 ---
 
-This guide completes one reviewable vLLM text-generation task with SQL `ai_prompt` first. It then shows the equivalent Python Expression construction and reserves the specialized Relation helper for advanced capabilities at the end.
+Use GPU Inference when you want to send multimodal or text data to a local or private LLM in batches. Typical inputs include extracted documents, captions, transcripts, labels, or prompt rows prepared by an earlier Vane stage.
 
-Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures, option fields, and return types. Use [AI Function Concepts](/docs/data/concepts/ai-functions) and the [Execution Model](/docs/data/concepts/execution-model) for the reasons behind the Expression/Relation boundary and worker lifecycle.
+This guide focuses on the vLLM path for batch prompt inference in Vane. For general non-vLLM-backed GPU model code, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
 
-The task keeps this contract from source to output:
+The common workflow shape is:
 
 ```text
-select a keyed candidate slice -> generate one VARCHAR per row -> retain IDs and source -> validate -> review -> write
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
 ```
 
-Use this guide when prompts should run against a model on the local machine or in your Ray environment, model initialization should be reused across batches, or GPU scheduling and prompt locality need deliberate validation. For arbitrary GPU model code or a source-preserving multi-column result schema, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
+## When to Use GPU Inference
 
-## 1. Prepare a Small, Keyed Candidate Slice
+Use this guide when:
 
-Start with real rows, a deterministic order, stable business IDs, and the source fields needed to reproduce an output. Keep the first run small enough to inspect by hand.
+- You have many prompts, not a few interactive chat requests.
+- The model needs to run locally or in your own Ray environment.
+- Model or engine initialization is expensive and should be reused across batches.
+- You need to validate GPU actor reuse, multi-GPU scheduling, or a Ray-backed vLLM actor pool.
+- Similar prompts share a system prefix or template, and cache locality may affect throughput.
+
+## vLLM in Vane
+
+For ordinary row-preserving prompt enrichment, use the SQL Expression AI Function `ai_prompt(...)` first:
+
+```sql
+select
+    case_id,
+    document_id,
+    ai_prompt(
+        prompt,
+        struct_pack(
+            provider := 'vllm',
+            model := 'Qwen/Qwen3-1.7B',
+            batch_size := 8
+        )
+    ) as response_text
+from gpu_prompts
+```
+
+`vane.ai.prompt(...)` is the alternate Python Expression entry point for the same projection model. Use the Python Relation method `rel.prompt(...)` only when the task needs Relation-only capabilities such as structured or multimodal output, or explicit Relation execution controls.
+
+## Build the Prompt Relation
+
+Start with a small real slice of source rows. Keep prompt text separate from the identifiers and metadata you will need later.
 
 ```python
 import vane
 
 con = vane.connect()
 
-source = con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(document_type AS VARCHAR) AS document_type,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/claims/documents/*.parquet')
-    """
-)
-source.to_table("gpu_inference_source")
-
-candidates = con.sql(
-    """
-    SELECT
-        'claims-vllm-2026-07-11-001'::VARCHAR AS run_id,
+prompts = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
-        (
-            'Extract the claim decision and one short factual reason: '
-            || source_text
-        )::VARCHAR AS prompt
-    FROM gpu_inference_source
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND document_type IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND source_text IS NOT NULL
-      AND trim(source_text) <> ''
-    ORDER BY document_type, case_id, document_id
-    LIMIT 50
-    """
-)
-candidates.to_table("gpu_inference_candidates")
+        document_type,
+        'Extract the claim decision and one short reason from this document: '
+            || text as prompt
+    from read_parquet('data/claims/documents/*.parquet')
+    where text is not null
+    order by case_id, document_id
+    limit 50
+""")
 
-expected_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-if not expected_keys:
-    raise ValueError("GPU inference candidate slice is empty")
-if len(set(expected_keys)) != len(expected_keys):
-    raise ValueError("(case_id, document_id) must be unique")
+prompts.to_table("gpu_prompts")
+prompt_table = prompts.to_arrow_table()
 ```
 
-`run_id` identifies this configuration and output path; `(case_id, document_id)` identifies the business row. Never use output order as identity. If the prompt template, model, or material engine settings change, use a new run ID or record an explicit version.
+Recommended input columns:
 
-## 2. Run Basic Local vLLM Generation with SQL
+| Column | Purpose |
+| --- | --- |
+| `case_id`, `document_id`, `asset_id`, or another stable key | Join responses back to source systems. |
+| `source_uri` or source metadata | Review unusual outputs and reproduce failures. |
+| `document_type`, `media_type`, category, tenant, or task type | Group prompts and compare output quality by source segment. |
+| `prompt` | Final text sent to vLLM. |
+| `system_prefix` or template ID, if used | Explain prompt groups and cache locality experiments. |
 
-The recommended first prompt call is a top-level SQL projection. The constant `struct_pack` selects vLLM and supplies only non-secret, query-wide configuration. The two JSON bridge fields are strings containing valid JSON; they become the provider's `engine_args` and `generate_args` dictionaries at bind time.
+Keep prompt construction deterministic on the first run. If you change the template, record a `run_id` or prompt version in the output.
+
+## Run a Local vLLM Sample
+
+Before adding Ray actor-pool complexity, validate the model, prompt shape, output length, and GPU memory behavior with the recommended SQL Expression path.
 
 ```python
-local_prompted = con.sql(
-    """
-    SELECT
-        run_id,
+response_rows = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         ai_prompt(
             prompt,
             struct_pack(
                 provider := 'vllm',
                 model := 'Qwen/Qwen3-1.7B',
-                concurrency := 1,
                 batch_size := 8,
+                concurrency := 1,
                 gpus_per_actor := 1.0,
                 max_retries := 0,
                 on_error := 'log',
-                system_message := 'Return one concise factual business note.',
+                system_message := 'Return concise JSON-like business notes.',
                 engine_args_json := '{"max_model_len": 2048}',
-                generate_args_json := '{"sampling_params": {"temperature": 0.0, "max_tokens": 128}}'
+                generate_args_json := '{"sampling_params":{"temperature":0.0,"max_tokens":128}}'
             )
-        ) AS response_text
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_prompted.to_table("gpu_inference_model_output")
+        ) as response_text
+    from gpu_prompts
+    order by case_id, document_id
+""")
+
+response_rows.to_table("gpu_responses")
 ```
 
-`ai_prompt` returns one `VARCHAR` beside each candidate row. Its options must be foldable constants; they cannot vary by row. SQL credential-like keys are rejected recursively, including inside the JSON bridges. A local vLLM run normally needs no hosted-provider API key. If model download requires a gated registry token, place it in the worker environment rather than SQL.
+The options argument is one foldable constant `STRUCT` shared by the query. With the local runner, Vane creates a subprocess actor and initializes the vLLM engine lazily in that worker, so the engine can be reused across batches in the same run. A nonzero `gpus_per_actor` does not reserve or isolate a local GPU; the subprocess inherits the devices visible to the driver. The first correctness check does not need Ray.
 
-With the default local runner, Vane creates a subprocess actor and initializes the real vLLM engine lazily on that worker. The actor reuses the engine for later batches in the same query. The nonzero `gpus_per_actor` value describes the intended resource, but local subprocess execution only inherits process-visible devices: it does not reserve or isolate a GPU and emits a warning for a nonzero GPU request. Set device visibility before starting the process and verify it independently.
+## Preserve IDs and Write Results
 
-Before materializing this query, the local worker must have a compatible Vane, vLLM, PyTorch, CUDA, and driver stack. Pre-stage the exact model/tokenizer artifacts when workers should run without outbound network access; otherwise allow only the artifact endpoint the model load requires. Treat `trust_remote_code` or a mutable model revision as a separate supply-chain decision rather than copying it into an example by default.
-
-## 3. Validate, Review, and Write
-
-Convert tolerant failures into an explicit status, retain the model and an audit-ready summary of the prompt template, system message, and material generation settings, and validate the keyed contract before writing.
+Because the Expression result stays in the same SQL projection, stable IDs and source metadata remain attached without positional Arrow recombination. Validate the keyed result before writing it.
 
 ```python
-local_review = con.sql(
-    """
-    SELECT
-        run_id,
+results = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         response_text,
-        'Qwen/Qwen3-1.7B'::VARCHAR AS model,
-        '{"prompt_template_version":"claims-decision-v1","system_message":"Return one concise factual business note.","max_model_len":2048,"temperature":0.0,"max_tokens":128}'::VARCHAR
-            AS config_summary,
-        CASE
-            WHEN response_text IS NULL OR trim(response_text) = ''
-                THEN 'prompt_error'
-            ELSE 'ready'
-        END::VARCHAR AS ai_status
-    FROM gpu_inference_model_output
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_review.to_table("gpu_inference_review")
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'error'
+            else 'ok'
+        end as status,
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'vLLM returned null or empty output'
+            else null
+        end as error_message,
+        'Qwen/Qwen3-1.7B' as model,
+        'claims-vllm-validation-001' as run_id
+    from gpu_responses
+    order by case_id, document_id
+""")
 
-validation = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(*) FILTER (
-            WHERE case_id IS NULL OR document_id IS NULL
-        ) AS null_key_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR source_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
-    FROM gpu_inference_review
-    """
-).fetchone()
-(
-    actual_row_count,
-    null_key_count,
-    null_source_count,
-    error_output_count,
-) = validation
+if results.count("*").fetchone()[0] != prompt_table.num_rows:
+    raise ValueError("vLLM output row count does not match prompt row count")
 
-actual_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_review
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-assert actual_row_count == len(expected_keys)
-assert actual_keys == expected_keys
-assert null_key_count == 0
-assert null_source_count == 0
-
-expected_columns = [
-    "run_id",
-    "case_id",
-    "document_id",
-    "document_type",
-    "source_uri",
-    "source_text",
-    "prompt",
-    "response_text",
-    "model",
-    "config_summary",
-    "ai_status",
-]
-assert list(local_review.columns) == expected_columns
-assert [str(dtype) for dtype in local_review.types] == ["VARCHAR"] * 11
-
-if error_output_count:
-    raise ValueError("Review prompt_error rows before scaling the run")
-
-local_review.write_parquet("output/claims-vllm-2026-07-11-001/part-00000.parquet")
-```
-
-`on_error := 'log'` keeps exhausted failures visible as null output instead of dropping source rows. Use `on_error := 'raise'` while diagnosing setup failures. Do not blindly append a retry to a durable table: merge or replace by `(run_id, case_id, document_id)`, or write a new reviewable run directory.
-
-## 4. Use Python Expression as an Alternate
-
-Use Python Expression when the projection is assembled in Python or typed vLLM options are easier to build there. It has the same row-preserving model as SQL and still adds exactly one `VARCHAR` result column.
-
-```python
-python_provider_options = vane.ai.VLLMProviderOptions(
-    engine_args={
-        "max_model_len": 2048,
-    },
-    concurrency=1,
-    gpus_per_actor=1,
-)
-python_prompt_options = vane.ai.VLLMPromptOptions(
-    generate_args={
-        "sampling_params": {
-            "temperature": 0.0,
-            "max_tokens": 128,
-        }
-    },
-    on_error="log",
-)
-
-python_prompted = candidates.select(
-    vane.col("run_id"),
-    vane.col("case_id"),
-    vane.col("document_id"),
-    vane.col("document_type"),
-    vane.col("source_uri"),
-    vane.col("source_text"),
-    vane.col("prompt"),
-    vane.ai.prompt(
-        vane.col("prompt"),
-        provider="vllm",
-        model="Qwen/Qwen3-1.7B",
-        provider_options=python_provider_options,
-        prompt_options=python_prompt_options,
-        system_message="Return one concise factual business note.",
-    ).alias("response_text"),
+results.write_parquet(
+    "output/claims-vllm-validation-001/part-00000.parquet"
 )
 ```
 
-If you choose this alternate, apply the same ordered-key, cardinality, null/error, schema, and run-specific write checks used for the SQL result. Keep the AI Expression directly in `select(...)` with an alias. It is not a route to structured, multimodal, or table-shaped output.
+Recommended output columns:
 
-## 5. Scale Without Mixing Resource Layers
+| Column | Purpose |
+| --- | --- |
+| Business ID column | Trace each response back to a source row. |
+| Source metadata | Reproduce and review failures. |
+| `prompt` or prompt version | Explain what the model saw. |
+| `response_text` | Generated text. |
+| `status` | `ok`, `error`, or a business review state you define. |
+| `error_message` | Nullable diagnostic column for review. |
+| `model`, `run_id`, and config summary | Compare runs without guessing which settings changed. |
 
-### Local and Ray Execution
+For stricter structured or multimodal output, use the Relation `prompt(...)` path and validate its declared result before writing the final table.
 
-Use the smallest topology that answers the current question:
+## Local vLLM vs Ray-Backed vLLM
 
-| Shape | What it proves | GPU behavior |
+Use the smallest execution shape that answers the current question.
+
+| Shape | Use when | Validate |
 | --- | --- | --- |
-| Local SQL or Python Expression sample | Prompt quality, model loading, engine reuse, output length, and first memory check. | The subprocess inherits visible devices. A GPU request is advisory, produces a warning when nonzero, and provides no reservation or isolation. |
-| Ray-backed Expression or an explicit Relation Ray actor pool | Distributed imports, actor reuse, placement, and multi-GPU capacity. | Ray scheduler requests reserve resources per actor. Workers still need compatible dependencies and model artifacts. |
-| Native vLLM Ray pool | vLLM-owned routing among reusable engine actors and optional named-pool reuse. | The inner pool has its own actor count and per-actor GPU requests; include these resources in capacity planning. |
+| Local vLLM sample | Prompt correctness, model loading, output quality, and the first GPU memory check. | 10-100 rows, non-empty output, expected output format, and no model reload per row. |
+| Ray actor execution | Multi-GPU validation, actor reuse, and larger prompt batches. | Ray sees the expected GPUs, workers can import vLLM, and each actor has model files and dependencies. |
+| Native vLLM Ray actor pool | Larger batch inference where Vane should reuse vLLM actors and route work between them. | Actor pool size, GPU assignment, shared pool reuse, inflight load distribution, and throughput. |
 
-SQL `concurrency=N` and typed `VLLMProviderOptions(concurrency=N)` map to the outer AI UDF `actor_number=N`. `gpus_per_actor=G` is the request for each of those actors. On Ray, full outer-pool parallelism therefore needs at least `N * G` advertised GPU resources. This outer concurrency is not an API request semaphore and is not the Relation method's `execution_backend` selector.
-
-Native vLLM Ray execution is a separate provider topology. In Python, a raw provider-options dict can retain provider-specific `concurrency` together with `use_ray=True`; that concurrency configures the inner native vLLM pool rather than the outer AI UDF pool. `ray_actor_pool_name` also belongs to the inner topology, and a pool name alone does not enable it. SQL's same-name `concurrency` field is outer-only. Do not assume an outer actor's GPU reservation also covers inner Ray actors. Introduce one layer at a time and inspect Ray placement before combining them.
-
-### Reuse Actors and Engines
-
-The provider descriptor is lightweight. Each execution actor lazily constructs its model/client once and reuses it across batches handled by that actor. This is query-scoped execution reuse, not durable state, a checkpoint, or a guarantee that a later query will find the same engine.
-
-A named native vLLM pool can let multiple distributed executors look up the same vLLM actor set and share inflight-load tracking. Keep the pool name, model, engine arguments, generation arguments, dependencies, and model artifacts consistent. A name collision with different settings is an operational error, not an automatic model upgrade.
-
-### Group Similar Prefixes and Treat Caches as Tuning
-
-When many prompts share the same system instruction or long template, group them by task type before inference if doing so does not change business meaning. Keep the stable key in the final artifact so execution grouping never becomes the join contract.
-
-vLLM engine prefix caching is engine/version configuration. Native pool routing also exposes provider-specific controls such as `do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`, and `load_balance_threshold`. Establish a correctness and throughput baseline before changing them, and record every override. They are not generic Relation UDF actor controls.
-
-### Tune Batch Size and Concurrency Together
-
-`batch_size` controls the outer Vane batch delivered to an AI actor. Larger batches can improve vLLM continuous batching, but also increase GPU memory pressure, latency, and the number of rows affected by one failure. Increase actor count only after one actor is stable and the Ray cluster has enough GPU and host memory for another model copy.
-
-Change one variable per benchmark: outer batch size, outer actor count, vLLM engine limits, or native-pool size. Measure warm-up separately from steady state, because loading weights and compiling kernels can dominate a small sample.
-
-## 6. Operate Model Calls and Writes Safely
-
-- **Dependencies and artifacts:** every selected worker must import the same compatible vLLM/PyTorch stack and read the exact model, tokenizer, custom-code revision, and cache path. Pre-stage large artifacts or verify worker network access before scheduling the run.
-- **Credentials and network:** local vLLM usually needs no inference API credential. Put gated model-registry credentials in worker environment variables or the platform secret store, never SQL or serialized options. Restrict outbound access to required artifact locations.
-- **Retries and errors:** this sample sets wrapper retries to zero. If retries are enabled, a timeout or worker/query retry can repeat work. `on_error="log"` requires explicit null/status review.
-- **Effects and identity:** model calls and model downloads are external effects. They are not transactional or exactly-once, and rollback cannot undo completed work. Preserve stable IDs and `run_id`; make downstream writes idempotent or reviewable.
-- **Determinism:** `temperature=0` improves repeatability but does not turn a distributed GPU run into an exactly-once or byte-identical computation across model, kernel, or dependency changes.
-
-## 7. Use Relation Prompting Last for Advanced Capabilities
-
-Use `rel.prompt` only when the task requires Relation-only structured output, supported multimodal `image_columns`, an explicit Relation backend, or explicit Relation actor-pool controls. It is a Python table transformation; Vane does not expose a direct SQL Relation API or SQL table function for it. The exact capability and output boundary is in the [AI Function API Reference](/docs/data/reference/ai-api), and the design reason is in [AI Function Concepts](/docs/data/concepts/ai-functions).
-
-This construction selects a valid Ray actor backend, supplies a positive `actor_number`, requests one Ray GPU per outer actor, and asks vLLM for structured output:
+For Ray-backed vLLM validation, configure Ray before building the distributed run, and keep model options consistent with the local sample. The following advanced example intentionally uses the Relation path because it selects an explicit Relation backend and native vLLM actor-pool controls.
 
 ```python
 import vane
 
-claim_decision_schema = {
-    "type": "object",
-    "properties": {
-        "decision": {"type": "string"},
-        "reason": {"type": "string"},
-    },
-    "required": ["decision", "reason"],
-    "additionalProperties": False,
-}
-
-
 vane.configure(runner="ray")
-ray_con = vane.connect()
 
-advanced_candidates = ray_con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        (
-            'Return a structured claim decision and reason: '
-            || CAST(text AS VARCHAR)
-        )::VARCHAR AS prompt
-    FROM read_parquet('data/claims/documents/*.parquet')
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND text IS NOT NULL
-    ORDER BY case_id, document_id
-    LIMIT 20
-    """
-)
-
-ray_provider_options = {
-    "engine_args": {
+ray_response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=32,
+    concurrency=2,
+    gpus_per_actor=1,
+    execution_backend="ray_actor",
+    use_ray=True,
+    ray_actor_pool_name="claims-vllm-validation",
+    engine_args={
+        "trust_remote_code": True,
         "max_model_len": 2048,
     },
-    "actor_number": 2,
-    "gpus_per_actor": 1.0,
-    "batch_size": 8,
-}
-ray_prompt_options = vane.ai.VLLMPromptOptions(
     generate_args={
         "sampling_params": {
             "temperature": 0.0,
@@ -352,29 +209,91 @@ ray_prompt_options = vane.ai.VLLMPromptOptions(
     },
     on_error="log",
 )
-
-decision_only = advanced_candidates.prompt(
-    "prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    provider_options=ray_provider_options,
-    prompt_options=ray_prompt_options,
-    return_format=claim_decision_schema,
-    output_column="decision_json",
-    execution_backend="ray_actor",
-)
 ```
 
-Here `actor_number=2` is the outer Relation UDF actor-pool size, and `gpus_per_actor=1.0` makes Ray reserve one GPU resource for each actor. Because `use_ray` is absent, each Ray UDF actor owns its local vLLM engine; this example does not create a second native vLLM Ray pool. If you deliberately choose the native pool instead, account for its separate actors and resources.
+Keep the two configuration layers separate:
 
-The built-in Relation helper may return only its configured `decision_json` column. The `_only` name makes that boundary visible: do not zip it back to `advanced_candidates` by row position. Use it as an isolated output-only stage when keys are not needed downstream. When the published artifact must retain IDs and multiple diagnostic columns, stay with SQL/Python Expression or use a custom row-preserving batch UDF with an explicit schema.
+- `execution_backend` controls where Vane runs the prompt UDF stage.
+- vLLM options such as `use_ray`, `concurrency`, `gpus_per_actor`, and `ray_actor_pool_name` control vLLM executor and actor-pool behavior.
 
-Add `image_columns=[...]` only for a provider/model combination that supports the chosen image representation, and validate the structured JSON against `claim_decision_schema` before publishing it. SQL can prepare the input and inspect a materialized result around this call, but that does not turn the Python Relation helper into a SQL Relation API.
+Change one layer at a time. If the local sample is not correct yet, Ray will make failures harder to diagnose.
 
-## Next Steps
+## Batch Cache Optimization
 
-- [AI Function API Reference](/docs/data/reference/ai-api) — exact SQL, Python Expression, Relation, typed-option, retry, and GPU contracts.
-- [AI Function Concepts](/docs/data/concepts/ai-functions) — why ordinary row enrichment and specialized Relation transformations have different boundaries.
-- [AI Functions](/docs/data/guides/ai-functions) — a complete hosted-provider task using the same stable-ID and review workflow.
-- [Ray Cluster Deployment](/docs/data/deploy/ray-cluster) and [Single-Node Deployment](/docs/data/deploy/single-node) — worker dependencies, artifacts, credentials, and resource setup.
-- [Performance Tuning](/docs/data/guides/performance-tuning) — measure batch size, actor parallelism, memory, and warm-up behavior.
+vLLM throughput does not depend only on GPU count. For a batch inference run, tune around engine reuse, bounded batches, and prompt locality.
+
+### Reuse Actors and Engines
+
+Avoid patterns that reload the model for every row or every tiny batch. Use actor-style execution for vLLM prompts, and keep `model`, `engine_args`, and dependency versions stable within one run.
+
+For Ray-backed vLLM, use a named actor pool when multiple distributed tasks should share the same vLLM actor set:
+
+```python
+ray_actor_pool_name="claims-vllm-validation"
+```
+
+The local code supports named vLLM actor pools and shares inflight tracking by pool name. This lets multiple executors see current load for each actor and route new prompt batches with better load awareness. It can also avoid repeatedly creating the same actor pool in a distributed plan.
+
+### Group Similar Prefixes
+
+When many prompts share the same system message, task template, or long prefix, and grouping does not change the business meaning of the run, group them before inference.
+
+```python
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        document_type,
+        source_uri,
+        case
+            when document_type = 'claim'
+                then 'You review insurance claim documents.'
+            when document_type = 'invoice'
+                then 'You review invoice support documents.'
+            else 'You review business documents.'
+        end as system_prefix,
+        'Return a short decision and reason: ' || text as prompt
+    from source_documents
+    where text is not null
+    order by document_type, case_id, document_id
+""")
+```
+
+Use `system_message` when one prefix applies to every row. If the prefix varies by row, put it into the prompt text or split the relation by task type. Final output should still be keyed by business ID so grouped execution does not make review ambiguous.
+
+The native vLLM executor includes prefix-routing controls such as `do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`, and `load_balance_threshold`. Treat them as tuning controls after you have a baseline. They are not generic UDF routing options.
+
+### Tune Batch and Concurrency Together
+
+Set `batch_size` explicitly for vLLM prompts. Larger batches can improve GPU utilization and vLLM continuous batching, but they can also increase latency, memory pressure, and failure blast radius.
+
+Increase `concurrency` only when GPU and actor memory have headroom. A simple capacity check is:
+
+```text
+required GPUs = concurrency * gpus_per_actor
+```
+
+If `concurrency=2` and `gpus_per_actor=1`, the Ray environment needs at least two available GPUs for full parallelism. If the model uses tensor parallelism or other vLLM engine-level GPU settings, include those in your own capacity estimate.
+
+## Key Configuration Concepts
+
+| Concept | Where it appears | Guidance |
+| --- | --- | --- |
+| `model` | `ai_prompt` options or `prompt(..., model=...)` | Use the exact model identifier you validated locally. |
+| `engine_args` | vLLM engine configuration | Put model loading and engine-level settings here, such as context length or trust settings. |
+| `generate_args` | vLLM generation request | Put sampling parameters here, usually under `sampling_params`. |
+| `batch_size` | Vane UDF batch and vLLM submission | Start small, then increase until GPU utilization, latency, or memory becomes the bottleneck. |
+| `concurrency` | Actor or vLLM pool size | Increase only when workers and GPUs still have headroom. |
+| `gpus_per_actor` | Ray GPU resource request for each vLLM actor | Match the model and engine setup. |
+| `ray_actor_pool_name` | Native vLLM Ray actor pool | Use it to share actor reuse in a distributed run. |
+| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for validation runs that need to keep failed rows reviewable. |
+
+Vane applies throughput-oriented defaults for the native vLLM engine scheduler. You can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a validation run unless you know exactly which setting you are testing.
+
+## Boundaries
+
+This guide is not a vLLM manual. It shows how to put vLLM batch inference into an Expression-first Vane workflow and what to validate before scaling.
+
+It is also not a production serving guide. It does not cover autoscaling, SLAs, traffic management, online request routing, or long-running service operation.
+
+For non-vLLM GPU models, custom tokenizers, multimodal preprocessing, or a full custom output schema, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For hosted provider prompting and small AI enrichment tasks, use [AI Functions](/docs/data/guides/ai-functions).

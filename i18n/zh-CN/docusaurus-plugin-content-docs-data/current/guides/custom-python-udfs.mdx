@@ -2,555 +2,502 @@
 title: 自定义 Python UDF
 ---
 
-本文完成一个真实任务：把文档文本规范化为有类型的审查列，同时保留稳定的文档 ID 与源 URI，校验输出契约，写入 Parquet，并清理已注册的 SQL alias。
+当 Vane Data pipeline 中的 Python 逻辑不适合用 SQL 或内置 AI Function 表达时，可以使用 Custom Python UDF：外部库、自定义规则、媒体处理、模型预处理、自定义推理、私有客户端，或完全可控的 output schema。
 
-精确签名和限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。SQL-first Expression 模型与 Relation escape hatch 背后的原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。
+本文聚焦 UDF 的类型，以及不同场景下的选择方式。如果只需在现有列旁增加一个有类型的结果，优先使用 Expression UDF：推荐通过 SQL alias 进入 SQL 工作流，也可以用 Python Expression API 构造同一个 projection。只有当 UDF 负责多列输出或改变行数的表阶段时，才使用 Relation API。
 
-## 任务目标与前置条件
+## 选择 UDF 类型
 
-主要工作流在本地使用内联数据运行。它要求 Vane 已正确安装，但任务本身不需要 Ray 集群、GPU、外部文件、凭据或 PyArrow 代码。结果会写入 `output/document-review.parquet`。
+先确定输出形态，再确定可调用对象形态；backend 是另一层选择，它决定可调用对象在哪里执行。
 
-源数据契约包含三个显式类型列：
+| UDF 类型 | 推荐 API | 可调用对象形态 | 适用场景 |
+| --- | --- | --- | --- |
+| 无状态 scalar Expression UDF | 注册 SQL alias；在 Python 中构造 expression 时使用 `vane.func` | Scalar 函数 | 在现有列旁增加一个有类型、保持行数的值。 |
+| 无状态 batch Expression UDF | 注册 SQL alias；在 Python 中构造 expression 时使用 `vane.func.batch` | Arrow 函数 | Batch 处理有帮助，但结果仍是一个有类型的列。 |
+| 有状态 Expression UDF | 注册 SQL alias；Python 使用 `vane.cls` 或 `vane.cls.batch` | 可调用类 | 一个有类型的结果需要 query scope 的 actor 状态。 |
+| 无状态 batch Relation UDF | `map_batches` | Python 函数 | 返回多列或完整表结果，且不需要复用状态。 |
+| 有状态 batch Relation UDF | `map_batches` | 可调用类 | 返回表形结果，同时跨 batch 复用昂贵的初始化结果。 |
+| 行扩展 Relation UDF | `flat_map` | 行函数 | 一个输入行可能产生零行、一行或多行输出。 |
+| Scalar Relation UDF | `map` | Scalar 函数 | 需要显式 Relation executor 及其透传结果形态。 |
 
-| 列 | 类型 | 用途 |
-| --- | --- | --- |
-| `document_id` | `VARCHAR` | 用于行数与身份校验的稳定业务 ID。 |
-| `source_uri` | `VARCHAR` | 每条结果都会保留的可追溯源位置。 |
-| `text` | `VARCHAR` | 需要规范化、允许为 null 的输入。 |
-
-数值 UDF 也应显式定义同样的类型边界：将 `1.25::DOUBLE` 与 `parameters=["DOUBLE"]`、`return_dtype="DOUBLE"` 配套使用。未转换的 decimal literal 通常是 `DECIMAL`，不应把它与 `DOUBLE` 默认为同一契约。
-
-## 主要工作流：SQL Expression（推荐）
-
-先定义一个原始 Python scalar callable——主要流程不使用 `vane.func` decorator。然后创建 connection 和 source，把有类型的 alias attach 到该 connection，并且只在 SQL `SELECT` projection 中调用它。
+普通的保持行数补充列任务，应先从 connection scope 的 SQL alias 开始。过滤、join 和源列选择仍然使用普通 SQL，Python callable 只提供一个有类型的 projection 值：
 
 ```python
 import vane
 
-import re
-from pathlib import Path
-
-
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL),
-        ('doc-003', 's3://sample/doc-003.txt', ' APPROVED ')
-    ) AS source_rows(document_id, source_uri, text)
-    ORDER BY document_id
-    """
-)
-source.to_table("udf_source_documents")
+
+
+def normalize_document_type(value):
+    return str(value or "unknown").strip().lower()
+
 
 vane.attach_function(
-    normalize_review_text,
-    alias="normalize_review_text_sql",
+    normalize_document_type,
+    alias="normalize_document_type_sql",
     connection=con,
     parameters=["VARCHAR"],
     return_dtype="VARCHAR",
 )
 
 try:
-    projected = con.sql(
-        """
-        SELECT
+    normalized = con.sql("""
+        select
             document_id,
-            source_uri,
-            text,
-            normalize_review_text_sql(text) AS review_text
-        FROM udf_source_documents
-        ORDER BY document_id
-        """
-    )
-    projected.to_table("udf_reviewed_documents")
-    result = con.table("udf_reviewed_documents")
-
-    expected_ids = [
-        row[0]
-        for row in con.sql(
-            "SELECT document_id FROM udf_source_documents ORDER BY document_id"
-        ).fetchall()
-    ]
-    rows = result.order("document_id").fetchall()
-    actual_ids = [row[0] for row in rows]
-
-    assert list(result.columns) == [
-        "document_id",
-        "source_uri",
-        "text",
-        "review_text",
-    ]
-    assert [str(dtype) for dtype in result.types] == [
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-    ]
-    assert len(rows) == len(expected_ids)
-    assert actual_ids == expected_ids
-    assert len(set(actual_ids)) == len(expected_ids)
-
-    source_nulls = con.sql(
-        "SELECT count(*) FROM udf_source_documents WHERE text IS NULL"
-    ).fetchone()[0]
-    result_nulls = con.sql(
-        "SELECT count(*) FROM udf_reviewed_documents WHERE review_text IS NULL"
-    ).fetchone()[0]
-    assert result_nulls == source_nulls
-    assert rows[0][3] == "missing signature"
-    assert rows[2][3] == "approved"
-
-    output_dir = Path("output")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result.write_parquet(
-        str(output_dir / "document-review.parquet"),
-        overwrite=True,
-    )
+            normalize_document_type_sql(document_type) as document_type
+        from (values
+            ('doc-001', ' Invoice '),
+            ('doc-002', null)
+        ) as documents(document_id, document_type)
+    """)
+    normalized.show()
 finally:
-    try:
-        vane.detach_function("normalize_review_text_sql", connection=con)
-    finally:
-        con.close()
+    vane.detach_function("normalize_document_type_sql", connection=con)
 ```
 
-Alias 仅限所属 connection，在 v1 中保持行数，并且只能出现在 projection 位置。先用普通 SQL 完成 source 的 filter 和 join；不要把 alias 放进 `WHERE`、`GROUP BY`、`HAVING`、join condition、aggregate argument 或依赖 short-circuit 的 expression。权威的放置与注册规则见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
+Alias 只属于 `con`，并且支持在 `SELECT` projection 中使用。应在 UDF projection 之前完成过滤、join 和分组。当 projection 需要作为 Python Expression 对象组装时，再使用 `vane.func`、`vane.func.batch`、`vane.cls` 或 `vane.cls.batch`。注册签名和放置限制见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
-把结果物化为 `udf_reviewed_documents` 后，校验和最终写入会针对同一份已完成的 UDF 结果，而不会为每项检查重复运行 callable。这些 assertion 会在接受输出之前校验 schema、精确 SQL 类型、行数、去重后的有序 ID、null 传播和代表性值。即使 projection、校验或写入失败，`finally` 仍会从同一个 connection 移除 alias。
+## 无状态 Batch UDF
 
-SQL 是默认入口，因为 relational selection 保持清晰可见，同时一个有类型的 Python 结果可以与原始列组合。该设计原因见 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。
+当每个 batch 都可以独立处理时，使用无状态 batch UDF：
 
-## 备用工作流：Python Expression
+- 文本清理
+- 基于规则的标注
+- 元数据检查
+- 轻量解析
+- 确定性特征提取
+- 不需要可复用状态的 Python 库调用
 
-当 expression 需要动态组装、作为 Python 对象复用，或在 notebook 与 library 中组合时，使用 Python 构造方式。它是同一个有类型 projection 模型的备用调用形式，并非不同的输出模型。
-
-### 使用 `vane.func` 的 Scalar Python Expression
-
-下面的任务不注册 SQL alias，也能得到相同的四列、保持行数的 projection：
+无状态 batch UDF 是一个 Python 函数，接收 `pyarrow.Table`，返回 `pyarrow.Table`。如果它只产出一个有类型的列并保持输入行数，可以把它注册为 SQL Expression alias，或通过 Python `vane.func.batch(..., row_preserving=True)` 使用。下面的示例会同时返回源字段、诊断字段和多个派生列，因此更适合使用表形的 `map_batches` Relation API。
 
 ```python
-import vane
-
 import re
 
-
-@vane.func(return_dtype="VARCHAR")
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
+import pyarrow as pa
+import vane
 
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    normalized_text = []
+    text_length = []
+    needs_review = []
+    review_reason = []
+    status = []
+    error = []
+
+    for media_type, text in zip(media_types, texts, strict=False):
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
+
+            normalized_text.append(clean)
+            text_length.append(len(clean))
+
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
+            needs_review.append(True)
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "document_type": document_types,
+        "normalized_text": normalized_text,
+        "text_length": text_length,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+        "status": status,
+        "error": error,
+    })
+
+
+prepared_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "media_type": "VARCHAR",
+    "document_type": "VARCHAR",
+    "normalized_text": "VARCHAR",
+    "text_length": "BIGINT",
+    "needs_review": "BOOLEAN",
+    "review_reason": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=64,
+    execution_backend="subprocess_task",
 )
 
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    normalize_review_text(vane.col("text")).alias("review_text"),
-)
-
-assert list(result.columns) == [
-    "document_id",
-    "source_uri",
-    "text",
-    "review_text",
-]
-assert len(result.fetchall()) == 2
-con.close()
+prepared.show()
 ```
 
-### 使用 `vane.func.batch` 的 Arrow Batch Python Expression
+返回的表同时包含新字段和后续阶段需要的源字段。`map_batches` 返回 UDF 产出的列，不会自动保留上游列。
 
-当 batch 处理有帮助，但契约仍是输入行旁边的一个有类型输出列时，使用 batch Expression：
+作为对比，保持行数的 Python batch Expression 会显式命名输入列，并且只声明一个输出列：
 
 ```python
-import vane
-
-import re
-import pyarrow as pa
-
-
-def normalize_review_batch(table):
+def normalize_text_batch(table: pa.Table) -> pa.Table:
     values = table.column("text").to_pylist()
-    normalized = [
-        None if value is None else re.sub(r"\s+", " ", value).strip().lower()
-        for value in values
-    ]
-    return pa.table({"review_text": pa.array(normalized, type=pa.string())})
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-review_text = vane.func.batch(
-    normalize_review_batch,
-    inputs={"text": vane.col("text")},
-    schema={"review_text": "VARCHAR"},
-    row_preserving=True,
-).alias("review_text")
-
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    review_text,
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-`row_preserving=True` 会检查每个输入行都有一个 batch 输出行，并允许结果与普通列并列。`row_preserving=False` 是 Python batch Expression 的显式例外：它可以改变基数，但 batch 结果必须是唯一的顶层 projection，而且 v1 不允许把它注册为 SQL alias。精确的 batch 与放置契约见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
-
-## Stateful `vane.cls`：窄范围契约
-
-只有可变状态必须在一次 query 的一个 actor 内存活时，才使用 `vane.cls`。v1 要求 `actor_number=1`；状态仅限 query scope、actor 内局部且临时，不 checkpoint，也不提供 exactly-once。下面的 memoizer 会维护 query 内缓存，同时仍返回一个确定的有类型列：
-
-```python
-import vane
-
-import re
-
-
-@vane.cls(actor_number=1, return_dtype="VARCHAR")
-class QueryMemoizer:
-    def __init__(self):
-        self.cache = {}
-
-    def __call__(self, text):
-        if text not in self.cache:
-            self.cache[text] = re.sub(r"\s+", " ", text).strip().lower()
-        return self.cache[text]
-
-
-memoizer = QueryMemoizer()
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', ' Repeat   me '),
-        ('doc-002', ' Repeat   me ')
-    ) AS source_rows(document_id, text)
-    """
-)
-
-result = source.select(
-    vane.col("document_id"),
-    memoizer(vane.col("text")).alias("review_text"),
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-Actor 丢失会导致 query 失败，分布式执行也不定义稳定的全局行求值顺序。不要把这个契约用作持久、全局、keyed 或 transactional 状态。精确限制见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)，原因与失败模型见 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。如果只是需要复用昂贵的模型或客户端，并且可以接受多个相互独立的 actor，请使用下文的 actor-backed Relation 模式。
-
-## Relation API：只用于表形能力
-
-只有任务需要表形能力或显式 Relation executor 时，才迁移到 Relation API。Vane 不提供这些 UDF 的直接 SQL table-function 形式，因此要在 Python 中构造这些阶段。下面的每个示例都会明确说明必须使用 Relation API 的能力。
-
-### 能力：Arrow 多列或完整表阶段输出 — `rel.map_batches`
-
-这里必须使用 `rel.map_batches`，因为一次调用会同时返回稳定源字段和多个新列。Relation 结果只包含声明的 schema，因此必须显式返回需要透传的字段。
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-def prepare_review_batch(table):
-    document_ids = table.column("document_id").to_pylist()
-    source_uris = table.column("source_uri").to_pylist()
-    texts = table.column("text").to_pylist()
-    review_text = [
-        None if text is None else re.sub(r"\s+", " ", text).strip().lower()
-        for text in texts
-    ]
-    text_length = [None if text is None else len(text) for text in review_text]
-    status = ["missing_text" if text is None else "ok" for text in review_text]
-    return pa.table(
-        {
-            "document_id": pa.array(document_ids, type=pa.string()),
-            "source_uri": pa.array(source_uris, type=pa.string()),
-            "review_text": pa.array(review_text, type=pa.string()),
-            "text_length": pa.array(text_length, type=pa.int64()),
-            "status": pa.array(status, type=pa.string()),
-        }
-    )
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "review_text": duckdb.sqltypes.VARCHAR,
-    "text_length": duckdb.sqltypes.BIGINT,
-    "status": duckdb.sqltypes.VARCHAR,
-}
-
-result = source.map_batches(
-    prepare_review_batch,
-    schema=review_schema,
-    batch_size=2,
-    execution_backend="subprocess_task",
-)
-
-assert list(result.columns) == list(review_schema)
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-### 能力：显式零行、一行或多行 — `rel.flat_map`
-
-`rel.flat_map` 是 filter 或 expansion 的显式基数边界。此任务针对 null 文本输出零个 token，针对非 null 文本输出多个 token，并把稳定 ID 和源 URI 带入每一行输出。
-
-```python
-import vane
-
-import duckdb
-
-
-def split_document(row):
-    text = row["text"]
-    if text is None:
-        return
-    for token_index, token in enumerate(text.split()):
-        yield {
-            "document_id": row["document_id"],
-            "source_uri": row["source_uri"],
-            "token_index": token_index,
-            "token": token.lower(),
-        }
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha Beta'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-token_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "token_index": duckdb.sqltypes.INTEGER,
-    "token": duckdb.sqltypes.VARCHAR,
-}
-
-tokens = source.flat_map(
-    split_document,
-    schema=token_schema,
-    execution_backend="subprocess_task",
-)
-
-assert tokens.order("document_id, token_index").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", 0, "alpha"),
-    ("doc-001", "s3://sample/doc-001.txt", 1, "beta"),
-]
-con.close()
-```
-
-### 能力：使用显式 Relation Executor 的逐行 Scalar 输出 — `rel.map`
-
-当前 `rel.map` 会把全部输入列作为 positional value 传给 scalar function，并返回原始列以及名为 `value` 的结果列。它不是过时的 pandas DataFrame batch mapping API。当你确实需要标准化的透传列加 `value` 契约，或显式 Relation backend 控制时，再使用它。
-
-```python
-import vane
-
-import duckdb
-
-
-def build_review_key(document_id, source_uri, text):
-    text_size = len(text or "")
-    return f"{document_id}:{text_size}"
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-mapped = source.map(
-    build_review_key,
-    return_type=duckdb.sqltypes.VARCHAR,
-    execution_backend="subprocess_task",
-)
-result = mapped.project(
-    "document_id, source_uri, text, value AS review_key"
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", "Alpha", "doc-001:5"),
-    ("doc-002", "s3://sample/doc-002.txt", None, None),
-]
-con.close()
-```
-
-### 能力：跨 Batch 复用模型或客户端 — Actor-Backed Relation Class
-
-当初始化结果需要由一个或多个 Relation actor 复用时，应传入零参数 callable class 本身，而不是已经创建的 instance。每个 actor 都会创建并复用自己的 instance；多个 actor 提供相互独立的复用与并行度，不定义共享或 keyed state。
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-class ReviewRuleSet:
-    def __init__(self):
-        self.risk_pattern = re.compile(r"missing|expired", re.IGNORECASE)
-
-    def __call__(self, table):
-        document_ids = table.column("document_id").to_pylist()
-        source_uris = table.column("source_uri").to_pylist()
-        texts = table.column("text").to_pylist()
-        needs_review = [
-            bool(self.risk_pattern.search(text or ""))
-            for text in texts
+    return pa.table({
+        "normalized_text": [
+            None if value is None else str(value).strip().lower()
+            for value in values
         ]
-        return pa.table(
-            {
-                "document_id": pa.array(document_ids, type=pa.string()),
-                "source_uri": pa.array(source_uris, type=pa.string()),
-                "needs_review": pa.array(needs_review, type=pa.bool_()),
-            }
-        )
+    })
 
 
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Missing signature'),
-        ('doc-002', 's3://sample/doc-002.txt', 'Approved')
-    ) AS source_rows(document_id, source_uri, text)
-    """
+normalized_text = vane.func.batch(
+    normalize_text_batch,
+    inputs={"text": vane.col("text")},
+    schema={"normalized_text": "VARCHAR"},
+    row_preserving=True,
+).alias("normalized_text")
+
+normalized = documents.select(
+    vane.col("document_id"),
+    normalized_text,
 )
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "needs_review": duckdb.sqltypes.BOOLEAN,
-}
-
-result = source.map_batches(
-    ReviewRuleSet,
-    schema=review_schema,
-    batch_size=1,
-    execution_backend="subprocess_actor",
-    actor_number=2,
-    gpus=0.0,
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", True),
-    ("doc-002", "s3://sample/doc-002.txt", False),
-]
-con.close()
 ```
 
-对于真实模型或客户端，请在 `__init__` 中或第一次使用时延迟初始化，让每个 actor 拥有并复用自己的资源。Constructor 应保持零参数；把部署相关配置放入可序列化 wrapper、class default 或 worker 环境。
+如果这个 projection 属于 SQL pipeline，使用已注册的 SQL 形式；如果需要动态组装 expression，则使用这里的 Python 形式。
 
-### 扩展 Backend 与资源
+增大 batch size 或迁移到 Ray 之前，先校验这个无状态 UDF：
 
-改变执行形态前，先在小型本地样本上验证 callable 与 schema：
+```python
+prepared.to_table("prepared_documents")
 
-1. 无状态 function 使用 `subprocess_task`。
-2. 本地 callable-class 复用使用 `subprocess_actor`。
-3. 只有分布式执行有帮助时，才把无状态工作迁移到 `ray_task`。
-4. 需要分布式复用、actor pool 或 Ray 资源调度时，才把 callable-class 工作迁移到 `ray_actor`。
+summary = con.sql("""
+    select
+        document_type,
+        media_type,
+        needs_review,
+        review_reason,
+        count(*) as rows
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
+""")
 
-`actor_number` 是 Relation actor 数量，不是 AI provider 的请求 `concurrency`。在 Ray 上，`gpus` 是每个 task 或 actor 的 scheduler reservation；例如 `actor_number=2` 与 `gpus=1.0` 需要两个 Ray GPU 资源位才能满并行运行。在本地 subprocess backend 上，`gpus` 不会 reservation 或隔离设备：worker 只会继承进程可见的 GPU，非零声明可能产生 warning。每个 worker 都必须能够导入 callable，并访问它的 dependency、model artifact、数据路径和凭据。精确的 backend 与资源限制见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)；部署任务请参阅[单节点部署](/zh-CN/docs/data/deploy/single-node)、[Ray 集群部署](/zh-CN/docs/data/deploy/ray-cluster)和 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
+summary.show()
+```
 
-### 输出、错误与副作用契约
+本地输出正确后，同一个函数可以用 `ray_task` 运行：
 
-把每个 Relation 结果视为显式的表契约：
+```python
+import vane
 
-- 返回与声明 schema 匹配的列和 Arrow-compatible value。
-- 包含下游需要的稳定 ID、源 path 或 URI 和业务 key；Relation stage 不会自动保留这些字段。
-- 如果预期的逐行失败需要保持可审查，请增加有类型的 `status` 与 `error` 列；未预期的 batch 或 actor 失败应让 query 失败。
-- 增加 `batch_size`、`actor_number` 或数据量之前，先校验 schema、SQL 类型、行数或基数预期、null 和 ID。
-- 尽量让 UDF 保持 pure。外部副作用不会随 SQL 事务回滚，也不提供 exactly-once；不可避免的写入应使用稳定 ID 作为 key 并保持幂等。
-- 只写入一次通过校验的最终 Relation，不要在 UDF 内部写入。
+vane.configure(runner="ray")
 
-状态、retry 与副作用背后的原因见 [UDF 概念](/zh-CN/docs/data/concepts/udfs)，精确输出和错误限制见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
+ray_prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
 
-## 相关指南
+只有在本地契约正确后才使用 `ray_task`。Ray 会额外引入 worker 导入、依赖、存储和资源等变量，可能掩盖普通的 UDF 问题。
 
-- 使用[结构化转换](/zh-CN/docs/data/guides/structured-transformation)完成 UDF 前后的 SQL 清理、join、去重和校验。
-- 当 Python 需要读取 bytes、解码媒体，或记录阶段级 status 与 error 时，使用[多模态 Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
-- 标准 prompting、embedding 和 classification 使用 [AI Function](/zh-CN/docs/data/guides/ai-functions)；自定义预处理、模型执行、客户端或输出 schema 使用自定义 UDF。
-- 本地输出契约正确后，再使用[性能调优](/zh-CN/docs/data/guides/performance-tuning)。
+## 有状态 Batch UDF
+
+当初始化结果需要跨 batch 复用时，使用有状态 batch UDF：
+
+- 模型或 tokenizer 加载
+- API 客户端初始化
+- 数据库或对象存储客户端初始化
+- 查找表或缓存
+- GPU 模型状态
+
+有状态 UDF 是可调用类。对于只返回一个有类型、保持行数的 Expression 结果，可以使用 `vane.cls` 或 `vane.cls.batch`，实例化被装饰的类，再把该实例注册为 SQL alias，或在 Python projection 中调用。v1 Expression 契约每个 query 使用一个 actor，其状态仅限 query scope 且是临时的。
+
+下面的示例返回多列表，因此使用 Relation 形式：传给 `map_batches` 的应该是类本身，而不是已经创建好的实例。Actor backend 会在 worker 内构造这个类，并在多个 batch 间复用同一个对象。
+
+Actor 类不应有必填构造参数。可以把配置放在环境变量、类级默认值、带默认值的可选参数，或无参数包装类中。
+
+```python
+import pyarrow as pa
+
+
+class PromptBuilder:
+    def __init__(self) -> None:
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
+
+        prompts = []
+        prompt_template = []
+        status = []
+        error = []
+
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
+
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
+
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
+            "status": status,
+            "error": error,
+        })
+
+
+prompt_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "prompt_template": "VARCHAR",
+    "prompt": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+在真实的模型 UDF 中，请在 `__init__` 中或第一次调用时延迟加载模型、tokenizer 或客户端，而不是在模块导入时加载。这样可以保持导入轻量，并让每个 subprocess 或 Ray actor 拥有自己的状态。
+
+如果需要分布式 actor 复用，把 backend 切换到 `ray_actor`：
+
+```python
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+对于依赖 GPU 的状态，请按 actor 请求 GPU 资源：
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # 在这里加载 tokenizer/model，使每个 actor 拥有自己的 GPU state。
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
+
+每个 Ray worker 都必须能够导入该可调用对象，并访问相同的数据路径、模型文件、凭据和 Python 依赖。
+
+## 行扩展 UDF
+
+当一个输入行可能产生零行、一行或多行输出时，使用 `flat_map`。典型场景包括文档分块、帧提取摘要、嵌套记录规范化、URL 展开，以及通过返回空结果来过滤行。
+
+Python `vane.func.batch(..., row_preserving=False)` 也可以生成改变行数的 batch Expression，但它必须是唯一的顶层 projection，而且 v1 不能把它注册为 SQL alias。当转换天然表示为显式的零行或多行输出时，优先使用 `flat_map`。
+
+可调用对象接收一行 Python `dict`。它可以返回 `None`、一个输出 `dict`，或多个输出 `dict` 组成的可迭代对象。
+
+```python
+def chunk_document(row: dict) -> list[dict]:
+    text = str(row.get("normalized_text") or "")
+    chunks = [text[index:index + 1000] for index in range(0, len(text), 1000)]
+
+    return [
+        {
+            "document_id": row["document_id"],
+            "chunk_id": f"{row['document_id']}:{position}",
+            "chunk_text": chunk,
+        }
+        for position, chunk in enumerate(chunks)
+        if chunk
+    ]
+
+
+chunks = prepared.flat_map(
+    chunk_document,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_text": "VARCHAR",
+    },
+    execution_backend="subprocess_task",
+)
+```
+
+声明的 schema 会从每个输出 `dict` 中选择键。缺失的键会变成 null，额外键会被忽略。
+
+## 标量 UDF
+
+如果只需在现有列旁增加一个简单的逐行值，优先使用上文展示的已注册 SQL scalar Expression；当 projection 在 Python 中构造时，使用 `vane.func`。只有明确需要 Relation executor 及其透传结果形态时，才使用 Relation `map`。
+
+```python
+def normalize_document_type(document_type: str) -> str:
+    return str(document_type or "unknown").strip().lower()
+
+
+normalized_types = documents.project("document_type").map(
+    normalize_document_type,
+    return_type="VARCHAR",
+    execution_backend="subprocess_task",
+)
+```
+
+对于标准 embedding 或 LLM 调用，优先使用内置 AI Function。对于自定义模型调用、媒体解码或任何可以从 batch 处理中获益的操作，一个有类型且保持行数的结果使用 batch Expression，表形结果使用 `map_batches`。
+
+## 共同输出契约
+
+请把每个 UDF 输出都视为显式契约。Expression UDF 向 projection 增加一个声明过的结果列；Relation UDF 则负责它返回的表形。
+
+| 主题 | 建议 |
+| --- | --- |
+| 返回列 | Expression batch schema 只声明一个输出列。对于 Relation `map_batches` 和 `flat_map`，精确返回 `schema` 中声明的列。 |
+| 源字段 | 在 Expression 结果旁选择源字段。Relation UDF 的后续阶段需要哪些源字段，就显式返回哪些字段。 |
+| 行诊断 | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
+| 类型 | 使用 Arrow 兼容值：字符串、数字、布尔值、bytes、list、struct 或 Arrow array。 |
+| Null | 保持 null 行为显式，尤其是数值型、bytes、list 和模型输出列。 |
+| 行数 | 保持行数的 Expression 必须为每个输入行返回一个输出行。Relation `map_batches` 通常也如此；显式零行或多行输出使用 `flat_map`。 |
+
+如果 Arrow 无法推断你需要的类型，请构造显式 array：
+
+```python
+return pa.table({
+    "document_id": pa.array(document_ids, type=pa.string()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+避免返回模型类、文件句柄、自定义 dataclass 或原始异常等 Python 对象。返回前请将它们转换为字符串、数字、bytes、list、struct、JSON 字符串或显式 Arrow array。
+
+## Backend 与扩展
+
+Expression UDF 根据可调用对象确定执行形态：`vane.func` 和 `vane.func.batch` 使用 task，`vane.cls` 和 `vane.cls.batch` 使用 actor。通过 Vane runner 配置选择本地或 Ray 执行。Relation UDF 则直接提供 `execution_backend`，应根据可调用对象形态选择：
+
+| Backend | 可调用对象形态 | 适用场景 |
+| --- | --- | --- |
+| `subprocess_task` | 函数 | 首个无状态 UDF、本地隔离、CPU 转换。 |
+| `subprocess_actor` | 可调用类 | 不使用 Ray 的本地模型或客户端复用。 |
+| `ray_task` | 函数 | 本地正确性校验后，再执行分布式无状态 batch 工作。 |
+| `ray_actor` | 可调用类 | 分布式模型/客户端复用、GPU 资源放置，或更大的 actor 池。 |
+
+唯一有效的 backend 名称是 `subprocess_task`、`subprocess_actor`、`ray_task` 和 `ray_actor`。`local`、`subprocess`、`ray=True`、`use_process`、`actor_count`、`prefer_actor` 等旧写法或缩写写法不是当前 API。
+
+建议按这个顺序推进：
+
+1. 使用 `subprocess_task` 或 `subprocess_actor` 在本地构建 UDF。
+2. 在小型真实样本上校验 schema、行数、ID、源列和错误行为。
+3. 输出正确后，在本地增大 `batch_size`。
+4. 只有当分布式执行有帮助时，才把无状态函数迁移到 `ray_task`。
+5. 只有当 actor 复用、GPU 资源放置或集群调度是必要条件时，才把有状态类迁移到 `ray_actor`。
+
+`batch_size` 控制 Vane 每次 `map_batches` 调用传入多少输入行。batch size 不应改变结果语义。如果调整 `batch_size` 后输出发生变化，UDF 很可能依赖了隐藏的 batch 状态。
+
+`concurrency` 支持 `subprocess_task`、`subprocess_actor` 和 `ray_actor`；不要将它与 `ray_task` 一起使用。
+
+## 相关文档
+
+- 当主要任务是表形态清理、join、去重、校验或输出整理时，使用 [结构化转换](/zh-CN/docs/data/guides/structured-transformation)。
+- 当 UDF 需要读取 bytes、解码文件、提取媒体特征，或记录逐阶段状态和错误时，使用 [多模态 Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
+- 对于标准 embedding、文本分类或提示词增强，使用 [AI 函数](/zh-CN/docs/data/guides/ai-functions)。当你需要自定义模型、自定义 output schema、外部客户端行为，或完全控制预处理与后处理时，使用自定义 Python UDF。
+- 使用 [UDF API 参考](/zh-CN/docs/data/reference/udf-api) 查询 SQL 注册、Python Expression 和 Relation API 的精确签名与限制。
+- 阅读 [UDF](/zh-CN/docs/data/concepts/udfs)，了解 Expression projection、Relation 表阶段、可调用类和执行 backend 背后的概念模型。

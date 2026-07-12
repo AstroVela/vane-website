@@ -1640,558 +1640,505 @@ con.execute("SET s3_url_style='path'")
 Route: /docs/data/guides/custom-python-udfs
 Source: docs/data/guides/custom-python-udfs.mdx
 
-This guide completes one real task: normalize document text into a typed review column, keep every result traceable to a stable document ID and source URI, validate the output contract, write Parquet, and clean up the registered SQL alias.
+Use Custom Python UDFs when a Vane Data pipeline needs Python logic that does not fit cleanly in SQL or a built-in AI Function: external libraries, custom rules, media processing, model preprocessing, custom inference, private clients, or a fully controlled output schema.
 
-Use the [UDF API Reference](/docs/data/reference/udf-api) for exact signatures and restrictions. Use [UDF Concepts](/docs/data/concepts/udfs) for the reasons behind the SQL-first Expression model and the Relation escape hatch.
+This guide focuses on the UDF types you can use and how to choose between them. For one typed result beside existing columns, prefer an Expression UDF: register a SQL alias for the recommended SQL workflow, or build the same projection with the Python Expression API. Use the Relation API when the UDF owns a multi-column or row-changing table stage.
 
-## Task Goal and Prerequisites
+## Choose a UDF Type
 
-The primary workflow runs locally against inline data. It requires a working Vane installation, but the task itself needs no Ray cluster, GPU, external files, credentials, or PyArrow code. It writes `output/document-review.parquet`.
+Choose the output shape first, then the callable shape. The execution backend is a separate choice that controls where the callable runs.
 
-The source contract has three explicitly typed columns:
+| UDF type | Preferred API | Callable shape | Use when |
+| --- | --- | --- | --- |
+| Stateless scalar Expression UDF | Registered SQL alias; Python `vane.func` when constructing expressions in Python | Scalar function | Add one typed, row-preserving value beside existing columns. |
+| Stateless batch Expression UDF | Registered SQL alias; Python `vane.func.batch` when constructing expressions in Python | Arrow function | Batching helps, but the result is still one typed column. |
+| Stateful Expression UDF | Registered SQL alias; Python `vane.cls` or `vane.cls.batch` | Callable class | One typed result needs query-scoped actor state. |
+| Stateless batch Relation UDF | `map_batches` | Python function | Return a multi-column or whole-table result without reusable state. |
+| Stateful batch Relation UDF | `map_batches` | Callable class | Return a table-shaped result while reusing expensive setup across batches. |
+| Row-expanding Relation UDF | `flat_map` | Row function | One input row can produce zero, one, or many output rows. |
+| Scalar Relation UDF | `map` | Scalar function | An explicit Relation executor and its pass-through result shape are required. |
 
-| Column | Type | Purpose |
-| --- | --- | --- |
-| `document_id` | `VARCHAR` | Stable business ID used for row-count and identity checks. |
-| `source_uri` | `VARCHAR` | Traceable source location retained in every result. |
-| `text` | `VARCHAR` | Nullable input to normalize. |
-
-For numeric UDFs, make the same type boundary explicit: use `1.25::DOUBLE` with `parameters=["DOUBLE"]` and `return_dtype="DOUBLE"`. A bare decimal literal is normally `DECIMAL`, which should not be silently treated as the same contract as `DOUBLE`.
-
-## Primary Workflow: SQL Expression (Recommended)
-
-Define a raw Python scalar callable first—there is no `vane.func` decorator in the primary path. Then create the connection and source, attach a typed alias to that connection, and invoke the alias only in a SQL `SELECT` projection.
+For a normal row-preserving enrichment, start with a connection-scoped SQL alias. Filtering, joining, and source-column selection remain ordinary SQL, while the Python callable contributes one typed projection value:
 
 ```python
 import vane
 
-import re
-from pathlib import Path
-
-
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL),
-        ('doc-003', 's3://sample/doc-003.txt', ' APPROVED ')
-    ) AS source_rows(document_id, source_uri, text)
-    ORDER BY document_id
-    """
-)
-source.to_table("udf_source_documents")
+
+
+def normalize_document_type(value):
+    return str(value or "unknown").strip().lower()
+
 
 vane.attach_function(
-    normalize_review_text,
-    alias="normalize_review_text_sql",
+    normalize_document_type,
+    alias="normalize_document_type_sql",
     connection=con,
     parameters=["VARCHAR"],
     return_dtype="VARCHAR",
 )
 
 try:
-    projected = con.sql(
-        """
-        SELECT
+    normalized = con.sql("""
+        select
             document_id,
-            source_uri,
-            text,
-            normalize_review_text_sql(text) AS review_text
-        FROM udf_source_documents
-        ORDER BY document_id
-        """
-    )
-    projected.to_table("udf_reviewed_documents")
-    result = con.table("udf_reviewed_documents")
-
-    expected_ids = [
-        row[0]
-        for row in con.sql(
-            "SELECT document_id FROM udf_source_documents ORDER BY document_id"
-        ).fetchall()
-    ]
-    rows = result.order("document_id").fetchall()
-    actual_ids = [row[0] for row in rows]
-
-    assert list(result.columns) == [
-        "document_id",
-        "source_uri",
-        "text",
-        "review_text",
-    ]
-    assert [str(dtype) for dtype in result.types] == [
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-    ]
-    assert len(rows) == len(expected_ids)
-    assert actual_ids == expected_ids
-    assert len(set(actual_ids)) == len(expected_ids)
-
-    source_nulls = con.sql(
-        "SELECT count(*) FROM udf_source_documents WHERE text IS NULL"
-    ).fetchone()[0]
-    result_nulls = con.sql(
-        "SELECT count(*) FROM udf_reviewed_documents WHERE review_text IS NULL"
-    ).fetchone()[0]
-    assert result_nulls == source_nulls
-    assert rows[0][3] == "missing signature"
-    assert rows[2][3] == "approved"
-
-    output_dir = Path("output")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result.write_parquet(
-        str(output_dir / "document-review.parquet"),
-        overwrite=True,
-    )
+            normalize_document_type_sql(document_type) as document_type
+        from (values
+            ('doc-001', ' Invoice '),
+            ('doc-002', null)
+        ) as documents(document_id, document_type)
+    """)
+    normalized.show()
 finally:
-    try:
-        vane.detach_function("normalize_review_text_sql", connection=con)
-    finally:
-        con.close()
+    vane.detach_function("normalize_document_type_sql", connection=con)
 ```
 
-The alias is connection-scoped, row-preserving in v1, and valid only in projection positions. Filter and join the source with ordinary SQL before this projection; do not put the alias in `WHERE`, `GROUP BY`, `HAVING`, join conditions, aggregate arguments, or short-circuit-sensitive expressions. The authoritative placement and registration rules are in the [UDF API Reference](/docs/data/reference/udf-api).
+The alias is scoped to `con` and is supported in `SELECT` projections. Apply filters, joins, and grouping before the UDF projection. Use `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` instead when the projection needs to be assembled as Python Expression objects. See the [UDF API Reference](/docs/data/reference/udf-api) for registration signatures and placement restrictions.
 
-Materializing `udf_reviewed_documents` makes validation and the final write operate on one completed UDF result rather than rerunning the callable for every check. The assertions verify schema, exact SQL types, row count, distinct ordered IDs, null propagation, and representative values before any output is accepted. `finally` removes the alias from the same connection even when projection, validation, or writing fails.
+## Stateless Batch UDFs
 
-SQL is the default because relational selection stays visible while one typed Python result composes beside the original columns. See [UDF Concepts](/docs/data/concepts/udfs) for that design rationale.
+Use a stateless batch UDF when each batch can be processed independently:
 
-## Alternate Workflow: Python Expression
+- text cleanup
+- rule-based labeling
+- metadata checks
+- lightweight parsing
+- deterministic feature extraction
+- Python library calls that do not need reusable state
 
-Use Python construction when expressions are assembled dynamically, reused as Python objects, or composed in a notebook or library. This is an alternate call form for the same typed projection model, not a different output model.
-
-### Scalar Python Expression with `vane.func`
-
-The following task produces the same four-column, row-preserving projection without registering a SQL alias:
+A stateless batch UDF is a Python function that receives a `pyarrow.Table` and returns a `pyarrow.Table`. If it produces one typed column and preserves input row count, it can be registered as a SQL Expression alias or used through Python `vane.func.batch(..., row_preserving=True)`. The example below returns source fields, diagnostics, and several derived columns together, so the table-shaped `map_batches` Relation API is the better fit.
 
 ```python
-import vane
-
 import re
 
-
-@vane.func(return_dtype="VARCHAR")
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
+import pyarrow as pa
+import vane
 
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    normalized_text = []
+    text_length = []
+    needs_review = []
+    review_reason = []
+    status = []
+    error = []
+
+    for media_type, text in zip(media_types, texts, strict=False):
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
+
+            normalized_text.append(clean)
+            text_length.append(len(clean))
+
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
+            needs_review.append(True)
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "document_type": document_types,
+        "normalized_text": normalized_text,
+        "text_length": text_length,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+        "status": status,
+        "error": error,
+    })
+
+
+prepared_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "media_type": "VARCHAR",
+    "document_type": "VARCHAR",
+    "normalized_text": "VARCHAR",
+    "text_length": "BIGINT",
+    "needs_review": "BOOLEAN",
+    "review_reason": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=64,
+    execution_backend="subprocess_task",
 )
 
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    normalize_review_text(vane.col("text")).alias("review_text"),
-)
-
-assert list(result.columns) == [
-    "document_id",
-    "source_uri",
-    "text",
-    "review_text",
-]
-assert len(result.fetchall()) == 2
-con.close()
+prepared.show()
 ```
 
-### Arrow Batch Python Expression with `vane.func.batch`
+The returned table contains both new fields and the source fields needed by later stages. `map_batches` returns the columns produced by the UDF; it does not automatically preserve upstream columns.
 
-Use a batch Expression when batching helps but the contract is still one typed output column beside the input rows:
+For comparison, a row-preserving Python batch Expression names its input columns explicitly and declares exactly one output column:
 
 ```python
-import vane
-
-import re
-import pyarrow as pa
-
-
-def normalize_review_batch(table):
+def normalize_text_batch(table: pa.Table) -> pa.Table:
     values = table.column("text").to_pylist()
-    normalized = [
-        None if value is None else re.sub(r"\s+", " ", value).strip().lower()
-        for value in values
-    ]
-    return pa.table({"review_text": pa.array(normalized, type=pa.string())})
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-review_text = vane.func.batch(
-    normalize_review_batch,
-    inputs={"text": vane.col("text")},
-    schema={"review_text": "VARCHAR"},
-    row_preserving=True,
-).alias("review_text")
-
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    review_text,
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-`row_preserving=True` checks that the batch output has one row per input row and permits normal columns beside it. `row_preserving=False` is the explicit Python batch Expression exception: it may change cardinality, but the batch result must be the sole top-level projection, and it cannot be registered as a SQL alias in v1. See the [UDF API Reference](/docs/data/reference/udf-api) for the exact batch and placement contracts.
-
-## Stateful `vane.cls`: A Narrow Contract
-
-Use `vane.cls` only when mutable state must live in one actor for one query. In v1, `actor_number=1` is required; the state is query-scoped, actor-local, ephemeral, not checkpointed, and not exactly-once. This memoizer keeps an in-query cache while still returning one deterministic typed column:
-
-```python
-import vane
-
-import re
-
-
-@vane.cls(actor_number=1, return_dtype="VARCHAR")
-class QueryMemoizer:
-    def __init__(self):
-        self.cache = {}
-
-    def __call__(self, text):
-        if text not in self.cache:
-            self.cache[text] = re.sub(r"\s+", " ", text).strip().lower()
-        return self.cache[text]
-
-
-memoizer = QueryMemoizer()
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', ' Repeat   me '),
-        ('doc-002', ' Repeat   me ')
-    ) AS source_rows(document_id, text)
-    """
-)
-
-result = source.select(
-    vane.col("document_id"),
-    memoizer(vane.col("text")).alias("review_text"),
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-Actor loss fails the query, and distributed execution does not define a stable global row-evaluation order. Do not use this contract as durable, global, keyed, or transactional state. The exact restrictions belong to the [UDF API Reference](/docs/data/reference/udf-api); the reasons and failure model are explained in [UDF Concepts](/docs/data/concepts/udfs). If the need is only to reuse an expensive model or client and multiple independent actors are acceptable, use the actor-backed Relation pattern below.
-
-## Relation API for Table-Shaped Capabilities
-
-Move to Relation API only when the required capability is table-shaped or needs an explicit Relation executor. Vane does not expose a direct SQL table-function form for these UDFs, so these stages are constructed in Python. Each example below names the capability that requires Relation API.
-
-### Capability: Arrow Multi-Column or Whole-Table Output — `rel.map_batches`
-
-`rel.map_batches` is required here because one call returns stable source fields plus several new columns. Relation output contains only the declared schema, so pass-through fields must be returned explicitly.
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-def prepare_review_batch(table):
-    document_ids = table.column("document_id").to_pylist()
-    source_uris = table.column("source_uri").to_pylist()
-    texts = table.column("text").to_pylist()
-    review_text = [
-        None if text is None else re.sub(r"\s+", " ", text).strip().lower()
-        for text in texts
-    ]
-    text_length = [None if text is None else len(text) for text in review_text]
-    status = ["missing_text" if text is None else "ok" for text in review_text]
-    return pa.table(
-        {
-            "document_id": pa.array(document_ids, type=pa.string()),
-            "source_uri": pa.array(source_uris, type=pa.string()),
-            "review_text": pa.array(review_text, type=pa.string()),
-            "text_length": pa.array(text_length, type=pa.int64()),
-            "status": pa.array(status, type=pa.string()),
-        }
-    )
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "review_text": duckdb.sqltypes.VARCHAR,
-    "text_length": duckdb.sqltypes.BIGINT,
-    "status": duckdb.sqltypes.VARCHAR,
-}
-
-result = source.map_batches(
-    prepare_review_batch,
-    schema=review_schema,
-    batch_size=2,
-    execution_backend="subprocess_task",
-)
-
-assert list(result.columns) == list(review_schema)
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-### Capability: Explicit Zero, One, or Many Rows — `rel.flat_map`
-
-`rel.flat_map` is the explicit cardinality boundary for filtering or expansion. This task emits zero tokens for null text and many tokens for non-null text while carrying the stable ID and source URI into every emitted row.
-
-```python
-import vane
-
-import duckdb
-
-
-def split_document(row):
-    text = row["text"]
-    if text is None:
-        return
-    for token_index, token in enumerate(text.split()):
-        yield {
-            "document_id": row["document_id"],
-            "source_uri": row["source_uri"],
-            "token_index": token_index,
-            "token": token.lower(),
-        }
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha Beta'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-token_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "token_index": duckdb.sqltypes.INTEGER,
-    "token": duckdb.sqltypes.VARCHAR,
-}
-
-tokens = source.flat_map(
-    split_document,
-    schema=token_schema,
-    execution_backend="subprocess_task",
-)
-
-assert tokens.order("document_id, token_index").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", 0, "alpha"),
-    ("doc-001", "s3://sample/doc-001.txt", 1, "beta"),
-]
-con.close()
-```
-
-### Capability: Row-Wise Scalar Output with an Explicit Relation Executor — `rel.map`
-
-Current `rel.map` calls the scalar function with all input columns as positional values and returns the original columns plus a result column named `value`. It is not the stale pandas DataFrame batch-mapping API. Use it when the standardized pass-through-plus-`value` contract or explicit Relation backend controls are the capability you need.
-
-```python
-import vane
-
-import duckdb
-
-
-def build_review_key(document_id, source_uri, text):
-    text_size = len(text or "")
-    return f"{document_id}:{text_size}"
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-mapped = source.map(
-    build_review_key,
-    return_type=duckdb.sqltypes.VARCHAR,
-    execution_backend="subprocess_task",
-)
-result = mapped.project(
-    "document_id, source_uri, text, value AS review_key"
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", "Alpha", "doc-001:5"),
-    ("doc-002", "s3://sample/doc-002.txt", None, None),
-]
-con.close()
-```
-
-### Capability: Model or Client Reuse Across Batches — Actor-Backed Relation Classes
-
-Pass a zero-argument callable class—not an already-created instance—when setup should be reused by one or more Relation actors. Each actor constructs and reuses its own instance; multiple actors provide independent reuse and parallelism, not shared or keyed state.
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-class ReviewRuleSet:
-    def __init__(self):
-        self.risk_pattern = re.compile(r"missing|expired", re.IGNORECASE)
-
-    def __call__(self, table):
-        document_ids = table.column("document_id").to_pylist()
-        source_uris = table.column("source_uri").to_pylist()
-        texts = table.column("text").to_pylist()
-        needs_review = [
-            bool(self.risk_pattern.search(text or ""))
-            for text in texts
+    return pa.table({
+        "normalized_text": [
+            None if value is None else str(value).strip().lower()
+            for value in values
         ]
-        return pa.table(
-            {
-                "document_id": pa.array(document_ids, type=pa.string()),
-                "source_uri": pa.array(source_uris, type=pa.string()),
-                "needs_review": pa.array(needs_review, type=pa.bool_()),
-            }
-        )
+    })
 
 
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Missing signature'),
-        ('doc-002', 's3://sample/doc-002.txt', 'Approved')
-    ) AS source_rows(document_id, source_uri, text)
-    """
+normalized_text = vane.func.batch(
+    normalize_text_batch,
+    inputs={"text": vane.col("text")},
+    schema={"normalized_text": "VARCHAR"},
+    row_preserving=True,
+).alias("normalized_text")
+
+normalized = documents.select(
+    vane.col("document_id"),
+    normalized_text,
 )
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "needs_review": duckdb.sqltypes.BOOLEAN,
-}
-
-result = source.map_batches(
-    ReviewRuleSet,
-    schema=review_schema,
-    batch_size=1,
-    execution_backend="subprocess_actor",
-    actor_number=2,
-    gpus=0.0,
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", True),
-    ("doc-002", "s3://sample/doc-002.txt", False),
-]
-con.close()
 ```
 
-For a real model or client, initialize it in `__init__` or lazily on first use so each actor owns and reuses that resource. Keep constructors zero-argument; put deployment-specific configuration in a serializable wrapper, class defaults, or the worker environment.
+Use the registered SQL form when this projection belongs in a SQL pipeline; use this Python form when expressions are assembled dynamically.
 
-### Scale Backends and Resources
+Validate the stateless UDF before increasing the batch size or moving to Ray:
 
-Prove the callable and schema on a small local sample before changing the execution shape:
+```python
+prepared.to_table("prepared_documents")
 
-1. Use `subprocess_task` for a stateless function.
-2. Use `subprocess_actor` for local callable-class reuse.
-3. Move stateless work to `ray_task` only when distribution helps.
-4. Move callable-class work to `ray_actor` for distributed reuse, actor pools, or Ray resource scheduling.
+summary = con.sql("""
+    select
+        document_type,
+        media_type,
+        needs_review,
+        review_reason,
+        count(*) as rows
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
+""")
 
-`actor_number` is the Relation actor count; it is not an AI provider's request `concurrency`. On Ray, `gpus` is a scheduler reservation per task or actor. For example, `actor_number=2` with `gpus=1.0` needs two Ray GPU resource slots for full parallelism. On a local subprocess backend, `gpus` does not reserve or isolate a device: workers only inherit process-visible GPUs, and a nonzero declaration may produce a warning. Every worker must be able to import the callable and access its dependencies, model artifacts, data paths, and credentials. Exact backend and resource restrictions are in the [UDF API Reference](/docs/data/reference/udf-api); deployment tasks are covered by [Single-Node Deployment](/docs/data/deploy/single-node), [Ray Cluster Deployment](/docs/data/deploy/ray-cluster), and [GPU Inference](/docs/data/guides/gpu-inference).
+summary.show()
+```
 
-### Output, Error, and Side-Effect Contracts
+After the local output is correct, the same function can run with `ray_task`:
 
-Treat every Relation result as an explicit table contract:
+```python
+import vane
 
-- Return columns and Arrow-compatible values that match the declared schema.
-- Include stable IDs, source paths or URIs, and any business keys needed downstream; Relation stages do not automatically retain them.
-- Add typed `status` and `error` columns when expected per-row failures should remain reviewable. Let unexpected batch or actor failures fail the query.
-- Validate schema, SQL types, row counts or cardinality expectations, nulls, and IDs before increasing `batch_size`, `actor_number`, or data volume.
-- Keep UDFs pure when possible. External side effects are not rolled back with the SQL transaction and are not exactly-once; make unavoidable writes idempotent and keyed by stable IDs.
-- Write the validated final Relation once instead of writing from inside a UDF.
+vane.configure(runner="ray")
 
-See [UDF Concepts](/docs/data/concepts/udfs) for the state, retry, and side-effect rationale, and the [UDF API Reference](/docs/data/reference/udf-api) for the exact output and error restrictions.
+ray_prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
+
+Use `ray_task` only after the local contract is correct. Ray adds worker import, dependency, storage, and resource variables that can hide ordinary UDF bugs.
+
+## Stateful Batch UDFs
+
+Use a stateful batch UDF when setup should be reused across batches:
+
+- model or tokenizer loading
+- API client setup
+- database or object-store client setup
+- lookup tables or caches
+- GPU model state
+
+A stateful UDF is a callable class. For one typed, row-preserving Expression result, use `vane.cls` or `vane.cls.batch`, instantiate the decorated class, and either attach that instance as a SQL alias or call it while building a Python projection. The v1 Expression contract uses one actor per query and treats its state as query-scoped and ephemeral.
+
+The example below returns a multi-column table, so it uses the Relation form instead: pass the class itself to `map_batches`, not an already-created instance. Actor backends construct the class inside the worker and reuse the same object for multiple batches.
+
+Actor classes should have no required constructor arguments. Put configuration in environment variables, class-level defaults, optional arguments with defaults, or a no-argument wrapper class.
+
+```python
+import pyarrow as pa
+
+
+class PromptBuilder:
+    def __init__(self) -> None:
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
+
+        prompts = []
+        prompt_template = []
+        status = []
+        error = []
+
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
+
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
+
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
+            "status": status,
+            "error": error,
+        })
+
+
+prompt_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "prompt_template": "VARCHAR",
+    "prompt": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+In a real model UDF, load the model, tokenizer, or client in `__init__` or lazily on first call, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+
+For distributed actor reuse, switch the backend to `ray_actor`:
+
+```python
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+For GPU-backed state, request GPU resources per actor:
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # Load the tokenizer/model here so each actor owns its GPU state.
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` is per actor. With `concurrency=2`, Ray needs two available GPU slots for full parallelism. For more GPU execution patterns, see [GPU Inference](/docs/data/guides/gpu-inference).
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+
+## Row-Expanding UDFs
+
+Use `flat_map` when one input row can produce zero, one, or many output rows. Typical uses include document chunking, frame extraction summaries, nested record normalization, URL expansion, and filtering by returning no rows.
+
+Python `vane.func.batch(..., row_preserving=False)` can produce a cardinality-changing batch Expression, but it must be the sole top-level projection and cannot be attached as a SQL alias in v1. Prefer `flat_map` when the transformation is naturally expressed as explicit zero-or-many rows.
+
+The callable receives one row as a Python `dict`. It may return `None`, one output `dict`, or an iterable of output dicts.
+
+```python
+def chunk_document(row: dict) -> list[dict]:
+    text = str(row.get("normalized_text") or "")
+    chunks = [text[index:index + 1000] for index in range(0, len(text), 1000)]
+
+    return [
+        {
+            "document_id": row["document_id"],
+            "chunk_id": f"{row['document_id']}:{position}",
+            "chunk_text": chunk,
+        }
+        for position, chunk in enumerate(chunks)
+        if chunk
+    ]
+
+
+chunks = prepared.flat_map(
+    chunk_document,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_text": "VARCHAR",
+    },
+    execution_backend="subprocess_task",
+)
+```
+
+The declared schema selects keys from each output dict. Missing keys become null, and extra keys are ignored.
+
+## Scalar UDFs
+
+For a small row-wise value beside existing columns, prefer the registered SQL scalar Expression shown above; use Python `vane.func` when the projection is constructed in Python. Use Relation `map` only when you specifically need an explicit Relation executor and its pass-through result shape.
+
+```python
+def normalize_document_type(document_type: str) -> str:
+    return str(document_type or "unknown").strip().lower()
+
+
+normalized_types = documents.project("document_type").map(
+    normalize_document_type,
+    return_type="VARCHAR",
+    execution_backend="subprocess_task",
+)
+```
+
+For standard embeddings or LLM calls, prefer the built-in AI Functions. For custom model calls, media decoding, or any operation that benefits from batching, choose a batch Expression for one typed row-preserving result or `map_batches` for a table-shaped result.
+
+## Shared Output Contract
+
+Treat every UDF output as an explicit contract. An Expression UDF contributes one declared result column to a projection; a Relation UDF owns the table shape it returns.
+
+| Topic | Guidance |
+| --- | --- |
+| Returned columns | An Expression batch schema declares exactly one output column. For Relation `map_batches` and `flat_map`, return exactly the columns declared in `schema`. |
+| Source fields | Select source fields beside an Expression result. Return them explicitly from a Relation UDF when later stages need them. |
+| Row diagnostics | Return explicit `status` and `error` columns when failed rows should remain reviewable. |
+| Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
+| Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
+| Row count | A row-preserving Expression must return one output row per input row. A Relation `map_batches` UDF usually does the same; use `flat_map` for explicit zero-or-many outputs. |
+
+If Arrow cannot infer the type you want, build an explicit array:
+
+```python
+return pa.table({
+    "document_id": pa.array(document_ids, type=pa.string()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, structs, JSON strings, or explicit Arrow arrays before returning.
+
+## Backend and Scaling
+
+Expression UDFs derive their execution shape from the callable: `vane.func` and `vane.func.batch` use tasks, while `vane.cls` and `vane.cls.batch` use actors. Configure the Vane runner to choose local or Ray execution. Relation UDFs expose `execution_backend` directly; choose it according to callable shape:
+
+| Backend | Callable shape | Use it for |
+| --- | --- | --- |
+| `subprocess_task` | Function | First stateless UDFs, local isolation, CPU transforms. |
+| `subprocess_actor` | Callable class | Local model or client reuse without Ray. |
+| `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
+| `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
+
+The only valid backend names are `subprocess_task`, `subprocess_actor`, `ray_task`, and `ray_actor`. Older or shorthand options such as `local`, `subprocess`, `ray=True`, `use_process`, `actor_count`, and `prefer_actor` are not the current API.
+
+Use this progression:
+
+1. Build the UDF locally with `subprocess_task` or `subprocess_actor`.
+2. Validate schema, row counts, IDs, source columns, and error behavior on a small real sample.
+3. Increase `batch_size` locally after the output is correct.
+4. Move stateless functions to `ray_task` only when distribution helps.
+5. Move stateful classes to `ray_actor` only when actor reuse, GPU placement, or cluster scheduling is required.
+
+`batch_size` controls how many input rows Vane passes to one `map_batches` call. Batch size should not change result semantics. If output changes when `batch_size` changes, the UDF is probably relying on hidden batch state.
+
+`concurrency` is supported for `subprocess_task`, `subprocess_actor`, and `ray_actor`; do not pass it with `ray_task`.
 
 ## Related Guides
 
-- Use [Structured Transformation](/docs/data/guides/structured-transformation) for SQL cleanup, joins, deduplication, and validation around the UDF stage.
-- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when Python reads bytes, decodes media, or records stage-specific status and errors.
-- Use [AI Functions](/docs/data/guides/ai-functions) for standard prompting, embedding, and classification; use a custom UDF for custom preprocessing, model execution, clients, or output schemas.
-- Use [Performance Tuning](/docs/data/guides/performance-tuning) after the local output contract is correct.
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is table-shaped cleanup, joins, deduplication, validation, or output shaping.
+- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
+- Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Use Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
+- Use the [UDF API Reference](/docs/data/reference/udf-api) to look up exact SQL registration, Python Expression, and Relation signatures and restrictions.
+- Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind Expression projections, Relation table stages, callable classes, and execution backends.
 
 ## Multimodal Pipeline
 
@@ -2557,783 +2504,498 @@ Replace `signature_batch` with your own deterministic signature function. Return
 Route: /docs/data/guides/ai-functions
 Source: docs/data/guides/ai-functions.mdx
 
-This guide completes one reviewable document-analysis task. It uses SQL `ai_prompt` and `ai_embed` first, shows Python Expression as an alternate entry point to the same row-preserving model, and moves to Relation API only for capabilities that require it.
+Vane Data is built for multimodal AI workloads. AI Functions let you run models over data: generating embeddings, classifying text, or calling large language and multimodal models.
 
-Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures and options, and [AI Function Concepts](/docs/data/concepts/ai-functions) for the reasons behind the Expression and Relation models.
+For row-preserving work that adds one model output to each input row, start with the SQL Expression functions `ai_embed` and `ai_prompt`. Use the Python Expression functions `vane.ai.embed` and `vane.ai.prompt` when provider configuration is more convenient to construct in Python. Use the Relation helpers for specialized capabilities such as built-in text classification, long-text chunking, structured responses, or multimodal prompting.
 
-**Prerequisites**
+AI Functions are a good starting point for common tasks such as embeddings, text classification, and prompting. Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) when the work is mainly chunking and embedding many documents. Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM or GPU-backed batch prompting. Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when you need full control over model loading, retries, output schema, preprocessing, or per-row error columns.
 
-- Install the OpenAI client in every environment that may execute the relation, including every worker environment: `python -m pip install openai`.
-- Set `OPENAI_API_KEY` in every worker's environment. Do not put credentials in SQL text or options.
-- Provide Parquet files at `data/documents/*.parquet` with `document_id`, `document_type`, `source_uri`, and `text` columns that can be cast to `VARCHAR`. In the selected slice, IDs must be non-null and unique, and source URIs and text must be non-null.
-- Ensure the output parent directory exists before running, for example with `mkdir -p output`.
+## Input Relation
 
-## 1. Prepare a Reviewable Source
+Start with a relation that contains:
 
-Start with a stable business ID, the source text sent to the model, and enough metadata to reproduce and review an output:
+- A stable business ID, such as `document_id`, `ticket_id`, `case_id`, or `line_item_id`.
+- The text column or fields needed by the model.
+- Source metadata that helps review unusual outputs later, such as `source_uri`, `media_type`, `document_type`, or `created_at`.
 
 ```python
 import vane
 
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(document_type AS VARCHAR) AS document_type,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/documents/*.parquet')
-    """
-)
-source.to_table("ai_review_source")
+
+source = con.sql("""
+    select
+        document_id,
+        document_type,
+        text,
+        source_uri
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+source.to_table("source_sample")
 ```
 
-`document_id` is the review and write key. `source_uri`, `document_type`, and `source_text` explain where each model result came from and what the provider saw.
+Keep the first sample small and ordered. Stable IDs let you validate AI output deterministically; ordering makes manual review repeatable but must not be used as a substitute for identity.
 
-## 2. Complete the Task with SQL Expression
+## Preserve IDs
 
-### Select a Candidate Slice
+SQL and Python AI Expressions are row-preserving and produce one output column. Keep IDs and source fields in the same `SELECT` or `rel.select(...)` projection as the AI Expression instead of materializing the model output separately and joining it back by row position.
 
-Use ordinary SQL to filter before any provider call. Keep the first run small, deterministic, and representative:
+After each Expression task, compare the stable IDs as well as the row count:
 
 ```python
-candidates = con.sql(
-    """
-    SELECT
-        'ai-review-2026-07-11-001'::VARCHAR AS run_id,
+def assert_same_ids(input_rel, output_rel):
+    input_ids = sorted(row[0] for row in input_rel.project("document_id").fetchall())
+    output_ids = sorted(row[0] for row in output_rel.project("document_id").fetchall())
+
+    if output_ids != input_ids:
+        raise ValueError("AI output IDs do not match source IDs")
+```
+
+The Relation helpers `embed_text(...)`, `classify_text(...)`, and the Relation form of `prompt(...)` return the configured output relation rather than an ordinary projection containing all source columns. Use them when that output shape fits the task. If the final result must also carry stable IDs and several source fields, use an Expression where one is available, or a custom row-preserving batch UDF that returns those fields in its declared schema. Do not reattach Relation output to source rows by position.
+
+## Embed Text
+
+Use `ai_embed` when each input row should get one vector. Because it is an Expression, the SQL projection can retain the stable ID and source metadata beside the embedding:
+
+```python
+embedded = con.sql("""
+    select
         document_id,
         document_type,
         source_uri,
-        source_text,
-        (
-            'Summarize the business issue and required follow-up in one sentence: '
-            || source_text
-        )::VARCHAR AS review_prompt
-    FROM ai_review_source
-    WHERE source_text IS NOT NULL
-      AND trim(source_text) <> ''
-      AND document_type IN ('invoice', 'claim', 'memo')
-    ORDER BY document_id
-    LIMIT 100
-    """
-)
-candidates.to_table("ai_review_candidates")
-
-expected_ids = [row[0] for row in con.sql(
-    "SELECT document_id FROM ai_review_candidates ORDER BY document_id"
-).fetchall()]
-expected_row_count = len(expected_ids)
-
-if expected_row_count == 0:
-    raise ValueError("AI review candidate slice is empty")
-if len(set(expected_ids)) != expected_row_count:
-    raise ValueError("document_id must be unique in the candidate slice")
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                dimensions := 512,
+                normalize := true,
+                concurrency := 4,
+                batch_size := 64,
+                on_error := 'raise'
+            )
+        ) as embedding
+    from source_sample
+    order by document_id
+""")
 ```
 
-The stable ordering makes this validation run reproducible. The ID and source fields remain in every later projection; model output order is never used as an identity contract.
+The second argument to `ai_embed` is one constant options value; `struct_pack(...)` is the usual way to construct it. Setting `dimensions` also gives the output a fixed `FLOAT[512]` type.
 
-### Generate Review Notes First
+Validation checks:
 
-Set `OPENAI_API_KEY` in the environment of every worker before executing the relation. Never place a key, token, password, or secret in SQL options.
+- Input column: filtered `text` should be non-null.
+- Output column: `embedding` should exist, and vector length should match the model expectation.
+- ID preservation: `document_id` should match the input IDs exactly.
+- Result review: inspect a few rows to confirm empty or very short text was not embedded accidentally.
 
 ```python
-prompted = con.sql(
-    """
-    SELECT
-        run_id,
+assert_same_ids(source, embedded)
+embedding_table = embedded.to_arrow_table()
+
+if embedding_table.num_rows == 0:
+    raise ValueError("empty embedding sample")
+
+embeddings = embedding_table["embedding"].to_pylist()
+if any(value is None or len(value) != 512 for value in embeddings):
+    raise ValueError("embedding is null or has an unexpected dimension")
+```
+
+When the same typed configuration is easier to build in Python, use the equivalent Python Expression:
+
+```python
+embedded_python = source.select(
+    vane.col("document_id"),
+    vane.col("document_type"),
+    vane.col("source_uri"),
+    vane.col("text"),
+    vane.ai.embed(
+        vane.col("text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=vane.ai.OpenAIProviderOptions(concurrency=4),
+        embedding_options=vane.ai.OpenAIEmbeddingOptions(on_error="raise"),
+        dimensions=512,
+        normalize=True,
+    ).alias("embedding"),
+)
+```
+
+For long text, the Relation helper can split each input value into overlapping character chunks, embed the chunks, and combine them back into one vector:
+
+```python
+chunked_embedding_only = source.embed_text(
+    "text",
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    max_chunk_chars=2000,
+    chunk_overlap_chars=200,
+    output_column="embedding",
+    execution_backend="subprocess_actor",
+)
+```
+
+This is an output-only Relation stage. If every chunk needs its own stable ID and row, use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) instead.
+
+## Classify Text
+
+Use the Relation helper `classify_text` when the label set is small and each input row should get one zero-shot label. There is no SQL or Python Expression form of this helper.
+
+```python
+label_only = source.classify_text(
+    "text",
+    labels=["invoice", "claim", "memo", "other"],
+    provider="transformers",
+    model="facebook/bart-large-mnli",
+    output_column="ai_label",
+    batch_size=16,
+    execution_backend="subprocess_actor",
+)
+```
+
+Validation checks:
+
+- Input column: `text` should contain the text you want the classifier to see.
+- Output column: `ai_label` should contain only one of the labels you provided.
+- Cardinality: output row count should match input row count.
+- Result review: sample by label and check whether the label set is too broad, too narrow, or missing business categories.
+
+```python
+label_table = label_only.to_arrow_table()
+source_table = source.to_arrow_table()
+
+if label_table.num_rows != source_table.num_rows:
+    raise ValueError("classification row count mismatch")
+
+labels = set(label_table["ai_label"].to_pylist())
+allowed = {"invoice", "claim", "memo", "other"}
+unexpected = labels - allowed
+if unexpected:
+    raise ValueError(f"unexpected labels: {[str(x) for x in unexpected]}")
+```
+
+Because this Relation helper returns the label output, do not join it back to `source` by row position. When the published classification artifact must contain IDs, source fields, labels, and per-row errors together, use a custom row-preserving batch UDF with an explicit multi-column schema.
+
+## Prompt
+
+Use `ai_prompt` when output is generated from a row-level prompt. Keep the first prompt narrow and easy to review.
+
+```python
+prompts = con.sql("""
+    select
         document_id,
         document_type,
         source_uri,
-        source_text,
+        'Summarize this document in one sentence: ' || text as review_prompt
+    from source_sample
+    order by document_id
+""")
+
+prompts.to_table("review_prompts")
+
+reviewed = con.sql("""
+    select
+        document_id,
+        document_type,
+        source_uri,
         review_prompt,
         ai_prompt(
             review_prompt,
             struct_pack(
                 provider := 'openai',
                 model := 'gpt-4o-mini',
-                concurrency := 2,
+                concurrency := 4,
                 max_api_concurrency := 4,
                 batch_size := 8,
-                max_retries := 2,
-                on_error := 'log',
-                system_message := 'Return one concise factual review note.',
-                temperature := 0.0
-            )
-        ) AS review_note
-    FROM ai_review_candidates
-    ORDER BY document_id
-    """
-)
-prompted.to_table("ai_review_prompted")
-```
-
-The second argument is one foldable constant `STRUCT`. Provider, model, execution, and request settings cannot vary by row. With `on_error := 'log'`, a response that still fails after retries remains a null `review_note` for the validation step instead of silently disappearing.
-
-### Add Embeddings When Retrieval Is Part of the Task
-
-This guide's task produces a review artifact for both audit and retrieval, so the workflow below assumes the `embedding` column is present. Add one more SQL Expression column while retaining the source and prompt output:
-
-```python
-reviewed = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
-        document_type,
-        source_uri,
-        source_text,
-        review_prompt,
-        review_note,
-        ai_embed(
-            source_text,
-            struct_pack(
-                provider := 'openai',
-                model := 'text-embedding-3-small',
-                dimensions := 512,
-                normalize := true,
-                concurrency := 2,
-                batch_size := 32,
-                max_retries := 2,
+                system_message := 'Return concise business review notes.',
+                temperature := 0.0,
                 on_error := 'raise'
             )
-        ) AS embedding
-    FROM ai_review_prompted
-    ORDER BY document_id
-    """
-)
-reviewed.to_table("ai_review_model_output")
+        ) as review_note
+    from review_prompts
+    order by document_id
+""")
 ```
 
-Both calls run inside `SELECT` projections and can be nested in ordinary projection expressions. Each adds one typed, row-preserving output column; predicates, grouping, joins, short-circuit composition, and row-varying configuration stay outside the AI expression.
+Validation checks:
 
-### Validate and Write the Review Artifact
-
-Turn tolerant prompt failures into an explicit review status, then check cardinality, IDs, null/error output, and the exact schema before writing:
+- Input column: `review_prompt` should contain only fields the model should see.
+- Output column: `review_note` should be non-empty and short enough to review.
+- ID preservation: `document_id`, `document_type`, and `source_uri` remain beside the output.
+- Result review: manually inspect a small sample before increasing `limit`, `batch_size`, or `concurrency`.
 
 ```python
-reviewable = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
-        document_type,
-        source_uri,
-        source_text,
-        review_prompt,
-        review_note,
-        embedding,
-        CASE
-            WHEN review_note IS NULL OR trim(review_note) = ''
-                THEN 'prompt_error'
-            WHEN embedding IS NULL OR array_length(embedding) <> 512
-                THEN 'embedding_error'
-            ELSE 'ready'
-        END::VARCHAR AS ai_status
-    FROM ai_review_model_output
-    ORDER BY document_id
-    """
-)
-reviewable.to_table("ai_review_result")
+assert_same_ids(prompts, reviewed)
+review_table = reviewed.to_arrow_table()
 
-validation = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(DISTINCT document_id) AS distinct_id_count,
-        count(*) FILTER (WHERE document_id IS NULL) AS null_id_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR source_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
-    FROM ai_review_result
-    """
-).fetchone()
-(
-    actual_row_count,
-    distinct_id_count,
-    null_id_count,
-    null_source_count,
-    error_output_count,
-) = validation
-
-assert actual_row_count == expected_row_count
-assert distinct_id_count == expected_row_count
-assert null_id_count == 0
-assert null_source_count == 0
-
-actual_ids = [row[0] for row in con.sql(
-    "SELECT document_id FROM ai_review_result ORDER BY document_id"
-).fetchall()]
-assert actual_ids == expected_ids
-
-expected_columns = [
-    "run_id",
-    "document_id",
-    "document_type",
-    "source_uri",
-    "source_text",
-    "review_prompt",
-    "review_note",
-    "embedding",
-    "ai_status",
-]
-expected_types = [
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "FLOAT[512]",
-    "VARCHAR",
-]
-assert list(reviewable.columns) == expected_columns
-assert [str(dtype) for dtype in reviewable.types] == expected_types
-
-print({"error_output_count": error_output_count})
-reviewable.write_parquet("output/ai-review-2026-07-11-001.parquet")
+empty = [value for value in review_table["review_note"].to_pylist() if not value]
+if empty:
+    raise ValueError("prompt returned empty responses")
 ```
 
-The write keeps failed rows beside their IDs, source, prompt, and status for review. Require `error_output_count == 0` only when the next stage accepts clean results exclusively. Use a new `run_id` and output path for a genuinely new provider run; for a durable table, merge or replace by stable keys instead of blindly appending retries.
-
-## 3. Use Python Expression as an Alternate
-
-Use Python Expression when typed provider/configuration construction belongs in Python. It has the same one-column, row-preserving projection semantics as SQL Expression; it is not the path to structured, multimodal, or table-shaped output.
+The equivalent Python Expression accepts typed provider and prompt options while preserving the same one-column projection model:
 
 ```python
-python_prompt_provider_options = vane.ai.OpenAIProviderOptions(
-    concurrency=2,
-    max_api_concurrency=4,
-)
-python_embedding_provider_options = vane.ai.OpenAIProviderOptions(
-    concurrency=2,
-)
-python_prompt_options = vane.ai.OpenAIPromptOptions(
-    temperature=0,
-    on_error="log",
-)
-python_embedding_options = vane.ai.OpenAIEmbeddingOptions(
-    on_error="raise",
-)
-
-python_prompted = candidates.select(
-    vane.col("run_id"),
+reviewed_python = prompts.select(
     vane.col("document_id"),
     vane.col("document_type"),
     vane.col("source_uri"),
-    vane.col("source_text"),
     vane.col("review_prompt"),
     vane.ai.prompt(
         vane.col("review_prompt"),
         provider="openai",
         model="gpt-4o-mini",
-        provider_options=python_prompt_provider_options,
-        prompt_options=python_prompt_options,
-        system_message="Return one concise factual review note.",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            concurrency=4,
+            max_api_concurrency=4,
+        ),
+        prompt_options=vane.ai.OpenAIPromptOptions(
+            temperature=0,
+            on_error="raise",
+        ),
+        system_message="Return concise business review notes.",
     ).alias("review_note"),
 )
-
-python_reviewed = python_prompted.select(
-    vane.col("run_id"),
-    vane.col("document_id"),
-    vane.col("document_type"),
-    vane.col("source_uri"),
-    vane.col("source_text"),
-    vane.col("review_prompt"),
-    vane.col("review_note"),
-    vane.ai.embed(
-        vane.col("source_text"),
-        provider="openai",
-        model="text-embedding-3-small",
-        provider_options=python_embedding_provider_options,
-        embedding_options=python_embedding_options,
-        dimensions=512,
-        normalize=True,
-    ).alias("embedding"),
-)
-python_reviewed.to_table("ai_review_python_model_output")
 ```
 
-Apply the same row-count, ordered-ID, null/error, schema, and run-specific write checks used for `ai_review_model_output`. Keep every AI Expression directly inside `rel.select(...)` with an alias; do not use it in filters or manually recombine its output with source rows.
+Use the Relation form `prompts.prompt(...)` only when the task needs Relation-only options such as `return_format`, `image_columns`, `use_chat_completions`, or an explicit `execution_backend`. It returns the configured output relation, so plan stable-key preservation before using it. Expression calls do not accept those Relation-only options; rename an Expression result with `.alias(...)`.
 
-## 4. Use Relation API Only for Specialized Capabilities
+## Provider and Execution Choices
 
-Relation helpers are Python table transformations. Vane does not provide a direct SQL Relation or table-function API for them. Use them only when the task requires capabilities that SQL or Python Expression does not expose.
+Choose the smallest provider setup that answers the current task.
 
-### Structured or Multimodal Prompting
+| Choice | Use when | Watch |
+| --- | --- | --- |
+| Hosted provider | You need a managed model and can use external API calls. | Credentials, cost, latency, rate limits, and provider-specific output behavior. |
+| Local model | You need local execution through installed model libraries. | Model download, dependency versions, memory use, and worker initialization time. |
+| vLLM or GPU model | You need GPU-backed prompt throughput or private LLM inference. | vLLM paths and GPU-specific tuning are covered in [GPU Inference](/docs/data/guides/gpu-inference). |
 
-Define the response model and import before calling `rel.prompt`. The same helper accepts `image_columns` for provider/model combinations that support image input:
+Minimum settings to make explicit:
 
-```python
-from pydantic import BaseModel
-
-
-class ReviewDecision(BaseModel):
-    label: str
-    reason: str
-
-
-multimodal_candidates = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(review_prompt AS VARCHAR) AS review_prompt,
-        image
-    FROM read_parquet('data/review-items/*.parquet')
-    WHERE review_prompt IS NOT NULL
-    ORDER BY document_id
-    LIMIT 20
-    """
-)
-
-decision_only = multimodal_candidates.prompt(
-    "review_prompt",
-    image_columns=["image"],
-    provider="openai",
-    model="gpt-4o-mini",
-    provider_options=vane.ai.OpenAIProviderOptions(
-        max_api_concurrency=4,
-    ),
-    prompt_options=vane.ai.OpenAIPromptOptions(
-        temperature=0,
-        on_error="log",
-    ),
-    return_format=ReviewDecision,
-    output_column="decision_json",
-    execution_backend="subprocess_task",
-)
-```
-
-Validate every non-null `decision_json` against `ReviewDecision` before publishing it. Use text-only input by omitting `image_columns`; keep `return_format` only when the selected provider supports structured responses.
-
-### Built-In Classification
-
-`rel.classify_text` is the built-in zero-shot classification path:
-
-```python
-label_only = candidates.classify_text(
-    "source_text",
-    labels=["billing", "delivery", "policy", "other"],
-    provider="transformers",
-    model="facebook/bart-large-mnli",
-    output_column="review_label",
-    batch_size=16,
-    execution_backend="subprocess_task",
-)
-```
-
-Validate non-null labels against the declared set and sample every label group before scaling.
-
-### Built-In Long-Text Chunking
-
-`rel.embed_text` owns built-in character chunking through `max_chunk_chars`:
-
-```python
-chunk_embedding_only = candidates.embed_text(
-    "source_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    max_chunk_chars=2000,
-    chunk_overlap_chars=200,
-    output_column="chunked_embedding",
-    execution_backend="subprocess_task",
-)
-```
-
-Use SQL `ai_embed` or `vane.ai.embed` when each existing row simply needs one embedding column. Use this Relation helper when the helper must split and combine long text itself; use the [Embeddings at Scale Guide](/docs/data/guides/embeddings-at-scale) when chunks need their own stable IDs and rows.
-
-### Select an Explicit Relation Backend and Actor Pool
-
-Relation methods can select `execution_backend` explicitly. For a Ray-backed vLLM actor pool, provider `concurrency` maps to actor count while `gpus_per_actor` requests the Ray GPU resource for each actor:
-
-```python
-vane.configure(runner="ray")
-
-gpu_response_only = candidates.prompt(
-    "review_prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    provider_options=vane.ai.VLLMProviderOptions(
-        concurrency=2,
-        gpus_per_actor=1,
-    ),
-    prompt_options=vane.ai.VLLMPromptOptions(
-        max_tokens=128,
-        temperature=0,
-        on_error="log",
-    ),
-    output_column="gpu_review_note",
-    execution_backend="ray_actor",
-)
-```
-
-The `_only` names are deliberate: Relation helpers may return only their configured output columns rather than automatically retaining every source field. Plan source preservation before the call. Use the built-in helper as an isolated output-only stage only when downstream work does not need source keys. When it does, use a custom row-preserving batch UDF that returns the stable IDs and outputs in one declared schema. Never reconnect results by row position.
-
-## 5. Operate Providers and Writes Safely
-
-- **Provider and model:** Record the exact provider, model, prompt/run version, and output path. Hosted providers add network, quota, latency, and cost concerns; local providers add dependency, model-file, memory, and startup concerns.
-- **Credentials:** Provider descriptors are serialized and instantiated lazily on workers. Put credentials in each worker environment, not in SQL text or serialized options, and limit worker network access to the required endpoint.
-- **Execution controls:** SQL and Python Expression let the active runner choose a local subprocess actor or Ray actor. Relation methods can choose an explicit backend. Provider `concurrency` controls actor count; `max_api_concurrency` limits calls inside an actor; batch size affects throughput, memory, and failure scope.
-- **Retries and errors:** Validate with `on_error="raise"` when failures should stop the sample. Tolerant modes can turn prompt failures into nulls and, when the dimension is known, embedding failures into zero vectors, so check the output contract you selected. Wrapper and provider-SDK retries can both repeat a call.
-- **External effects:** Provider requests are not transactional or exactly-once. A query retry can incur another request and charge, and rollback cannot undo a completed call. Preserve `(run_id, document_id)`, write reviewable run artifacts, and make downstream merges idempotent.
+- `provider` and `model`: record the exact provider and model used for each run.
+- Provider credentials: set them through environment variables in every worker environment; do not put API keys or other credentials in SQL options.
+- SQL options: pass one foldable constant options value, normally `struct_pack(...)`; configuration cannot vary by row.
+- Python options: use typed provider, prompt, and embedding option objects when that makes configuration clearer.
+- `batch_size` and `concurrency`: increase them only after the small sample is correct; larger values can increase memory use or hit provider rate limits.
+- Execution: Expression AI Functions follow the active Vane runner. Relation helpers can additionally select `execution_backend` explicitly when needed.
+- Errors and retries: choose `on_error` deliberately and validate null, empty, or malformed model output. Provider calls are external side effects, so a query retry can issue another request and incur additional cost.
 
 ## Next Steps
 
-- [AI Function API Reference](/docs/data/reference/ai-api) — exact SQL Expression, Python Expression, Relation, provider, and option contracts.
-- [AI Function Concepts](/docs/data/concepts/ai-functions) — why the two semantic models have different capability and output boundaries.
-- [GPU Inference](/docs/data/guides/gpu-inference) — local and Ray-backed vLLM execution, actor reuse, and GPU validation.
-- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) — deterministic chunk IDs, large embedding jobs, and reviewable vector outputs.
-- [Custom Python UDFs](/docs/data/guides/custom-python-udfs) — source-preserving multi-column schemas and per-row diagnostics beyond built-in helpers.
+- Use [Embeddings at Scale](/docs/data/guides/embeddings-at-scale) for document chunking, stable chunk IDs, embedding output schema, and larger embedding jobs.
+- Use [GPU Inference](/docs/data/guides/gpu-inference) for vLLM-backed prompt batches, GPU actor reuse, and Ray GPU execution.
+- Use [Custom Python UDFs](/docs/data/guides/custom-python-udfs) when an AI Relation helper is too narrow or when the output must include IDs, source fields, status, errors, and model output from one declared schema.
+- Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures, parameters, return values, and calling restrictions.
 
 ## GPU Inference
 
 Route: /docs/data/guides/gpu-inference
 Source: docs/data/guides/gpu-inference.mdx
 
-This guide completes one reviewable vLLM text-generation task with SQL `ai_prompt` first. It then shows the equivalent Python Expression construction and reserves the specialized Relation helper for advanced capabilities at the end.
+Use GPU Inference when you want to send multimodal or text data to a local or private LLM in batches. Typical inputs include extracted documents, captions, transcripts, labels, or prompt rows prepared by an earlier Vane stage.
 
-Use the [AI Function API Reference](/docs/data/reference/ai-api) for exact signatures, option fields, and return types. Use [AI Function Concepts](/docs/data/concepts/ai-functions) and the [Execution Model](/docs/data/concepts/execution-model) for the reasons behind the Expression/Relation boundary and worker lifecycle.
+This guide focuses on the vLLM path for batch prompt inference in Vane. For general non-vLLM-backed GPU model code, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
 
-The task keeps this contract from source to output:
+The common workflow shape is:
 
 ```text
-select a keyed candidate slice -> generate one VARCHAR per row -> retain IDs and source -> validate -> review -> write
+load source rows -> build prompt column -> keep IDs and source metadata -> run vLLM batches -> validate output -> write result table
 ```
 
-Use this guide when prompts should run against a model on the local machine or in your Ray environment, model initialization should be reused across batches, or GPU scheduling and prompt locality need deliberate validation. For arbitrary GPU model code or a source-preserving multi-column result schema, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs).
+## When to Use GPU Inference
 
-## 1. Prepare a Small, Keyed Candidate Slice
+Use this guide when:
 
-Start with real rows, a deterministic order, stable business IDs, and the source fields needed to reproduce an output. Keep the first run small enough to inspect by hand.
+- You have many prompts, not a few interactive chat requests.
+- The model needs to run locally or in your own Ray environment.
+- Model or engine initialization is expensive and should be reused across batches.
+- You need to validate GPU actor reuse, multi-GPU scheduling, or a Ray-backed vLLM actor pool.
+- Similar prompts share a system prefix or template, and cache locality may affect throughput.
+
+## vLLM in Vane
+
+For ordinary row-preserving prompt enrichment, use the SQL Expression AI Function `ai_prompt(...)` first:
+
+```sql
+select
+    case_id,
+    document_id,
+    ai_prompt(
+        prompt,
+        struct_pack(
+            provider := 'vllm',
+            model := 'Qwen/Qwen3-1.7B',
+            batch_size := 8
+        )
+    ) as response_text
+from gpu_prompts
+```
+
+`vane.ai.prompt(...)` is the alternate Python Expression entry point for the same projection model. Use the Python Relation method `rel.prompt(...)` only when the task needs Relation-only capabilities such as structured or multimodal output, or explicit Relation execution controls.
+
+## Build the Prompt Relation
+
+Start with a small real slice of source rows. Keep prompt text separate from the identifiers and metadata you will need later.
 
 ```python
 import vane
 
 con = vane.connect()
 
-source = con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(document_type AS VARCHAR) AS document_type,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/claims/documents/*.parquet')
-    """
-)
-source.to_table("gpu_inference_source")
-
-candidates = con.sql(
-    """
-    SELECT
-        'claims-vllm-2026-07-11-001'::VARCHAR AS run_id,
+prompts = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
-        (
-            'Extract the claim decision and one short factual reason: '
-            || source_text
-        )::VARCHAR AS prompt
-    FROM gpu_inference_source
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND document_type IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND source_text IS NOT NULL
-      AND trim(source_text) <> ''
-    ORDER BY document_type, case_id, document_id
-    LIMIT 50
-    """
-)
-candidates.to_table("gpu_inference_candidates")
+        document_type,
+        'Extract the claim decision and one short reason from this document: '
+            || text as prompt
+    from read_parquet('data/claims/documents/*.parquet')
+    where text is not null
+    order by case_id, document_id
+    limit 50
+""")
 
-expected_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-if not expected_keys:
-    raise ValueError("GPU inference candidate slice is empty")
-if len(set(expected_keys)) != len(expected_keys):
-    raise ValueError("(case_id, document_id) must be unique")
+prompts.to_table("gpu_prompts")
+prompt_table = prompts.to_arrow_table()
 ```
 
-`run_id` identifies this configuration and output path; `(case_id, document_id)` identifies the business row. Never use output order as identity. If the prompt template, model, or material engine settings change, use a new run ID or record an explicit version.
+Recommended input columns:
 
-## 2. Run Basic Local vLLM Generation with SQL
+| Column | Purpose |
+| --- | --- |
+| `case_id`, `document_id`, `asset_id`, or another stable key | Join responses back to source systems. |
+| `source_uri` or source metadata | Review unusual outputs and reproduce failures. |
+| `document_type`, `media_type`, category, tenant, or task type | Group prompts and compare output quality by source segment. |
+| `prompt` | Final text sent to vLLM. |
+| `system_prefix` or template ID, if used | Explain prompt groups and cache locality experiments. |
 
-The recommended first prompt call is a top-level SQL projection. The constant `struct_pack` selects vLLM and supplies only non-secret, query-wide configuration. The two JSON bridge fields are strings containing valid JSON; they become the provider's `engine_args` and `generate_args` dictionaries at bind time.
+Keep prompt construction deterministic on the first run. If you change the template, record a `run_id` or prompt version in the output.
+
+## Run a Local vLLM Sample
+
+Before adding Ray actor-pool complexity, validate the model, prompt shape, output length, and GPU memory behavior with the recommended SQL Expression path.
 
 ```python
-local_prompted = con.sql(
-    """
-    SELECT
-        run_id,
+response_rows = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         ai_prompt(
             prompt,
             struct_pack(
                 provider := 'vllm',
                 model := 'Qwen/Qwen3-1.7B',
-                concurrency := 1,
                 batch_size := 8,
+                concurrency := 1,
                 gpus_per_actor := 1.0,
                 max_retries := 0,
                 on_error := 'log',
-                system_message := 'Return one concise factual business note.',
+                system_message := 'Return concise JSON-like business notes.',
                 engine_args_json := '{"max_model_len": 2048}',
-                generate_args_json := '{"sampling_params": {"temperature": 0.0, "max_tokens": 128}}'
+                generate_args_json := '{"sampling_params":{"temperature":0.0,"max_tokens":128}}'
             )
-        ) AS response_text
-    FROM gpu_inference_candidates
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_prompted.to_table("gpu_inference_model_output")
+        ) as response_text
+    from gpu_prompts
+    order by case_id, document_id
+""")
+
+response_rows.to_table("gpu_responses")
 ```
 
-`ai_prompt` returns one `VARCHAR` beside each candidate row. Its options must be foldable constants; they cannot vary by row. SQL credential-like keys are rejected recursively, including inside the JSON bridges. A local vLLM run normally needs no hosted-provider API key. If model download requires a gated registry token, place it in the worker environment rather than SQL.
+The options argument is one foldable constant `STRUCT` shared by the query. With the local runner, Vane creates a subprocess actor and initializes the vLLM engine lazily in that worker, so the engine can be reused across batches in the same run. A nonzero `gpus_per_actor` does not reserve or isolate a local GPU; the subprocess inherits the devices visible to the driver. The first correctness check does not need Ray.
 
-With the default local runner, Vane creates a subprocess actor and initializes the real vLLM engine lazily on that worker. The actor reuses the engine for later batches in the same query. The nonzero `gpus_per_actor` value describes the intended resource, but local subprocess execution only inherits process-visible devices: it does not reserve or isolate a GPU and emits a warning for a nonzero GPU request. Set device visibility before starting the process and verify it independently.
+## Preserve IDs and Write Results
 
-Before materializing this query, the local worker must have a compatible Vane, vLLM, PyTorch, CUDA, and driver stack. Pre-stage the exact model/tokenizer artifacts when workers should run without outbound network access; otherwise allow only the artifact endpoint the model load requires. Treat `trust_remote_code` or a mutable model revision as a separate supply-chain decision rather than copying it into an example by default.
-
-## 3. Validate, Review, and Write
-
-Convert tolerant failures into an explicit status, retain the model and an audit-ready summary of the prompt template, system message, and material generation settings, and validate the keyed contract before writing.
+Because the Expression result stays in the same SQL projection, stable IDs and source metadata remain attached without positional Arrow recombination. Validate the keyed result before writing it.
 
 ```python
-local_review = con.sql(
-    """
-    SELECT
-        run_id,
+results = con.sql("""
+    select
         case_id,
         document_id,
-        document_type,
         source_uri,
-        source_text,
+        document_type,
         prompt,
         response_text,
-        'Qwen/Qwen3-1.7B'::VARCHAR AS model,
-        '{"prompt_template_version":"claims-decision-v1","system_message":"Return one concise factual business note.","max_model_len":2048,"temperature":0.0,"max_tokens":128}'::VARCHAR
-            AS config_summary,
-        CASE
-            WHEN response_text IS NULL OR trim(response_text) = ''
-                THEN 'prompt_error'
-            ELSE 'ready'
-        END::VARCHAR AS ai_status
-    FROM gpu_inference_model_output
-    ORDER BY document_type, case_id, document_id
-    """
-)
-local_review.to_table("gpu_inference_review")
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'error'
+            else 'ok'
+        end as status,
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'vLLM returned null or empty output'
+            else null
+        end as error_message,
+        'Qwen/Qwen3-1.7B' as model,
+        'claims-vllm-validation-001' as run_id
+    from gpu_responses
+    order by case_id, document_id
+""")
 
-validation = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(*) FILTER (
-            WHERE case_id IS NULL OR document_id IS NULL
-        ) AS null_key_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR source_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE ai_status <> 'ready') AS error_output_count
-    FROM gpu_inference_review
-    """
-).fetchone()
-(
-    actual_row_count,
-    null_key_count,
-    null_source_count,
-    error_output_count,
-) = validation
+if results.count("*").fetchone()[0] != prompt_table.num_rows:
+    raise ValueError("vLLM output row count does not match prompt row count")
 
-actual_keys = con.sql(
-    """
-    SELECT case_id, document_id
-    FROM gpu_inference_review
-    ORDER BY document_type, case_id, document_id
-    """
-).fetchall()
-
-assert actual_row_count == len(expected_keys)
-assert actual_keys == expected_keys
-assert null_key_count == 0
-assert null_source_count == 0
-
-expected_columns = [
-    "run_id",
-    "case_id",
-    "document_id",
-    "document_type",
-    "source_uri",
-    "source_text",
-    "prompt",
-    "response_text",
-    "model",
-    "config_summary",
-    "ai_status",
-]
-assert list(local_review.columns) == expected_columns
-assert [str(dtype) for dtype in local_review.types] == ["VARCHAR"] * 11
-
-if error_output_count:
-    raise ValueError("Review prompt_error rows before scaling the run")
-
-local_review.write_parquet("output/claims-vllm-2026-07-11-001/part-00000.parquet")
-```
-
-`on_error := 'log'` keeps exhausted failures visible as null output instead of dropping source rows. Use `on_error := 'raise'` while diagnosing setup failures. Do not blindly append a retry to a durable table: merge or replace by `(run_id, case_id, document_id)`, or write a new reviewable run directory.
-
-## 4. Use Python Expression as an Alternate
-
-Use Python Expression when the projection is assembled in Python or typed vLLM options are easier to build there. It has the same row-preserving model as SQL and still adds exactly one `VARCHAR` result column.
-
-```python
-python_provider_options = vane.ai.VLLMProviderOptions(
-    engine_args={
-        "max_model_len": 2048,
-    },
-    concurrency=1,
-    gpus_per_actor=1,
-)
-python_prompt_options = vane.ai.VLLMPromptOptions(
-    generate_args={
-        "sampling_params": {
-            "temperature": 0.0,
-            "max_tokens": 128,
-        }
-    },
-    on_error="log",
-)
-
-python_prompted = candidates.select(
-    vane.col("run_id"),
-    vane.col("case_id"),
-    vane.col("document_id"),
-    vane.col("document_type"),
-    vane.col("source_uri"),
-    vane.col("source_text"),
-    vane.col("prompt"),
-    vane.ai.prompt(
-        vane.col("prompt"),
-        provider="vllm",
-        model="Qwen/Qwen3-1.7B",
-        provider_options=python_provider_options,
-        prompt_options=python_prompt_options,
-        system_message="Return one concise factual business note.",
-    ).alias("response_text"),
+results.write_parquet(
+    "output/claims-vllm-validation-001/part-00000.parquet"
 )
 ```
 
-If you choose this alternate, apply the same ordered-key, cardinality, null/error, schema, and run-specific write checks used for the SQL result. Keep the AI Expression directly in `select(...)` with an alias. It is not a route to structured, multimodal, or table-shaped output.
+Recommended output columns:
 
-## 5. Scale Without Mixing Resource Layers
+| Column | Purpose |
+| --- | --- |
+| Business ID column | Trace each response back to a source row. |
+| Source metadata | Reproduce and review failures. |
+| `prompt` or prompt version | Explain what the model saw. |
+| `response_text` | Generated text. |
+| `status` | `ok`, `error`, or a business review state you define. |
+| `error_message` | Nullable diagnostic column for review. |
+| `model`, `run_id`, and config summary | Compare runs without guessing which settings changed. |
 
-### Local and Ray Execution
+For stricter structured or multimodal output, use the Relation `prompt(...)` path and validate its declared result before writing the final table.
 
-Use the smallest topology that answers the current question:
+## Local vLLM vs Ray-Backed vLLM
 
-| Shape | What it proves | GPU behavior |
+Use the smallest execution shape that answers the current question.
+
+| Shape | Use when | Validate |
 | --- | --- | --- |
-| Local SQL or Python Expression sample | Prompt quality, model loading, engine reuse, output length, and first memory check. | The subprocess inherits visible devices. A GPU request is advisory, produces a warning when nonzero, and provides no reservation or isolation. |
-| Ray-backed Expression or an explicit Relation Ray actor pool | Distributed imports, actor reuse, placement, and multi-GPU capacity. | Ray scheduler requests reserve resources per actor. Workers still need compatible dependencies and model artifacts. |
-| Native vLLM Ray pool | vLLM-owned routing among reusable engine actors and optional named-pool reuse. | The inner pool has its own actor count and per-actor GPU requests; include these resources in capacity planning. |
+| Local vLLM sample | Prompt correctness, model loading, output quality, and the first GPU memory check. | 10-100 rows, non-empty output, expected output format, and no model reload per row. |
+| Ray actor execution | Multi-GPU validation, actor reuse, and larger prompt batches. | Ray sees the expected GPUs, workers can import vLLM, and each actor has model files and dependencies. |
+| Native vLLM Ray actor pool | Larger batch inference where Vane should reuse vLLM actors and route work between them. | Actor pool size, GPU assignment, shared pool reuse, inflight load distribution, and throughput. |
 
-SQL `concurrency=N` and typed `VLLMProviderOptions(concurrency=N)` map to the outer AI UDF `actor_number=N`. `gpus_per_actor=G` is the request for each of those actors. On Ray, full outer-pool parallelism therefore needs at least `N * G` advertised GPU resources. This outer concurrency is not an API request semaphore and is not the Relation method's `execution_backend` selector.
-
-Native vLLM Ray execution is a separate provider topology. In Python, a raw provider-options dict can retain provider-specific `concurrency` together with `use_ray=True`; that concurrency configures the inner native vLLM pool rather than the outer AI UDF pool. `ray_actor_pool_name` also belongs to the inner topology, and a pool name alone does not enable it. SQL's same-name `concurrency` field is outer-only. Do not assume an outer actor's GPU reservation also covers inner Ray actors. Introduce one layer at a time and inspect Ray placement before combining them.
-
-### Reuse Actors and Engines
-
-The provider descriptor is lightweight. Each execution actor lazily constructs its model/client once and reuses it across batches handled by that actor. This is query-scoped execution reuse, not durable state, a checkpoint, or a guarantee that a later query will find the same engine.
-
-A named native vLLM pool can let multiple distributed executors look up the same vLLM actor set and share inflight-load tracking. Keep the pool name, model, engine arguments, generation arguments, dependencies, and model artifacts consistent. A name collision with different settings is an operational error, not an automatic model upgrade.
-
-### Group Similar Prefixes and Treat Caches as Tuning
-
-When many prompts share the same system instruction or long template, group them by task type before inference if doing so does not change business meaning. Keep the stable key in the final artifact so execution grouping never becomes the join contract.
-
-vLLM engine prefix caching is engine/version configuration. Native pool routing also exposes provider-specific controls such as `do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`, and `load_balance_threshold`. Establish a correctness and throughput baseline before changing them, and record every override. They are not generic Relation UDF actor controls.
-
-### Tune Batch Size and Concurrency Together
-
-`batch_size` controls the outer Vane batch delivered to an AI actor. Larger batches can improve vLLM continuous batching, but also increase GPU memory pressure, latency, and the number of rows affected by one failure. Increase actor count only after one actor is stable and the Ray cluster has enough GPU and host memory for another model copy.
-
-Change one variable per benchmark: outer batch size, outer actor count, vLLM engine limits, or native-pool size. Measure warm-up separately from steady state, because loading weights and compiling kernels can dominate a small sample.
-
-## 6. Operate Model Calls and Writes Safely
-
-- **Dependencies and artifacts:** every selected worker must import the same compatible vLLM/PyTorch stack and read the exact model, tokenizer, custom-code revision, and cache path. Pre-stage large artifacts or verify worker network access before scheduling the run.
-- **Credentials and network:** local vLLM usually needs no inference API credential. Put gated model-registry credentials in worker environment variables or the platform secret store, never SQL or serialized options. Restrict outbound access to required artifact locations.
-- **Retries and errors:** this sample sets wrapper retries to zero. If retries are enabled, a timeout or worker/query retry can repeat work. `on_error="log"` requires explicit null/status review.
-- **Effects and identity:** model calls and model downloads are external effects. They are not transactional or exactly-once, and rollback cannot undo completed work. Preserve stable IDs and `run_id`; make downstream writes idempotent or reviewable.
-- **Determinism:** `temperature=0` improves repeatability but does not turn a distributed GPU run into an exactly-once or byte-identical computation across model, kernel, or dependency changes.
-
-## 7. Use Relation Prompting Last for Advanced Capabilities
-
-Use `rel.prompt` only when the task requires Relation-only structured output, supported multimodal `image_columns`, an explicit Relation backend, or explicit Relation actor-pool controls. It is a Python table transformation; Vane does not expose a direct SQL Relation API or SQL table function for it. The exact capability and output boundary is in the [AI Function API Reference](/docs/data/reference/ai-api), and the design reason is in [AI Function Concepts](/docs/data/concepts/ai-functions).
-
-This construction selects a valid Ray actor backend, supplies a positive `actor_number`, requests one Ray GPU per outer actor, and asks vLLM for structured output:
+For Ray-backed vLLM validation, configure Ray before building the distributed run, and keep model options consistent with the local sample. The following advanced example intentionally uses the Relation path because it selects an explicit Relation backend and native vLLM actor-pool controls.
 
 ```python
 import vane
 
-claim_decision_schema = {
-    "type": "object",
-    "properties": {
-        "decision": {"type": "string"},
-        "reason": {"type": "string"},
-    },
-    "required": ["decision", "reason"],
-    "additionalProperties": False,
-}
-
-
 vane.configure(runner="ray")
-ray_con = vane.connect()
 
-advanced_candidates = ray_con.sql(
-    """
-    SELECT
-        CAST(case_id AS VARCHAR) AS case_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        (
-            'Return a structured claim decision and reason: '
-            || CAST(text AS VARCHAR)
-        )::VARCHAR AS prompt
-    FROM read_parquet('data/claims/documents/*.parquet')
-    WHERE case_id IS NOT NULL
-      AND document_id IS NOT NULL
-      AND text IS NOT NULL
-    ORDER BY case_id, document_id
-    LIMIT 20
-    """
-)
-
-ray_provider_options = {
-    "engine_args": {
+ray_response_only = prompts.prompt(
+    "prompt",
+    provider="vllm",
+    model="Qwen/Qwen3-1.7B",
+    output_column="response_text",
+    batch_size=32,
+    concurrency=2,
+    gpus_per_actor=1,
+    execution_backend="ray_actor",
+    use_ray=True,
+    ray_actor_pool_name="claims-vllm-validation",
+    engine_args={
+        "trust_remote_code": True,
         "max_model_len": 2048,
     },
-    "actor_number": 2,
-    "gpus_per_actor": 1.0,
-    "batch_size": 8,
-}
-ray_prompt_options = vane.ai.VLLMPromptOptions(
     generate_args={
         "sampling_params": {
             "temperature": 0.0,
@@ -3342,124 +3004,233 @@ ray_prompt_options = vane.ai.VLLMPromptOptions(
     },
     on_error="log",
 )
-
-decision_only = advanced_candidates.prompt(
-    "prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    provider_options=ray_provider_options,
-    prompt_options=ray_prompt_options,
-    return_format=claim_decision_schema,
-    output_column="decision_json",
-    execution_backend="ray_actor",
-)
 ```
 
-Here `actor_number=2` is the outer Relation UDF actor-pool size, and `gpus_per_actor=1.0` makes Ray reserve one GPU resource for each actor. Because `use_ray` is absent, each Ray UDF actor owns its local vLLM engine; this example does not create a second native vLLM Ray pool. If you deliberately choose the native pool instead, account for its separate actors and resources.
+Keep the two configuration layers separate:
 
-The built-in Relation helper may return only its configured `decision_json` column. The `_only` name makes that boundary visible: do not zip it back to `advanced_candidates` by row position. Use it as an isolated output-only stage when keys are not needed downstream. When the published artifact must retain IDs and multiple diagnostic columns, stay with SQL/Python Expression or use a custom row-preserving batch UDF with an explicit schema.
+- `execution_backend` controls where Vane runs the prompt UDF stage.
+- vLLM options such as `use_ray`, `concurrency`, `gpus_per_actor`, and `ray_actor_pool_name` control vLLM executor and actor-pool behavior.
 
-Add `image_columns=[...]` only for a provider/model combination that supports the chosen image representation, and validate the structured JSON against `claim_decision_schema` before publishing it. SQL can prepare the input and inspect a materialized result around this call, but that does not turn the Python Relation helper into a SQL Relation API.
+Change one layer at a time. If the local sample is not correct yet, Ray will make failures harder to diagnose.
 
-## Next Steps
+## Batch Cache Optimization
 
-- [AI Function API Reference](/docs/data/reference/ai-api) — exact SQL, Python Expression, Relation, typed-option, retry, and GPU contracts.
-- [AI Function Concepts](/docs/data/concepts/ai-functions) — why ordinary row enrichment and specialized Relation transformations have different boundaries.
-- [AI Functions](/docs/data/guides/ai-functions) — a complete hosted-provider task using the same stable-ID and review workflow.
-- [Ray Cluster Deployment](/docs/data/deploy/ray-cluster) and [Single-Node Deployment](/docs/data/deploy/single-node) — worker dependencies, artifacts, credentials, and resource setup.
-- [Performance Tuning](/docs/data/guides/performance-tuning) — measure batch size, actor parallelism, memory, and warm-up behavior.
+vLLM throughput does not depend only on GPU count. For a batch inference run, tune around engine reuse, bounded batches, and prompt locality.
+
+### Reuse Actors and Engines
+
+Avoid patterns that reload the model for every row or every tiny batch. Use actor-style execution for vLLM prompts, and keep `model`, `engine_args`, and dependency versions stable within one run.
+
+For Ray-backed vLLM, use a named actor pool when multiple distributed tasks should share the same vLLM actor set:
+
+```python
+ray_actor_pool_name="claims-vllm-validation"
+```
+
+The local code supports named vLLM actor pools and shares inflight tracking by pool name. This lets multiple executors see current load for each actor and route new prompt batches with better load awareness. It can also avoid repeatedly creating the same actor pool in a distributed plan.
+
+### Group Similar Prefixes
+
+When many prompts share the same system message, task template, or long prefix, and grouping does not change the business meaning of the run, group them before inference.
+
+```python
+prompts = con.sql("""
+    select
+        case_id,
+        document_id,
+        document_type,
+        source_uri,
+        case
+            when document_type = 'claim'
+                then 'You review insurance claim documents.'
+            when document_type = 'invoice'
+                then 'You review invoice support documents.'
+            else 'You review business documents.'
+        end as system_prefix,
+        'Return a short decision and reason: ' || text as prompt
+    from source_documents
+    where text is not null
+    order by document_type, case_id, document_id
+""")
+```
+
+Use `system_message` when one prefix applies to every row. If the prefix varies by row, put it into the prompt text or split the relation by task type. Final output should still be keyed by business ID so grouped execution does not make review ambiguous.
+
+The native vLLM executor includes prefix-routing controls such as `do_prefix_routing`, `min_bucket_size`, `prefix_match_threshold`, and `load_balance_threshold`. Treat them as tuning controls after you have a baseline. They are not generic UDF routing options.
+
+### Tune Batch and Concurrency Together
+
+Set `batch_size` explicitly for vLLM prompts. Larger batches can improve GPU utilization and vLLM continuous batching, but they can also increase latency, memory pressure, and failure blast radius.
+
+Increase `concurrency` only when GPU and actor memory have headroom. A simple capacity check is:
+
+```text
+required GPUs = concurrency * gpus_per_actor
+```
+
+If `concurrency=2` and `gpus_per_actor=1`, the Ray environment needs at least two available GPUs for full parallelism. If the model uses tensor parallelism or other vLLM engine-level GPU settings, include those in your own capacity estimate.
+
+## Key Configuration Concepts
+
+| Concept | Where it appears | Guidance |
+| --- | --- | --- |
+| `model` | `ai_prompt` options or `prompt(..., model=...)` | Use the exact model identifier you validated locally. |
+| `engine_args` | vLLM engine configuration | Put model loading and engine-level settings here, such as context length or trust settings. |
+| `generate_args` | vLLM generation request | Put sampling parameters here, usually under `sampling_params`. |
+| `batch_size` | Vane UDF batch and vLLM submission | Start small, then increase until GPU utilization, latency, or memory becomes the bottleneck. |
+| `concurrency` | Actor or vLLM pool size | Increase only when workers and GPUs still have headroom. |
+| `gpus_per_actor` | Ray GPU resource request for each vLLM actor | Match the model and engine setup. |
+| `ray_actor_pool_name` | Native vLLM Ray actor pool | Use it to share actor reuse in a distributed run. |
+| `on_error` | vLLM executor error behavior | Use `raise` while debugging; use `log` for validation runs that need to keep failed rows reviewable. |
+
+Vane applies throughput-oriented defaults for the native vLLM engine scheduler. You can override engine-level settings through `engine_args`. Do not copy a full vLLM serving configuration into a validation run unless you know exactly which setting you are testing.
+
+## Boundaries
+
+This guide is not a vLLM manual. It shows how to put vLLM batch inference into an Expression-first Vane workflow and what to validate before scaling.
+
+It is also not a production serving guide. It does not cover autoscaling, SLAs, traffic management, online request routing, or long-running service operation.
+
+For non-vLLM GPU models, custom tokenizers, multimodal preprocessing, or a full custom output schema, use [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For hosted provider prompting and small AI enrichment tasks, use [AI Functions](/docs/data/guides/ai-functions).
 
 ## Embeddings at Scale
 
 Route: /docs/data/guides/embeddings-at-scale
 Source: docs/data/guides/embeddings-at-scale.mdx
 
-Build embedding pipelines around a reviewable table contract: filter a deterministic candidate slice, keep stable IDs and source fields in the projection, add one embedding column, validate the materialized result, and only then write it. SQL Expression is the default path. The examples below start from prepared chunk rows so each vector already has a durable `(document_id, chunk_id)` key.
+Use Vane Data for embedding pipelines when you want SQL filtering, batch model execution, and table outputs in one workflow.
 
-## Complete a Hosted Embedding Run with SQL
+The usual shape is:
 
-This first workflow uses a hosted provider and completes the task before introducing alternate APIs. `embedding_source` and `embedding_candidates` contain no provider output, while `embedding_model_output` materializes the external call once for validation and writing.
+1. Read and filter source rows with SQL.
+2. Chunk long text into stable units.
+3. Embed chunks with SQL `ai_embed(...)`, or use the Python Expression API when the configuration belongs in Python.
+4. Write embeddings with stable document and chunk IDs.
+
+## Basic text embedding
+
+The recommended entry point is the SQL Expression API. `ai_embed` adds one embedding value per input row, so identifiers and source fields can stay in the same projection:
 
 ```python
-import math
-
 import vane
 
 con = vane.connect()
-
-source = con.sql(
-    """
+embedded = con.sql("""
     SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND chunk_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND chunk_text IS NOT NULL
-      AND length(trim(chunk_text)) > 0
-    """
+        id,
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2'
+            )
+        ) AS embedding
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+""")
+```
+
+`ai_embed` is evaluated in a `SELECT` projection and can be combined with ordinary columns. Without `dimensions`, its result type is `FLOAT[]`. The options argument is a constant `STRUCT` for the whole task, not a set of per-row values.
+
+## Chunk long text first
+
+Do not send whole documents to an embedding model unless that is intentional. Create bounded chunks with stable IDs.
+
+```python
+import pyarrow as pa
+
+def chunk_rows(batch: pa.Table) -> pa.Table:
+    doc_ids = batch.column("id").to_pylist()
+    texts = batch.column("text").to_pylist()
+    out_doc_id = []
+    out_chunk_id = []
+    out_text = []
+
+    for doc_id, text in zip(doc_ids, texts):
+        parts = [part.strip() for part in str(text).split(".") if part.strip()]
+        for idx, part in enumerate(parts):
+            out_doc_id.append(doc_id)
+            out_chunk_id.append(idx)
+            out_text.append(part)
+
+    return pa.table({
+        "id": out_doc_id,
+        "chunk_id": out_chunk_id,
+        "chunk_text": out_text,
+    })
+
+rel = con.sql("""
+    SELECT id, text
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+""")
+
+chunks = rel.map_batches(
+    chunk_rows,
+    schema={
+        "id": "BIGINT",
+        "chunk_id": "BIGINT",
+        "chunk_text": "VARCHAR",
+    },
+    batch_size=512,
+    execution_backend="subprocess_task",
 )
-source.to_table("embedding_source")
+chunks.to_table("document_chunks")
+con.sql("SELECT * FROM document_chunks").write_parquet("data/document-chunks.parquet")
+```
 
-candidates = con.sql(
-    """
+This step uses the Relation API because one document can produce multiple output rows. The Parquet copy provides the input used by the isolated Ray example below. For production systems, use a tokenizer-aware chunker that matches the model context window and preserves enough overlap for retrieval quality.
+
+## Use a local embedding model
+
+Local models are usually best with an actor backend, because model initialization is expensive. SQL `ai_embed` creates that execution path while keeping the source columns in the projection:
+
+```python
+embedded_local = con.sql("""
     SELECT
-        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
-        document_id,
+        id,
         chunk_id,
-        source_uri,
-        chunk_text
-    FROM embedding_source
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-candidates.to_table("embedding_candidates")
-
-candidate_check = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(DISTINCT struct_pack(
-            document_id := document_id,
-            chunk_id := chunk_id
-        )) AS distinct_id_count,
-        count(*) FILTER (
-            WHERE document_id IS NULL OR chunk_id IS NULL
-        ) AS null_id_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR chunk_text IS NULL
-        ) AS null_source_count
-    FROM embedding_candidates
-    """
-).fetchone()
-expected_row_count, distinct_id_count, null_id_count, null_source_count = candidate_check
-assert expected_row_count > 0
-assert distinct_id_count == expected_row_count
-assert null_id_count == 0
-assert null_source_count == 0
-
-expected_ids = con.sql(
-    """
-    SELECT document_id, chunk_id
-    FROM embedding_candidates
-    ORDER BY document_id, chunk_id
-    """
-).fetchall()
-
-embedded = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
-        chunk_id,
-        source_uri,
         chunk_text,
-        'openai'::VARCHAR AS embedding_provider,
-        'text-embedding-3-small'::VARCHAR AS embedding_model,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM document_chunks
+""")
+```
+
+Use the Python Expression API as an alternative when typed configuration or Python composition is more convenient:
+
+```python
+embedded_python = chunks.select(
+    vane.col("id"),
+    vane.col("chunk_id"),
+    vane.col("chunk_text"),
+    vane.ai.embed(
+        vane.col("chunk_text"),
+        provider="transformers",
+        model="sentence-transformers/all-MiniLM-L6-v2",
+    ).alias("embedding"),
+)
+```
+
+Both forms are row-preserving Expression operations. When the provider detects usable GPU resources, it may request a GPU from the UDF execution layer.
+
+## Use hosted embedding APIs
+
+Hosted providers are useful when you want managed models and can tolerate API latency and rate limits. The SQL form remains the preferred entry point:
+
+```python
+embedded_hosted = con.sql("""
+    SELECT
+        id,
+        chunk_id,
+        chunk_text,
         ai_embed(
             chunk_text,
             struct_pack(
@@ -3468,353 +3239,74 @@ embedded = con.sql(
                 dimensions := 512,
                 normalize := true,
                 batch_size := 64,
-                concurrency := 2,
-                on_error := 'raise'
+                concurrency := 8
             )
         ) AS embedding
-    FROM embedding_candidates
-    ORDER BY document_id, chunk_id
-    """
-)
-embedded.to_table("embedding_model_output")
+    FROM document_chunks
+""")
+```
 
-output_check = con.sql(
-    """
+Set credentials such as `OPENAI_API_KEY` in every worker environment; credential-like fields are rejected in SQL options. `concurrency` controls the number of AI actors, while request-level concurrency depends on the provider. Increase either only after measuring rate limits, retries, and cost on a bounded input.
+
+## Use Ray for larger jobs
+
+Move to Ray after the local path is correct. Configure the runner before creating the connection or input relation; the SQL Expression itself does not change:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+
+embedded_ray = con.sql("""
     SELECT
-        count(*) AS row_count,
-        count(DISTINCT struct_pack(
-            document_id := document_id,
-            chunk_id := chunk_id
-        )) AS distinct_id_count,
-        count(*) FILTER (
-            WHERE document_id IS NULL OR chunk_id IS NULL
-        ) AS null_id_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR chunk_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE embedding IS NULL) AS null_embedding_count
-    FROM embedding_model_output
-    """
-).fetchone()
-(
-    actual_row_count,
-    actual_distinct_id_count,
-    actual_null_id_count,
-    actual_null_source_count,
-    null_embedding_count,
-) = output_check
-assert actual_row_count == expected_row_count
-assert actual_distinct_id_count == expected_row_count
-assert actual_null_id_count == 0
-assert actual_null_source_count == 0
-assert null_embedding_count == 0
-
-actual_ids = con.sql(
-    """
-    SELECT document_id, chunk_id
-    FROM embedding_model_output
-    ORDER BY document_id, chunk_id
-    """
-).fetchall()
-assert actual_ids == expected_ids
-
-result = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
+        id,
         chunk_id,
-        source_uri,
         chunk_text,
-        embedding_provider,
-        embedding_model,
-        embedding
-    FROM embedding_model_output
-    ORDER BY document_id, chunk_id
-    """
-)
-expected_columns = [
-    "run_id",
-    "document_id",
-    "chunk_id",
-    "source_uri",
-    "chunk_text",
-    "embedding_provider",
-    "embedding_model",
-    "embedding",
-]
-expected_types = [
-    "VARCHAR",
-    "VARCHAR",
-    "BIGINT",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "FLOAT[512]",
-]
-assert list(result.columns) == expected_columns
-assert [str(dtype) for dtype in result.types] == expected_types
-
-for document_id, chunk_id, vector in con.sql(
-    """
-    SELECT document_id, chunk_id, embedding
-    FROM embedding_model_output
-    """
-).fetchall():
-    assert document_id is not None and chunk_id is not None
-    assert len(vector) == 512
-    assert all(math.isfinite(float(value)) for value in vector)
-    norm = math.sqrt(sum(float(value) ** 2 for value in vector))
-    assert math.isclose(norm, 1.0, rel_tol=1e-4, abs_tol=1e-4)
-
-result.write_parquet("output/embedding-run-2026-07-11-001/part-00000.parquet")
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM read_parquet('data/document-chunks.parquet')
+""")
 ```
 
-The second argument to `ai_embed` is one foldable constant `STRUCT`: provider, model, vector shape, normalization, batching, actor count, and error policy bind once for the task rather than becoming columns or per-row options. SQL binding rejects credential-like fields. Put `OPENAI_API_KEY` and any endpoint-specific secrets in every worker environment, never in SQL text or serialized options.
+Every Ray worker must be able to import the provider libraries and access model files or provider credentials. Local subprocess execution inherits visible devices but does not reserve or isolate GPUs; use Ray when explicit resource scheduling is required.
 
-The `LIMIT` is safe only with a deterministic `ORDER BY`. Increase it after the complete check passes; do not replace the stable business key with a generated row number.
+## Output shape
 
-## Choose Vector Shape and Normalization
+Write a complete relation that makes downstream retrieval and auditing straightforward:
 
-Without `dimensions`, the declared SQL and Python Expression type is dynamic `FLOAT[]`. Set `dimensions=N` only when the selected provider and model support that size; the result is fixed `FLOAT[N]`, which makes schema drift and wrong-length vectors easier to reject before indexing.
+- `document_id`
+- `chunk_id`
+- `chunk_text`
+- `embedding`
+- `source_uri`
+- model name and provider
+- creation timestamp or run ID when needed
 
-`normalize=true` requests L2 normalization. Choose it at task level according to the retrieval metric and index contract, then verify finite values, exact length, and approximately unit norm as the completed workflow does. Do not infer correctness from a provider request succeeding. See the [AI Function API Reference](/docs/data/reference/ai-api) for exact provider, dimension, normalization, retry, and error options.
-
-## Tune Batches, Concurrency, and Workers
-
-- `batch_size` controls how many input rows reach an AI actor in one UDF batch. The OpenAI embedding implementation may further pack requests under its token budget. Increase batch size until memory, latency, or failure scope becomes the limiting factor.
-- SQL `concurrency` maps to the AI actor count. It is not a per-row option and does not itself mean that one actor sends that many simultaneous requests. Request-level controls such as `max_api_concurrency` are provider- and capability-specific; do not assume every embedding provider consumes them.
-- More actors can raise throughput, but also increase quota pressure, retries, cost, and duplicate external effects after task retries. Measure a bounded slice first.
-- The active runner resolves SQL and Python Expression actors to local subprocesses or Ray actors. Local subprocesses inherit visible devices but do not reserve or isolate GPUs. Configure Ray before constructing the relation when scheduling, distributed scans, or GPU placement require it.
-- Every worker needs the provider package, network and storage access, credential environment variables, and—for local models—the same model files or download access. Keep model and dependency versions identical across workers.
-
-For vLLM GPU operation and actor-pool validation, continue with [GPU Inference](/docs/data/guides/gpu-inference).
-
-## Use Python Expression as an Alternate
-
-Use Python Expression when typed configuration belongs in Python. It has the same one-column, row-preserving projection semantics as the SQL workflow, including the same IDs and source fields.
+Because the Expression API keeps identifiers and embeddings in one projection, the result can be written directly after validation:
 
 ```python
-import vane
-
-con = vane.connect()
-candidates = con.sql(
-    """
-    SELECT
-        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND chunk_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND chunk_text IS NOT NULL
-      AND length(trim(chunk_text)) > 0
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-
-python_embedded = candidates.select(
-    vane.col("run_id"),
-    vane.col("document_id"),
-    vane.col("chunk_id"),
-    vane.col("source_uri"),
-    vane.col("chunk_text"),
-    vane.lit("openai").alias("embedding_provider"),
-    vane.lit("text-embedding-3-small").alias("embedding_model"),
-    vane.ai.embed(
-        vane.col("chunk_text"),
-        provider="openai",
-        model="text-embedding-3-small",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            concurrency=2,
-        ),
-        embedding_options=vane.ai.OpenAIEmbeddingOptions(
-            on_error="raise",
-        ),
-        dimensions=512,
-        normalize=True,
-    ).alias("embedding"),
-)
+embedded_hosted.write_parquet("output/embeddings/part-00000.parquet")
 ```
 
-Apply the SQL workflow's row-count, ordered-key, null, type, dimension, finite-value, normalization, and run-specific write checks before publishing this alternate. Keep the AI call directly inside `rel.select(...)` with an alias; do not manually combine a result-only column with source rows by position.
+Before writing, validate row counts, stable IDs, nulls, and vector dimensions. For distributed writes, ensure every worker can access the output filesystem.
 
-## Run Local Transformers Locally or on Ray
+## Tuning checklist
 
-For an offline or private path, rebuild the same Expression with a local Transformers model. The default runner uses a local subprocess actor. Configure Ray before creating the connection and relation when the execution must use Ray.
-
-```python
-import vane
-
-vane.configure(runner="ray")
-con = vane.connect()
-candidates = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE chunk_text IS NOT NULL
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-
-ray_embedded = candidates.select(
-    vane.col("document_id"),
-    vane.col("chunk_id"),
-    vane.col("source_uri"),
-    vane.col("chunk_text"),
-    vane.ai.embed(
-        vane.col("chunk_text"),
-        provider="transformers",
-        model="sentence-transformers/all-MiniLM-L6-v2",
-        provider_options={"batch_size": 64},
-        dimensions=384,
-        normalize=True,
-    ).alias("embedding"),
-)
-```
-
-The model is instantiated lazily and reused across batches in its actor. The Transformers provider requests a GPU resource when CUDA is detected; Ray can reserve that resource, while a local subprocess cannot. Switching runners does not by itself promise more model actors, so validate the physical actor count, GPU assignment, model reuse, and output contract before scaling.
-
-## Keep Outputs Reviewable and Downstream Writes Idempotent
-
-Hosted provider calls are external effects outside SQL transactions and are not exactly-once. A retry can repeat a request and charge even if the original query never publishes a table. Preserve stable IDs, source text or a durable source reference, provider/model/config, and `run_id` beside every vector so inputs and outputs remain reviewable.
-
-Write each provider run to a unique path. For a durable index or table, merge or replace by `(run_id, document_id, chunk_id)`—or by a versioned business key when a run ID should be superseded—instead of blindly appending retries. Keep candidate and materialized model-output tables separate so validation never reissues the provider call.
-
-## Use Relation Embedding Only for Built-In Long-Text Chunking
-
-The Python Relation helper is useful when its built-in `max_chunk_chars` and `chunk_overlap_chars` behavior is the capability the task needs, or when an explicit Relation backend and actor pool are required. Vane exposes no direct SQL Relation or table-function API for this helper.
-
-```python
-import vane
-
-vane.configure(runner="ray")
-con = vane.connect()
-long_text_source = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/documents/*.parquet')
-    WHERE text IS NOT NULL
-    ORDER BY document_id
-    LIMIT 100
-    """
-)
-
-embedding_only = long_text_source.embed_text(
-    "source_text",
-    provider="openai",
-    model="text-embedding-3-small",
-    dimensions=512,
-    output_column="embedding",
-    max_chunk_chars=2000,
-    chunk_overlap_chars=200,
-    batch_size=64,
-    actor_number=2,
-    num_gpus=0,
-    execution_backend="ray_actor",
-)
-```
-
-Here `actor_number` is an explicit Relation UDF actor-pool control, distinct from configuring provider `concurrency` on an Expression; the actor backend must match it. The helper splits each input internally, combines chunk vectors with a text-length-weighted average, normalizes the combined vector, and declares its configured output column as dynamic `FLOAT[]` even when provider dimensions are requested.
-
-`embedding_only` is deliberate: the helper does not promise to retain `document_id`, `source_uri`, or `source_text`, and it does not emit one output row per internal chunk. Never reconnect it to source rows by position. Use the SQL or Python Expression path when stable source columns must accompany each vector, and use the custom preprocessing stage when chunks need independent IDs and rows.
-
-## Use a Custom Relation UDF Only for Table-Shaped Preprocessing
-
-Use a custom Relation UDF when preprocessing must change cardinality or return several columns, such as turning documents into durable chunk rows. Do not replace the row-preserving embedding Expression with a custom UDF merely to add one vector column.
-
-```python
-import pyarrow as pa
-
-import vane
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/documents/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND text IS NOT NULL
-    """
-)
-
-
-def chunk_documents(batch: pa.Table) -> pa.Table:
-    document_ids = batch.column("document_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
-    source_texts = batch.column("source_text").to_pylist()
-    out_document_id = []
-    out_chunk_id = []
-    out_source_uri = []
-    out_chunk_text = []
-    out_chunker_version = []
-
-    for document_id, source_uri, source_text in zip(
-        document_ids,
-        source_uris,
-        source_texts,
-    ):
-        parts = [
-            part.strip()
-            for part in str(source_text).split(".")
-            if part.strip()
-        ]
-        for chunk_id, chunk_text in enumerate(parts):
-            out_document_id.append(document_id)
-            out_chunk_id.append(chunk_id)
-            out_source_uri.append(source_uri)
-            out_chunk_text.append(chunk_text)
-            out_chunker_version.append("sentence-v1")
-
-    return pa.table(
-        {
-            "document_id": pa.array(out_document_id, type=pa.string()),
-            "chunk_id": pa.array(out_chunk_id, type=pa.int64()),
-            "source_uri": pa.array(out_source_uri, type=pa.string()),
-            "chunk_text": pa.array(out_chunk_text, type=pa.string()),
-            "chunker_version": pa.array(
-                out_chunker_version,
-                type=pa.string(),
-            ),
-        }
-    )
-
-
-chunks = source.map_batches(
-    chunk_documents,
-    schema={
-        "document_id": "VARCHAR",
-        "chunk_id": "BIGINT",
-        "source_uri": "VARCHAR",
-        "chunk_text": "VARCHAR",
-        "chunker_version": "VARCHAR",
-    },
-    batch_size=512,
-    execution_backend="subprocess_task",
-)
-chunks.to_table("embedding_chunks")
-```
-
-The example is intentionally simple. Production chunkers should be tokenizer-aware, bound chunk size and overlap to the model contract, and version the algorithm. Validate unique `(document_id, chunk_id)` keys and deterministic output before sending `embedding_chunks` through the SQL workflow.
-
-For the complete capability boundary and execution semantics, read [AI Function Concepts](/docs/data/concepts/ai-functions), then use the [AI Functions Guide](/docs/data/guides/ai-functions) for a broader end-to-end task and [GPU Inference](/docs/data/guides/gpu-inference) for GPU-specific operation.
+- Filter and project before embedding.
+- Keep chunks bounded and deterministic.
+- Use actor execution for local models.
+- Increase `batch_size` until latency or memory becomes the bottleneck.
+- Increase actor or provider request concurrency only when workers and API quota have headroom.
+- Use Ray when scan, inference, or write throughput exceeds one process, or when resource scheduling is required.
+- Keep output rows deterministic with stable document and chunk IDs.
+- Set fixed `dimensions` only when the provider and model support that vector size.
 
 ## Performance Tuning
 

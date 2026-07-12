@@ -2,555 +2,502 @@
 title: Custom Python UDFs
 ---
 
-This guide completes one real task: normalize document text into a typed review column, keep every result traceable to a stable document ID and source URI, validate the output contract, write Parquet, and clean up the registered SQL alias.
+Use Custom Python UDFs when a Vane Data pipeline needs Python logic that does not fit cleanly in SQL or a built-in AI Function: external libraries, custom rules, media processing, model preprocessing, custom inference, private clients, or a fully controlled output schema.
 
-Use the [UDF API Reference](/docs/data/reference/udf-api) for exact signatures and restrictions. Use [UDF Concepts](/docs/data/concepts/udfs) for the reasons behind the SQL-first Expression model and the Relation escape hatch.
+This guide focuses on the UDF types you can use and how to choose between them. For one typed result beside existing columns, prefer an Expression UDF: register a SQL alias for the recommended SQL workflow, or build the same projection with the Python Expression API. Use the Relation API when the UDF owns a multi-column or row-changing table stage.
 
-## Task Goal and Prerequisites
+## Choose a UDF Type
 
-The primary workflow runs locally against inline data. It requires a working Vane installation, but the task itself needs no Ray cluster, GPU, external files, credentials, or PyArrow code. It writes `output/document-review.parquet`.
+Choose the output shape first, then the callable shape. The execution backend is a separate choice that controls where the callable runs.
 
-The source contract has three explicitly typed columns:
+| UDF type | Preferred API | Callable shape | Use when |
+| --- | --- | --- | --- |
+| Stateless scalar Expression UDF | Registered SQL alias; Python `vane.func` when constructing expressions in Python | Scalar function | Add one typed, row-preserving value beside existing columns. |
+| Stateless batch Expression UDF | Registered SQL alias; Python `vane.func.batch` when constructing expressions in Python | Arrow function | Batching helps, but the result is still one typed column. |
+| Stateful Expression UDF | Registered SQL alias; Python `vane.cls` or `vane.cls.batch` | Callable class | One typed result needs query-scoped actor state. |
+| Stateless batch Relation UDF | `map_batches` | Python function | Return a multi-column or whole-table result without reusable state. |
+| Stateful batch Relation UDF | `map_batches` | Callable class | Return a table-shaped result while reusing expensive setup across batches. |
+| Row-expanding Relation UDF | `flat_map` | Row function | One input row can produce zero, one, or many output rows. |
+| Scalar Relation UDF | `map` | Scalar function | An explicit Relation executor and its pass-through result shape are required. |
 
-| Column | Type | Purpose |
-| --- | --- | --- |
-| `document_id` | `VARCHAR` | Stable business ID used for row-count and identity checks. |
-| `source_uri` | `VARCHAR` | Traceable source location retained in every result. |
-| `text` | `VARCHAR` | Nullable input to normalize. |
-
-For numeric UDFs, make the same type boundary explicit: use `1.25::DOUBLE` with `parameters=["DOUBLE"]` and `return_dtype="DOUBLE"`. A bare decimal literal is normally `DECIMAL`, which should not be silently treated as the same contract as `DOUBLE`.
-
-## Primary Workflow: SQL Expression (Recommended)
-
-Define a raw Python scalar callable first—there is no `vane.func` decorator in the primary path. Then create the connection and source, attach a typed alias to that connection, and invoke the alias only in a SQL `SELECT` projection.
+For a normal row-preserving enrichment, start with a connection-scoped SQL alias. Filtering, joining, and source-column selection remain ordinary SQL, while the Python callable contributes one typed projection value:
 
 ```python
 import vane
 
-import re
-from pathlib import Path
-
-
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL),
-        ('doc-003', 's3://sample/doc-003.txt', ' APPROVED ')
-    ) AS source_rows(document_id, source_uri, text)
-    ORDER BY document_id
-    """
-)
-source.to_table("udf_source_documents")
+
+
+def normalize_document_type(value):
+    return str(value or "unknown").strip().lower()
+
 
 vane.attach_function(
-    normalize_review_text,
-    alias="normalize_review_text_sql",
+    normalize_document_type,
+    alias="normalize_document_type_sql",
     connection=con,
     parameters=["VARCHAR"],
     return_dtype="VARCHAR",
 )
 
 try:
-    projected = con.sql(
-        """
-        SELECT
+    normalized = con.sql("""
+        select
             document_id,
-            source_uri,
-            text,
-            normalize_review_text_sql(text) AS review_text
-        FROM udf_source_documents
-        ORDER BY document_id
-        """
-    )
-    projected.to_table("udf_reviewed_documents")
-    result = con.table("udf_reviewed_documents")
-
-    expected_ids = [
-        row[0]
-        for row in con.sql(
-            "SELECT document_id FROM udf_source_documents ORDER BY document_id"
-        ).fetchall()
-    ]
-    rows = result.order("document_id").fetchall()
-    actual_ids = [row[0] for row in rows]
-
-    assert list(result.columns) == [
-        "document_id",
-        "source_uri",
-        "text",
-        "review_text",
-    ]
-    assert [str(dtype) for dtype in result.types] == [
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-        "VARCHAR",
-    ]
-    assert len(rows) == len(expected_ids)
-    assert actual_ids == expected_ids
-    assert len(set(actual_ids)) == len(expected_ids)
-
-    source_nulls = con.sql(
-        "SELECT count(*) FROM udf_source_documents WHERE text IS NULL"
-    ).fetchone()[0]
-    result_nulls = con.sql(
-        "SELECT count(*) FROM udf_reviewed_documents WHERE review_text IS NULL"
-    ).fetchone()[0]
-    assert result_nulls == source_nulls
-    assert rows[0][3] == "missing signature"
-    assert rows[2][3] == "approved"
-
-    output_dir = Path("output")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result.write_parquet(
-        str(output_dir / "document-review.parquet"),
-        overwrite=True,
-    )
+            normalize_document_type_sql(document_type) as document_type
+        from (values
+            ('doc-001', ' Invoice '),
+            ('doc-002', null)
+        ) as documents(document_id, document_type)
+    """)
+    normalized.show()
 finally:
-    try:
-        vane.detach_function("normalize_review_text_sql", connection=con)
-    finally:
-        con.close()
+    vane.detach_function("normalize_document_type_sql", connection=con)
 ```
 
-The alias is connection-scoped, row-preserving in v1, and valid only in projection positions. Filter and join the source with ordinary SQL before this projection; do not put the alias in `WHERE`, `GROUP BY`, `HAVING`, join conditions, aggregate arguments, or short-circuit-sensitive expressions. The authoritative placement and registration rules are in the [UDF API Reference](/docs/data/reference/udf-api).
+The alias is scoped to `con` and is supported in `SELECT` projections. Apply filters, joins, and grouping before the UDF projection. Use `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` instead when the projection needs to be assembled as Python Expression objects. See the [UDF API Reference](/docs/data/reference/udf-api) for registration signatures and placement restrictions.
 
-Materializing `udf_reviewed_documents` makes validation and the final write operate on one completed UDF result rather than rerunning the callable for every check. The assertions verify schema, exact SQL types, row count, distinct ordered IDs, null propagation, and representative values before any output is accepted. `finally` removes the alias from the same connection even when projection, validation, or writing fails.
+## Stateless Batch UDFs
 
-SQL is the default because relational selection stays visible while one typed Python result composes beside the original columns. See [UDF Concepts](/docs/data/concepts/udfs) for that design rationale.
+Use a stateless batch UDF when each batch can be processed independently:
 
-## Alternate Workflow: Python Expression
+- text cleanup
+- rule-based labeling
+- metadata checks
+- lightweight parsing
+- deterministic feature extraction
+- Python library calls that do not need reusable state
 
-Use Python construction when expressions are assembled dynamically, reused as Python objects, or composed in a notebook or library. This is an alternate call form for the same typed projection model, not a different output model.
-
-### Scalar Python Expression with `vane.func`
-
-The following task produces the same four-column, row-preserving projection without registering a SQL alias:
+A stateless batch UDF is a Python function that receives a `pyarrow.Table` and returns a `pyarrow.Table`. If it produces one typed column and preserves input row count, it can be registered as a SQL Expression alias or used through Python `vane.func.batch(..., row_preserving=True)`. The example below returns source fields, diagnostics, and several derived columns together, so the table-shaped `map_batches` Relation API is the better fit.
 
 ```python
-import vane
-
 import re
 
-
-@vane.func(return_dtype="VARCHAR")
-def normalize_review_text(text):
-    if text is None:
-        return None
-    return re.sub(r"\s+", " ", text).strip().lower()
-
+import pyarrow as pa
+import vane
 
 con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
+
+documents = con.sql("""
+    select
+        cast(document_id as varchar) as document_id,
+        source_uri,
+        media_type,
+        document_type,
+        text
+    from read_parquet('data/documents/*.parquet')
+    where text is not null
+    order by document_id
+    limit 100
+""")
+
+SUPPORTED_MEDIA_TYPES = {"application/pdf", "text/plain", "text/html"}
+RISK_TERMS = ("missing signature", "expired", "redacted incorrectly")
+
+
+def prepare_document_text(batch: pa.Table) -> pa.Table:
+    document_ids = batch.column("document_id").to_pylist()
+    source_uris = batch.column("source_uri").to_pylist()
+    media_types = batch.column("media_type").to_pylist()
+    document_types = batch.column("document_type").to_pylist()
+    texts = batch.column("text").to_pylist()
+
+    normalized_text = []
+    text_length = []
+    needs_review = []
+    review_reason = []
+    status = []
+    error = []
+
+    for media_type, text in zip(media_types, texts, strict=False):
+        try:
+            clean = re.sub(r"\s+", " ", str(text or "")).strip()
+            lower = clean.lower()
+
+            normalized_text.append(clean)
+            text_length.append(len(clean))
+
+            if media_type not in SUPPORTED_MEDIA_TYPES:
+                needs_review.append(True)
+                review_reason.append("unsupported_media_type")
+            elif not clean:
+                needs_review.append(True)
+                review_reason.append("empty_text")
+            elif any(term in lower for term in RISK_TERMS):
+                needs_review.append(True)
+                review_reason.append("risk_term")
+            else:
+                needs_review.append(False)
+                review_reason.append("none")
+            status.append("ok")
+            error.append("")
+        except Exception as exc:
+            normalized_text.append("")
+            text_length.append(0)
+            needs_review.append(True)
+            review_reason.append("udf_error")
+            status.append("failed")
+            error.append(f"prepare_document_text: {type(exc).__name__}: {exc}")
+
+    return pa.table({
+        "document_id": document_ids,
+        "source_uri": source_uris,
+        "media_type": media_types,
+        "document_type": document_types,
+        "normalized_text": normalized_text,
+        "text_length": text_length,
+        "needs_review": needs_review,
+        "review_reason": review_reason,
+        "status": status,
+        "error": error,
+    })
+
+
+prepared_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "media_type": "VARCHAR",
+    "document_type": "VARCHAR",
+    "normalized_text": "VARCHAR",
+    "text_length": "BIGINT",
+    "needs_review": "BOOLEAN",
+    "review_reason": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=64,
+    execution_backend="subprocess_task",
 )
 
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    normalize_review_text(vane.col("text")).alias("review_text"),
-)
-
-assert list(result.columns) == [
-    "document_id",
-    "source_uri",
-    "text",
-    "review_text",
-]
-assert len(result.fetchall()) == 2
-con.close()
+prepared.show()
 ```
 
-### Arrow Batch Python Expression with `vane.func.batch`
+The returned table contains both new fields and the source fields needed by later stages. `map_batches` returns the columns produced by the UDF; it does not automatically preserve upstream columns.
 
-Use a batch Expression when batching helps but the contract is still one typed output column beside the input rows:
+For comparison, a row-preserving Python batch Expression names its input columns explicitly and declares exactly one output column:
 
 ```python
-import vane
-
-import re
-import pyarrow as pa
-
-
-def normalize_review_batch(table):
+def normalize_text_batch(table: pa.Table) -> pa.Table:
     values = table.column("text").to_pylist()
-    normalized = [
-        None if value is None else re.sub(r"\s+", " ", value).strip().lower()
-        for value in values
-    ]
-    return pa.table({"review_text": pa.array(normalized, type=pa.string())})
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-review_text = vane.func.batch(
-    normalize_review_batch,
-    inputs={"text": vane.col("text")},
-    schema={"review_text": "VARCHAR"},
-    row_preserving=True,
-).alias("review_text")
-
-result = source.select(
-    vane.col("document_id"),
-    vane.col("source_uri"),
-    vane.col("text"),
-    review_text,
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-`row_preserving=True` checks that the batch output has one row per input row and permits normal columns beside it. `row_preserving=False` is the explicit Python batch Expression exception: it may change cardinality, but the batch result must be the sole top-level projection, and it cannot be registered as a SQL alias in v1. See the [UDF API Reference](/docs/data/reference/udf-api) for the exact batch and placement contracts.
-
-## Stateful `vane.cls`: A Narrow Contract
-
-Use `vane.cls` only when mutable state must live in one actor for one query. In v1, `actor_number=1` is required; the state is query-scoped, actor-local, ephemeral, not checkpointed, and not exactly-once. This memoizer keeps an in-query cache while still returning one deterministic typed column:
-
-```python
-import vane
-
-import re
-
-
-@vane.cls(actor_number=1, return_dtype="VARCHAR")
-class QueryMemoizer:
-    def __init__(self):
-        self.cache = {}
-
-    def __call__(self, text):
-        if text not in self.cache:
-            self.cache[text] = re.sub(r"\s+", " ", text).strip().lower()
-        return self.cache[text]
-
-
-memoizer = QueryMemoizer()
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', ' Repeat   me '),
-        ('doc-002', ' Repeat   me ')
-    ) AS source_rows(document_id, text)
-    """
-)
-
-result = source.select(
-    vane.col("document_id"),
-    memoizer(vane.col("text")).alias("review_text"),
-)
-
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-Actor loss fails the query, and distributed execution does not define a stable global row-evaluation order. Do not use this contract as durable, global, keyed, or transactional state. The exact restrictions belong to the [UDF API Reference](/docs/data/reference/udf-api); the reasons and failure model are explained in [UDF Concepts](/docs/data/concepts/udfs). If the need is only to reuse an expensive model or client and multiple independent actors are acceptable, use the actor-backed Relation pattern below.
-
-## Relation API for Table-Shaped Capabilities
-
-Move to Relation API only when the required capability is table-shaped or needs an explicit Relation executor. Vane does not expose a direct SQL table-function form for these UDFs, so these stages are constructed in Python. Each example below names the capability that requires Relation API.
-
-### Capability: Arrow Multi-Column or Whole-Table Output — `rel.map_batches`
-
-`rel.map_batches` is required here because one call returns stable source fields plus several new columns. Relation output contains only the declared schema, so pass-through fields must be returned explicitly.
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-def prepare_review_batch(table):
-    document_ids = table.column("document_id").to_pylist()
-    source_uris = table.column("source_uri").to_pylist()
-    texts = table.column("text").to_pylist()
-    review_text = [
-        None if text is None else re.sub(r"\s+", " ", text).strip().lower()
-        for text in texts
-    ]
-    text_length = [None if text is None else len(text) for text in review_text]
-    status = ["missing_text" if text is None else "ok" for text in review_text]
-    return pa.table(
-        {
-            "document_id": pa.array(document_ids, type=pa.string()),
-            "source_uri": pa.array(source_uris, type=pa.string()),
-            "review_text": pa.array(review_text, type=pa.string()),
-            "text_length": pa.array(text_length, type=pa.int64()),
-            "status": pa.array(status, type=pa.string()),
-        }
-    )
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', ' Missing   signature '),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "review_text": duckdb.sqltypes.VARCHAR,
-    "text_length": duckdb.sqltypes.BIGINT,
-    "status": duckdb.sqltypes.VARCHAR,
-}
-
-result = source.map_batches(
-    prepare_review_batch,
-    schema=review_schema,
-    batch_size=2,
-    execution_backend="subprocess_task",
-)
-
-assert list(result.columns) == list(review_schema)
-assert len(result.fetchall()) == 2
-con.close()
-```
-
-### Capability: Explicit Zero, One, or Many Rows — `rel.flat_map`
-
-`rel.flat_map` is the explicit cardinality boundary for filtering or expansion. This task emits zero tokens for null text and many tokens for non-null text while carrying the stable ID and source URI into every emitted row.
-
-```python
-import vane
-
-import duckdb
-
-
-def split_document(row):
-    text = row["text"]
-    if text is None:
-        return
-    for token_index, token in enumerate(text.split()):
-        yield {
-            "document_id": row["document_id"],
-            "source_uri": row["source_uri"],
-            "token_index": token_index,
-            "token": token.lower(),
-        }
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha Beta'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-token_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "token_index": duckdb.sqltypes.INTEGER,
-    "token": duckdb.sqltypes.VARCHAR,
-}
-
-tokens = source.flat_map(
-    split_document,
-    schema=token_schema,
-    execution_backend="subprocess_task",
-)
-
-assert tokens.order("document_id, token_index").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", 0, "alpha"),
-    ("doc-001", "s3://sample/doc-001.txt", 1, "beta"),
-]
-con.close()
-```
-
-### Capability: Row-Wise Scalar Output with an Explicit Relation Executor — `rel.map`
-
-Current `rel.map` calls the scalar function with all input columns as positional values and returns the original columns plus a result column named `value`. It is not the stale pandas DataFrame batch-mapping API. Use it when the standardized pass-through-plus-`value` contract or explicit Relation backend controls are the capability you need.
-
-```python
-import vane
-
-import duckdb
-
-
-def build_review_key(document_id, source_uri, text):
-    text_size = len(text or "")
-    return f"{document_id}:{text_size}"
-
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Alpha'),
-        ('doc-002', 's3://sample/doc-002.txt', NULL)
-    ) AS source_rows(document_id, source_uri, text)
-    """
-)
-
-mapped = source.map(
-    build_review_key,
-    return_type=duckdb.sqltypes.VARCHAR,
-    execution_backend="subprocess_task",
-)
-result = mapped.project(
-    "document_id, source_uri, text, value AS review_key"
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", "Alpha", "doc-001:5"),
-    ("doc-002", "s3://sample/doc-002.txt", None, None),
-]
-con.close()
-```
-
-### Capability: Model or Client Reuse Across Batches — Actor-Backed Relation Classes
-
-Pass a zero-argument callable class—not an already-created instance—when setup should be reused by one or more Relation actors. Each actor constructs and reuses its own instance; multiple actors provide independent reuse and parallelism, not shared or keyed state.
-
-```python
-import vane
-
-import re
-import duckdb
-import pyarrow as pa
-
-
-class ReviewRuleSet:
-    def __init__(self):
-        self.risk_pattern = re.compile(r"missing|expired", re.IGNORECASE)
-
-    def __call__(self, table):
-        document_ids = table.column("document_id").to_pylist()
-        source_uris = table.column("source_uri").to_pylist()
-        texts = table.column("text").to_pylist()
-        needs_review = [
-            bool(self.risk_pattern.search(text or ""))
-            for text in texts
+    return pa.table({
+        "normalized_text": [
+            None if value is None else str(value).strip().lower()
+            for value in values
         ]
-        return pa.table(
-            {
-                "document_id": pa.array(document_ids, type=pa.string()),
-                "source_uri": pa.array(source_uris, type=pa.string()),
-                "needs_review": pa.array(needs_review, type=pa.bool_()),
-            }
-        )
+    })
 
 
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        document_id::VARCHAR AS document_id,
-        source_uri::VARCHAR AS source_uri,
-        text::VARCHAR AS text
-    FROM (VALUES
-        ('doc-001', 's3://sample/doc-001.txt', 'Missing signature'),
-        ('doc-002', 's3://sample/doc-002.txt', 'Approved')
-    ) AS source_rows(document_id, source_uri, text)
-    """
+normalized_text = vane.func.batch(
+    normalize_text_batch,
+    inputs={"text": vane.col("text")},
+    schema={"normalized_text": "VARCHAR"},
+    row_preserving=True,
+).alias("normalized_text")
+
+normalized = documents.select(
+    vane.col("document_id"),
+    normalized_text,
 )
-review_schema = {
-    "document_id": duckdb.sqltypes.VARCHAR,
-    "source_uri": duckdb.sqltypes.VARCHAR,
-    "needs_review": duckdb.sqltypes.BOOLEAN,
-}
-
-result = source.map_batches(
-    ReviewRuleSet,
-    schema=review_schema,
-    batch_size=1,
-    execution_backend="subprocess_actor",
-    actor_number=2,
-    gpus=0.0,
-)
-
-assert result.order("document_id").fetchall() == [
-    ("doc-001", "s3://sample/doc-001.txt", True),
-    ("doc-002", "s3://sample/doc-002.txt", False),
-]
-con.close()
 ```
 
-For a real model or client, initialize it in `__init__` or lazily on first use so each actor owns and reuses that resource. Keep constructors zero-argument; put deployment-specific configuration in a serializable wrapper, class defaults, or the worker environment.
+Use the registered SQL form when this projection belongs in a SQL pipeline; use this Python form when expressions are assembled dynamically.
 
-### Scale Backends and Resources
+Validate the stateless UDF before increasing the batch size or moving to Ray:
 
-Prove the callable and schema on a small local sample before changing the execution shape:
+```python
+prepared.to_table("prepared_documents")
 
-1. Use `subprocess_task` for a stateless function.
-2. Use `subprocess_actor` for local callable-class reuse.
-3. Move stateless work to `ray_task` only when distribution helps.
-4. Move callable-class work to `ray_actor` for distributed reuse, actor pools, or Ray resource scheduling.
+summary = con.sql("""
+    select
+        document_type,
+        media_type,
+        needs_review,
+        review_reason,
+        count(*) as rows
+    from prepared_documents
+    group by document_type, media_type, needs_review, review_reason
+    order by document_type, media_type, needs_review, review_reason
+""")
 
-`actor_number` is the Relation actor count; it is not an AI provider's request `concurrency`. On Ray, `gpus` is a scheduler reservation per task or actor. For example, `actor_number=2` with `gpus=1.0` needs two Ray GPU resource slots for full parallelism. On a local subprocess backend, `gpus` does not reserve or isolate a device: workers only inherit process-visible GPUs, and a nonzero declaration may produce a warning. Every worker must be able to import the callable and access its dependencies, model artifacts, data paths, and credentials. Exact backend and resource restrictions are in the [UDF API Reference](/docs/data/reference/udf-api); deployment tasks are covered by [Single-Node Deployment](/docs/data/deploy/single-node), [Ray Cluster Deployment](/docs/data/deploy/ray-cluster), and [GPU Inference](/docs/data/guides/gpu-inference).
+summary.show()
+```
 
-### Output, Error, and Side-Effect Contracts
+After the local output is correct, the same function can run with `ray_task`:
 
-Treat every Relation result as an explicit table contract:
+```python
+import vane
 
-- Return columns and Arrow-compatible values that match the declared schema.
-- Include stable IDs, source paths or URIs, and any business keys needed downstream; Relation stages do not automatically retain them.
-- Add typed `status` and `error` columns when expected per-row failures should remain reviewable. Let unexpected batch or actor failures fail the query.
-- Validate schema, SQL types, row counts or cardinality expectations, nulls, and IDs before increasing `batch_size`, `actor_number`, or data volume.
-- Keep UDFs pure when possible. External side effects are not rolled back with the SQL transaction and are not exactly-once; make unavoidable writes idempotent and keyed by stable IDs.
-- Write the validated final Relation once instead of writing from inside a UDF.
+vane.configure(runner="ray")
 
-See [UDF Concepts](/docs/data/concepts/udfs) for the state, retry, and side-effect rationale, and the [UDF API Reference](/docs/data/reference/udf-api) for the exact output and error restrictions.
+ray_prepared = documents.map_batches(
+    prepare_document_text,
+    schema=prepared_schema,
+    batch_size=256,
+    execution_backend="ray_task",
+)
+```
+
+Use `ray_task` only after the local contract is correct. Ray adds worker import, dependency, storage, and resource variables that can hide ordinary UDF bugs.
+
+## Stateful Batch UDFs
+
+Use a stateful batch UDF when setup should be reused across batches:
+
+- model or tokenizer loading
+- API client setup
+- database or object-store client setup
+- lookup tables or caches
+- GPU model state
+
+A stateful UDF is a callable class. For one typed, row-preserving Expression result, use `vane.cls` or `vane.cls.batch`, instantiate the decorated class, and either attach that instance as a SQL alias or call it while building a Python projection. The v1 Expression contract uses one actor per query and treats its state as query-scoped and ephemeral.
+
+The example below returns a multi-column table, so it uses the Relation form instead: pass the class itself to `map_batches`, not an already-created instance. Actor backends construct the class inside the worker and reuse the same object for multiple batches.
+
+Actor classes should have no required constructor arguments. Put configuration in environment variables, class-level defaults, optional arguments with defaults, or a no-argument wrapper class.
+
+```python
+import pyarrow as pa
+
+
+class PromptBuilder:
+    def __init__(self) -> None:
+        self.template_by_type = {
+            "claim": "Extract claim decision and one short reason:",
+            "invoice": "Extract invoice number, supplier, and total:",
+            "policy": "Summarize policy issue and required follow-up:",
+        }
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        document_types = batch.column("document_type").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+        upstream_status = batch.column("status").to_pylist()
+        upstream_error = batch.column("error").to_pylist()
+
+        prompts = []
+        prompt_template = []
+        status = []
+        error = []
+
+        for document_type, text, previous_status, previous_error in zip(
+            document_types,
+            texts,
+            upstream_status,
+            upstream_error,
+            strict=False,
+        ):
+            if previous_status != "ok":
+                prompt_template.append("")
+                prompts.append("")
+                status.append("skipped")
+                error.append(previous_error)
+                continue
+
+            template = self.template_by_type.get(document_type, "Summarize this document:")
+            prompt_template.append(template)
+            prompts.append(f"{template}\n\n{text}")
+            status.append("ok")
+            error.append("")
+
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "prompt_template": prompt_template,
+            "prompt": prompts,
+            "status": status,
+            "error": error,
+        })
+
+
+prompt_schema = {
+    "document_id": "VARCHAR",
+    "source_uri": "VARCHAR",
+    "prompt_template": "VARCHAR",
+    "prompt": "VARCHAR",
+    "status": "VARCHAR",
+    "error": "VARCHAR",
+}
+
+prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=64,
+    execution_backend="subprocess_actor",
+    concurrency=2,
+)
+```
+
+In a real model UDF, load the model, tokenizer, or client in `__init__` or lazily on first call, not at module import time. That keeps imports cheap and lets each subprocess or Ray actor own its own state.
+
+For distributed actor reuse, switch the backend to `ray_actor`:
+
+```python
+ray_prompts = prepared.map_batches(
+    PromptBuilder,
+    schema=prompt_schema,
+    batch_size=128,
+    execution_backend="ray_actor",
+    concurrency=4,
+)
+```
+
+For GPU-backed state, request GPU resources per actor:
+
+```python
+class GpuEmbedder:
+    def __init__(self) -> None:
+        # Load the tokenizer/model here so each actor owns its GPU state.
+        self.model_name = "local-or-mounted-model"
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        document_ids = batch.column("document_id").to_pylist()
+        source_uris = batch.column("source_uri").to_pylist()
+        texts = batch.column("normalized_text").to_pylist()
+
+        embeddings = [[0.0, 0.0, 0.0] for _ in texts]
+        return pa.table({
+            "document_id": document_ids,
+            "source_uri": source_uris,
+            "embedding": embeddings,
+            "status": ["ok"] * len(document_ids),
+            "error": [""] * len(document_ids),
+        })
+
+
+embedded = prepared.map_batches(
+    GpuEmbedder,
+    schema={
+        "document_id": "VARCHAR",
+        "source_uri": "VARCHAR",
+        "embedding": "FLOAT[]",
+        "status": "VARCHAR",
+        "error": "VARCHAR",
+    },
+    batch_size=32,
+    execution_backend="ray_actor",
+    concurrency=2,
+    cpus=0.0,
+    gpus=1.0,
+)
+```
+
+`gpus=1.0` is per actor. With `concurrency=2`, Ray needs two available GPU slots for full parallelism. For more GPU execution patterns, see [GPU Inference](/docs/data/guides/gpu-inference).
+
+Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
+
+## Row-Expanding UDFs
+
+Use `flat_map` when one input row can produce zero, one, or many output rows. Typical uses include document chunking, frame extraction summaries, nested record normalization, URL expansion, and filtering by returning no rows.
+
+Python `vane.func.batch(..., row_preserving=False)` can produce a cardinality-changing batch Expression, but it must be the sole top-level projection and cannot be attached as a SQL alias in v1. Prefer `flat_map` when the transformation is naturally expressed as explicit zero-or-many rows.
+
+The callable receives one row as a Python `dict`. It may return `None`, one output `dict`, or an iterable of output dicts.
+
+```python
+def chunk_document(row: dict) -> list[dict]:
+    text = str(row.get("normalized_text") or "")
+    chunks = [text[index:index + 1000] for index in range(0, len(text), 1000)]
+
+    return [
+        {
+            "document_id": row["document_id"],
+            "chunk_id": f"{row['document_id']}:{position}",
+            "chunk_text": chunk,
+        }
+        for position, chunk in enumerate(chunks)
+        if chunk
+    ]
+
+
+chunks = prepared.flat_map(
+    chunk_document,
+    schema={
+        "document_id": "VARCHAR",
+        "chunk_id": "VARCHAR",
+        "chunk_text": "VARCHAR",
+    },
+    execution_backend="subprocess_task",
+)
+```
+
+The declared schema selects keys from each output dict. Missing keys become null, and extra keys are ignored.
+
+## Scalar UDFs
+
+For a small row-wise value beside existing columns, prefer the registered SQL scalar Expression shown above; use Python `vane.func` when the projection is constructed in Python. Use Relation `map` only when you specifically need an explicit Relation executor and its pass-through result shape.
+
+```python
+def normalize_document_type(document_type: str) -> str:
+    return str(document_type or "unknown").strip().lower()
+
+
+normalized_types = documents.project("document_type").map(
+    normalize_document_type,
+    return_type="VARCHAR",
+    execution_backend="subprocess_task",
+)
+```
+
+For standard embeddings or LLM calls, prefer the built-in AI Functions. For custom model calls, media decoding, or any operation that benefits from batching, choose a batch Expression for one typed row-preserving result or `map_batches` for a table-shaped result.
+
+## Shared Output Contract
+
+Treat every UDF output as an explicit contract. An Expression UDF contributes one declared result column to a projection; a Relation UDF owns the table shape it returns.
+
+| Topic | Guidance |
+| --- | --- |
+| Returned columns | An Expression batch schema declares exactly one output column. For Relation `map_batches` and `flat_map`, return exactly the columns declared in `schema`. |
+| Source fields | Select source fields beside an Expression result. Return them explicitly from a Relation UDF when later stages need them. |
+| Row diagnostics | Return explicit `status` and `error` columns when failed rows should remain reviewable. |
+| Types | Use Arrow-compatible values: strings, numbers, booleans, bytes, lists, structs, or Arrow arrays. |
+| Nulls | Keep null behavior explicit, especially for numeric, bytes, list, and model-output columns. |
+| Row count | A row-preserving Expression must return one output row per input row. A Relation `map_batches` UDF usually does the same; use `flat_map` for explicit zero-or-many outputs. |
+
+If Arrow cannot infer the type you want, build an explicit array:
+
+```python
+return pa.table({
+    "document_id": pa.array(document_ids, type=pa.string()),
+    "review_reason": pa.array(review_reason, type=pa.string()),
+})
+```
+
+Avoid returning Python objects such as model classes, file handles, custom dataclasses, or raw exceptions. Convert them to strings, numbers, bytes, lists, structs, JSON strings, or explicit Arrow arrays before returning.
+
+## Backend and Scaling
+
+Expression UDFs derive their execution shape from the callable: `vane.func` and `vane.func.batch` use tasks, while `vane.cls` and `vane.cls.batch` use actors. Configure the Vane runner to choose local or Ray execution. Relation UDFs expose `execution_backend` directly; choose it according to callable shape:
+
+| Backend | Callable shape | Use it for |
+| --- | --- | --- |
+| `subprocess_task` | Function | First stateless UDFs, local isolation, CPU transforms. |
+| `subprocess_actor` | Callable class | Local model or client reuse without Ray. |
+| `ray_task` | Function | Distributed stateless batch work after local correctness is proven. |
+| `ray_actor` | Callable class | Distributed model/client reuse, GPU placement, or larger actor pools. |
+
+The only valid backend names are `subprocess_task`, `subprocess_actor`, `ray_task`, and `ray_actor`. Older or shorthand options such as `local`, `subprocess`, `ray=True`, `use_process`, `actor_count`, and `prefer_actor` are not the current API.
+
+Use this progression:
+
+1. Build the UDF locally with `subprocess_task` or `subprocess_actor`.
+2. Validate schema, row counts, IDs, source columns, and error behavior on a small real sample.
+3. Increase `batch_size` locally after the output is correct.
+4. Move stateless functions to `ray_task` only when distribution helps.
+5. Move stateful classes to `ray_actor` only when actor reuse, GPU placement, or cluster scheduling is required.
+
+`batch_size` controls how many input rows Vane passes to one `map_batches` call. Batch size should not change result semantics. If output changes when `batch_size` changes, the UDF is probably relying on hidden batch state.
+
+`concurrency` is supported for `subprocess_task`, `subprocess_actor`, and `ray_actor`; do not pass it with `ray_task`.
 
 ## Related Guides
 
-- Use [Structured Transformation](/docs/data/guides/structured-transformation) for SQL cleanup, joins, deduplication, and validation around the UDF stage.
-- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when Python reads bytes, decodes media, or records stage-specific status and errors.
-- Use [AI Functions](/docs/data/guides/ai-functions) for standard prompting, embedding, and classification; use a custom UDF for custom preprocessing, model execution, clients, or output schemas.
-- Use [Performance Tuning](/docs/data/guides/performance-tuning) after the local output contract is correct.
+- Use [Structured Transformation](/docs/data/guides/structured-transformation) when the main task is table-shaped cleanup, joins, deduplication, validation, or output shaping.
+- Use [Multimodal Pipeline](/docs/data/guides/multimodal-pipeline) when the UDF reads bytes, decodes files, extracts media features, or records per-stage status and errors.
+- Use [AI Functions](/docs/data/guides/ai-functions) for standard embedding, classification, or prompt enrichment. Use Custom Python UDFs when you need a custom model, custom output schema, external client behavior, or full control over preprocessing and postprocessing.
+- Use the [UDF API Reference](/docs/data/reference/udf-api) to look up exact SQL registration, Python Expression, and Relation signatures and restrictions.
+- Read [UDFs](/docs/data/concepts/udfs) for the conceptual model behind Expression projections, Relation table stages, callable classes, and execution backends.

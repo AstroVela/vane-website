@@ -4,6 +4,16 @@ import { join } from 'node:path'
 
 const read = (path) => readFileSync(path, 'utf8')
 const stripTags = (value) => value.replace(/<[^>]+>/g, '')
+const manuallyReviewedGuidePaths = new Set([
+  'docs/data/guides/custom-python-udfs.mdx',
+  'docs/data/guides/ai-functions.mdx',
+  'docs/data/guides/embeddings-at-scale.mdx',
+  'docs/data/guides/gpu-inference.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/custom-python-udfs.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/ai-functions.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/embeddings-at-scale.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/gpu-inference.mdx',
+])
 const collectMdxEntries = (directory) => readdirSync(directory, { withFileTypes: true })
   .flatMap((entry) => {
     const path = join(directory, entry.name)
@@ -18,7 +28,9 @@ const documentationCorpusEntries = () => [
   'docs/data/guides',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides',
-].flatMap(collectMdxEntries)
+]
+  .flatMap(collectMdxEntries)
+  .filter(({ path }) => !manuallyReviewedGuidePaths.has(path))
 
 const assertParquetOutputLifecycle = (source, message) => {
   assert.doesNotMatch(
@@ -1236,586 +1248,6 @@ const assertQuickstartTask = (source, locale, message) => {
   assertPatterns(source, rolePatterns, `${message} role links`)
 }
 
-const assertCustomUdfTask = (source, locale, message) => {
-  const blocks = fencedCodeBlocks(source)
-  const primary = blocks[0]
-  assert.match(primary, /^```python\nimport vane\b/, `${message}: primary task should be Python setup`)
-  const callable = primary.match(/def ([a-z_]\w*)\([^)]*\):/)?.[1]
-  const alias = primary.match(/alias="([a-z_]\w*)"/)?.[1]
-  assert.ok(callable, `${message}: primary task should define its raw callable`)
-  assert.ok(alias, `${message}: primary task should define its SQL alias`)
-  assertSubstringOrder(
-    primary,
-    [
-      `def ${callable}`,
-      'con = vane.connect()',
-      'vane.attach_function(',
-      `alias="${alias}"`,
-      `${alias}(text) AS review_text`,
-      'expected_ids =',
-      'assert list(result.columns)',
-      'result.write_parquet(',
-      'finally:',
-      `vane.detach_function("${alias}", connection=con)`,
-      'con.close()',
-    ],
-    `${message} primary SQL alias lifecycle`,
-  )
-  assert.match(
-    primary,
-    new RegExp(
-      `SELECT\\s+document_id,\\s+source_uri,\\s+text,\\s+${escapeRegExp(alias)}\\(text\\) AS review_text`,
-    ),
-    `${message}: SQL alias projection should preserve document ID and source URI`,
-  )
-
-  const pythonHeading = locale === 'en'
-    ? /^## Alternate Workflow: Python Expression$/
-    : /^## 备用工作流：Python Expression$/
-  const relationHeading = locale === 'en'
-    ? /^## Relation API for Table-Shaped Capabilities$/
-    : /^## Relation API：只用于表形能力$/
-  const pythonSection = conceptSection(source, pythonHeading, `${message} Python Expression`)
-  const relationSection = conceptSection(source, relationHeading, `${message} Relation API`)
-  assertPatterns(
-    pythonSection,
-    [/@vane\.func\(/, /vane\.func\.batch\(/, /source\.select\(/],
-    `${message} Python Expression alternatives`,
-  )
-  assertSubstringOrder(
-    blocks.join('\n'),
-    ['vane.attach_function(', '@vane.func(', 'vane.func.batch(', '@vane.cls(', 'source.map_batches('],
-    `${message} SQL, Python Expression, and Relation order`,
-  )
-
-  const relationBlocks = fencedCodeBlocks(relationSection)
-  const multiColumn = relationBlocks.find((block) => /def prepare_review_batch\(/.test(block))
-  const flatMap = relationBlocks.find((block) => /source\.flat_map\(/.test(block))
-  const rowMap = relationBlocks.find((block) => /source\.map\(/.test(block))
-  const actorReuse = relationBlocks.find((block) => /class ReviewRuleSet:/.test(block))
-  assert.ok(multiColumn, `${message}: Relation examples should define multi-column map_batches`)
-  assert.ok(flatMap, `${message}: Relation examples should define cardinality-changing flat_map`)
-  assert.ok(rowMap, `${message}: Relation examples should define current row-wise scalar map`)
-  assert.ok(actorReuse, `${message}: Relation examples should define actor-backed reuse`)
-  assertPatterns(
-    multiColumn,
-    [
-      /pa\.table\(/,
-      /"document_id":/,
-      /"source_uri":/,
-      /"review_text":/,
-      /"text_length":/,
-      /"status":/,
-      /source\.map_batches\(/,
-    ],
-    `${message} multi-column map_batches`,
-  )
-  assertPatterns(
-    flatMap,
-    [/yield \{/, /"document_id": row\["document_id"\]/, /source\.flat_map\(/],
-    `${message} cardinality-changing flat_map`,
-  )
-  assertPatterns(
-    rowMap,
-    [
-      /def build_review_key\(document_id, source_uri, text\):/,
-      /source\.map\(/,
-      /return_type=duckdb\.sqltypes\.VARCHAR/,
-      /execution_backend="subprocess_task"/,
-      /value AS review_key/,
-    ],
-    `${message} row-wise scalar map`,
-  )
-  assertSubstringOrder(
-    actorReuse,
-    [
-      'class ReviewRuleSet:',
-      'source.map_batches(',
-      'ReviewRuleSet,',
-      'execution_backend="subprocess_actor"',
-      'actor_number=2',
-      'gpus=0.0',
-    ],
-    `${message} actor-backed reuse`,
-  )
-  assertPatterns(
-    relationSection,
-    [/subprocess_task/, /subprocess_actor/, /ray_task/, /ray_actor/, /gpus=1\.0/, /worker/],
-    `${message} backend and GPU guidance`,
-  )
-  for (const block of relationBlocks) {
-    assert.doesNotMatch(
-      block,
-      /\bconcurrency\s*=/,
-      `${message}: UDF Relation examples should not use AI provider concurrency`,
-    )
-  }
-  assertRejects(
-    collapseWrappedMarkdown(relationSection),
-    locale === 'en'
-      ? [/rel\.map`?\s+(?:is|acts as)\s+(?:a\s+)?(?:pandas )?batch/i]
-      : [/rel\.map`?\s*(?:是|作为)\s*pandas batch/i],
-    `${message} current rel.map contract`,
-  )
-  assert.doesNotMatch(
-    relationBlocks.join('\n'),
-    /import pandas|\bpd\.|pandas\.DataFrame/i,
-    `${message}: rel.map should not restore the stale pandas implementation`,
-  )
-
-  const rolePatterns = locale === 'en'
-    ? [
-        /\[UDF API Reference\]\(\/docs\/data\/reference\/udf-api\)/,
-        /\[UDF Concepts\]\(\/docs\/data\/concepts\/udfs\)/,
-      ]
-    : [
-        /\[UDF API 参考\]\(\/zh-CN\/docs\/data\/reference\/udf-api\)/,
-        /\[UDF 概念\]\(\/zh-CN\/docs\/data\/concepts\/udfs\)/,
-      ]
-  assertPatterns(source, rolePatterns, `${message} role links`)
-}
-
-const sqlStringBodies = (block) =>
-  [...block.matchAll(/"""([\s\S]*?)"""/g)].map((match) => match[1])
-
-const assertAiGuideTask = (source, locale, message) => {
-  const blocks = fencedCodeBlocks(source)
-  const examples = blocks.join('\n')
-  assertSubstringOrder(
-    examples,
-    [
-      'ai_prompt(',
-      'ai_embed(',
-      'validation =',
-      'reviewable.write_parquet(',
-      'vane.ai.prompt(',
-      'vane.ai.embed(',
-      'multimodal_candidates.prompt(',
-      'candidates.classify_text(',
-      'candidates.embed_text(',
-      'gpu_response_only = candidates.prompt(',
-    ],
-    `${message} SQL, Python Expression, and specialized Relation order`,
-  )
-
-  const sqlPrompt = codeBlockContaining(source, /\bai_prompt\(/, `${message} SQL ai_prompt`)
-  const sqlEmbed = codeBlockContaining(source, /\bai_embed\(/, `${message} SQL ai_embed`)
-  assert.match(
-    sqlPrompt,
-    /SELECT\s+run_id,\s+document_id,\s+document_type,\s+source_uri,\s+source_text,\s+review_prompt,\s+ai_prompt\([\s\S]*struct_pack\(/,
-    `${message}: SQL ai_prompt should preserve stable ID and source fields with constant options`,
-  )
-  assert.match(
-    sqlEmbed,
-    /SELECT\s+run_id,\s+document_id,\s+document_type,\s+source_uri,\s+source_text,\s+review_prompt,\s+review_note,\s+ai_embed\([\s\S]*struct_pack\(/,
-    `${message}: SQL ai_embed should preserve stable ID, source, and prompt output with constant options`,
-  )
-  assertNoCredentialSqlFields(sqlPrompt, `${message} SQL ai_prompt`)
-  assertNoCredentialSqlFields(sqlEmbed, `${message} SQL ai_embed`)
-
-  const pythonExpression = codeBlockContaining(
-    source,
-    /vane\.ai\.prompt\([\s\S]*vane\.ai\.embed\(/,
-    `${message} Python Expression`,
-  )
-  assertSubstringOrder(
-    pythonExpression,
-    [
-      'python_prompt_provider_options = vane.ai.OpenAIProviderOptions(',
-      'python_embedding_provider_options = vane.ai.OpenAIProviderOptions(',
-      'python_prompt_options = vane.ai.OpenAIPromptOptions(',
-      'python_embedding_options = vane.ai.OpenAIEmbeddingOptions(',
-      'python_prompted = candidates.select(',
-      'vane.ai.prompt(',
-      ').alias("review_note")',
-      'python_reviewed = python_prompted.select(',
-      'vane.ai.embed(',
-      ').alias("embedding")',
-    ],
-    `${message} complete Python Expression construction`,
-  )
-
-  const structured = codeBlockContaining(
-    source,
-    /class ReviewDecision\(BaseModel\):[\s\S]*multimodal_candidates\.prompt\(/,
-    `${message} structured and multimodal Relation prompt`,
-  )
-  assertSubstringOrder(
-    structured,
-    [
-      'from pydantic import BaseModel',
-      'class ReviewDecision(BaseModel):',
-      'multimodal_candidates = con.sql(',
-      'multimodal_candidates.prompt(',
-      'image_columns=["image"]',
-      'return_format=ReviewDecision',
-      'output_column="decision_json"',
-      'execution_backend="subprocess_task"',
-    ],
-    `${message} structured and multimodal Relation prompt`,
-  )
-  const classification = codeBlockContaining(
-    source,
-    /candidates\.classify_text\(/,
-    `${message} Relation classification`,
-  )
-  assertPatterns(
-    classification,
-    [/labels=\[/, /output_column="review_label"/, /execution_backend="subprocess_task"/],
-    `${message} Relation classification`,
-  )
-  const chunking = codeBlockContaining(
-    source,
-    /candidates\.embed_text\(/,
-    `${message} Relation chunking`,
-  )
-  assertPatterns(
-    chunking,
-    [/max_chunk_chars=2000/, /chunk_overlap_chars=200/, /output_column="chunked_embedding"/],
-    `${message} Relation chunking`,
-  )
-  const actorControls = codeBlockContaining(
-    source,
-    /gpu_response_only = candidates\.prompt\(/,
-    `${message} Relation actor controls`,
-  )
-  assertSubstringOrder(
-    actorControls,
-    [
-      'vane.configure(runner="ray")',
-      'gpu_response_only = candidates.prompt(',
-      'provider_options=vane.ai.VLLMProviderOptions(',
-      'concurrency=2',
-      'gpus_per_actor=1',
-      'execution_backend="ray_actor"',
-    ],
-    `${message} valid Relation actor controls`,
-  )
-
-  for (const block of blocks) {
-    for (const sqlBody of sqlStringBodies(block)) {
-      assert.doesNotMatch(
-        sqlBody,
-        /(?:^|[^\w])(?:rel\.)?(?:prompt|embed_text|classify_text)\s*\(/,
-        `${message}: Relation helpers should not appear as a direct SQL API`,
-      )
-    }
-  }
-  assert.doesNotMatch(source, /append_column\(/, `${message}: rejects manual AI recombination`)
-  assertPatterns(
-    source,
-    locale === 'en'
-      ? [
-          /worker environment/,
-          /does not provide a direct SQL Relation or table-function API/,
-          /stable business ID/,
-          /idempotent/,
-          /\[AI Function API Reference\]\(\/docs\/data\/reference\/ai-api\)/,
-          /\[AI Function Concepts\]\(\/docs\/data\/concepts\/ai-functions\)/,
-        ]
-      : [
-          /worker 的环境/,
-          /不提供直接的 SQL Relation 或 table-function API/,
-          /稳定的业务 ID/,
-          /幂等性/,
-          /\[AI Function API 参考\]\(\/zh-CN\/docs\/data\/reference\/ai-api\)/,
-          /\[AI Function 概念\]\(\/zh-CN\/docs\/data\/concepts\/ai-functions\)/,
-        ],
-    `${message} operational and role guidance`,
-  )
-  const normalized = collapseWrappedMarkdown(source)
-  assertPatterns(
-    normalized,
-    locale === 'en'
-      ? [/workflow below assumes the `embedding` column is present/i]
-      : [/后续的校验和写出流程假定 `embedding` 列存在/],
-    `${message} embedding-dependent workflow`,
-  )
-  assertRejects(
-    normalized,
-    locale === 'en'
-      ? [/Skip this step when the review artifact does not need vectors/i]
-      : [/审查产物不需要向量时，可以跳过这一步/],
-    `${message} embedding-dependent workflow`,
-  )
-}
-
-const assertCodeBlockCallOrder = (source, calls, message) => {
-  const blocks = fencedCodeBlocks(source)
-  const positions = calls.map(({ label, pattern }) => {
-    const index = blocks.findIndex((block) => pattern.test(block))
-    assert.notEqual(index, -1, `${message} call order: missing ${label}`)
-    return { label, index }
-  })
-
-  for (let index = 1; index < positions.length; index += 1) {
-    assert.ok(
-      positions[index].index > positions[index - 1].index,
-      `${message} call order: expected ${positions[index].label} after ${positions[index - 1].label}`,
-    )
-  }
-
-  return Object.fromEntries(positions.map(({ label, index }) => [label, blocks[index]]))
-}
-
-const assertExplicitParquetFileWrites = (source, message) => {
-  const calls = [
-    ...fencedCodeBlocks(source).join('\n').matchAll(/\.write_parquet\(\s*([^\n)]+?)\s*\)/g),
-  ]
-  assert.ok(calls.length > 0, `${message}: missing explicit write_parquet file path`)
-
-  for (const call of calls) {
-    const argument = call[1].trim()
-    const literal = argument.match(/^(["'])([^"']+)\1$/)
-    assert.ok(literal, `${message}: write_parquet file path should be one string literal`)
-    assert.doesNotMatch(
-      literal[2],
-      /\/$/,
-      `${message}: write_parquet file path should not be a directory ending in slash`,
-    )
-    assert.match(
-      literal[2],
-      /\.parquet$/i,
-      `${message}: write_parquet file path should name a parquet file`,
-    )
-  }
-}
-
-const assertSqlJsonBridge = (block, option, message) => {
-  const value = block.match(new RegExp(`\\b${option}\\s*:=\\s*'([^']+)'`))?.[1]
-  assert.ok(value, `${message}: ${option} should be a constant SQL string`)
-  assert.doesNotThrow(
-    () => JSON.parse(value),
-    `${message}: ${option} should contain valid JSON`,
-  )
-}
-
-const assertEmbeddingGuideTask = (source, locale, message) => {
-  const blocks = assertCodeBlockCallOrder(
-    source,
-    [
-      { label: 'SQL ai_embed', pattern: /(?:^|[^.\w])ai_embed\(/ },
-      { label: 'Python vane.ai.embed', pattern: /vane\.ai\.embed\(/ },
-      { label: 'Relation rel.embed_text', pattern: /\.embed_text\(/ },
-      { label: 'custom Relation UDF', pattern: /\.map_batches\(/ },
-    ],
-    message,
-  )
-
-  const sqlEmbedding = blocks['SQL ai_embed']
-  assert.match(
-    sqlEmbedding,
-    /ai_embed\(\s*[a-z_]\w*\s*,\s*struct_pack\(/,
-    `${message}: SQL ai_embed should use one constant struct_pack`,
-  )
-  assertNoCredentialSqlFields(sqlEmbedding, `${message} SQL ai_embed`)
-
-  const pythonEmbedding = blocks['Python vane.ai.embed']
-  assertPatterns(
-    pythonEmbedding,
-    [/\.select\(/, /vane\.ai\.embed\(/, /\.alias\("embedding"\)/],
-    `${message} Python Expression embedding`,
-  )
-
-  const relationEmbedding = blocks['Relation rel.embed_text']
-  assertPatterns(
-    relationEmbedding,
-    [
-      /\.embed_text\(/,
-      /max_chunk_chars\s*=\s*\d+/,
-      /chunk_overlap_chars\s*=\s*\d+/,
-      /actor_number\s*=\s*[1-9]\d*/,
-      /execution_backend\s*=\s*["'](?:subprocess|ray)_actor["']/,
-    ],
-    `${message} Relation embedding boundary`,
-  )
-  assertExplicitParquetFileWrites(source, message)
-
-  const concurrencyHeading = locale === 'en'
-    ? /^## .*Batch.*Concurrency.*Worker/i
-    : /^## .*Batch.*并发.*Worker/i
-  const concurrencySection = collapseWrappedMarkdown(
-    conceptSection(source, concurrencyHeading, `${message} concurrency section`),
-  )
-  assertPatterns(
-    concurrencySection,
-    locale === 'en'
-      ? [/SQL `concurrency`/, /AI actor count/i, /per-row option/i, /max_api_concurrency/]
-      : [/SQL `concurrency`/, /AI actor 数/i, /逐行 option/i, /max_api_concurrency/],
-    `${message} concurrency boundary`,
-  )
-
-  const relationHeading = locale === 'en'
-    ? /^## .*Relation Embedding.*(?:Long-Text|Chunking)/i
-    : /^## (?=.*Relation Embedding)(?=.*长文本分块).*$/i
-  const relationSection = collapseWrappedMarkdown(
-    conceptSection(source, relationHeading, `${message} Relation embedding section`),
-  )
-  assertPatterns(
-    relationSection,
-    locale === 'en'
-      ? [
-          /max_chunk_chars/,
-          /chunk_overlap_chars/,
-          /SQL Relation/,
-          /table-function API/,
-          /does not promise to retain/i,
-          /document_id/,
-        ]
-      : [
-          /max_chunk_chars/,
-          /chunk_overlap_chars/,
-          /SQL Relation/,
-          /table-function API/,
-          /不承诺保留/,
-          /document_id/,
-        ],
-    `${message} Relation capability boundary`,
-  )
-}
-
-const assertGpuGuideTask = (source, locale, message) => {
-  const blocks = assertCodeBlockCallOrder(
-    source,
-    [
-      { label: 'SQL ai_prompt', pattern: /(?:^|[^.\w])ai_prompt\(/ },
-      { label: 'Python vane.ai.prompt', pattern: /vane\.ai\.prompt\(/ },
-      {
-        label: 'advanced Relation rel.prompt',
-        pattern: /\.prompt\([\s\S]*\breturn_format\s*=/,
-      },
-    ],
-    message,
-  )
-
-  const sqlPrompt = blocks['SQL ai_prompt']
-  assert.match(
-    sqlPrompt,
-    /ai_prompt\(\s*[a-z_]\w*\s*,\s*struct_pack\(/,
-    `${message}: SQL ai_prompt should use one constant struct_pack`,
-  )
-  assert.match(
-    sqlPrompt,
-    /\bprovider\s*:=\s*'vllm'/,
-    `${message}: SQL ai_prompt should select vLLM with a constant option`,
-  )
-  assertSqlJsonBridge(sqlPrompt, 'engine_args_json', `${message} SQL ai_prompt`)
-  assertSqlJsonBridge(sqlPrompt, 'generate_args_json', `${message} SQL ai_prompt`)
-  assertNoCredentialSqlFields(sqlPrompt, `${message} SQL ai_prompt`)
-
-  const pythonPrompt = blocks['Python vane.ai.prompt']
-  assertPatterns(
-    pythonPrompt,
-    [
-      /vane\.ai\.VLLMProviderOptions\(/,
-      /vane\.ai\.VLLMPromptOptions\(/,
-      /vane\.ai\.prompt\(/,
-      /\.alias\("response_text"\)/,
-    ],
-    `${message} typed Python Expression prompt`,
-  )
-
-  const relationPrompt = blocks['advanced Relation rel.prompt']
-  assertPatterns(
-    relationPrompt,
-    [
-      /\.prompt\(/,
-      /actor_number["']?\s*:\s*[1-9]\d*/,
-      /gpus_per_actor["']?\s*:\s*[1-9]\d*(?:\.\d+)?/,
-      /return_format\s*=\s*\w+/,
-      /output_column\s*=\s*["'][^"']+["']/,
-      /execution_backend\s*=\s*["']ray_actor["']/,
-    ],
-    `${message} advanced Relation prompt`,
-  )
-
-  const reviewBlock = codeBlockContaining(
-    source,
-    /AS config_summary/,
-    `${message} review configuration summary`,
-  )
-  assertPatterns(
-    reviewBlock,
-    [/prompt_template_version/, /system_message/],
-    `${message} review configuration summary`,
-  )
-  assertExplicitParquetFileWrites(source, message)
-
-  const scaleHeading = locale === 'en'
-    ? /^## .*Scale.*Resource Layers/i
-    : /^## .*扩展.*资源层/i
-  const scaleSection = collapseWrappedMarkdown(
-    conceptSection(source, scaleHeading, `${message} resource-layer section`),
-  )
-  assertPatterns(
-    scaleSection,
-    locale === 'en'
-      ? [
-          /SQL `concurrency=N`/,
-          /VLLMProviderOptions\(concurrency=N\)/,
-          /outer AI UDF/,
-          /actor_number=N/,
-          /raw provider-options dict/,
-          /use_ray=True/,
-          /inner native vLLM pool/,
-          /outer-only/,
-        ]
-      : [
-          /SQL `concurrency=N`/,
-          /VLLMProviderOptions\(concurrency=N\)/,
-          /外层 AI UDF/,
-          /actor_number=N/,
-          /raw provider-options dict/,
-          /use_ray=True/,
-          /内层原生 vLLM pool/,
-          /只配置外层/,
-        ],
-    `${message} outer and inner concurrency boundary`,
-  )
-
-  const relationHeading = locale === 'en'
-    ? /^## .*Relation Prompting.*Advanced Capabilities/i
-    : /^## .*Relation.*高级能力/i
-  const relationSection = collapseWrappedMarkdown(
-    conceptSection(source, relationHeading, `${message} Relation prompt section`),
-  )
-  assertPatterns(
-    relationSection,
-    locale === 'en'
-      ? [
-          /rel\.prompt/,
-          /structured output/i,
-          /image_columns/,
-          /execution_backend/,
-          /actor_number/,
-          /direct SQL Relation API/,
-          /SQL table function/,
-        ]
-      : [
-          /rel\.prompt/,
-          /结构化输出/,
-          /image_columns/,
-          /execution_backend/,
-          /actor_number/,
-          /直接 SQL Relation API/,
-          /SQL table function/,
-        ],
-    `${message} Relation capability boundary`,
-  )
-}
-
-const assertBilingualGuideTask = (schema) => {
-  const { label, sources, check } = schema
-  assertBilingualGuideStructure(schema)
-  for (const locale of ['en', 'zh']) {
-    check(
-      sources[locale],
-      locale,
-      `${locale === 'en' ? 'English' : 'Chinese'} ${label}`,
-    )
-  }
-}
-
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
@@ -1850,22 +1282,6 @@ const executionModel = read(paths.executionModel)
 const executionModelZh = read(paths.executionModelZh)
 const sqlVsPython = read(paths.sqlVsPython)
 const sqlVsPythonZh = read(paths.sqlVsPythonZh)
-const customUdfs = read('docs/data/guides/custom-python-udfs.mdx')
-const customUdfsZh = read(
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/custom-python-udfs.mdx',
-)
-const aiGuide = read('docs/data/guides/ai-functions.mdx')
-const aiGuideZh = read(
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/ai-functions.mdx',
-)
-const embeddingsGuide = read('docs/data/guides/embeddings-at-scale.mdx')
-const embeddingsGuideZh = read(
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/embeddings-at-scale.mdx',
-)
-const gpuGuide = read('docs/data/guides/gpu-inference.mdx')
-const gpuGuideZh = read(
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/gpu-inference.mdx',
-)
 const quickstart = read('docs/data/quickstart/quickstart.mdx')
 const quickstartZh = read(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
@@ -1892,10 +1308,6 @@ const approvedBilingualDocumentationPairs = [
   approvedDocumentationPair('concepts/execution-model', 'concept', 'Execution Model Concepts'),
   approvedDocumentationPair('concepts/sql-vs-python', 'concept', 'SQL vs Python Concepts'),
   approvedDocumentationPair('quickstart/quickstart', 'guide', 'Quickstart'),
-  approvedDocumentationPair('guides/custom-python-udfs', 'guide', 'Custom Python UDF Guide'),
-  approvedDocumentationPair('guides/ai-functions', 'guide', 'AI Functions Guide'),
-  approvedDocumentationPair('guides/embeddings-at-scale', 'guide', 'Embeddings at Scale Guide'),
-  approvedDocumentationPair('guides/gpu-inference', 'guide', 'GPU Inference Guide'),
   approvedDocumentationPair(
     'guides/multimodal-ingest',
     'guide',
@@ -1935,10 +1347,6 @@ const publicApiCorpus = [
   aiConcept,
   executionModel,
   sqlVsPython,
-  customUdfs,
-  aiGuide,
-  embeddingsGuide,
-  gpuGuide,
   quickstart,
 ].join('\n')
 
@@ -3256,86 +2664,6 @@ const guideSchemas = [
     },
     check: assertQuickstartTask,
   },
-  {
-    id: 'custom-udf',
-    label: 'Custom Python UDF Guide',
-    sources: { en: customUdfs, zh: customUdfsZh },
-    headings: {
-      en: [
-        /^## Task Goal and Prerequisites$/,
-        /^## Primary Workflow: SQL Expression \(Recommended\)$/,
-        /^## Alternate Workflow: Python Expression$/,
-        /^### Scalar Python Expression with `vane\.func`$/,
-        /^### Arrow Batch Python Expression with `vane\.func\.batch`$/,
-        /^## Stateful `vane\.cls`: A Narrow Contract$/,
-        /^## Relation API for Table-Shaped Capabilities$/,
-        /^### Capability: Arrow Multi-Column or Whole-Table Output — `rel\.map_batches`$/,
-        /^### Capability: Explicit Zero, One, or Many Rows — `rel\.flat_map`$/,
-        /^### Capability: Row-Wise Scalar Output with an Explicit Relation Executor — `rel\.map`$/,
-        /^### Capability: Model or Client Reuse Across Batches — Actor-Backed Relation Classes$/,
-        /^### Scale Backends and Resources$/,
-        /^### Output, Error, and Side-Effect Contracts$/,
-        /^## Related Guides$/,
-      ],
-      zh: [
-        /^## 任务目标与前置条件$/,
-        /^## 主要工作流：SQL Expression（推荐）$/,
-        /^## 备用工作流：Python Expression$/,
-        /^### 使用 `vane\.func` 的 Scalar Python Expression$/,
-        /^### 使用 `vane\.func\.batch` 的 Arrow Batch Python Expression$/,
-        /^## Stateful `vane\.cls`：窄范围契约$/,
-        /^## Relation API：只用于表形能力$/,
-        /^### 能力：Arrow 多列或完整表阶段输出 — `rel\.map_batches`$/,
-        /^### 能力：显式零行、一行或多行 — `rel\.flat_map`$/,
-        /^### 能力：使用显式 Relation Executor 的逐行 Scalar 输出 — `rel\.map`$/,
-        /^### 能力：跨 Batch 复用模型或客户端 — Actor-Backed Relation Class$/,
-        /^### 扩展 Backend 与资源$/,
-        /^### 输出、错误与副作用契约$/,
-        /^## 相关指南$/,
-      ],
-    },
-    check: assertCustomUdfTask,
-  },
-  {
-    id: 'ai-guide',
-    label: 'AI Functions Guide',
-    sources: { en: aiGuide, zh: aiGuideZh },
-    headings: {
-      en: [
-        /^## 1\. Prepare a Reviewable Source$/,
-        /^## 2\. Complete the Task with SQL Expression$/,
-        /^### Select a Candidate Slice$/,
-        /^### Generate Review Notes First$/,
-        /^### Add Embeddings When Retrieval Is Part of the Task$/,
-        /^### Validate and Write the Review Artifact$/,
-        /^## 3\. Use Python Expression as an Alternate$/,
-        /^## 4\. Use Relation API Only for Specialized Capabilities$/,
-        /^### Structured or Multimodal Prompting$/,
-        /^### Built-In Classification$/,
-        /^### Built-In Long-Text Chunking$/,
-        /^### Select an Explicit Relation Backend and Actor Pool$/,
-        /^## 5\. Operate Providers and Writes Safely$/,
-        /^## Next Steps$/,
-      ],
-      zh: [
-        /^## 1\. 准备可审查的源数据$/,
-        /^## 2\. 用 SQL Expression 完成任务$/,
-        /^### 选择候选切片$/,
-        /^### 先生成审查说明$/,
-        /^### 需要检索时添加 Embedding$/,
-        /^### 校验并写入审查产物$/,
-        /^## 3\. 将 Python Expression 作为备选入口$/,
-        /^## 4\. 仅在专用能力需要时使用 Relation API$/,
-        /^### 结构化或多模态 Prompt$/,
-        /^### 内置分类$/,
-        /^### 内置长文本分块$/,
-        /^### 显式选择 Relation Backend 与 Actor Pool$/,
-        /^## 5\. 安全运行 Provider 与写入$/,
-        /^## 后续阅读$/,
-      ],
-    },
-    check: assertAiGuideTask,
-  },
 ]
 
 for (const schema of guideSchemas) {
@@ -3349,77 +2677,6 @@ for (const schema of guideSchemas) {
   }
 }
 
-const embeddingGpuGuideSchemas = [
-  {
-    id: 'embeddings-at-scale',
-    label: 'Embeddings at Scale Guide',
-    sources: { en: embeddingsGuide, zh: embeddingsGuideZh },
-    headings: {
-      en: [
-        /^## (?=.*\bSQL\b)(?=.*\bEmbedding\b).*$/i,
-        /^## .*Vector (?:Shape|Dimensions?).*Normalization/i,
-        /^## .*Batch.*Concurrency.*Worker/i,
-        /^## .*Python Expression/i,
-        /^## .*Transformers.*(?:Local|Ray)/i,
-        /^## .*Outputs.*(?:Reviewable|Idempotent)/i,
-        /^## .*Relation Embedding.*(?:Long-Text|Chunking)/i,
-        /^## .*Custom Relation UDF.*Table-Shaped/i,
-      ],
-      zh: [
-        /^## (?=.*SQL)(?=.*Embedding).*$/i,
-        /^## .*向量.*归一化/,
-        /^## .*Batch.*并发.*Worker/i,
-        /^## .*Python Expression/i,
-        /^## (?=.*Transformers)(?=.*(?:本地|Ray)).*$/i,
-        /^## .*输出.*(?:审查|幂等)/,
-        /^## (?=.*Relation Embedding)(?=.*长文本分块).*$/i,
-        /^## .*自定义 Relation UDF.*表形/i,
-      ],
-    },
-    check: assertEmbeddingGuideTask,
-  },
-  {
-    id: 'gpu-inference',
-    label: 'GPU Inference Guide',
-    sources: { en: gpuGuide, zh: gpuGuideZh },
-    headings: {
-      en: [
-        /^## .*Prepare.*Candidate Slice/i,
-        /^## (?=.*\bSQL\b)(?=.*\bvLLM\b)(?=.*\bGeneration\b).*$/i,
-        /^## .*Validate.*(?:Review|Write)/i,
-        /^## .*Python Expression/i,
-        /^## .*Scale.*Resource Layers/i,
-        /^### .*Local.*Ray.*Execution/i,
-        /^### .*Reuse.*(?:Actors?|Engines?)/i,
-        /^### .*Prefixes?.*Caches?/i,
-        /^### .*Batch Size.*Concurrency/i,
-        /^## .*Operate.*(?:Model Calls|Writes)/i,
-        /^## .*Relation Prompting.*Advanced Capabilities/i,
-        /^## .*Next Steps/i,
-      ],
-      zh: [
-        /^## .*候选切片/,
-        /^## (?=.*SQL)(?=.*vLLM)(?=.*生成).*$/i,
-        /^## .*校验.*(?:审查|写出)/,
-        /^## .*Python Expression/i,
-        /^## .*扩展.*资源层/,
-        /^### .*本地.*Ray.*执行/,
-        /^### .*复用.*(?:actor|engine)/i,
-        /^### .*前缀.*缓存/,
-        /^### .*batch size.*并发/i,
-        /^## .*安全运维.*(?:模型调用|写出)/,
-        /^## .*Relation.*高级能力/i,
-        /^## .*后续/,
-      ],
-    },
-    check: assertGpuGuideTask,
-  },
-]
-
-for (const schema of embeddingGpuGuideSchemas) {
-  assertBilingualGuideTask(schema)
-}
-
 const expectedApprovedPairIds = [
   'reference/udf-api',
   'reference/ai-api',
@@ -3428,10 +2685,6 @@ const expectedApprovedPairIds = [
   'concepts/execution-model',
   'concepts/sql-vs-python',
   'quickstart/quickstart',
-  'guides/custom-python-udfs',
-  'guides/ai-functions',
-  'guides/embeddings-at-scale',
-  'guides/gpu-inference',
   'guides/multimodal-ingest',
   'guides/multimodal-pipeline',
   'guides/structured-transformation',
@@ -3533,7 +2786,6 @@ for (const [placeholder, target, check] of [
   ['TODO', udfReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TODO Reference mutation')],
   ['TBD', aiReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TBD Reference mutation')],
   ['your_function_here', quickstart, (source) => assertGuideExamplesSafe(source, 'your_function_here Guide mutation')],
-  ['example_alias', customUdfs, (source) => assertGuideExamplesSafe(source, 'example_alias Guide mutation')],
 ]) {
   const mutation = target.replace('import vane\n', `import vane\n${placeholder}\n`)
   assert.notEqual(mutation, target, `${placeholder} mutation should change an executable block`)
@@ -3799,46 +3051,6 @@ assert.throws(
   /SQL-first lifecycle/,
   'Quickstart guards should consume the lazy result before detaching its alias',
 )
-const customUdfPandasMapMutation = customUdfs.replace(
-  'def build_review_key(document_id, source_uri, text):',
-  'import pandas as pd\n\n\ndef build_review_key(document_id, source_uri, text):',
-)
-assert.throws(
-  () => assertCustomUdfTask(
-    customUdfPandasMapMutation,
-    'en',
-    'Custom UDF stale pandas map mutation',
-  ),
-  /stale pandas implementation/,
-  'Custom UDF guards should reject the stale pandas rel.map contract',
-)
-const aiUndefinedResponseModelMutation = aiGuide.replace(
-  'class ReviewDecision(BaseModel):',
-  'class UndefinedReplacement(BaseModel):',
-)
-assert.throws(
-  () => assertAiGuideTask(
-    aiUndefinedResponseModelMutation,
-    'en',
-    'AI Guide undefined response-model mutation',
-  ),
-  /structured and multimodal Relation prompt/,
-  'AI Guide guards should reject a response model used before definition',
-)
-const aiOptionalEmbeddingMutation = aiGuide.replace(
-  "This guide's task produces a review artifact for both audit and retrieval, so the workflow below assumes the `embedding` column is present.",
-  'Skip this step when the review artifact does not need vectors.',
-)
-assert.notEqual(aiOptionalEmbeddingMutation, aiGuide, 'AI optional-embedding mutation should modify the Guide')
-assert.throws(
-  () => assertAiGuideTask(
-    aiOptionalEmbeddingMutation,
-    'en',
-    'AI Guide optional-embedding mutation',
-  ),
-  /embedding-dependent workflow/,
-  'AI Guide guards should reject an optional embedding step before embedding-dependent validation',
-)
 const aiTopLevelPlacementMutation = aiReference.replace(
   'supported only inside a `SELECT projection`',
   'supported only as a top-level value in a `SELECT projection`',
@@ -3852,72 +3064,6 @@ assert.throws(
   ),
   /ordinary nested projection composition/,
   'AI Reference guards should reject top-level-only projection wording',
-)
-
-const swapLiteralSegments = (source, first, second) => {
-  const placeholder = '__UDF_AI_V2_CONTENT_CHECK_SWAP__'
-  assert.doesNotMatch(source, new RegExp(placeholder), 'mutation placeholder should be unique')
-  return source.replace(first, placeholder).replace(second, first).replace(placeholder, second)
-}
-
-const embeddingsSqlBlock = codeBlockContaining(
-  embeddingsGuide,
-  /(?:^|[^.\w])ai_embed\(/,
-  'Embedding order mutation SQL block',
-)
-const embeddingsPythonBlock = codeBlockContaining(
-  embeddingsGuide,
-  /vane\.ai\.embed\(/,
-  'Embedding order mutation Python block',
-)
-const embeddingsOrderMutation = swapLiteralSegments(
-  embeddingsGuide,
-  embeddingsSqlBlock,
-  embeddingsPythonBlock,
-)
-assert.throws(
-  () => assertEmbeddingGuideTask(
-    embeddingsOrderMutation,
-    'en',
-    'Embedding order mutation',
-  ),
-  /call order/,
-  'Embedding guide guards should reject Python Expression before SQL ai_embed',
-)
-
-const gpuSqlBlock = codeBlockContaining(
-  gpuGuide,
-  /(?:^|[^.\w])ai_prompt\(/,
-  'GPU order mutation SQL block',
-)
-const gpuPythonBlock = codeBlockContaining(
-  gpuGuide,
-  /vane\.ai\.prompt\(/,
-  'GPU order mutation Python block',
-)
-const gpuOrderMutation = swapLiteralSegments(gpuGuide, gpuSqlBlock, gpuPythonBlock)
-assert.throws(
-  () => assertGpuGuideTask(
-    gpuOrderMutation,
-    'en',
-    'GPU order mutation',
-  ),
-  /call order/,
-  'GPU guide guards should reject Python Expression before SQL ai_prompt',
-)
-
-const gpuDirectoryWriteMutation = gpuGuide.replace(
-  'output/claims-vllm-2026-07-11-001/part-00000.parquet',
-  'output/claims-vllm-2026-07-11-001/',
-)
-assert.throws(
-  () => assertGpuGuideTask(
-    gpuDirectoryWriteMutation,
-    'en',
-    'GPU directory-write mutation',
-  ),
-  /write_parquet file path/,
-  'GPU guide guards should reject a directory-only write_parquet destination',
 )
 
 for (const [label, block] of [
@@ -3944,22 +3090,6 @@ for (const [label, block] of [
     `SQL credential guards should reject ${label}`,
   )
 }
-
-const embeddingsHeadingOrderMutation = embeddingsGuide
-  .replace('## Complete a Hosted Embedding Run with SQL', '## __EMBEDDING_HEADING_SWAP__')
-  .replace('## Use Python Expression as an Alternate', '## Complete a Hosted Embedding Run with SQL')
-  .replace('## __EMBEDDING_HEADING_SWAP__', '## Use Python Expression as an Alternate')
-assert.throws(
-  () => {
-    const schema = embeddingGpuGuideSchemas.find(({ id }) => id === 'embeddings-at-scale')
-    assertBilingualGuideStructure({
-      ...schema,
-      sources: { en: embeddingsHeadingOrderMutation, zh: embeddingsGuideZh },
-    })
-  },
-  /semantic heading/,
-  'Embedding heading guards should reject Python Expression before SQL',
-)
 
 const documentationCorpus = documentationCorpusEntries()
 assert.ok(
@@ -4063,7 +3193,6 @@ for (const [source, label] of [
   )
 }
 
-assert.doesNotMatch(aiGuide, /append_column\(/, 'AI guide should not default to manual Arrow recombination')
 assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
 assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
 

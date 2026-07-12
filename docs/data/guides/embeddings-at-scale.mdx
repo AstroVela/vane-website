@@ -2,92 +2,139 @@
 title: Embeddings at Scale
 ---
 
-Build embedding pipelines around a reviewable table contract: filter a deterministic candidate slice, keep stable IDs and source fields in the projection, add one embedding column, validate the materialized result, and only then write it. SQL Expression is the default path. The examples below start from prepared chunk rows so each vector already has a durable `(document_id, chunk_id)` key.
+Use Vane Data for embedding pipelines when you want SQL filtering, batch model execution, and table outputs in one workflow.
 
-## Complete a Hosted Embedding Run with SQL
+The usual shape is:
 
-This first workflow uses a hosted provider and completes the task before introducing alternate APIs. `embedding_source` and `embedding_candidates` contain no provider output, while `embedding_model_output` materializes the external call once for validation and writing.
+1. Read and filter source rows with SQL.
+2. Chunk long text into stable units.
+3. Embed chunks with SQL `ai_embed(...)`, or use the Python Expression API when the configuration belongs in Python.
+4. Write embeddings with stable document and chunk IDs.
+
+## Basic text embedding
+
+The recommended entry point is the SQL Expression API. `ai_embed` adds one embedding value per input row, so identifiers and source fields can stay in the same projection:
 
 ```python
-import math
-
 import vane
 
 con = vane.connect()
-
-source = con.sql(
-    """
+embedded = con.sql("""
     SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND chunk_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND chunk_text IS NOT NULL
-      AND length(trim(chunk_text)) > 0
-    """
+        id,
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2'
+            )
+        ) AS embedding
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+""")
+```
+
+`ai_embed` is evaluated in a `SELECT` projection and can be combined with ordinary columns. Without `dimensions`, its result type is `FLOAT[]`. The options argument is a constant `STRUCT` for the whole task, not a set of per-row values.
+
+## Chunk long text first
+
+Do not send whole documents to an embedding model unless that is intentional. Create bounded chunks with stable IDs.
+
+```python
+import pyarrow as pa
+
+def chunk_rows(batch: pa.Table) -> pa.Table:
+    doc_ids = batch.column("id").to_pylist()
+    texts = batch.column("text").to_pylist()
+    out_doc_id = []
+    out_chunk_id = []
+    out_text = []
+
+    for doc_id, text in zip(doc_ids, texts):
+        parts = [part.strip() for part in str(text).split(".") if part.strip()]
+        for idx, part in enumerate(parts):
+            out_doc_id.append(doc_id)
+            out_chunk_id.append(idx)
+            out_text.append(part)
+
+    return pa.table({
+        "id": out_doc_id,
+        "chunk_id": out_chunk_id,
+        "chunk_text": out_text,
+    })
+
+rel = con.sql("""
+    SELECT id, text
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+""")
+
+chunks = rel.map_batches(
+    chunk_rows,
+    schema={
+        "id": "BIGINT",
+        "chunk_id": "BIGINT",
+        "chunk_text": "VARCHAR",
+    },
+    batch_size=512,
+    execution_backend="subprocess_task",
 )
-source.to_table("embedding_source")
+chunks.to_table("document_chunks")
+con.sql("SELECT * FROM document_chunks").write_parquet("data/document-chunks.parquet")
+```
 
-candidates = con.sql(
-    """
+This step uses the Relation API because one document can produce multiple output rows. The Parquet copy provides the input used by the isolated Ray example below. For production systems, use a tokenizer-aware chunker that matches the model context window and preserves enough overlap for retrieval quality.
+
+## Use a local embedding model
+
+Local models are usually best with an actor backend, because model initialization is expensive. SQL `ai_embed` creates that execution path while keeping the source columns in the projection:
+
+```python
+embedded_local = con.sql("""
     SELECT
-        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
-        document_id,
+        id,
         chunk_id,
-        source_uri,
-        chunk_text
-    FROM embedding_source
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-candidates.to_table("embedding_candidates")
-
-candidate_check = con.sql(
-    """
-    SELECT
-        count(*) AS row_count,
-        count(DISTINCT struct_pack(
-            document_id := document_id,
-            chunk_id := chunk_id
-        )) AS distinct_id_count,
-        count(*) FILTER (
-            WHERE document_id IS NULL OR chunk_id IS NULL
-        ) AS null_id_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR chunk_text IS NULL
-        ) AS null_source_count
-    FROM embedding_candidates
-    """
-).fetchone()
-expected_row_count, distinct_id_count, null_id_count, null_source_count = candidate_check
-assert expected_row_count > 0
-assert distinct_id_count == expected_row_count
-assert null_id_count == 0
-assert null_source_count == 0
-
-expected_ids = con.sql(
-    """
-    SELECT document_id, chunk_id
-    FROM embedding_candidates
-    ORDER BY document_id, chunk_id
-    """
-).fetchall()
-
-embedded = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
-        chunk_id,
-        source_uri,
         chunk_text,
-        'openai'::VARCHAR AS embedding_provider,
-        'text-embedding-3-small'::VARCHAR AS embedding_model,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM document_chunks
+""")
+```
+
+Use the Python Expression API as an alternative when typed configuration or Python composition is more convenient:
+
+```python
+embedded_python = chunks.select(
+    vane.col("id"),
+    vane.col("chunk_id"),
+    vane.col("chunk_text"),
+    vane.ai.embed(
+        vane.col("chunk_text"),
+        provider="transformers",
+        model="sentence-transformers/all-MiniLM-L6-v2",
+    ).alias("embedding"),
+)
+```
+
+Both forms are row-preserving Expression operations. When the provider detects usable GPU resources, it may request a GPU from the UDF execution layer.
+
+## Use hosted embedding APIs
+
+Hosted providers are useful when you want managed models and can tolerate API latency and rate limits. The SQL form remains the preferred entry point:
+
+```python
+embedded_hosted = con.sql("""
+    SELECT
+        id,
+        chunk_id,
+        chunk_text,
         ai_embed(
             chunk_text,
             struct_pack(
@@ -96,350 +143,71 @@ embedded = con.sql(
                 dimensions := 512,
                 normalize := true,
                 batch_size := 64,
-                concurrency := 2,
-                on_error := 'raise'
+                concurrency := 8
             )
         ) AS embedding
-    FROM embedding_candidates
-    ORDER BY document_id, chunk_id
-    """
-)
-embedded.to_table("embedding_model_output")
+    FROM document_chunks
+""")
+```
 
-output_check = con.sql(
-    """
+Set credentials such as `OPENAI_API_KEY` in every worker environment; credential-like fields are rejected in SQL options. `concurrency` controls the number of AI actors, while request-level concurrency depends on the provider. Increase either only after measuring rate limits, retries, and cost on a bounded input.
+
+## Use Ray for larger jobs
+
+Move to Ray after the local path is correct. Configure the runner before creating the connection or input relation; the SQL Expression itself does not change:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+
+embedded_ray = con.sql("""
     SELECT
-        count(*) AS row_count,
-        count(DISTINCT struct_pack(
-            document_id := document_id,
-            chunk_id := chunk_id
-        )) AS distinct_id_count,
-        count(*) FILTER (
-            WHERE document_id IS NULL OR chunk_id IS NULL
-        ) AS null_id_count,
-        count(*) FILTER (
-            WHERE source_uri IS NULL OR chunk_text IS NULL
-        ) AS null_source_count,
-        count(*) FILTER (WHERE embedding IS NULL) AS null_embedding_count
-    FROM embedding_model_output
-    """
-).fetchone()
-(
-    actual_row_count,
-    actual_distinct_id_count,
-    actual_null_id_count,
-    actual_null_source_count,
-    null_embedding_count,
-) = output_check
-assert actual_row_count == expected_row_count
-assert actual_distinct_id_count == expected_row_count
-assert actual_null_id_count == 0
-assert actual_null_source_count == 0
-assert null_embedding_count == 0
-
-actual_ids = con.sql(
-    """
-    SELECT document_id, chunk_id
-    FROM embedding_model_output
-    ORDER BY document_id, chunk_id
-    """
-).fetchall()
-assert actual_ids == expected_ids
-
-result = con.sql(
-    """
-    SELECT
-        run_id,
-        document_id,
+        id,
         chunk_id,
-        source_uri,
         chunk_text,
-        embedding_provider,
-        embedding_model,
-        embedding
-    FROM embedding_model_output
-    ORDER BY document_id, chunk_id
-    """
-)
-expected_columns = [
-    "run_id",
-    "document_id",
-    "chunk_id",
-    "source_uri",
-    "chunk_text",
-    "embedding_provider",
-    "embedding_model",
-    "embedding",
-]
-expected_types = [
-    "VARCHAR",
-    "VARCHAR",
-    "BIGINT",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "FLOAT[512]",
-]
-assert list(result.columns) == expected_columns
-assert [str(dtype) for dtype in result.types] == expected_types
-
-for document_id, chunk_id, vector in con.sql(
-    """
-    SELECT document_id, chunk_id, embedding
-    FROM embedding_model_output
-    """
-).fetchall():
-    assert document_id is not None and chunk_id is not None
-    assert len(vector) == 512
-    assert all(math.isfinite(float(value)) for value in vector)
-    norm = math.sqrt(sum(float(value) ** 2 for value in vector))
-    assert math.isclose(norm, 1.0, rel_tol=1e-4, abs_tol=1e-4)
-
-result.write_parquet("output/embedding-run-2026-07-11-001/part-00000.parquet")
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM read_parquet('data/document-chunks.parquet')
+""")
 ```
 
-The second argument to `ai_embed` is one foldable constant `STRUCT`: provider, model, vector shape, normalization, batching, actor count, and error policy bind once for the task rather than becoming columns or per-row options. SQL binding rejects credential-like fields. Put `OPENAI_API_KEY` and any endpoint-specific secrets in every worker environment, never in SQL text or serialized options.
+Every Ray worker must be able to import the provider libraries and access model files or provider credentials. Local subprocess execution inherits visible devices but does not reserve or isolate GPUs; use Ray when explicit resource scheduling is required.
 
-The `LIMIT` is safe only with a deterministic `ORDER BY`. Increase it after the complete check passes; do not replace the stable business key with a generated row number.
+## Output shape
 
-## Choose Vector Shape and Normalization
+Write a complete relation that makes downstream retrieval and auditing straightforward:
 
-Without `dimensions`, the declared SQL and Python Expression type is dynamic `FLOAT[]`. Set `dimensions=N` only when the selected provider and model support that size; the result is fixed `FLOAT[N]`, which makes schema drift and wrong-length vectors easier to reject before indexing.
+- `document_id`
+- `chunk_id`
+- `chunk_text`
+- `embedding`
+- `source_uri`
+- model name and provider
+- creation timestamp or run ID when needed
 
-`normalize=true` requests L2 normalization. Choose it at task level according to the retrieval metric and index contract, then verify finite values, exact length, and approximately unit norm as the completed workflow does. Do not infer correctness from a provider request succeeding. See the [AI Function API Reference](/docs/data/reference/ai-api) for exact provider, dimension, normalization, retry, and error options.
-
-## Tune Batches, Concurrency, and Workers
-
-- `batch_size` controls how many input rows reach an AI actor in one UDF batch. The OpenAI embedding implementation may further pack requests under its token budget. Increase batch size until memory, latency, or failure scope becomes the limiting factor.
-- SQL `concurrency` maps to the AI actor count. It is not a per-row option and does not itself mean that one actor sends that many simultaneous requests. Request-level controls such as `max_api_concurrency` are provider- and capability-specific; do not assume every embedding provider consumes them.
-- More actors can raise throughput, but also increase quota pressure, retries, cost, and duplicate external effects after task retries. Measure a bounded slice first.
-- The active runner resolves SQL and Python Expression actors to local subprocesses or Ray actors. Local subprocesses inherit visible devices but do not reserve or isolate GPUs. Configure Ray before constructing the relation when scheduling, distributed scans, or GPU placement require it.
-- Every worker needs the provider package, network and storage access, credential environment variables, and—for local models—the same model files or download access. Keep model and dependency versions identical across workers.
-
-For vLLM GPU operation and actor-pool validation, continue with [GPU Inference](/docs/data/guides/gpu-inference).
-
-## Use Python Expression as an Alternate
-
-Use Python Expression when typed configuration belongs in Python. It has the same one-column, row-preserving projection semantics as the SQL workflow, including the same IDs and source fields.
+Because the Expression API keeps identifiers and embeddings in one projection, the result can be written directly after validation:
 
 ```python
-import vane
-
-con = vane.connect()
-candidates = con.sql(
-    """
-    SELECT
-        'embedding-run-2026-07-11-001'::VARCHAR AS run_id,
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND chunk_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND chunk_text IS NOT NULL
-      AND length(trim(chunk_text)) > 0
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-
-python_embedded = candidates.select(
-    vane.col("run_id"),
-    vane.col("document_id"),
-    vane.col("chunk_id"),
-    vane.col("source_uri"),
-    vane.col("chunk_text"),
-    vane.lit("openai").alias("embedding_provider"),
-    vane.lit("text-embedding-3-small").alias("embedding_model"),
-    vane.ai.embed(
-        vane.col("chunk_text"),
-        provider="openai",
-        model="text-embedding-3-small",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            concurrency=2,
-        ),
-        embedding_options=vane.ai.OpenAIEmbeddingOptions(
-            on_error="raise",
-        ),
-        dimensions=512,
-        normalize=True,
-    ).alias("embedding"),
-)
+embedded_hosted.write_parquet("output/embeddings/part-00000.parquet")
 ```
 
-Apply the SQL workflow's row-count, ordered-key, null, type, dimension, finite-value, normalization, and run-specific write checks before publishing this alternate. Keep the AI call directly inside `rel.select(...)` with an alias; do not manually combine a result-only column with source rows by position.
+Before writing, validate row counts, stable IDs, nulls, and vector dimensions. For distributed writes, ensure every worker can access the output filesystem.
 
-## Run Local Transformers Locally or on Ray
+## Tuning checklist
 
-For an offline or private path, rebuild the same Expression with a local Transformers model. The default runner uses a local subprocess actor. Configure Ray before creating the connection and relation when the execution must use Ray.
-
-```python
-import vane
-
-vane.configure(runner="ray")
-con = vane.connect()
-candidates = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(chunk_id AS BIGINT) AS chunk_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(chunk_text AS VARCHAR) AS chunk_text
-    FROM read_parquet('data/document-chunks/*.parquet')
-    WHERE chunk_text IS NOT NULL
-    ORDER BY document_id, chunk_id
-    LIMIT 1000
-    """
-)
-
-ray_embedded = candidates.select(
-    vane.col("document_id"),
-    vane.col("chunk_id"),
-    vane.col("source_uri"),
-    vane.col("chunk_text"),
-    vane.ai.embed(
-        vane.col("chunk_text"),
-        provider="transformers",
-        model="sentence-transformers/all-MiniLM-L6-v2",
-        provider_options={"batch_size": 64},
-        dimensions=384,
-        normalize=True,
-    ).alias("embedding"),
-)
-```
-
-The model is instantiated lazily and reused across batches in its actor. The Transformers provider requests a GPU resource when CUDA is detected; Ray can reserve that resource, while a local subprocess cannot. Switching runners does not by itself promise more model actors, so validate the physical actor count, GPU assignment, model reuse, and output contract before scaling.
-
-## Keep Outputs Reviewable and Downstream Writes Idempotent
-
-Hosted provider calls are external effects outside SQL transactions and are not exactly-once. A retry can repeat a request and charge even if the original query never publishes a table. Preserve stable IDs, source text or a durable source reference, provider/model/config, and `run_id` beside every vector so inputs and outputs remain reviewable.
-
-Write each provider run to a unique path. For a durable index or table, merge or replace by `(run_id, document_id, chunk_id)`—or by a versioned business key when a run ID should be superseded—instead of blindly appending retries. Keep candidate and materialized model-output tables separate so validation never reissues the provider call.
-
-## Use Relation Embedding Only for Built-In Long-Text Chunking
-
-The Python Relation helper is useful when its built-in `max_chunk_chars` and `chunk_overlap_chars` behavior is the capability the task needs, or when an explicit Relation backend and actor pool are required. Vane exposes no direct SQL Relation or table-function API for this helper.
-
-```python
-import vane
-
-vane.configure(runner="ray")
-con = vane.connect()
-long_text_source = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/documents/*.parquet')
-    WHERE text IS NOT NULL
-    ORDER BY document_id
-    LIMIT 100
-    """
-)
-
-embedding_only = long_text_source.embed_text(
-    "source_text",
-    provider="openai",
-    model="text-embedding-3-small",
-    dimensions=512,
-    output_column="embedding",
-    max_chunk_chars=2000,
-    chunk_overlap_chars=200,
-    batch_size=64,
-    actor_number=2,
-    num_gpus=0,
-    execution_backend="ray_actor",
-)
-```
-
-Here `actor_number` is an explicit Relation UDF actor-pool control, distinct from configuring provider `concurrency` on an Expression; the actor backend must match it. The helper splits each input internally, combines chunk vectors with a text-length-weighted average, normalizes the combined vector, and declares its configured output column as dynamic `FLOAT[]` even when provider dimensions are requested.
-
-`embedding_only` is deliberate: the helper does not promise to retain `document_id`, `source_uri`, or `source_text`, and it does not emit one output row per internal chunk. Never reconnect it to source rows by position. Use the SQL or Python Expression path when stable source columns must accompany each vector, and use the custom preprocessing stage when chunks need independent IDs and rows.
-
-## Use a Custom Relation UDF Only for Table-Shaped Preprocessing
-
-Use a custom Relation UDF when preprocessing must change cardinality or return several columns, such as turning documents into durable chunk rows. Do not replace the row-preserving embedding Expression with a custom UDF merely to add one vector column.
-
-```python
-import pyarrow as pa
-
-import vane
-
-con = vane.connect()
-source = con.sql(
-    """
-    SELECT
-        CAST(document_id AS VARCHAR) AS document_id,
-        CAST(source_uri AS VARCHAR) AS source_uri,
-        CAST(text AS VARCHAR) AS source_text
-    FROM read_parquet('data/documents/*.parquet')
-    WHERE document_id IS NOT NULL
-      AND source_uri IS NOT NULL
-      AND text IS NOT NULL
-    """
-)
-
-
-def chunk_documents(batch: pa.Table) -> pa.Table:
-    document_ids = batch.column("document_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
-    source_texts = batch.column("source_text").to_pylist()
-    out_document_id = []
-    out_chunk_id = []
-    out_source_uri = []
-    out_chunk_text = []
-    out_chunker_version = []
-
-    for document_id, source_uri, source_text in zip(
-        document_ids,
-        source_uris,
-        source_texts,
-    ):
-        parts = [
-            part.strip()
-            for part in str(source_text).split(".")
-            if part.strip()
-        ]
-        for chunk_id, chunk_text in enumerate(parts):
-            out_document_id.append(document_id)
-            out_chunk_id.append(chunk_id)
-            out_source_uri.append(source_uri)
-            out_chunk_text.append(chunk_text)
-            out_chunker_version.append("sentence-v1")
-
-    return pa.table(
-        {
-            "document_id": pa.array(out_document_id, type=pa.string()),
-            "chunk_id": pa.array(out_chunk_id, type=pa.int64()),
-            "source_uri": pa.array(out_source_uri, type=pa.string()),
-            "chunk_text": pa.array(out_chunk_text, type=pa.string()),
-            "chunker_version": pa.array(
-                out_chunker_version,
-                type=pa.string(),
-            ),
-        }
-    )
-
-
-chunks = source.map_batches(
-    chunk_documents,
-    schema={
-        "document_id": "VARCHAR",
-        "chunk_id": "BIGINT",
-        "source_uri": "VARCHAR",
-        "chunk_text": "VARCHAR",
-        "chunker_version": "VARCHAR",
-    },
-    batch_size=512,
-    execution_backend="subprocess_task",
-)
-chunks.to_table("embedding_chunks")
-```
-
-The example is intentionally simple. Production chunkers should be tokenizer-aware, bound chunk size and overlap to the model contract, and version the algorithm. Validate unique `(document_id, chunk_id)` keys and deterministic output before sending `embedding_chunks` through the SQL workflow.
-
-For the complete capability boundary and execution semantics, read [AI Function Concepts](/docs/data/concepts/ai-functions), then use the [AI Functions Guide](/docs/data/guides/ai-functions) for a broader end-to-end task and [GPU Inference](/docs/data/guides/gpu-inference) for GPU-specific operation.
+- Filter and project before embedding.
+- Keep chunks bounded and deterministic.
+- Use actor execution for local models.
+- Increase `batch_size` until latency or memory becomes the bottleneck.
+- Increase actor or provider request concurrency only when workers and API quota have headroom.
+- Use Ray when scan, inference, or write throughput exceeds one process, or when resource scheduling is required.
+- Keep output rows deterministic with stable document and chunk IDs.
+- Set fixed `dimensions` only when the provider and model support that vector size.
