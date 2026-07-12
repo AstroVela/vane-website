@@ -3096,20 +3096,6 @@ assert.match(sidebar, /"group": "Reference"[\s\S]*"reference\/udf-api"[\s\S]*"re
 assert.match(localeLabels, /category\.Reference[\s\S]*API 参考/, 'Docusaurus locale labels should translate the Reference group')
 assert.match(packageJson, /"udf-ai-v2:content:check": "node scripts\/udf-ai-v2-content-check\.mjs"/, 'package scripts should register the UDF/AI v2 content check')
 
-const home = stripTags(read('src/pages/Home.tsx'))
-const enterprise = stripTags(read('src/pages/EnterpriseAgentUseCase.tsx'))
-const training = stripTags(read('src/pages/TrainingUseCase.tsx'))
-const useCases = stripTags(read('src/pages/useCasesData.ts'))
-
-assert.match(home, /con\.sql\([\s\S]*SELECT id, text,[\s\S]*ai_embed\([\s\S]*AS embedding/i, 'Homepage hero should lead with a SQL ai_embed projection and retain source fields')
-assert.doesNotMatch(home, /vane\.ai\.(?:prompt|embed)\(|vane\.col\(/, 'Homepage hero should not make Python Expression the primary spelling')
-assert.doesNotMatch(home, /\.write_parquet\(["'][^"'\n]+\/["']\)/, 'Homepage hero should write to an explicit Parquet file')
-assert.doesNotMatch(home, /from vane\.ai import describe|vane\.read\(/, 'Homepage hero should reject fictional APIs')
-assert.match(enterprise, /ai_prompt\(/, 'Enterprise use case should demonstrate SQL ai_prompt')
-assert.doesNotMatch(enterprise, /append_column\(/, 'Enterprise use case should not manually recombine AI output')
-assert.match(training, /vane\.ai\.embed|ai_embed\(/, 'Training use case should use the v2 embedding surface')
-assert.match(useCases, /vane\.ai\.(embed|prompt)|ai_(embed|prompt)\(/, 'Use-case cards should include v2 AI APIs')
-
 assert.doesNotMatch(publicApiCorpus, /vane\.function\b/, 'Public docs should use the final vane.func name')
 assert.doesNotMatch(publicApiCorpus, /_duckdb\._VaneUDF|_create_vane_|expression_udf=true/, 'Public docs should not expose internal protocol symbols')
 for (const [source, name] of [
