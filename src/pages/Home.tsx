@@ -14,11 +14,10 @@ import { DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
 const HERO_CODE = `<span class="k">import</span> vane
 
-vane<span class="p">.</span><span class="f">configure</span><span class="p">(</span>runner<span class="p">=</span><span class="s">"ray"</span><span class="p">)</span>
 con <span class="p">=</span> vane<span class="p">.</span><span class="f">connect</span><span class="p">()</span>
 
-media <span class="p">=</span> con<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
-    SELECT id, text,
+embeddings <span class="p">=</span> con<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
+    SELECT id,
            ai_embed(
                text,
                struct_pack(
@@ -26,10 +25,10 @@ media <span class="p">=</span> con<span class="p">.</span><span class="f">sql</s
                    model := 'text-embedding-3-small'
                )
            ) AS embedding
-    FROM read_parquet('media/*.parquet')
+    FROM read_parquet('documents/*.parquet')
 """</span><span class="p">)</span>
 
-media<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"ai_ready_media.parquet"</span><span class="p">)</span><span class="cur"></span>`
+embeddings<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"embeddings.parquet"</span><span class="p">)</span><span class="cur"></span>`
 
 const SCENARIOS: Array<{
   title: string
@@ -134,6 +133,8 @@ export default function Home() {
       getStarted: 'Get Started',
       chooseWorkload: 'Choose your workload',
       preRelease: 'pre-release',
+      heroCodeLocal: 'Runs locally by default. Add',
+      heroCodeRay: 'to run the same pipeline on Ray.',
       useCases: 'Use Cases',
       workloadsTitle: 'Four real-world AI workloads.',
       workloadsLead: 'From multimodal model training to enterprise data pipelines, real-world AI runs on messy multimodal data. Pick the pipeline that matches your workload.',
@@ -163,6 +164,8 @@ export default function Home() {
       getStarted: '开始使用',
       chooseWorkload: '选择你的工作负载',
       preRelease: '预发布',
+      heroCodeLocal: '默认在本地运行。增加',
+      heroCodeRay: '即可让同一条流水线运行在 Ray 上。',
       useCases: '用例',
       workloadsTitle: '多模态 AI 场景',
       workloadsLead: '从训练数据准备到企业 Agent 后端，真实 AI 系统面对的都是混杂的多模态数据',
@@ -218,7 +221,12 @@ export default function Home() {
               <span>·</span><span>{copy.preRelease}</span><span>·</span><span>Apache-2.0</span>
             </div>
           </div>
-          <CodeWindow filename="multimodal.py" running code={HERO_CODE} />
+          <div className="home-hero-code">
+            <CodeWindow filename="embed_documents.py" running code={HERO_CODE} />
+            <p className="home-hero-code-note">
+              {copy.heroCodeLocal} <code>vane.configure(runner="ray")</code> {copy.heroCodeRay}
+            </p>
+          </div>
         </div>
       </section>
 

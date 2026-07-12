@@ -12,39 +12,33 @@ import { ENTERPRISE_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
 const AUDIT_CODE = `import vane
 
-con = vane.connect()
-docs = con.sql("""
-    select document_id, claim_id, document_type, text, source_uri
-    from read_parquet('data/insurance_documents/*.parquet')
-    where text is not null
-""")
-docs.to_table("docs")
+@vane.func(return_dtype="VARCHAR")
+def policy_check(text):
+    return "missing_signature" if "missing signature" in text.lower() else None
 
-reviewed = con.sql("""
-    select claim_id, document_id, document_type,
-           case
-             when lower(text) like '%missing signature%' then 'missing_signature'
-             when lower(text) like '%expired%' then 'expired_reference'
-           end as rule_hit,
+con = vane.connect()
+vane.attach_function(
+    policy_check,
+    parameters=["VARCHAR"],
+    connection=con,
+)
+
+findings = con.sql("""
+    SELECT claim_id, document_id,
+           policy_check(text) AS rule_hit,
            ai_prompt(
                text,
                struct_pack(
                    provider := 'openai',
                    model := 'gpt-4o-mini',
-                   system_message := 'Audit the insurance document for missing evidence. Return a concise review finding.',
-                   temperature := 0.0
+                   system_message := 'Find missing claim evidence.'
                )
-           ) as model_response,
+           ) AS ai_finding,
            source_uri
-    from docs
+    FROM read_parquet('claims/*.parquet')
 """)
-reviewed.to_table("reviewed")
 
-final = con.sql("""
-    select claim_id, document_id, document_type, rule_hit, model_response, source_uri
-    from reviewed
-    where rule_hit is not null or model_response is not null
-""")`
+findings.write_parquet("audit_findings.parquet")`
 
 const INSURANCE_AUDIT_DOC = '/docs/data/examples/insurance-document-audit'
 
@@ -218,16 +212,14 @@ const DOC_ROWS_ZH = [
   { id: 'DOC-1030', text: 'policy expired', src: 'policy.pdf' },
   { id: 'DOC-1031', text: 'coverage limit', src: 'memo.pdf' },
 ]
-const PIPELINE_STAGES_EN = ['SQL rules', 'model review', 'audit rows']
-const PIPELINE_STAGES_ZH = ['SQL 规则', '模型推理', '文件处理']
-// The audit row's produced columns, straight from the final relation in
-// AUDIT_CODE (rule_hit, model_response, source_uri) — keeps the figure honest to the
-// code below and reinforces the page's source-reference / evidence-chain point.
-const AUDIT_OUTPUTS_EN = ['rule hit', 'model response', 'source URI']
-const AUDIT_OUTPUTS_ZH = ['规则命中', '模型响应', '来源 URI']
+const PIPELINE_STAGES_EN = ['Python rule', 'SQL AI review', 'audit rows']
+const PIPELINE_STAGES_ZH = ['Python 规则', 'SQL AI 审查', '审核结果']
+// Keep the diagram labels aligned with the columns produced by AUDIT_CODE.
+const AUDIT_OUTPUTS_EN = ['rule hit', 'AI finding', 'source URI']
+const AUDIT_OUTPUTS_ZH = ['规则命中', 'AI 发现', '来源 URI']
 
-/* Real-example flow: a parsed document table feeds one Vane pipeline (SQL rules
-   -> model review -> audit rows) that produces auditable outputs. Three equal-
+/* Real-example flow: a parsed document table feeds one Vane pipeline (Python rule
+   -> SQL AI review -> audit rows) that produces auditable outputs. Three equal-
    height panels share one row anatomy; the middle is the green-accented hero. */
 function ExamplePipelineDiagram({ locale }: { locale: SiteLocale }) {
   const copy = pickLocale(
@@ -320,7 +312,7 @@ export default function EnterpriseAgentUseCase() {
       howTitle: 'source rows → auditable outputs, as one relation pipeline.',
       example: 'Real Example',
       exampleTitle: 'Insurance document audit pattern',
-      exampleLead: 'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
+      exampleLead: 'Register a Python policy rule once, then call it beside ai_prompt in SQL. Business IDs and source references stay on every audit row.',
       ctaTitle: 'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
     },
     {
@@ -341,7 +333,7 @@ export default function EnterpriseAgentUseCase() {
       howTitle: '以一条关系语义的SQL流水线，从多模数据变成可信决策',
       example: '真实示例',
       exampleTitle: '保险审核流水线',
-      exampleLead: '从理赔申请和原始理赔材料出发，在一条SQL流水线里完成非结构数据处理、模型推理和规则检查。',
+      exampleLead: 'Python 规则注册一次后即可在 SQL 中与 ai_prompt 并排调用；业务 ID 和来源引用始终保留在每条审核结果中。',
       ctaTitle: '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
     },
   )
