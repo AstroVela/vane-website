@@ -295,7 +295,7 @@ const assertEntryTemplate = (source, entries, labels, message) => {
     const body = section(source, `#### \`${entry}\``, next ? `#### \`${next}\`` : undefined)
     const actualLabels = markdownLines(body)
       .map(({ text }) => text)
-      .filter((line) => /^\*\*[^*]+\*\*$/.test(line))
+      .filter((line) => /^##### /.test(line))
     assert.deepEqual(actualLabels, labels, `${message}: ${entry} should use the exact entry template`)
   })
 }
@@ -344,7 +344,7 @@ const assertExampleSetup = (source, entry, next, setupPattern, message) => {
   const body = section(source, `#### \`${entry}\``, next ? `#### \`${next}\`` : undefined)
   assert.match(
     body,
-    /\*\*Minimal example\*\*[\s\S]*```python\nimport vane[\s\S]*con = vane\.connect\(\)/,
+    /##### Minimal example[\s\S]*```python\nimport vane[\s\S]*con = vane\.connect\(\)/,
     `${message} should define imports and a connection in its minimal example`,
   )
   assert.match(body, setupPattern, `${message} should define and preserve the setup its example uses`)
@@ -634,8 +634,8 @@ const assertPythonDefinedNames = (block, state, message) => {
 const referenceMinimalExampleBlocks = (source, locale, message) => {
   const lines = markdownLines(source)
   const entries = lines.filter(({ text }) => /^#### `[^`]+`$/.test(text))
-  const minimalLabel = locale === 'zh' ? '**最小示例**' : '**Minimal example**'
-  const restrictionsLabel = locale === 'zh' ? '**限制与错误**' : '**Restrictions and errors**'
+  const minimalLabel = locale === 'zh' ? '##### 最小示例' : '##### Minimal example'
+  const restrictionsLabel = locale === 'zh' ? '##### 限制与错误' : '##### Restrictions and errors'
   return entries.flatMap((entry, index) => {
     const body = source.slice(entry.offset, entries[index + 1]?.offset ?? source.length)
     const start = exactLineIndex(body, minimalLabel)
@@ -1307,24 +1307,24 @@ const aiEntrySignatures = new Map([
   ['rel.classify_text', 'rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation'],
 ])
 const referenceLabels = [
-  '**Purpose**',
-  '**Signature**',
-  '**Parameters**',
-  '**Returns**',
-  '**Behavior and data contract**',
-  '**Minimal example**',
-  '**Restrictions and errors**',
-  '**Related pages**',
+  '##### Purpose',
+  '##### Signature',
+  '##### Parameters',
+  '##### Returns',
+  '##### Behavior and data contract',
+  '##### Minimal example',
+  '##### Restrictions and errors',
+  '##### Related pages',
 ]
 const referenceLabelsZh = [
-  '**用途**',
-  '**签名**',
-  '**参数**',
-  '**返回值**',
-  '**行为与数据契约**',
-  '**最小示例**',
-  '**限制与错误**',
-  '**相关页面**',
+  '##### 用途',
+  '##### 签名',
+  '##### 参数',
+  '##### 返回值',
+  '##### 行为与数据契约',
+  '##### 最小示例',
+  '##### 限制与错误',
+  '##### 相关页面',
 ]
 const udfIntroductionRequirements = [
   'public UDF signatures, parameters, returns, and call restrictions',
@@ -1520,7 +1520,7 @@ const conceptSchemas = [
           en: {
             mustMatch: [
               [/(?:query-scoped|scoped to (?:one|the) query)[^.\n]{0,80}(?:actor-local|local to (?:one|the) actor)[^.\n]{0,80}(?:ephemeral|temporary|non-durable)/i, 'scope mutable state to one query and actor'],
-              [/\b(?:not|never|cannot|can't)\b[^.\n]{0,80}\b(?:checkpoint(?:ed|ing)?|restor(?:e|ed|able|ation))\b/i, 'deny checkpoint or restoration'],
+              [/\b(?:not|never|cannot|can't)\b[^.\n]{0,80}\b(?:checkpoint(?:ed|ing)?|restore|restored|restorable|restoration)\b/i, 'deny checkpoint or restoration'],
               [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bglobal state\b/i, 'deny global state'],
               [/\b(?:not|neither|no|without)\b[^.\n]{0,100}\bkeyed state\b/i, 'deny keyed state'],
               [/\b(?:not|no|without)\b[^.\n]{0,80}\bexactly-once\b/i, 'deny exactly-once semantics'],
@@ -2137,25 +2137,25 @@ assert.throws(
   () => assertEntrySignatures(
     [
       '#### `rel.prompt`',
-      '**Signature**',
+      '##### Signature',
       '```python',
       aiEntrySignatures.get('rel.prompt').replace(
         'use_chat_completions=True',
         'use_chat_completions=False',
       ),
       '```',
-      '**Parameters**',
+      '##### Parameters',
       'The wrong signature is inside the entry.',
       '#### `unrelated`',
-      '**Signature**',
+      '##### Signature',
       '```python',
       aiEntrySignatures.get('rel.prompt'),
       '```',
-      '**Parameters**',
+      '##### Parameters',
     ].join('\n'),
     new Map([['rel.prompt', aiEntrySignatures.get('rel.prompt')]]),
-    '**Signature**',
-    '**Parameters**',
+    '##### Signature',
+    '##### Parameters',
     'entry-scoped signature mutation probe',
   ),
   /exact fenced signature/,
@@ -2165,7 +2165,7 @@ assert.throws(
   () => assertExampleSetup(
     [
       '#### `ai_prompt`',
-      '**Minimal example**',
+      '##### Minimal example',
       '```python',
       'import vane',
       'con = vane.connect()',
@@ -2256,21 +2256,21 @@ assertApiModels(udfReference, ['## Expression API', '## Relation API'], 'UDF ref
 assertApiModels(udfReferenceZh, ['## Expression API', '## Relation API'], 'Chinese UDF reference')
 assertOrdered(
   udfReference,
-  ['### SQL Entry Point (Recommended)', '**Registered-object compatibility**', '#### `vane.attach_function`'],
+  ['### SQL Entry Point (Recommended)', 'Registered-object compatibility:', '#### `vane.attach_function`'],
   'UDF registered-object compatibility placement',
 )
 assertOrdered(
   udfReferenceZh,
-  ['### SQL 入口（推荐）', '**注册对象兼容矩阵**', '#### `vane.attach_function`'],
+  ['### SQL 入口（推荐）', '注册对象兼容矩阵：', '#### `vane.attach_function`'],
   'Chinese UDF registered-object compatibility placement',
 )
 assert.equal(
-  markdownLines(udfReference).filter(({ text }) => text === '**Registered-object compatibility**').length,
+  markdownLines(udfReference).filter(({ text }) => text === 'Registered-object compatibility:').length,
   1,
   'UDF reference should contain one shared registered-object compatibility block',
 )
 assert.equal(
-  markdownLines(udfReferenceZh).filter(({ text }) => text === '**注册对象兼容矩阵**').length,
+  markdownLines(udfReferenceZh).filter(({ text }) => text === '注册对象兼容矩阵：').length,
   1,
   'Chinese UDF reference should contain one shared registered-object compatibility block',
 )
@@ -2416,8 +2416,8 @@ assert.match(aiReference, /^---\ntitle: AI Function API Reference\n---/)
 assert.match(aiReferenceZh, /^---\ntitle: AI Function API 参考\n---/)
 
 for (const [source, name, signatureLabel, parametersLabel] of [
-  [aiReference, 'AI reference', '**Signature**', '**Parameters**'],
-  [aiReferenceZh, 'Chinese AI reference', '**签名**', '**参数**'],
+  [aiReference, 'AI reference', '##### Signature', '##### Parameters'],
+  [aiReferenceZh, 'Chinese AI reference', '##### 签名', '##### 参数'],
 ]) {
   assertOrdered(
     source,
@@ -2782,7 +2782,7 @@ assert.throws(
 
 const validActorReferenceProbe = [
   '#### `rel.prompt`',
-  '**Minimal example**',
+  '##### Minimal example',
   '```python',
   'result = rel.prompt(',
   '    "text",',
@@ -2791,7 +2791,7 @@ const validActorReferenceProbe = [
   '    gpus=0.0,',
   ')',
   '```',
-  '**Restrictions and errors**',
+  '##### Restrictions and errors',
 ].join('\n')
 for (const [label, mutation] of [
   ['missing actor_number', validActorReferenceProbe.replace('    actor_number=1,\n', '')],

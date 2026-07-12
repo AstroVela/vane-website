@@ -3310,7 +3310,7 @@ Expression UDFs participate in a projection and normally preserve one output row
 
 `vane.attach_function` and `vane.detach_function` are Python registration controls for SQL Expression calls. They do not define a separate API model.
 
-**Registered-object compatibility**
+Registered-object compatibility:
 
 | Registered object | Required or allowed arguments | Forbidden or fixed arguments |
 | --- | --- | --- |
@@ -3325,11 +3325,11 @@ Uninstantiated Vane class wrappers must first capture constructor arguments, for
 
 #### `vane.attach_function`
 
-**Purpose**
+##### Purpose
 
 Register a supported Python callable or Vane wrapper as a connection-scoped SQL Expression alias.
 
-**Signature**
+##### Signature
 
 ```python
 vane.attach_function(
@@ -3348,7 +3348,7 @@ vane.attach_function(
 ) -> None
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3364,15 +3364,15 @@ vane.attach_function(
 | `gpus` | Optional non-negative batch or raw-actor GPU resource request. |
 | `actor_number` | Positive actor count for a zero-argument raw batch callable class; it cannot override a Vane class decorator. |
 
-**Returns**
+##### Returns
 
 `None` after the alias is registered on the selected connection.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The selected connection owns the alias, and only queries planned on that connection can use it. Python preflight validation completes before the catalog change is applied. Batch aliases accept case-insensitive SQL named arguments and reorder them to `input_names`; scalar aliases accept positional arguments only. `replace=True` is limited to a same-signature Vane alias owned by the same connection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3399,39 +3399,39 @@ finally:
     vane.detach_function("add_one_sql", connection=con)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Unsupported objects, missing types, invalid option combinations, duplicate `input_names`, and uninstantiated Vane class wrappers fail during Python preflight. Apply registration outside an active transaction: the DuckDB catalog apply can cancel the active transaction. The shared compatibility table above is normative for allowed overrides.
 
-**Related pages**
+##### Related pages
 
 [Register and use a UDF in a complete task](/docs/data/guides/custom-python-udfs) · [Why SQL and Python share Expression semantics](/docs/data/concepts/udfs)
 
 #### `registered_alias(...args)`
 
-**Purpose**
+##### Purpose
 
 Invoke a registered Python UDF as the recommended SQL entry point to the Expression API.
 
-**Signature**
+##### Signature
 
 ```sql
 registered_alias(argument [, ...]) -> declared_return_type
 ```
 
-**Parameters**
+##### Parameters
 
 `argument [, ...]` must match the SQL `parameters` declared at registration. Raw batch aliases may also use case-insensitive named arguments declared by `input_names`; scalar aliases reject named arguments.
 
-**Returns**
+##### Returns
 
 One value of the registered `declared_return_type` for each input row.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The alias is connection-scoped and row-preserving in v1. It is valid in a `SELECT projection` and composes beside ordinary columns, so identifiers and source fields can remain in the same projection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3458,21 +3458,21 @@ finally:
     vane.detach_function("add_tax", connection=con)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Registered aliases are unsupported in `WHERE`, `GROUP BY`, `HAVING`, join conditions, aggregate arguments, and short-circuit-sensitive `CASE`, `AND`, `OR`, or `COALESCE` expressions. Planning fails rather than falling back to per-row Python execution. SQL aliases cannot use the cardinality-changing `row_preserving=False` contract in v1.
 
-**Related pages**
+##### Related pages
 
 [SQL-first UDF task](/docs/data/guides/custom-python-udfs) · [Expression placement model](/docs/data/concepts/udfs)
 
 #### `vane.detach_function`
 
-**Purpose**
+##### Purpose
 
 Remove a registered SQL Expression alias from a selected connection.
 
-**Signature**
+##### Signature
 
 ```python
 vane.detach_function(
@@ -3482,22 +3482,22 @@ vane.detach_function(
 ) -> None
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
 | `alias` | Name of the SQL alias to remove. |
 | `connection` | Connection from which to remove it. `None` uses `duckdb.default_connection()`. |
 
-**Returns**
+##### Returns
 
 `None` after the alias is removed.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 Removal applies only to the specified connection, or to the default connection when `connection=None`. It delegates to that connection's function-removal operation.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3517,11 +3517,11 @@ vane.attach_function(
 vane.detach_function("identity_sql", connection=con)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Use the same connection that owns the alias. A missing alias or a connection mismatch is reported by the connection's removal operation; detaching on one connection does not affect aliases on another.
 
-**Related pages**
+##### Related pages
 
 [SQL alias lifecycle task](/docs/data/guides/custom-python-udfs) · [Connection and execution semantics](/docs/data/concepts/udfs)
 
@@ -3531,29 +3531,29 @@ Python constructors and wrappers build the same one-column Expression model. Cal
 
 #### `vane.col`
 
-**Purpose**
+##### Purpose
 
 Construct a reference to a named relation column.
 
-**Signature**
+##### Signature
 
 ```python
 vane.col(name: str) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 `name` is the column name to resolve against the relation that consumes the expression.
 
-**Returns**
+##### Returns
 
 A DuckDB `Expression` representing the column reference.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The reference is lazy. It is bound when used in a relation operation such as `select`.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3563,39 +3563,39 @@ rel = con.sql("SELECT 1 AS id, 'hello' AS text")
 result = rel.select(vane.col("id"), vane.col("text"))
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `name` must resolve in the consuming relation. Missing or ambiguous columns fail during binding.
 
-**Related pages**
+##### Related pages
 
 [Python Expression UDF task](/docs/data/guides/custom-python-udfs) · [Expression model](/docs/data/concepts/udfs)
 
 #### `vane.lit`
 
-**Purpose**
+##### Purpose
 
 Construct a constant expression from a Python literal.
 
-**Signature**
+##### Signature
 
 ```python
 vane.lit(value: Any) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 `value` is a Python value convertible to a DuckDB literal.
 
-**Returns**
+##### Returns
 
 A constant DuckDB `Expression`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The literal is part of the lazy projection and is repeated according to the relation's row count.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3608,39 +3608,39 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Values without a DuckDB literal conversion are rejected when the expression is constructed or bound.
 
-**Related pages**
+##### Related pages
 
 [Python Expression UDF task](/docs/data/guides/custom-python-udfs) · [Expression model](/docs/data/concepts/udfs)
 
 #### `vane.sql_expr`
 
-**Purpose**
+##### Purpose
 
 Construct a DuckDB expression from SQL expression text.
 
-**Signature**
+##### Signature
 
 ```python
 vane.sql_expr(sql: str) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 `sql` is one SQL expression, not a complete query.
 
-**Returns**
+##### Returns
 
 A parsed DuckDB `Expression`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 Column names in the SQL text are resolved against the consuming relation, and the result composes with other Python expressions.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3652,21 +3652,21 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Invalid SQL expression text and unresolved names fail during parsing or binding. Do not interpolate untrusted text into `sql`.
 
-**Related pages**
+##### Related pages
 
 [Python Expression UDF task](/docs/data/guides/custom-python-udfs) · [SQL and Python entry points](/docs/data/concepts/udfs)
 
 #### `vane.func`
 
-**Purpose**
+##### Purpose
 
 Wrap a stateless scalar Python callable for eager calls and one-column Expression execution.
 
-**Signature**
+##### Signature
 
 ```python
 vane.func(
@@ -3677,7 +3677,7 @@ vane.func(
 ) -> VaneFunction | decorator
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3685,15 +3685,15 @@ vane.func(
 | `return_dtype` | Single-column output type. Optional for eager-only calls, but required for Expression or SQL execution. |
 | `name` | Display and default SQL name. `None` derives it from the callable, with `map_udf` as the final fallback. |
 
-**Returns**
+##### Returns
 
 A `VaneFunction` wrapper, or a decorator when `fn=None`. Calling the wrapper returns the eager Python result or a DuckDB `Expression`, depending on its inputs.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 When every argument is an ordinary Python value, the original callable runs immediately in the current process. When any positional argument is an `Expression`, the call builds a lazy, stateless scalar expression using a task backend. Ordinary keyword values remain Python arguments; mutable state is not retained across batches.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3712,21 +3712,21 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Expression inputs must be positional; an `Expression` supplied in keyword arguments is rejected. Expression execution requires `return_dtype` and follows the shared projection and short-circuit placement limits.
 
-**Related pages**
+##### Related pages
 
 [Build a scalar UDF task](/docs/data/guides/custom-python-udfs) · [Eager and Expression execution](/docs/data/concepts/udfs)
 
 #### `vane.func.batch`
 
-**Purpose**
+##### Purpose
 
 Wrap a stateless Arrow batch callable as one typed output Expression.
 
-**Signature**
+##### Signature
 
 ```python
 vane.func.batch(
@@ -3741,7 +3741,7 @@ vane.func.batch(
 ) -> Any | Expression
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3753,15 +3753,15 @@ vane.func.batch(
 | `row_preserving` | `False` permits cardinality change as a result-only projection; `True` requires one output row per input row. |
 | `gpus` | Optional non-negative execution resource declaration. |
 
-**Returns**
+##### Returns
 
 The eager callable result when every input is a literal, or one DuckDB `Expression` when any input is an `Expression`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The eager path builds `pa.table(inputs)` and calls `fn` immediately. The Expression path names input columns from `inputs` and uses a stateless task backend. `row_preserving=True` checks equal input and output row counts and permits ordinary projection columns beside the result.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import pyarrow as pa
@@ -3782,21 +3782,21 @@ normalized = vane.func.batch(
 result = rel.select(vane.col("id"), normalized)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `inputs` must be non-empty. The Expression schema must declare exactly one output column. With `row_preserving=False`, the batch expression may change cardinality but must be the sole top-level projection; SQL registration accepts only row-preserving batch wrappers.
 
-**Related pages**
+##### Related pages
 
 [Batch Expression task](/docs/data/guides/custom-python-udfs) · [Cardinality contracts](/docs/data/concepts/udfs)
 
 #### `vane.cls`
 
-**Purpose**
+##### Purpose
 
 Decorate a scalar callable class whose mutable state is reused by one actor during one query.
 
-**Signature**
+##### Signature
 
 ```python
 vane.cls(
@@ -3809,7 +3809,7 @@ vane.cls(
 ) -> VaneClass | decorator
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3819,15 +3819,15 @@ vane.cls(
 | `name` | UDF name. `None` derives it from the class, with `class_udf` as fallback. |
 | `gpus` | Per-actor GPU resource request; default `0`. |
 
-**Returns**
+##### Returns
 
 A `VaneClass` wrapper, or a decorator when `class_=None`. Calling the decorated class captures constructor arguments in an instance wrapper; calling that instance returns an eager value or an `Expression`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 Ordinary values use one local eager instance. Expression inputs create the real class inside one worker actor and reuse it for batches handled by that actor. Expression execution is row-preserving. In Expression and SQL execution, any SQL NULL input produces NULL without invoking the class; eager Python calls retain Python behavior and pass `None` to user code.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -3847,21 +3847,21 @@ rel = con.sql("SELECT 1::BIGINT AS delta")
 result = rel.select(counter(vane.col("delta")).alias("running_value"))
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 v1 accepts only the exact integer `actor_number=1`; `True`, `1.0`, and other integers are rejected. Expression inputs must be positional, not keyword arguments. State is query-scoped, actor-local, ephemeral, not checkpointed, and not exactly-once; actor loss fails the query.
 
-**Related pages**
+##### Related pages
 
 [Stateful UDF task](/docs/data/guides/custom-python-udfs) · [State and failure semantics](/docs/data/concepts/udfs)
 
 #### `vane.cls.batch`
 
-**Purpose**
+##### Purpose
 
 Decorate an Arrow batch callable class whose mutable state is reused by one actor during one query.
 
-**Signature**
+##### Signature
 
 ```python
 vane.cls.batch(
@@ -3876,7 +3876,7 @@ vane.cls.batch(
 ) -> VaneClassBatch | decorator
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3888,15 +3888,15 @@ vane.cls.batch(
 | `row_preserving` | `False` permits cardinality change as the sole top-level projection; `True` requires equal row counts. |
 | `gpus` | Per-actor GPU resource request; default `0`. |
 
-**Returns**
+##### Returns
 
 A `VaneClassBatch` wrapper, or a decorator when `class_=None`. Instantiating the wrapper captures constructor arguments; invoking the instance as `instance(**inputs)` returns an eager batch result or an `Expression`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 Input mapping keys become Arrow column names. Ordinary values build a local Arrow table and reuse one local instance; Expression values create and reuse the class inside one worker actor. State has the same query-local lifetime as `vane.cls`.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import pyarrow as pa
@@ -3919,25 +3919,27 @@ normalized = normalizer(text=vane.col("text")).alias("normalized")
 result = rel.select(vane.col("id"), normalized)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 v1 requires the exact integer `actor_number=1`, and the schema must contain exactly one output column. `row_preserving=False` may change cardinality only as the sole top-level projection. SQL registration requires the decorator to set `row_preserving=True`. State is query-scoped, actor-local, ephemeral, not checkpointed, and not exactly-once.
 
-**Related pages**
+##### Related pages
 
 [Stateful batch UDF task](/docs/data/guides/custom-python-udfs) · [State and cardinality semantics](/docs/data/concepts/udfs)
 
 ## Relation API
 
+### Python Entry Point
+
 Relation methods are specialized Python table stages. They may return a new table shape or expose explicit backend and actor-pool controls. Vane does not expose SQL table-function syntax for these Relation UDFs.
 
 #### `rel.map_batches`
 
-**Purpose**
+##### Purpose
 
 Transform Arrow batches into a declared table shape, including multi-column output.
 
-**Signature**
+##### Signature
 
 ```python
 rel.map_batches(
@@ -3960,7 +3962,7 @@ rel.map_batches(
 ) -> DuckDBPyRelation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -3976,15 +3978,15 @@ rel.map_batches(
 | `max_ready_rows` | Optional positive bound for ready output rows. |
 | `generator_backpressure_num_objects` | Optional positive generator backpressure limit. |
 
-**Returns**
+##### Returns
 
 A lazy `DuckDBPyRelation` containing the columns declared by `schema`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The callable receives Arrow batches with the relation's input column names. Output names, types, and shape come from `schema`; multi-column results are flattened into ordinary relation columns. The stage may return a different row count and does not automatically retain input columns.
 
-**Minimal example**
+##### Minimal example
 
 Relation API is needed here because the callable emits a two-column table stage rather than one Expression column.
 
@@ -4010,21 +4012,21 @@ schema = {
 features = rel.map_batches(build_features, schema=schema, batch_size=1024)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `schema` must be a dict and callable output must match its names, types, and column count. Batch, queue, and actor counts must be positive; resources must be non-negative. Task backends accept functions and reject actor-only options; actor backends require a callable class plus explicit actor resources.
 
-**Related pages**
+##### Related pages
 
 [Multi-column Relation UDF task](/docs/data/guides/custom-python-udfs) · [Relation execution model](/docs/data/concepts/udfs)
 
 #### `rel.flat_map`
 
-**Purpose**
+##### Purpose
 
 Apply a row callable that emits zero, one, or many output rows under a declared schema.
 
-**Signature**
+##### Signature
 
 ```python
 rel.flat_map(
@@ -4047,7 +4049,7 @@ rel.flat_map(
 ) -> DuckDBPyRelation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4061,15 +4063,15 @@ rel.flat_map(
 | `queue_depth`, `max_outstanding_batches` | Optional positive admission and in-flight limits. |
 | `max_ready_rows`, `generator_backpressure_num_objects` | Optional positive output/backpressure limits. |
 
-**Returns**
+##### Returns
 
 A lazy `DuckDBPyRelation` with zero, one, or many output rows per input row and columns declared by `schema`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 Returning `None` emits no row, returning one mapping emits one row, and yielding mappings emits multiple rows. Only fields declared by the output schema are produced, so pass-through values must be included explicitly.
 
-**Minimal example**
+##### Minimal example
 
 Relation API is needed here because one input row expands into multiple output rows.
 
@@ -4090,21 +4092,21 @@ schema = {
 words = rel.flat_map(split_words, schema=schema)
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Every emitted mapping must conform to `schema`. This is an explicit cardinality-changing boundary; it cannot be represented as a registered SQL Expression alias. Invalid backend/callable combinations and non-positive batch, queue, or actor controls fail preflight.
 
-**Related pages**
+##### Related pages
 
 [Row-expansion UDF task](/docs/data/guides/custom-python-udfs) · [Cardinality model](/docs/data/concepts/udfs)
 
 #### `rel.map`
 
-**Purpose**
+##### Purpose
 
 Apply a row-wise scalar Python UDF to all relation columns and append its typed result.
 
-**Signature**
+##### Signature
 
 ```python
 rel.map(
@@ -4124,7 +4126,7 @@ rel.map(
 ) -> DuckDBPyRelation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4137,15 +4139,15 @@ rel.map(
 | `queue_depth`, `max_outstanding_batches` | Optional positive admission and in-flight limits. |
 | `side_effects` | Marks the callable as having side effects; default `False`. It does not add transaction or exactly-once guarantees. |
 
-**Returns**
+##### Returns
 
 A lazy `DuckDBPyRelation` containing every input column plus the scalar result in a column named `value`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The method is row-preserving: one scalar result is appended for each input row. The active runner and callable shape choose the backend when none is supplied. Use a following projection to rename or select the `value` column.
 
-**Minimal example**
+##### Minimal example
 
 Relation API is used here because the stage needs an explicit Relation execution backend and its standardized pass-through-plus-`value` contract.
 
@@ -4166,11 +4168,11 @@ mapped = rel.map(
 result = mapped.project("id, value AS next_id")
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `return_type` is required. Function callables use task backends; callable classes use actor backends and require valid actor/resource controls. `side_effects=True` records the effect boundary but does not make external writes transactional, idempotent, or exactly-once.
 
-**Related pages**
+##### Related pages
 
 [Relation UDF tasks](/docs/data/guides/custom-python-udfs) · [Relation execution and side effects](/docs/data/concepts/udfs)
 
@@ -4219,17 +4221,17 @@ This is not a closed allowlist: additional fields may pass through to the select
 
 #### `ai_prompt`
 
-**Purpose**
+##### Purpose
 
 Generate one text response for each input message from a SQL projection.
 
-**Signature**
+##### Signature
 
 ```sql
 ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR
 ```
 
-**Parameters**
+##### Parameters
 
 `ai_prompt` accepts 1 or 2 arguments.
 
@@ -4238,15 +4240,15 @@ ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR
 | `messages` | Required `VARCHAR` expression containing the prompt or message text. |
 | `options` | Optional foldable constant, normally a constant `STRUCT` built with `struct_pack`. It may select `provider`, `model`, actor/batch/retry controls, `system_message`, request options, and provider-specific configuration. |
 
-**Returns**
+##### Returns
 
 One `VARCHAR` response for each input row.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The call is a row-preserving Expression. Options are bound once as a Python configuration dictionary, cannot vary by row, and forward recognized provider and request configuration to the selected provider. The output composes with IDs and source columns in the same projection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4281,27 +4283,27 @@ result = con.sql(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. Provider lookup, unsupported capabilities, and provider execution failures are reported when the expression is planned or evaluated.
 
-**Related pages**
+##### Related pages
 
 [Build an AI task with SQL](/docs/data/guides/ai-functions) · [Why SQL is the default Expression entry point](/docs/data/concepts/ai-functions)
 
 #### `ai_embed`
 
-**Purpose**
+##### Purpose
 
 Generate one embedding vector for each input text from a SQL projection.
 
-**Signature**
+##### Signature
 
 ```sql
 ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]
 ```
 
-**Parameters**
+##### Parameters
 
 `ai_embed` accepts 1 or 2 arguments.
 
@@ -4310,15 +4312,15 @@ ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]
 | `text` | Required `VARCHAR` expression containing the text to embed. |
 | `options` | Optional foldable constant, normally a constant `STRUCT` built with `struct_pack`. It may select `provider`, `model`, actor/batch/retry controls, `dimensions`, `normalize`, request options, and provider-specific configuration. |
 
-**Returns**
+##### Returns
 
 `FLOAT[]` when `dimensions` is absent or `None`; fixed-size `FLOAT[N]` when `dimensions=N`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The call is a row-preserving Expression. Options are bound once as a Python configuration dictionary, cannot vary by row, and forward recognized provider and embedding configuration. `normalize=true` requests L2 normalization. The output composes with IDs and source columns in the same projection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4354,11 +4356,11 @@ result = con.sql(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. The provider must support text embedding, and a requested dimension must be valid for that provider and model.
 
-**Related pages**
+##### Related pages
 
 [Build an embedding task](/docs/data/guides/embeddings-at-scale) · [AI Expression execution semantics](/docs/data/concepts/ai-functions)
 
@@ -4368,17 +4370,17 @@ The Python builders create the same one-column Expression model and are useful w
 
 #### `vane.ai.prompt`
 
-**Purpose**
+##### Purpose
 
 Build a lazy row-preserving Expression that generates one text response per input message.
 
-**Signature**
+##### Signature
 
 ```python
 vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4389,15 +4391,15 @@ vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None
 | `prompt_options` | Typed request options or a dictionary of provider-specific extensions. |
 | `system_message` | Optional system instruction; defaults to `None`. |
 
-**Returns**
+##### Returns
 
 A lazy `Expression` with `VARCHAR` output. Use `.alias(...)` to choose the projection column name.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The expression adds one row-preserving projection column. It serializes a lightweight provider descriptor; the provider is instantiated lazily on a worker. When provider concurrency is unset, one actor is used, and the active runner resolves that actor to the local subprocess or Ray backend at planning time.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4420,27 +4422,27 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Expression mode rejects the Relation-only `return_format`, `image_columns`, `output_column`, `use_chat_completions`, and `execution_backend` arguments; use `rel.prompt` for those capabilities. The expression is supported only in projection placement, and the selected provider must implement prompting. Prefer worker credential environment variables over API keys in Python configuration.
 
-**Related pages**
+##### Related pages
 
 [Use Python Expression prompting in a task](/docs/data/guides/ai-functions) · [Expression and Relation capability boundary](/docs/data/concepts/ai-functions)
 
 #### `vane.ai.embed`
 
-**Purpose**
+##### Purpose
 
 Build a lazy row-preserving Expression that embeds one text value per input row.
 
-**Signature**
+##### Signature
 
 ```python
 vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, embedding_options=None, dimensions=None, normalize=None) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4452,15 +4454,15 @@ vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, emb
 | `dimensions` | `None` for dynamic output, or integer `N` for a fixed-size vector. |
 | `normalize` | `True` requests L2 normalization; `None` and `False` leave provider output unnormalized. |
 
-**Returns**
+##### Returns
 
 A lazy `Expression`: `FLOAT[]` when `dimensions=None`, or `FLOAT[N]` when `dimensions=N`. Use `.alias(...)` to choose the output name.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The expression adds one row-preserving projection column. It serializes a lightweight provider descriptor and instantiates the provider lazily on a worker. When provider concurrency is unset, one actor is used, and the active runner resolves the execution backend when the query is planned.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4483,31 +4485,33 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The expression is supported only in projection placement. The provider must implement text embedding, and a requested dimension must be valid for its model. Prefer worker credential environment variables over API keys in Python configuration.
 
-**Related pages**
+##### Related pages
 
 [Use Python Expression embeddings in a task](/docs/data/guides/embeddings-at-scale) · [AI provider and execution model](/docs/data/concepts/ai-functions)
 
 ## Relation API
 
+### Python Entry Point
+
 These Python Relation methods are specialized table transformations. They support controls that the Expression entry points do not, and there is no corresponding SQL table-function syntax.
 
 #### `rel.prompt`
 
-**Purpose**
+##### Purpose
 
 Generate text, multimodal, or structured prompt output as a specialized Relation transformation.
 
-**Signature**
+##### Signature
 
 ```python
 rel.prompt(column, *, image_columns=None, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None, return_format=None, use_chat_completions=True, output_column="response", execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4524,15 +4528,15 @@ rel.prompt(column, *, image_columns=None, provider="openai", model=None, provide
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured `output_column` is `VARCHAR`; structured results are serialized into that column.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The helper reads `column` plus any `image_columns`, batches provider calls, and returns the configured result column. `return_format` enables provider-supported structured output. Unlike an Expression projection, this Relation transformation does not promise to retain every source column; retain stable keys in the surrounding workflow when joining results back.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4561,27 +4565,27 @@ result = rel.prompt(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` and every named image column must exist. The provider/model must support the requested text, image, and structured-output features. Invalid `return_format`, unsupported chat mode, missing worker dependencies or credentials, and invalid backend selection fail before or during execution. Provider calls are external effects and may be retried.
 
-**Related pages**
+##### Related pages
 
 [Structured and multimodal prompt tasks](/docs/data/guides/ai-functions) · [Why these capabilities use Relation API](/docs/data/concepts/ai-functions)
 
 #### `rel.embed_text`
 
-**Purpose**
+##### Purpose
 
 Embed a Relation text column with optional built-in character chunking.
 
-**Signature**
+##### Signature
 
 ```python
 rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_column="embedding", max_chunk_chars=None, chunk_overlap_chars=200, execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4595,15 +4599,15 @@ rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_col
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured output column has dynamic `FLOAT[]` type.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The default provider is `transformers`. When `max_chunk_chars` is set, text is split into overlapping character chunks; chunk embeddings are combined using a text-length-weighted average and normalized. The Relation helper returns the configured output column rather than a fixed-size `FLOAT[N]` declaration.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4624,27 +4628,27 @@ result = rel.embed_text(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` must exist and contain compatible text. Chunk sizes and overlaps must form a valid configuration, the provider must implement text embedding, and the chosen backend must have the provider dependency and model available. Use `vane.ai.embed` or `ai_embed` when a row-preserving projection and optional fixed-size `FLOAT[N]` declaration are required.
 
-**Related pages**
+##### Related pages
 
 [Embedding with built-in chunking](/docs/data/guides/embeddings-at-scale) · [Expression versus Relation embeddings](/docs/data/concepts/ai-functions)
 
 #### `rel.classify_text`
 
-**Purpose**
+##### Purpose
 
 Classify each text value against a required set of zero-shot labels.
 
-**Signature**
+##### Signature
 
 ```python
 rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -4656,15 +4660,15 @@ rel.classify_text(column, *, labels, provider=None, model=None, output_column="l
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured output column has `VARCHAR` type.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The default provider is `transformers`. The classifier scores each input against the supplied labels and returns the selected label in `output_column`.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -4684,11 +4688,11 @@ result = rel.classify_text(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` must exist, `labels` is required, and the selected provider must implement text classification. The backend worker must have the provider dependency and model available. Classification has no SQL or Python Expression equivalent in this API version.
 
-**Related pages**
+##### Related pages
 
 [Choose Relation AI for classification](/docs/data/guides/ai-functions) · [Specialized Relation transformations](/docs/data/concepts/ai-functions)
 

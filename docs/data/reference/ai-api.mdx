@@ -27,17 +27,17 @@ This is not a closed allowlist: additional fields may pass through to the select
 
 #### `ai_prompt`
 
-**Purpose**
+##### Purpose
 
 Generate one text response for each input message from a SQL projection.
 
-**Signature**
+##### Signature
 
 ```sql
 ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR
 ```
 
-**Parameters**
+##### Parameters
 
 `ai_prompt` accepts 1 or 2 arguments.
 
@@ -46,15 +46,15 @@ ai_prompt(messages VARCHAR [, options CONSTANT]) -> VARCHAR
 | `messages` | Required `VARCHAR` expression containing the prompt or message text. |
 | `options` | Optional foldable constant, normally a constant `STRUCT` built with `struct_pack`. It may select `provider`, `model`, actor/batch/retry controls, `system_message`, request options, and provider-specific configuration. |
 
-**Returns**
+##### Returns
 
 One `VARCHAR` response for each input row.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The call is a row-preserving Expression. Options are bound once as a Python configuration dictionary, cannot vary by row, and forward recognized provider and request configuration to the selected provider. The output composes with IDs and source columns in the same projection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -89,27 +89,27 @@ result = con.sql(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. Provider lookup, unsupported capabilities, and provider execution failures are reported when the expression is planned or evaluated.
 
-**Related pages**
+##### Related pages
 
 [Build an AI task with SQL](/docs/data/guides/ai-functions) · [Why SQL is the default Expression entry point](/docs/data/concepts/ai-functions)
 
 #### `ai_embed`
 
-**Purpose**
+##### Purpose
 
 Generate one embedding vector for each input text from a SQL projection.
 
-**Signature**
+##### Signature
 
 ```sql
 ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]
 ```
 
-**Parameters**
+##### Parameters
 
 `ai_embed` accepts 1 or 2 arguments.
 
@@ -118,15 +118,15 @@ ai_embed(text VARCHAR [, options CONSTANT]) -> FLOAT[] | FLOAT[N]
 | `text` | Required `VARCHAR` expression containing the text to embed. |
 | `options` | Optional foldable constant, normally a constant `STRUCT` built with `struct_pack`. It may select `provider`, `model`, actor/batch/retry controls, `dimensions`, `normalize`, request options, and provider-specific configuration. |
 
-**Returns**
+##### Returns
 
 `FLOAT[]` when `dimensions` is absent or `None`; fixed-size `FLOAT[N]` when `dimensions=N`.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The call is a row-preserving Expression. Options are bound once as a Python configuration dictionary, cannot vary by row, and forward recognized provider and embedding configuration. `normalize=true` requests L2 normalization. The output composes with IDs and source columns in the same projection.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -162,11 +162,11 @@ result = con.sql(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The first argument must bind as `VARCHAR`; the second must be foldable. The function is supported only inside a `SELECT projection`; it may be nested in ordinary projection expressions, but is not supported in predicates, grouping, joins, aggregate arguments, or short-circuit expressions. SQL AI recursively rejects credential-like fields, including nested keys and JSON option bridges. Supply credentials through worker environment variables such as `OPENAI_API_KEY`, never through SQL options. The provider must support text embedding, and a requested dimension must be valid for that provider and model.
 
-**Related pages**
+##### Related pages
 
 [Build an embedding task](/docs/data/guides/embeddings-at-scale) · [AI Expression execution semantics](/docs/data/concepts/ai-functions)
 
@@ -176,17 +176,17 @@ The Python builders create the same one-column Expression model and are useful w
 
 #### `vane.ai.prompt`
 
-**Purpose**
+##### Purpose
 
 Build a lazy row-preserving Expression that generates one text response per input message.
 
-**Signature**
+##### Signature
 
 ```python
 vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -197,15 +197,15 @@ vane.ai.prompt(messages, *, provider="openai", model=None, provider_options=None
 | `prompt_options` | Typed request options or a dictionary of provider-specific extensions. |
 | `system_message` | Optional system instruction; defaults to `None`. |
 
-**Returns**
+##### Returns
 
 A lazy `Expression` with `VARCHAR` output. Use `.alias(...)` to choose the projection column name.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The expression adds one row-preserving projection column. It serializes a lightweight provider descriptor; the provider is instantiated lazily on a worker. When provider concurrency is unset, one actor is used, and the active runner resolves that actor to the local subprocess or Ray backend at planning time.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -228,27 +228,27 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 Expression mode rejects the Relation-only `return_format`, `image_columns`, `output_column`, `use_chat_completions`, and `execution_backend` arguments; use `rel.prompt` for those capabilities. The expression is supported only in projection placement, and the selected provider must implement prompting. Prefer worker credential environment variables over API keys in Python configuration.
 
-**Related pages**
+##### Related pages
 
 [Use Python Expression prompting in a task](/docs/data/guides/ai-functions) · [Expression and Relation capability boundary](/docs/data/concepts/ai-functions)
 
 #### `vane.ai.embed`
 
-**Purpose**
+##### Purpose
 
 Build a lazy row-preserving Expression that embeds one text value per input row.
 
-**Signature**
+##### Signature
 
 ```python
 vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, embedding_options=None, dimensions=None, normalize=None) -> Expression
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -260,15 +260,15 @@ vane.ai.embed(text, *, provider="openai", model=None, provider_options=None, emb
 | `dimensions` | `None` for dynamic output, or integer `N` for a fixed-size vector. |
 | `normalize` | `True` requests L2 normalization; `None` and `False` leave provider output unnormalized. |
 
-**Returns**
+##### Returns
 
 A lazy `Expression`: `FLOAT[]` when `dimensions=None`, or `FLOAT[N]` when `dimensions=N`. Use `.alias(...)` to choose the output name.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The expression adds one row-preserving projection column. It serializes a lightweight provider descriptor and instantiates the provider lazily on a worker. When provider concurrency is unset, one actor is used, and the active runner resolves the execution backend when the query is planned.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -291,31 +291,33 @@ result = rel.select(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 The expression is supported only in projection placement. The provider must implement text embedding, and a requested dimension must be valid for its model. Prefer worker credential environment variables over API keys in Python configuration.
 
-**Related pages**
+##### Related pages
 
 [Use Python Expression embeddings in a task](/docs/data/guides/embeddings-at-scale) · [AI provider and execution model](/docs/data/concepts/ai-functions)
 
 ## Relation API
 
+### Python Entry Point
+
 These Python Relation methods are specialized table transformations. They support controls that the Expression entry points do not, and there is no corresponding SQL table-function syntax.
 
 #### `rel.prompt`
 
-**Purpose**
+##### Purpose
 
 Generate text, multimodal, or structured prompt output as a specialized Relation transformation.
 
-**Signature**
+##### Signature
 
 ```python
 rel.prompt(column, *, image_columns=None, provider="openai", model=None, provider_options=None, prompt_options=None, system_message=None, return_format=None, use_chat_completions=True, output_column="response", execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -332,15 +334,15 @@ rel.prompt(column, *, image_columns=None, provider="openai", model=None, provide
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured `output_column` is `VARCHAR`; structured results are serialized into that column.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The helper reads `column` plus any `image_columns`, batches provider calls, and returns the configured result column. `return_format` enables provider-supported structured output. Unlike an Expression projection, this Relation transformation does not promise to retain every source column; retain stable keys in the surrounding workflow when joining results back.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -369,27 +371,27 @@ result = rel.prompt(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` and every named image column must exist. The provider/model must support the requested text, image, and structured-output features. Invalid `return_format`, unsupported chat mode, missing worker dependencies or credentials, and invalid backend selection fail before or during execution. Provider calls are external effects and may be retried.
 
-**Related pages**
+##### Related pages
 
 [Structured and multimodal prompt tasks](/docs/data/guides/ai-functions) · [Why these capabilities use Relation API](/docs/data/concepts/ai-functions)
 
 #### `rel.embed_text`
 
-**Purpose**
+##### Purpose
 
 Embed a Relation text column with optional built-in character chunking.
 
-**Signature**
+##### Signature
 
 ```python
 rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_column="embedding", max_chunk_chars=None, chunk_overlap_chars=200, execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -403,15 +405,15 @@ rel.embed_text(column, *, provider=None, model=None, dimensions=None, output_col
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured output column has dynamic `FLOAT[]` type.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The default provider is `transformers`. When `max_chunk_chars` is set, text is split into overlapping character chunks; chunk embeddings are combined using a text-length-weighted average and normalized. The Relation helper returns the configured output column rather than a fixed-size `FLOAT[N]` declaration.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -432,27 +434,27 @@ result = rel.embed_text(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` must exist and contain compatible text. Chunk sizes and overlaps must form a valid configuration, the provider must implement text embedding, and the chosen backend must have the provider dependency and model available. Use `vane.ai.embed` or `ai_embed` when a row-preserving projection and optional fixed-size `FLOAT[N]` declaration are required.
 
-**Related pages**
+##### Related pages
 
 [Embedding with built-in chunking](/docs/data/guides/embeddings-at-scale) · [Expression versus Relation embeddings](/docs/data/concepts/ai-functions)
 
 #### `rel.classify_text`
 
-**Purpose**
+##### Purpose
 
 Classify each text value against a required set of zero-shot labels.
 
-**Signature**
+##### Signature
 
 ```python
 rel.classify_text(column, *, labels, provider=None, model=None, output_column="label", execution_backend=None, **options) -> Relation
 ```
 
-**Parameters**
+##### Parameters
 
 | Parameter | Contract |
 | --- | --- |
@@ -464,15 +466,15 @@ rel.classify_text(column, *, labels, provider=None, model=None, output_column="l
 | `execution_backend` | Explicit Relation UDF backend, or `None` to infer it from the active runner. |
 | `**options` | Additional provider-specific extensions. |
 
-**Returns**
+##### Returns
 
 A `Relation` whose configured output column has `VARCHAR` type.
 
-**Behavior and data contract**
+##### Behavior and data contract
 
 The default provider is `transformers`. The classifier scores each input against the supplied labels and returns the selected label in `output_column`.
 
-**Minimal example**
+##### Minimal example
 
 ```python
 import vane
@@ -492,11 +494,11 @@ result = rel.classify_text(
 )
 ```
 
-**Restrictions and errors**
+##### Restrictions and errors
 
 `column` must exist, `labels` is required, and the selected provider must implement text classification. The backend worker must have the provider dependency and model available. Classification has no SQL or Python Expression equivalent in this API version.
 
-**Related pages**
+##### Related pages
 
 [Choose Relation AI for classification](/docs/data/guides/ai-functions) · [Specialized Relation transformations](/docs/data/concepts/ai-functions)
 
