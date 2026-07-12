@@ -1826,9 +1826,6 @@ const paths = {
   udfConceptZh: 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/udfs.mdx',
   aiConceptZh:
     'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
-  architecture: 'docs/data/concepts/architecture.mdx',
-  architectureZh:
-    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/architecture.mdx',
   executionModel: 'docs/data/concepts/execution-model.mdx',
   executionModelZh:
     'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/execution-model.mdx',
@@ -1849,8 +1846,6 @@ const udfConcept = read(paths.udfConcept)
 const aiConcept = read(paths.aiConcept)
 const udfConceptZh = read(paths.udfConceptZh)
 const aiConceptZh = read(paths.aiConceptZh)
-const architecture = read(paths.architecture)
-const architectureZh = read(paths.architectureZh)
 const executionModel = read(paths.executionModel)
 const executionModelZh = read(paths.executionModelZh)
 const sqlVsPython = read(paths.sqlVsPython)
@@ -1894,7 +1889,6 @@ const approvedBilingualDocumentationPairs = [
   approvedDocumentationPair('reference/ai-api', 'reference', 'AI Function API Reference'),
   approvedDocumentationPair('concepts/udfs', 'concept', 'UDF Concepts'),
   approvedDocumentationPair('concepts/ai-functions', 'concept', 'AI Function Concepts'),
-  approvedDocumentationPair('concepts/architecture', 'concept', 'Architecture Concepts'),
   approvedDocumentationPair('concepts/execution-model', 'concept', 'Execution Model Concepts'),
   approvedDocumentationPair('concepts/sql-vs-python', 'concept', 'SQL vs Python Concepts'),
   approvedDocumentationPair('quickstart/quickstart', 'guide', 'Quickstart'),
@@ -1939,7 +1933,6 @@ const publicApiCorpus = [
   aiReference,
   udfConcept,
   aiConcept,
-  architecture,
   executionModel,
   sqlVsPython,
   customUdfs,
@@ -2419,99 +2412,6 @@ const relatedCommonRules = {
 }
 
 const relatedConceptSchemas = [
-  {
-    id: 'architecture',
-    label: 'Architecture Concepts',
-    sources: { en: architecture, zh: architectureZh },
-    entryOrder: {
-      en: [/^### SQL Entry Point to Expression API/, /^### Python Entry Point to Expression API$/, /^### Relation API$/],
-      zh: [/^### Expression API 的 SQL 入口/, /^### Expression API 的 Python 入口$/, /^### Relation API$/],
-    },
-    document: {
-      en: { require: [...relatedCommonRules.en.require, /two semantic API models[^.\n]{0,100}Expression API[^.\n]{0,80}Relation API/i, /SQL and Python are entry points into Expression[^.\n]{0,100}not two additional top-level models/i], reject: relatedCommonRules.en.reject },
-      zh: { require: [...relatedCommonRules.zh.require, /只有两种语义 API 模型[^。\n]{0,100}Expression API[^。\n]{0,80}Relation API/, /SQL 与 Python 是 Expression 的两种入口[^。\n]{0,100}不是另外两个顶层模型/], reject: relatedCommonRules.zh.reject },
-    },
-    sections: [
-      {
-        id: 'SQL entry',
-        heading: { en: /^### SQL Entry Point to Expression API/, zh: /^### Expression API 的 SQL 入口/ },
-        require: {
-          en: [/(?=[\s\S]*SQL Expression is the default)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*registered SQL alias)(?=[\s\S]*ai_prompt)(?=[\s\S]*ai_embed)/i],
-          zh: [/(?=[\s\S]*SQL Expression 是[^。\n]{0,80}默认)(?=[\s\S]*vane\.attach_function)(?=[\s\S]*SQL 别名)(?=[\s\S]*ai_prompt)(?=[\s\S]*ai_embed)/i],
-        },
-      },
-      {
-        id: 'Python entry',
-        heading: { en: /^### Python Entry Point to Expression API$/, zh: /^### Expression API 的 Python 入口$/ },
-        require: {
-          en: [/Python Expression[^.\n]{0,120}alternate syntax[^.\n]{0,100}same projection model/i, /(?=[\s\S]*vane\.col)(?=[\s\S]*vane\.func)(?=[\s\S]*vane\.ai\.prompt)/i],
-          zh: [/Python Expression[^。\n]{0,120}(?:另一种语法|同一个投影模型)/i, /(?=[\s\S]*vane\.col)(?=[\s\S]*vane\.func)(?=[\s\S]*vane\.ai\.prompt)/i],
-        },
-      },
-      {
-        id: 'Relation contract',
-        heading: { en: /^### Relation API$/, zh: /^### Relation API$/ },
-        require: {
-          en: [/(?=[\s\S]*Relation API[^.\n]{0,100}(?:specialized|table shape))(?=[\s\S]*rel\.map_batches)(?=[\s\S]*rel\.prompt)/i],
-          zh: [/(?=[\s\S]*Relation API[^。\n]{0,100}(?:专用|表结构))(?=[\s\S]*rel\.map_batches)(?=[\s\S]*rel\.prompt)/i],
-        },
-      },
-      {
-        id: 'shared lowering',
-        heading: { en: /^## Shared planning and execution$/, zh: /^## 共享规划与执行$/ },
-        require: {
-          en: [/(?=[\s\S]*lazy relational work)(?=[\s\S]*Registered UDF aliases and SQL AI calls[^.\n]{0,180}lowered[^.\n]{0,180}Python Expression)(?=[\s\S]*Relation operators?[^.\n]{0,160}cardinality contract)(?=[\s\S]*Logical planning[\s\S]{0,180}Physical planning[^.\n]{0,180}local or Ray task\/actor)/i],
-          zh: [/(?=[\s\S]*惰性的关系工作)(?=[\s\S]*注册的 UDF 别名和 SQL AI 调用[^。\n]{0,180}降为[^。\n]{0,180}Python Expression)(?=[\s\S]*Relation 算子[^。\n]{0,160}基数契约)(?=[\s\S]*逻辑规划[\s\S]{0,180}物理规划[^。\n]{0,180}本地或 Ray 的 task\/actor)/i],
-        },
-        reject: { en: [/(?:Registered UDF aliases|SQL AI calls) (?:maintain|use|have) separate SQL runtimes?/i], zh: [/注册的 UDF 别名(?:会|将|各自)?(?:维护|使用|拥有)独立的 SQL 运行时/] },
-      },
-      {
-        id: 'runner modes',
-        heading: { en: /^## Runner modes$/, zh: /^## 执行模式$/ },
-        require: {
-          en: [/(?=[\s\S]*Local[\s\S]{0,360}relational work in the driver process[\s\S]{0,220}subprocess_)(?=[\s\S]*Ray[\s\S]{0,300}Ray task or actor)/i],
-          zh: [/(?=[\s\S]*本地[\s\S]{0,360}关系处理在驱动进程内运行[\s\S]{0,220}subprocess_)(?=[\s\S]*Ray[\s\S]{0,300}Ray task 或 actor)/i],
-        },
-      },
-      {
-        id: 'UDF execution',
-        heading: { en: /^## UDF execution layer$/, zh: /^## UDF 执行层$/ },
-        require: {
-          en: [/(?=[\s\S]*typed Arrow batches)(?=[\s\S]*one callable-class instance per actor[^.\n]{0,160}reuse)(?=[\s\S]*Multiple actors[^.\n]{0,120}independent)/i],
-          zh: [/(?=[\s\S]*有类型的 Arrow 批次)(?=[\s\S]*每个 actor 中构造一个可调用类实例[^。\n]{0,160}复用)(?=[\s\S]*多个 actor[^。\n]{0,120}独立)/i],
-        },
-      },
-      {
-        id: 'provider lifecycle',
-        heading: { en: /^## AI provider lifecycle$/, zh: /^## AI Provider 生命周期$/ },
-        require: {
-          en: [/(?=[\s\S]*serializable provider descriptor)(?=[\s\S]*Instantiation is lazy and worker-side)(?=[\s\S]*first batch[\s\S]{0,140}client\/model[\s\S]{0,100}actor reuse)/i],
-          zh: [/(?=[\s\S]*可序列化的 provider 描述对象)(?=[\s\S]*延迟[^。\n]{0,100}工作进程上创建)(?=[\s\S]*首个批次[\s\S]{0,140}客户端\/模型[\s\S]{0,100}actor 内复用)/i],
-        },
-      },
-      {
-        id: 'worker environment',
-        heading: { en: /^## Worker environment$/, zh: /^## 工作进程环境$/ },
-        require: {
-          en: [/(?=[\s\S]*Every worker needs)(?=[\s\S]*Python modules)(?=[\s\S]*credentials)(?=[\s\S]*Model files)(?=[\s\S]*AI credentials belong in this worker environment)/i],
-          zh: [/(?=[\s\S]*每个工作进程都必须)(?=[\s\S]*Python 模块)(?=[\s\S]*凭据)(?=[\s\S]*模型文件)(?=[\s\S]*AI 凭据应放在工作进程环境中)/i],
-        },
-      },
-      {
-        id: 'data movement',
-        heading: { en: /^## Data movement$/, zh: /^## 数据流动$/ },
-        require: {
-          en: [/(?=[\s\S]*Expression execution[^.\n]{0,180}argument columns)(?=[\s\S]*Relation methods receive Arrow batches)(?=[\s\S]*filters and column projections before expensive Python or model stages)/i],
-          zh: [/(?=[\s\S]*Expression 执行[^。\n]{0,180}参数列)(?=[\s\S]*Relation 方法接收 Arrow 批次)(?=[\s\S]*过滤与列投影放在昂贵的 Python 或模型阶段之前)/i],
-        },
-      },
-    ],
-    examples: {
-      languages: ['text', 'text', 'python', 'bash'],
-      order: ['SQL Expression', 'Python Expression', 'Relation API'],
-      require: [/```python\nimport vane\n\nvane\.configure\(runner="ray"\)/, /```bash\nexport VANE_RUNNER=ray/],
-    },
-  },
   {
     id: 'execution',
     label: 'Execution Model Concepts',
@@ -3525,7 +3425,6 @@ const expectedApprovedPairIds = [
   'reference/ai-api',
   'concepts/udfs',
   'concepts/ai-functions',
-  'concepts/architecture',
   'concepts/execution-model',
   'concepts/sql-vs-python',
   'quickstart/quickstart',
@@ -3561,11 +3460,6 @@ const assertApprovedPairRegistryIdentity = (pairs, message) => {
   for (const pair of pairs) assertApprovedPairPathIdentity(pair, `${message} ${pair.id}`)
 }
 
-assert.equal(
-  approvedBilingualDocumentationPairs.length,
-  16,
-  'Task 10 should keep an explicit registry of all approved bilingual documentation pairs',
-)
 assertApprovedPairRegistryIdentity(
   approvedBilingualDocumentationPairs,
   'Task 10 approved bilingual pair registry',

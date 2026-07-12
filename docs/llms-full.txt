@@ -585,104 +585,98 @@ Stay with SQL Expression when one typed result belongs beside each input row. Mo
 Route: /docs/data/concepts/architecture
 Source: docs/data/concepts/architecture.mdx
 
-Vane Data is a multimodal-native data engine. It combines DuckDB-compatible SQL, Python expressions, table-shaped Python and AI transformations, and local or Ray execution in one lazy relational plan.
+Vane Data is a multimodal-native data engine. It exposes a DuckDB-compatible SQL and Python surface, adds Expression and Relation UDF and AI operations, and can execute selected work locally or through Ray.
 
-The public architecture has two semantic API models: the **Expression API** and the **Relation API**. SQL and Python are entry points into Expression, not two additional top-level models.
+The design goal is simple: keep pipelines table-shaped while allowing SQL, Python libraries, model inference, and distributed execution to live in one workflow.
 
 ## System view
 
-The layers separate what an operation returns from how and where it runs:
+A Vane Data pipeline has four user-visible layers:
 
-```text
-Public entry points                         Semantic API model       Planned work
-SQL Expression (recommended) ──────────┐
-Python Expression ─────────────────────┴──> Expression API ──┐
-Python Relation methods ──────────────────> Relation API ────┴──> shared logical/physical planning
-                                                                       │
-                                                                local or Ray runner
-                                                                       │
-                                                               task/actor execution
-```
+1. API surface: `import vane`, `vane.connect()`, DuckDB-compatible SQL, Expression and Relation APIs, UDFs, and AI Functions.
+2. Relation pipeline: SQL operations, projections, filters, joins, custom Expression results, Relation transformations, and writes are composed as relation steps.
+3. Execution runner: local execution handles development and single-node jobs; the Ray runner distributes suitable scans, writes, and UDF or AI work.
+4. UDF runtime: Python functions, callable classes, and AI providers run through task or actor backends.
 
-Both models remain part of a table-shaped pipeline. Ordinary SQL still performs scans, filters, joins, projections, and surrounding writes. The semantic model determines whether custom work contributes one projection result or owns a table transformation; later layers decide its physical execution.
+At the API layer, Expression and Relation describe what an operation returns. Expression contributes a typed result to a projection, while Relation owns a table-shaped transformation. SQL is the recommended entry point for Expression UDFs and AI Functions; Python provides both Expression syntax and Relation methods.
 
-## Public API models
+This separation lets a pipeline start locally, then move selected work to Ray when data volume, model throughput, or resource placement requires it.
 
-Choose the public model from the output contract, then choose its entry point and execution controls.
+## Public user surface
 
-### SQL Entry Point to Expression API (Recommended)
+Use these as the primary public entry points:
 
-SQL Expression is the default path when one typed result belongs beside each input row in a `SELECT` projection.
+- `import vane`
+- `vane.connect()`
+- `vane.configure(...)`
+- `vane.current_config()`
+- `vane.env`
+- DuckDB-compatible SQL through `con.sql(...)` and `con.execute(...)`
+- SQL Expression UDF aliases registered with `vane.attach_function(...)` and removed with `vane.detach_function(...)`
+- SQL AI Expressions through `ai_prompt(...)` and `ai_embed(...)`
+- Python Expression inputs through `vane.col(...)`, `vane.lit(...)`, and `vane.sql_expr(...)`
+- Python Expression UDFs through `vane.func`, `vane.func.batch`, `vane.cls`, and `vane.cls.batch`
+- Python AI Expressions through `vane.ai.prompt(...)` and `vane.ai.embed(...)`
+- DuckDB-compatible relation APIs
+- `rel.map_batches(...)`
+- `rel.flat_map(...)`
+- `rel.map(...)`
+- `rel.embed_text(...)`
+- `rel.classify_text(...)`
+- `rel.prompt(...)`
 
-- `vane.attach_function(...)` gives a compatible Python UDF a registered SQL alias, and `vane.detach_function(...)` removes it.
-- The registered alias is called in SQL as a projection expression.
-- SQL `ai_prompt(...)` and `ai_embed(...)` add one AI result column through the same model.
+Choose Expression when custom work belongs in a projection, normally as one typed result beside each input row. Choose Relation when the operation owns the output columns or row count. Vane does not currently expose a direct SQL Relation or table-function API; SQL can prepare a relation before a Python Relation call and consume its result afterward.
 
-Registration controls the SQL entry point to Expression; it is not a third API model. Keeping identifiers and source fields in the same projection makes the row-preserving contract and result provenance visible.
-
-### Python Entry Point to Expression API
-
-Python Expression is alternate syntax for the same projection model. `vane.col(...)`, `vane.lit(...)`, and `vane.sql_expr(...)` build inputs for `vane.func`, `vane.func.batch`, `vane.cls`, `vane.cls.batch`, `vane.ai.prompt`, and `vane.ai.embed` expressions.
-
-The normal composable form produces one typed result for each input row, just like SQL Expression. Python batch Expression has a narrowly defined cardinality-changing exception; its placement and output rules belong in the API Reference.
-
-### Relation API
-
-Relation API is the specialized model for operations that own table shape. Custom Relation methods include `rel.map_batches(...)`, `rel.flat_map(...)`, and `rel.map(...)`. AI Relation methods include `rel.prompt(...)`, `rel.embed_text(...)`, and `rel.classify_text(...)` for capabilities such as structured or multimodal output, built-in chunking or classification, and explicit Relation execution controls.
-
-Vane does not expose a direct SQL Relation or table-function API. SQL can produce the input relation before a Python Relation call and consume its result afterward, but the table-shaped method itself is currently Python Relation API.
-
-## Shared planning and execution
-
-All public forms build lazy relational work. Registered UDF aliases and SQL AI calls are lowered to the same logical projection execution model as Python Expression; they do not maintain separate SQL runtimes. Relation operators instead own their declared table-shaped output and cardinality contract.
-
-| Public form | Logical contract | Execution ownership |
-| --- | --- | --- |
-| Registered SQL aliases, `ai_prompt`, `ai_embed` | Expression projection | Shared projection execution layer |
-| `vane.func` / `vane.cls` / `vane.ai` expressions | Expression projection | Shared projection execution layer |
-| Python `rel.*` UDF and AI methods | Relation transformation | Relation operator owns table shape |
-
-Logical planning preserves this distinction. Physical planning then selects local or Ray task/actor execution without changing the public output model.
+Existing DuckDB-style imports remain available for compatible code, but new Vane Data projects should prefer `import vane`.
 
 ## Runner modes
 
-Vane Data has two main execution modes:
+Vane Data has two main execution modes.
 
-| Mode | Best fit | Execution behavior |
-| --- | --- | --- |
-| Local | Development, testing, lightweight SQL, and single-node UDF jobs | Runs relational work in the driver process; Python UDF and AI execution uses `subprocess_task` or `subprocess_actor` workers on the same machine |
-| Ray | Distributed scans and writes, distributed UDFs, model throughput, or explicit resource placement | Distributes suitable work and uses Ray task or actor execution |
+Local mode:
 
-Select Ray with `vane.configure(runner="ray")` or `VANE_RUNNER=ray`. If Ray is already initialized, the surrounding process can affect runner selection, so production scripts should configure the intended runner before creating connections and executing pipelines.
+- Runs relational work in the driver process on the local machine.
+- Is the right starting point for development, testing, lightweight SQL, and single-node UDF jobs.
+- Uses local subprocess task or actor workers for UDF and AI execution.
+
+Ray mode:
+
+- Selected with `vane.configure(runner="ray")` or `VANE_RUNNER=ray`.
+- Uses Ray for distributed scans, distributed writes, distributed UDFs, and actor-based model workers.
+- Requires every worker to have access to the same Python dependencies, storage systems, model files, and credentials needed by the pipeline.
+
+If the process already has Ray initialized, runner selection can interact with that environment. For predictable behavior in production scripts, configure the intended runner explicitly before creating connections and running pipelines.
 
 ## UDF execution layer
 
-The execution layer moves typed Arrow batches between relational operators and Python callables. Task backends run functions without long-lived state; actor backends construct one callable-class instance per actor and reuse it across batches. Multiple actors therefore own independent model, client, or cache instances.
+UDFs reach the same execution layer through two public output contracts. Expression UDFs add a typed projection result: the recommended SQL path calls an alias registered with `vane.attach_function(...)`, while `vane.func` and `vane.cls` provide Python Expression syntax. Relation UDFs such as `rel.map_batches(...)`, `rel.flat_map(...)`, and `rel.map(...)` own a table-shaped stage and return its declared output.
 
-| Backend | Callable shape | Typical role |
+Choose the backend based on callable shape and resource needs:
+
+| Backend | Callable shape | Use case |
 | --- | --- | --- |
 | `subprocess_task` | Python function | Local stateless batch transforms |
 | `subprocess_actor` | Callable class | Local model or client reuse |
 | `ray_task` | Python function | Distributed stateless transforms |
 | `ray_actor` | Callable class | Distributed model reuse or GPU-backed inference |
 
-For Expression work, the active runner maps the logical task or actor requirement to a local or Ray backend. Relation methods can expose explicit backend controls because the Relation operator owns the complete table stage. Exact resource, state, and backend restrictions are documented in the API Reference.
+Task backends are for functions without long-lived state. Actor backends construct a callable class in each actor and reuse that instance across batches; separate actors keep separate state. The active runner maps Expression work to a local or Ray backend, while Relation methods can also expose explicit execution controls.
 
-## AI provider lifecycle
+Exact signatures, cardinality exceptions, placement rules, and resource restrictions belong in the UDF API Reference.
 
-AI configuration crosses the planning boundary as a serializable provider descriptor, not as a live client or model. Instantiation is lazy and worker-side:
+## AI Function layer
 
-```text
-Provider/options -> serializable plan descriptor -> worker's first batch -> live client/model -> actor reuse
-```
+AI Functions use the same Expression and Relation output contracts and the same worker execution model:
 
-This avoids initializing providers for work that never executes and amortizes setup across later batches handled by the same actor. SQL and Python AI Expression use the runner-selected actor backend; Relation AI can additionally expose explicit Relation execution controls.
+- SQL `ai_prompt(...)` and `ai_embed(...)` are the recommended path when one AI result belongs in a `SELECT` projection.
+- Python `vane.ai.prompt(...)` and `vane.ai.embed(...)` provide alternate Expression syntax for the same projection model.
+- Relation methods such as `rel.prompt(...)`, `rel.embed_text(...)`, and `rel.classify_text(...)` support table-shaped capabilities such as structured or multimodal output, chunking, classification, and explicit Relation execution controls.
 
-Provider requests are external effects outside SQL transactions. A retry can repeat a completed request, and rollback cannot undo it, so pipelines should retain stable identifiers and use idempotent downstream handling where repetition matters.
+AI provider configuration crosses the plan as serializable data. The live client or model is created lazily in the worker and can be reused by its actor across batches. Use AI Functions for common provider-backed operations; use custom UDFs when you need full control over model loading, batching, output schema, or provider behavior.
 
 ## Configuration model
 
-Programmatic and environment configuration select the same public runner setting:
+Programmatic configuration:
 
 ```python
 import vane
@@ -690,38 +684,38 @@ import vane
 vane.configure(runner="ray")
 ```
 
+Environment configuration:
+
 ```bash
 export VANE_RUNNER=ray
 ```
 
-`vane.configure(...)` applies registered `VANE_*` settings through the process environment. Use `vane.current_config()` or `vane.env.as_dict()` to inspect the public configuration snapshot. Configure the process before creating connections or starting work that may reach workers.
+`vane.configure(...)` applies registered `VANE_*` settings through the process environment. Use `vane.current_config()` or `vane.env.as_dict()` to inspect the public configuration snapshot.
 
 ## Worker environment
 
-Every worker needs the runtime context required by the work it executes:
+Workers need the runtime context required by the work they execute. In practice, confirm that workers can access:
 
 - Python modules used by UDFs and AI providers.
 - Object storage credentials and endpoint settings.
-- Model files or accessible model download locations.
+- Model files or model download locations.
 - Relevant `VANE_*`, `AWS_*`, `S3FS_*`, `DUCKDB_*`, `PYTHONPATH`, and `RAY_ADDRESS` environment values.
 
-AI credentials belong in this worker environment because provider clients are created there. Credential-like fields are rejected from SQL AI options; API keys, tokens, and secrets should not be embedded in plans.
+AI provider clients are created in workers, so provider credentials must be available there. Prefer worker environment variables for API keys, tokens, and secrets; SQL AI options reject credential-like fields instead of embedding credentials in the plan.
+
+Set the required environment before creating connections or running pipelines.
 
 ## Data movement
 
-Common data paths follow the same layering:
+Common data paths:
 
-- SQL scans local or remote data into DuckDB-compatible relations and reduces it with ordinary filters and projections.
-- Expression execution sends the required argument columns through UDF or AI workers and combines the typed result with the surrounding projection.
-- Relation methods receive Arrow batches and return their declared table output. If later stages need source columns, the Relation operation must include them in its output contract.
-- Ray mode can materialize and move partitions through Ray workers.
-- Writes use DuckDB-compatible or Vane Data relation paths according to the runner and target.
+- SQL reads local or remote data into DuckDB-compatible relations.
+- Expression execution sends the required argument columns to a UDF or AI worker and combines the typed result with the surrounding projection.
+- Relation methods stream Arrow batches into Python workers and return their declared table output. When downstream stages still need source columns, include those columns in the Relation output.
+- Ray mode can materialize partitions through Ray workers.
+- Writes use DuckDB-compatible and Vane Data relation write paths, depending on runner and target.
 
-Place filters and column projections before expensive Python or model stages. This reduces data crossing into Python and, under Ray, reduces cluster movement. SQL can continue before and after a Python Relation stage without turning that stage into a SQL Relation API.
-
-## Boundaries and next steps
-
-This page explains why the public models share execution while retaining different output contracts. For exact signatures, defaults, and restrictions, use the [UDF API Reference](/docs/data/reference/udf-api) and [AI Function API Reference](/docs/data/reference/ai-api). For complete setup-to-output tasks, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs) and [AI Functions Guide](/docs/data/guides/ai-functions).
+Place filters and column projections before expensive Python or model stages. This reduces the amount of data crossing into Python and, in Ray mode, reduces cluster data movement.
 
 ## Execution Model
 
