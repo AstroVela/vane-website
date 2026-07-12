@@ -3,266 +3,130 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇快速开始采用 Vane Data 推荐的路径：先用 SQL 选择一个较小的候选集，把原始 Python scalar callable 注册为 SQL Expression alias，在稳定的来源列旁投影其结果，校验表格，再写出 Parquet。页面还提供一个可选的托管 `ai_prompt` 投影。
+这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据和本地执行，不需要 Ray 集群、GPU、PyArrow 或模型 provider 凭据。
 
-必需路径使用内联数据在本地运行，不需要 Ray、GPU、PyArrow、远程存储、媒体文件或模型 provider 凭据。
+你将创建三行数据，把一个 Python 函数注册为 SQL alias，在 `SELECT` 中调用它，并看到结果。
 
-## 开始之前
-
-安装 Vane Data，并确认 `import vane` 可以正常工作：
+## 安装 Vane Data
 
 ```bash
 python -m pip install vane-ai
 ```
 
-只有可选的托管 AI 分支需要兼容 OpenAI 的 provider 包和凭据。请在 Vane 或 Ray worker 启动前，把凭据设置到 worker 环境中；绝不要把凭据放进 SQL options。
+## 运行第一个 SQL Expression UDF
 
-```bash
-python -m pip install openai
-export OPENAI_API_KEY="<your-key>"
-```
-
-运行无凭据的基础路径时，请在主 workflow 中保留 `run_optional_ai = False`。只有在 provider 环境准备好之后才把它改为 `True`。
-
-## 1. 创建连接和来源表
-
-先创建四条便于审核的记录。每行都有稳定 ID、来源 URI、业务优先级，以及后续投影实际使用的来源文本。
+把下面的内容复制到一个 Python 文件并运行：
 
 ```python
 import vane
 
 con = vane.connect()
 
-source_assets = con.sql(
-    """
-    SELECT
-        asset_id::VARCHAR AS asset_id,
-        source_uri::VARCHAR AS source_uri,
-        priority::VARCHAR AS priority,
-        source_text::VARCHAR AS source_text
+con.execute("""
+    CREATE TABLE documents AS
+    SELECT *
     FROM (VALUES
-        (
-            'asset-001',
-            's3://sample-bucket/claims/claim-001.txt',
-            'high',
-            'Customer submitted a signed claim form with supporting notes.'
-        ),
-        (
-            'asset-002',
-            's3://sample-bucket/invoices/invoice-018.txt',
-            'high',
-            'Invoice is missing approval metadata.'
-        ),
-        (
-            'asset-003',
-            's3://sample-bucket/calls/call-077.txt',
-            'normal',
-            'Transcript mentions an expired policy reference.'
-        ),
-        (
-            'asset-004',
-            's3://sample-bucket/memos/memo-009.txt',
-            'low',
-            'Internal follow-up note.'
-        )
-    ) AS source_rows(asset_id, source_uri, priority, source_text)
-    """
-)
-source_assets.to_table("quickstart_source_assets")
-source_assets.show()
-```
+        ('doc-001', 'Signed claim form received.'),
+        ('doc-002', 'Invoice is missing approval metadata.'),
+        ('doc-003', 'Policy reference has expired.')
+    ) AS rows(document_id, source_text)
+""")
 
-显式的 `VARCHAR` cast 让来源数据契约清晰可见，并与下文注册的 UDF 参数类型保持一致。
 
-## 2. 使用 SQL 选择候选行
-
-在运行 Python 或 AI 之前，先用普通 SQL 缩小输入范围。这个查询保留了稳定 ID 和来源字段，让每个结果都可审核。
-
-```python
-candidates = con.sql(
-    """
-    SELECT
-        asset_id,
-        source_uri,
-        source_text::VARCHAR AS source_text
-    FROM quickstart_source_assets
-    WHERE priority IN ('high', 'normal')
-      AND source_text IS NOT NULL
-      AND trim(source_text) <> ''
-    ORDER BY asset_id
-    """
-)
-candidates.to_table("quickstart_candidates")
-candidates.show()
-```
-
-过滤应放在 UDF 之外。v1 中注册的 SQL alias 只能用于 projection，并且保持行数，因此不要把 alias 放进 `WHERE`。
-
-## 3. 定义原始 scalar callable
-
-主路径使用普通 Python 函数。它为每个来源文本值返回一个审核状态，不需要 `vane.func` decorator。
-
-```python
 def review_status(source_text):
-    normalized = str(source_text or "").strip().lower()
-    if not normalized:
-        return "error: empty_text"
-    if "missing" in normalized or "expired" in normalized:
+    text = str(source_text).lower()
+    if "missing" in text or "expired" in text:
         return "needs_review"
     return "ready"
-```
 
-## 4. 安全运行 SQL Expression 路径
-
-下面的代码块按顺序完成整个生命周期：注册 callable、只在 SQL `SELECT` projection 中调用 alias、可选添加 SQL `ai_prompt`、校验、写出 Parquet，并在 `finally` 中注销 alias。
-
-```python
-review_alias = "review_status_sql"
-run_optional_ai = False
 
 vane.attach_function(
     review_status,
-    alias=review_alias,
+    alias="review_status_sql",
     connection=con,
     parameters=["VARCHAR"],
     return_dtype="VARCHAR",
 )
 
-try:
-    reviewed = con.sql(
-        """
-        SELECT
-            asset_id,
-            source_uri,
-            source_text,
-            review_status_sql(source_text::VARCHAR) AS review_status
-        FROM quickstart_candidates
-        ORDER BY asset_id
-        """
-    )
-    reviewed.to_table("quickstart_reviewed")
+reviewed = con.sql("""
+    SELECT
+        document_id,
+        source_text,
+        review_status_sql(source_text) AS review_status
+    FROM documents
+    ORDER BY document_id
+""")
 
-    if run_optional_ai:
-        reviewed_with_ai = con.sql(
-            """
-            SELECT
-                asset_id,
-                source_uri,
-                source_text,
-                review_status,
-                ai_prompt(
-                    source_text,
-                    struct_pack(
-                        provider := 'openai',
-                        model := 'gpt-4o-mini',
-                        concurrency := 1,
-                        system_message := 'Return one concise business review note.'
-                    )
-                ) AS ai_review_note
-            FROM quickstart_reviewed
-            ORDER BY asset_id
-            """
-        )
-        reviewed_with_ai.to_table("quickstart_result")
-        result = con.table("quickstart_result")
-    else:
-        result = con.table("quickstart_reviewed")
-
-    expected_row_count = 3
-    expected_ids = ["asset-001", "asset-002", "asset-003"]
-
-    validation = con.sql(
-        """
-        SELECT
-            count(*) AS row_count,
-            count(DISTINCT asset_id) AS distinct_id_count,
-            count(*) FILTER (WHERE asset_id IS NULL) AS null_id_count,
-            count(*) FILTER (WHERE review_status IS NULL) AS null_output_count,
-            count(*) FILTER (WHERE review_status LIKE 'error:%') AS error_output_count
-        FROM quickstart_reviewed
-        """
-    ).fetchone()
-    (
-        actual_row_count,
-        distinct_id_count,
-        null_id_count,
-        null_output_count,
-        error_output_count,
-    ) = validation
-
-    assert actual_row_count == expected_row_count
-    assert distinct_id_count == expected_row_count
-    assert null_id_count == 0
-    assert null_output_count == 0
-    assert error_output_count == 0
-
-    actual_ids = [
-        row[0]
-        for row in con.sql(
-            "SELECT asset_id FROM quickstart_reviewed ORDER BY asset_id"
-        ).fetchall()
-    ]
-    assert actual_ids == expected_ids
-
-    expected_columns = [
-        "asset_id",
-        "source_uri",
-        "source_text",
-        "review_status",
-    ]
-    expected_types = ["VARCHAR", "VARCHAR", "VARCHAR", "VARCHAR"]
-    if run_optional_ai:
-        expected_columns.append("ai_review_note")
-        expected_types.append("VARCHAR")
-        ai_validation = con.sql(
-            """
-            SELECT count(*) FILTER (
-                WHERE ai_review_note IS NULL OR trim(ai_review_note) = ''
-            ) AS null_or_empty_ai_output_count
-            FROM quickstart_result
-            """
-        ).fetchone()
-        null_or_empty_ai_output_count = ai_validation[0]
-        assert null_or_empty_ai_output_count == 0
-
-    actual_columns = list(result.columns)
-    actual_types = [str(dtype) for dtype in result.types]
-    assert actual_columns == expected_columns
-    assert actual_types == expected_types
-
-    output_path = (
-        "quickstart-ai-review.parquet"
-        if run_optional_ai
-        else "quickstart-review.parquet"
-    )
-    result.write_parquet(output_path)
-    result.show()
-finally:
-    vane.detach_function(review_alias, connection=con)
+reviewed.show()
+vane.detach_function("review_status_sql", connection=con)
 ```
 
-基础结果会为每个候选行保留一行。可选的 `ai_prompt` 调用同样保持行数，并保留 `asset_id`、`source_uri`、`source_text` 和 UDF 生成的 `review_status`。它的 `struct_pack` 只包含常量 provider 与请求设置；凭据仍然来自 worker 环境。
+结果会保留原始列，并新增一个有类型的 `review_status` 列：
 
-## 校验内容
+| document_id | review_status |
+| --- | --- |
+| doc-001 | ready |
+| doc-002 | needs_review |
+| doc-003 | needs_review |
 
-写出任何结果之前，assertion 会检查：
+## 刚才发生了什么
 
-- 行数符合预期，并且每行都有唯一的稳定 ID；
-- ID 的完整有序列表符合预期；
-- 不存在 null ID、null UDF 结果或显式 UDF 错误结果；
-- 输出列和 SQL 类型完全符合预期；
-- 启用 AI 时，不存在 null 或空的 AI 结果。
+- `vane.attach_function(...)` 把原始 Python callable 注册到 `con`。
+- `review_status_sql(...)` 成为可在 `SELECT` projection 中运行的 SQL Expression。
+- Expression 为每一输入行增加一个结果，因此 ID 和源文本仍在同一个 relation 中。
+- `show()` 物化惰性结果后，`vane.detach_function(...)` 移除了 alias。
 
-即使校验或写出过程抛出异常，`finally` 仍会从同一个连接中移除 `review_status_sql`。
+异常安全的清理、batch function、callable class 和 Relation 转换请继续阅读[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。精确签名和限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
-## 何时使用 Relation API
+## 可选：添加 AI Function
 
-当每个输入行旁只需要一个有类型的结果时，继续使用 SQL Expression。只有在需要表格 reshaping、多列输出或改变基数的阶段时，才转向 [UDF Relation API](/zh-CN/docs/data/reference/udf-api#relation-api)。只有在需要内置 chunking 或 classification、structured 或 multimodal prompting，或者显式 Relation 执行控制等专门能力时，才使用 [AI Relation API](/zh-CN/docs/data/reference/ai-api#relation-api)。
+这不是 Quickstart 的必需步骤。如果要试用托管 provider，请安装对应 package，并把凭据设置到 worker 环境中：
+
+```bash
+python -m pip install openai
+export OPENAI_API_KEY="<your-key>"
+```
+
+然后使用 SQL Expression function `ai_prompt` 增加一个 AI 结果：
+
+```python
+with_ai = con.sql("""
+    SELECT
+        document_id,
+        ai_prompt(
+            source_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini'
+            )
+        ) AS review_note
+    FROM documents
+    ORDER BY document_id
+""")
+
+with_ai.show()
+```
+
+Provider 调用可能产生费用，并把数据发送到你的环境之外。第一次运行时请保持输入较小；构建更大的 workflow 前，请阅读 [AI Function](/zh-CN/docs/data/guides/ai-functions)。
+
+## 从 Local 扩展到 Ray
+
+Quickstart 默认使用 local runner。要分布式执行同样的 UDF 或 AI Expression，请在创建连接**之前**配置 Ray：
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+```
+
+SQL projection 和注册的 callable 可以保持不变。处理更大任务时，把内联 `VALUES` 表替换为 Parquet 或对象存储等共享数据源。
+
+每个 Ray worker 都必须能够导入 UDF 及其依赖，并访问相同的数据、模型文件和工作所需凭据。在集群上运行前，请阅读 [Ray 集群部署](/zh-CN/docs/data/deploy/ray-cluster)。
 
 ## 下一步
 
 - [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)
-- [AI 函数](/zh-CN/docs/data/guides/ai-functions)
-- [UDF API 参考](/zh-CN/docs/data/reference/udf-api)
-- [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)
-- [SQL 与 Python](/zh-CN/docs/data/concepts/sql-vs-python)
+- [AI Function](/zh-CN/docs/data/guides/ai-functions)
+- [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)
+- [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)

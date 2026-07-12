@@ -3,266 +3,130 @@ title: Quickstart
 slug: /quickstart/quickstart
 ---
 
-This quickstart follows Vane Data's recommended path: use SQL to select a small candidate set, register one raw Python scalar callable as a SQL Expression alias, project its result beside stable source columns, validate the table, and write Parquet. A hosted `ai_prompt` projection is included as an optional extension.
+This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs locally, and needs no Ray cluster, GPU, PyArrow, or model-provider credentials.
 
-The required path runs locally with inline data. It does not need Ray, a GPU, PyArrow, remote storage, media files, or model-provider credentials.
+You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
-## Before you start
-
-Install Vane Data and verify that `import vane` works:
+## Install Vane Data
 
 ```bash
 python -m pip install vane-ai
 ```
 
-Only the optional hosted AI branch needs an OpenAI-compatible provider package and credentials. Set the credential in the worker environment before Vane or Ray workers start; never put it in SQL options.
+## Run Your First SQL Expression UDF
 
-```bash
-python -m pip install openai
-export OPENAI_API_KEY="<your-key>"
-```
-
-Leave `run_optional_ai = False` in the main workflow for the credential-free base path. Change it to `True` only after the provider environment is ready.
-
-## 1. Create a connection and source table
-
-Start with four reviewable rows. Each row has a stable ID, a source URI, a business priority, and the exact source text used by later projections.
+Copy this into a Python file and run it:
 
 ```python
 import vane
 
 con = vane.connect()
 
-source_assets = con.sql(
-    """
-    SELECT
-        asset_id::VARCHAR AS asset_id,
-        source_uri::VARCHAR AS source_uri,
-        priority::VARCHAR AS priority,
-        source_text::VARCHAR AS source_text
+con.execute("""
+    CREATE TABLE documents AS
+    SELECT *
     FROM (VALUES
-        (
-            'asset-001',
-            's3://sample-bucket/claims/claim-001.txt',
-            'high',
-            'Customer submitted a signed claim form with supporting notes.'
-        ),
-        (
-            'asset-002',
-            's3://sample-bucket/invoices/invoice-018.txt',
-            'high',
-            'Invoice is missing approval metadata.'
-        ),
-        (
-            'asset-003',
-            's3://sample-bucket/calls/call-077.txt',
-            'normal',
-            'Transcript mentions an expired policy reference.'
-        ),
-        (
-            'asset-004',
-            's3://sample-bucket/memos/memo-009.txt',
-            'low',
-            'Internal follow-up note.'
-        )
-    ) AS source_rows(asset_id, source_uri, priority, source_text)
-    """
-)
-source_assets.to_table("quickstart_source_assets")
-source_assets.show()
-```
+        ('doc-001', 'Signed claim form received.'),
+        ('doc-002', 'Invoice is missing approval metadata.'),
+        ('doc-003', 'Policy reference has expired.')
+    ) AS rows(document_id, source_text)
+""")
 
-The explicit `VARCHAR` casts make the source contract visible and match the UDF parameter type registered below.
 
-## 2. Select candidates with SQL
-
-Use ordinary SQL to reduce the input before Python or AI work. This query keeps the stable ID and source fields that make every result reviewable.
-
-```python
-candidates = con.sql(
-    """
-    SELECT
-        asset_id,
-        source_uri,
-        source_text::VARCHAR AS source_text
-    FROM quickstart_source_assets
-    WHERE priority IN ('high', 'normal')
-      AND source_text IS NOT NULL
-      AND trim(source_text) <> ''
-    ORDER BY asset_id
-    """
-)
-candidates.to_table("quickstart_candidates")
-candidates.show()
-```
-
-Filtering stays outside the UDF. Registered SQL aliases are projection-only and row-preserving in v1, so do not place the alias in `WHERE`.
-
-## 3. Define a raw scalar callable
-
-The primary path uses a plain Python function. It returns one review status for one source-text value and does not need a `vane.func` decorator.
-
-```python
 def review_status(source_text):
-    normalized = str(source_text or "").strip().lower()
-    if not normalized:
-        return "error: empty_text"
-    if "missing" in normalized or "expired" in normalized:
+    text = str(source_text).lower()
+    if "missing" in text or "expired" in text:
         return "needs_review"
     return "ready"
-```
 
-## 4. Run the SQL Expression path safely
-
-The following block completes the lifecycle in order: register the callable, invoke the alias only in a SQL `SELECT` projection, optionally add SQL `ai_prompt`, validate, write Parquet, and detach the alias in `finally`.
-
-```python
-review_alias = "review_status_sql"
-run_optional_ai = False
 
 vane.attach_function(
     review_status,
-    alias=review_alias,
+    alias="review_status_sql",
     connection=con,
     parameters=["VARCHAR"],
     return_dtype="VARCHAR",
 )
 
-try:
-    reviewed = con.sql(
-        """
-        SELECT
-            asset_id,
-            source_uri,
-            source_text,
-            review_status_sql(source_text::VARCHAR) AS review_status
-        FROM quickstart_candidates
-        ORDER BY asset_id
-        """
-    )
-    reviewed.to_table("quickstart_reviewed")
+reviewed = con.sql("""
+    SELECT
+        document_id,
+        source_text,
+        review_status_sql(source_text) AS review_status
+    FROM documents
+    ORDER BY document_id
+""")
 
-    if run_optional_ai:
-        reviewed_with_ai = con.sql(
-            """
-            SELECT
-                asset_id,
-                source_uri,
-                source_text,
-                review_status,
-                ai_prompt(
-                    source_text,
-                    struct_pack(
-                        provider := 'openai',
-                        model := 'gpt-4o-mini',
-                        concurrency := 1,
-                        system_message := 'Return one concise business review note.'
-                    )
-                ) AS ai_review_note
-            FROM quickstart_reviewed
-            ORDER BY asset_id
-            """
-        )
-        reviewed_with_ai.to_table("quickstart_result")
-        result = con.table("quickstart_result")
-    else:
-        result = con.table("quickstart_reviewed")
-
-    expected_row_count = 3
-    expected_ids = ["asset-001", "asset-002", "asset-003"]
-
-    validation = con.sql(
-        """
-        SELECT
-            count(*) AS row_count,
-            count(DISTINCT asset_id) AS distinct_id_count,
-            count(*) FILTER (WHERE asset_id IS NULL) AS null_id_count,
-            count(*) FILTER (WHERE review_status IS NULL) AS null_output_count,
-            count(*) FILTER (WHERE review_status LIKE 'error:%') AS error_output_count
-        FROM quickstart_reviewed
-        """
-    ).fetchone()
-    (
-        actual_row_count,
-        distinct_id_count,
-        null_id_count,
-        null_output_count,
-        error_output_count,
-    ) = validation
-
-    assert actual_row_count == expected_row_count
-    assert distinct_id_count == expected_row_count
-    assert null_id_count == 0
-    assert null_output_count == 0
-    assert error_output_count == 0
-
-    actual_ids = [
-        row[0]
-        for row in con.sql(
-            "SELECT asset_id FROM quickstart_reviewed ORDER BY asset_id"
-        ).fetchall()
-    ]
-    assert actual_ids == expected_ids
-
-    expected_columns = [
-        "asset_id",
-        "source_uri",
-        "source_text",
-        "review_status",
-    ]
-    expected_types = ["VARCHAR", "VARCHAR", "VARCHAR", "VARCHAR"]
-    if run_optional_ai:
-        expected_columns.append("ai_review_note")
-        expected_types.append("VARCHAR")
-        ai_validation = con.sql(
-            """
-            SELECT count(*) FILTER (
-                WHERE ai_review_note IS NULL OR trim(ai_review_note) = ''
-            ) AS null_or_empty_ai_output_count
-            FROM quickstart_result
-            """
-        ).fetchone()
-        null_or_empty_ai_output_count = ai_validation[0]
-        assert null_or_empty_ai_output_count == 0
-
-    actual_columns = list(result.columns)
-    actual_types = [str(dtype) for dtype in result.types]
-    assert actual_columns == expected_columns
-    assert actual_types == expected_types
-
-    output_path = (
-        "quickstart-ai-review.parquet"
-        if run_optional_ai
-        else "quickstart-review.parquet"
-    )
-    result.write_parquet(output_path)
-    result.show()
-finally:
-    vane.detach_function(review_alias, connection=con)
+reviewed.show()
+vane.detach_function("review_status_sql", connection=con)
 ```
 
-The base result preserves one row per candidate. The optional `ai_prompt` call does the same while retaining `asset_id`, `source_uri`, `source_text`, and the UDF-produced `review_status`. Its `struct_pack` contains only constant provider and request settings; credentials continue to come from the worker environment.
+The result contains the original columns plus one typed `review_status` column:
 
-## What the validation checks
+| document_id | review_status |
+| --- | --- |
+| doc-001 | ready |
+| doc-002 | needs_review |
+| doc-003 | needs_review |
 
-Before any output is written, the assertions verify:
+## What Just Happened
 
-- the expected row count and one distinct stable ID per row;
-- the exact ordered IDs;
-- no null IDs, null UDF results, or explicit UDF error results;
-- the exact output columns and SQL types; and
-- when AI is enabled, no null or empty AI result.
+- `vane.attach_function(...)` registered the raw Python callable on `con`.
+- `review_status_sql(...)` became a SQL Expression that could run in a `SELECT` projection.
+- The Expression added one result beside each input row, so IDs and source text stayed in the same relation.
+- `vane.detach_function(...)` removed the alias after the lazy result had been materialized by `show()`.
 
-If validation or writing raises an exception, `finally` still removes `review_status_sql` from the same connection.
+For exception-safe cleanup, batch functions, callable classes, and Relation transformations, continue with [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For exact signatures and restrictions, use the [UDF API Reference](/docs/data/reference/udf-api).
 
-## When to use Relation API
+## Optional: Add an AI Function
 
-Stay with SQL Expression when one typed result belongs beside each input row. Move to the [UDF Relation API](/docs/data/reference/udf-api#relation-api) only for table reshaping, multi-column output, or a cardinality-changing stage. Use the [AI Relation API](/docs/data/reference/ai-api#relation-api) only for specialized work such as built-in chunking or classification, structured or multimodal prompting, or explicit Relation execution controls.
+This is not required for the Quickstart. To try a hosted provider, install its package and set credentials in the worker environment:
 
-## Next
+```bash
+python -m pip install openai
+export OPENAI_API_KEY="<your-key>"
+```
+
+Then add an AI result with the SQL Expression function `ai_prompt`:
+
+```python
+with_ai = con.sql("""
+    SELECT
+        document_id,
+        ai_prompt(
+            source_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini'
+            )
+        ) AS review_note
+    FROM documents
+    ORDER BY document_id
+""")
+
+with_ai.show()
+```
+
+Provider calls can incur cost and send data outside your environment. Keep the first input small and read [AI Functions](/docs/data/guides/ai-functions) before building a larger workflow.
+
+## Scale from Local to Ray
+
+The Quickstart uses the default local runner. To distribute the same UDF or AI Expression work, configure Ray **before** creating the connection:
+
+```python
+import vane
+
+vane.configure(runner="ray")
+con = vane.connect()
+```
+
+The SQL projection and registered callable can stay the same. For a larger job, replace the inline `VALUES` table with a shared source such as Parquet or object storage.
+
+Every Ray worker must be able to import the UDF and its dependencies and access the same data, model files, and credentials required by its work. See [Ray Cluster Deployment](/docs/data/deploy/ray-cluster) before running on a cluster.
+
+## Next Steps
 
 - [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
 - [AI Functions](/docs/data/guides/ai-functions)
-- [UDF API Reference](/docs/data/reference/udf-api)
-- [AI Function API Reference](/docs/data/reference/ai-api)
-- [SQL vs Python](/docs/data/concepts/sql-vs-python)
+- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale)
+- [GPU Inference](/docs/data/guides/gpu-inference)

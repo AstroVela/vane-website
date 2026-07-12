@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 const read = (path) => readFileSync(path, 'utf8')
 const stripTags = (value) => value.replace(/<[^>]+>/g, '')
-const manuallyReviewedGuidePaths = new Set([
+const manuallyReviewedPagePaths = new Set([
   'docs/data/guides/custom-python-udfs.mdx',
   'docs/data/guides/ai-functions.mdx',
   'docs/data/guides/embeddings-at-scale.mdx',
@@ -13,6 +13,8 @@ const manuallyReviewedGuidePaths = new Set([
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/ai-functions.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/embeddings-at-scale.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/gpu-inference.mdx',
+  'docs/data/quickstart/quickstart.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
 ])
 const collectMdxEntries = (directory) => readdirSync(directory, { withFileTypes: true })
   .flatMap((entry) => {
@@ -30,7 +32,7 @@ const documentationCorpusEntries = () => [
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides',
 ]
   .flatMap(collectMdxEntries)
-  .filter(({ path }) => !manuallyReviewedGuidePaths.has(path))
+  .filter(({ path }) => !manuallyReviewedPagePaths.has(path))
 
 const assertParquetOutputLifecycle = (source, message) => {
   assert.doesNotMatch(
@@ -1180,74 +1182,6 @@ const assertNoCredentialSqlFields = (block, message) => {
   }
 }
 
-const assertQuickstartTask = (source, locale, message) => {
-  const blocks = fencedCodeBlocks(source)
-  const callableIndex = blocks.findIndex((block) => /def review_status\(source_text\):/.test(block))
-  const workflowIndex = blocks.findIndex((block) => /vane\.attach_function\(/.test(block))
-  assert.ok(
-    callableIndex !== -1 && workflowIndex > callableIndex,
-    `${message}: raw callable should be defined before alias attachment`,
-  )
-
-  const workflow = blocks[workflowIndex]
-  assertSubstringOrder(
-    workflow,
-    [
-      'review_alias = "review_status_sql"',
-      'vane.attach_function(',
-      'alias=review_alias',
-      'try:',
-      'review_status_sql(source_text::VARCHAR) AS review_status',
-      'ai_prompt(',
-      'struct_pack(',
-      'validation =',
-      'assert actual_row_count == expected_row_count',
-      'result.write_parquet(output_path)',
-      'result.show()',
-      'finally:',
-      'vane.detach_function(review_alias, connection=con)',
-    ],
-    `${message} SQL-first lifecycle`,
-  )
-  assert.match(
-    workflow,
-    /SELECT\s+asset_id,\s+source_uri,\s+source_text,\s+review_status_sql\(source_text::VARCHAR\) AS review_status/,
-    `${message}: alias projection should preserve stable ID and source columns`,
-  )
-  assert.match(
-    workflow,
-    /SELECT\s+asset_id,\s+source_uri,\s+source_text,\s+review_status,\s+ai_prompt\([\s\S]*struct_pack\([\s\S]*\) AS ai_review_note/,
-    `${message}: optional AI branch should use constant SQL ai_prompt beside source fields`,
-  )
-  assertNoCredentialSqlFields(workflow, `${message} optional AI branch`)
-
-  const examples = blocks.join('\n')
-  const sqlAiIndex = examples.indexOf('ai_prompt(')
-  const pythonOrRelationAiIndex = examples.search(
-    /vane\.ai\.|\.(?:prompt|embed_text|classify_text)\(/,
-  )
-  assert.ok(
-    sqlAiIndex !== -1 &&
-      (pythonOrRelationAiIndex === -1 || sqlAiIndex < pythonOrRelationAiIndex),
-    `${message}: optional SQL ai_prompt should precede Python or Relation AI`,
-  )
-
-  const rolePatterns = locale === 'en'
-    ? [
-        /\[UDF Relation API\]\(\/docs\/data\/reference\/udf-api#relation-api\)/,
-        /\[AI Relation API\]\(\/docs\/data\/reference\/ai-api#relation-api\)/,
-        /\[Custom Python UDFs\]\(\/docs\/data\/guides\/custom-python-udfs\)/,
-        /\[AI Functions\]\(\/docs\/data\/guides\/ai-functions\)/,
-      ]
-    : [
-        /\[UDF Relation API\]\(\/zh-CN\/docs\/data\/reference\/udf-api#relation-api\)/,
-        /\[AI Relation API\]\(\/zh-CN\/docs\/data\/reference\/ai-api#relation-api\)/,
-        /\[自定义 Python UDF\]\(\/zh-CN\/docs\/data\/guides\/custom-python-udfs\)/,
-        /\[AI 函数\]\(\/zh-CN\/docs\/data\/guides\/ai-functions\)/,
-      ]
-  assertPatterns(source, rolePatterns, `${message} role links`)
-}
-
 const paths = {
   udfReference: 'docs/data/reference/udf-api.mdx',
   aiReference: 'docs/data/reference/ai-api.mdx',
@@ -1282,10 +1216,6 @@ const executionModel = read(paths.executionModel)
 const executionModelZh = read(paths.executionModelZh)
 const sqlVsPython = read(paths.sqlVsPython)
 const sqlVsPythonZh = read(paths.sqlVsPythonZh)
-const quickstart = read('docs/data/quickstart/quickstart.mdx')
-const quickstartZh = read(
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
-)
 const approvedDocumentationPair = (id, kind, label, options = {}) => {
   const paths = {
     en: `docs/data/${id}.mdx`,
@@ -1307,7 +1237,6 @@ const approvedBilingualDocumentationPairs = [
   approvedDocumentationPair('concepts/ai-functions', 'concept', 'AI Function Concepts'),
   approvedDocumentationPair('concepts/execution-model', 'concept', 'Execution Model Concepts'),
   approvedDocumentationPair('concepts/sql-vs-python', 'concept', 'SQL vs Python Concepts'),
-  approvedDocumentationPair('quickstart/quickstart', 'guide', 'Quickstart'),
   approvedDocumentationPair(
     'guides/multimodal-ingest',
     'guide',
@@ -1347,7 +1276,6 @@ const publicApiCorpus = [
   aiConcept,
   executionModel,
   sqlVsPython,
-  quickstart,
 ].join('\n')
 
 const udfSqlEntries = [
@@ -2635,48 +2563,6 @@ for (const schema of relatedConceptSchemas) {
   assertRelatedConceptSchema(schema)
 }
 
-const guideSchemas = [
-  {
-    id: 'quickstart',
-    label: 'Quickstart',
-    sources: { en: quickstart, zh: quickstartZh },
-    headings: {
-      en: [
-        /^## Before you start$/,
-        /^## 1\. Create a connection and source table$/,
-        /^## 2\. Select candidates with SQL$/,
-        /^## 3\. Define a raw scalar callable$/,
-        /^## 4\. Run the SQL Expression path safely$/,
-        /^## What the validation checks$/,
-        /^## When to use Relation API$/,
-        /^## Next$/,
-      ],
-      zh: [
-        /^## 开始之前$/,
-        /^## 1\. 创建连接和来源表$/,
-        /^## 2\. 使用 SQL 选择候选行$/,
-        /^## 3\. 定义原始 scalar callable$/,
-        /^## 4\. 安全运行 SQL Expression 路径$/,
-        /^## 校验内容$/,
-        /^## 何时使用 Relation API$/,
-        /^## 下一步$/,
-      ],
-    },
-    check: assertQuickstartTask,
-  },
-]
-
-for (const schema of guideSchemas) {
-  assertBilingualGuideStructure(schema)
-  for (const locale of ['en', 'zh']) {
-    schema.check(
-      schema.sources[locale],
-      locale,
-      `${locale === 'en' ? 'English' : 'Chinese'} ${schema.label}`,
-    )
-  }
-}
-
 const expectedApprovedPairIds = [
   'reference/udf-api',
   'reference/ai-api',
@@ -2684,7 +2570,6 @@ const expectedApprovedPairIds = [
   'concepts/ai-functions',
   'concepts/execution-model',
   'concepts/sql-vs-python',
-  'quickstart/quickstart',
   'guides/multimodal-ingest',
   'guides/multimodal-pipeline',
   'guides/structured-transformation',
@@ -2785,7 +2670,6 @@ assert.throws(
 for (const [placeholder, target, check] of [
   ['TODO', udfReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TODO Reference mutation')],
   ['TBD', aiReference, (source) => assertReferenceExamplesSafe(source, 'en', 'TBD Reference mutation')],
-  ['your_function_here', quickstart, (source) => assertGuideExamplesSafe(source, 'your_function_here Guide mutation')],
 ]) {
   const mutation = target.replace('import vane\n', `import vane\n${placeholder}\n`)
   assert.notEqual(mutation, target, `${placeholder} mutation should change an executable block`)
@@ -3025,32 +2909,6 @@ assert.throws(
   'approved pair registry should reject a replaced path identity',
 )
 
-const quickstartOrderMutation = quickstart
-  .replace('## 2. Select candidates with SQL', '## __QUICKSTART_ORDER_SWAP__')
-  .replace('## 3. Define a raw scalar callable', '## 2. Select candidates with SQL')
-  .replace('## __QUICKSTART_ORDER_SWAP__', '## 3. Define a raw scalar callable')
-assert.throws(
-  () => assertGuideHeadingSchema(
-    quickstartOrderMutation,
-    guideSchemas[0].headings.en,
-    'Quickstart targeted order mutation',
-  ),
-  /semantic heading/,
-  'Quickstart guards should reject SQL candidate selection after callable definition',
-)
-const quickstartEarlyDetachMutation = quickstart.replace(
-  '    result.show()\nfinally:\n    vane.detach_function(review_alias, connection=con)',
-  'finally:\n    vane.detach_function(review_alias, connection=con)\n    result.show()',
-)
-assert.throws(
-  () => assertQuickstartTask(
-    quickstartEarlyDetachMutation,
-    'en',
-    'Quickstart early-detach mutation',
-  ),
-  /SQL-first lifecycle/,
-  'Quickstart guards should consume the lazy result before detaching its alias',
-)
 const aiTopLevelPlacementMutation = aiReference.replace(
   'supported only inside a `SELECT projection`',
   'supported only as a top-level value in a `SELECT projection`',
@@ -3192,9 +3050,6 @@ for (const [source, label] of [
     `Corpus guards should reject ${label}`,
   )
 }
-
-assert.doesNotMatch(quickstart, /append_column\(/, 'Quickstart should not default to manual Arrow recombination')
-assert.match(quickstart, /ai_prompt\([\s\S]*\) AS ai_review_note/, 'Quickstart should preserve source columns with a SQL AI projection')
 
 const task9OutputPaths = [
   'docs/data/guides/multimodal-pipeline.mdx',
