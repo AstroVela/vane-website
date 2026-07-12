@@ -3,14 +3,14 @@ title: Quickstart
 slug: /quickstart/quickstart
 ---
 
-This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs locally, and needs no Ray cluster, GPU, PyArrow, or model-provider credentials.
+This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs locally, and needs no Ray cluster, GPU, or model-provider credentials.
 
 You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
 ## Install Vane Data
 
 ```bash
-python -m pip install vane-ai
+python -m pip install 'vane-ai[all]'
 ```
 
 ## Run Your First SQL Expression UDF

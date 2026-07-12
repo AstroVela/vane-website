@@ -328,7 +328,7 @@ prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=64,
     execution_backend="subprocess_actor",
-    concurrency=2,
+    actor_number=2,
 )
 ```
 
@@ -342,7 +342,7 @@ ray_prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=128,
     execution_backend="ray_actor",
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
@@ -380,13 +380,13 @@ embedded = prepared.map_batches(
     },
     batch_size=32,
     execution_backend="ray_actor",
-    concurrency=2,
+    actor_number=2,
     cpus=0.0,
     gpus=1.0,
 )
 ```
 
-`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
+`gpus=1.0` 是每个 actor 的资源请求。使用 `actor_number=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
 
 每个 Ray worker 都必须能够导入该可调用对象，并访问相同的数据路径、模型文件、凭据和 Python 依赖。
 
@@ -492,7 +492,7 @@ Expression UDF 根据可调用对象确定执行形态：`vane.func` 和 `vane.f
 
 `batch_size` 控制 Vane 每次 `map_batches` 调用传入多少输入行。batch size 不应改变结果语义。如果调整 `batch_size` 后输出发生变化，UDF 很可能依赖了隐藏的 batch 状态。
 
-`concurrency` 支持 `subprocess_task`、`subprocess_actor` 和 `ray_actor`；不要将它与 `ray_task` 一起使用。
+使用 `actor_number` 设置 `subprocess_actor` 和 `ray_actor` 的 actor 池大小。Task backend 不接受这个 actor 池选项。
 
 ## 相关文档
 

@@ -18,7 +18,6 @@
     "home:content:check": "node scripts/home-content-check.mjs",
     "training:content:check": "node scripts/training-use-case-check.mjs",
     "solutions:content:check": "node scripts/solutions-content-check.mjs",
-    "udf-ai-v2:content:check": "node scripts/udf-ai-v2-content-check.mjs",
     "write-translations": "docusaurus write-translations --locale zh-CN",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

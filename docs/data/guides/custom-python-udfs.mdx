@@ -328,7 +328,7 @@ prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=64,
     execution_backend="subprocess_actor",
-    concurrency=2,
+    actor_number=2,
 )
 ```
 
@@ -342,7 +342,7 @@ ray_prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=128,
     execution_backend="ray_actor",
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
@@ -380,13 +380,13 @@ embedded = prepared.map_batches(
     },
     batch_size=32,
     execution_backend="ray_actor",
-    concurrency=2,
+    actor_number=2,
     cpus=0.0,
     gpus=1.0,
 )
 ```
 
-`gpus=1.0` is per actor. With `concurrency=2`, Ray needs two available GPU slots for full parallelism. For more GPU execution patterns, see [GPU Inference](/docs/data/guides/gpu-inference).
+`gpus=1.0` is per actor. With `actor_number=2`, Ray needs two available GPU slots for full parallelism. For more GPU execution patterns, see [GPU Inference](/docs/data/guides/gpu-inference).
 
 Every Ray worker must be able to import the callable and access the same data paths, model files, credentials, and Python dependencies.
 
@@ -492,7 +492,7 @@ Use this progression:
 
 `batch_size` controls how many input rows Vane passes to one `map_batches` call. Batch size should not change result semantics. If output changes when `batch_size` changes, the UDF is probably relying on hidden batch state.
 
-`concurrency` is supported for `subprocess_task`, `subprocess_actor`, and `ray_actor`; do not pass it with `ray_task`.
+Use `actor_number` to size `subprocess_actor` and `ray_actor` pools. Task backends do not accept this actor-pool option.
 
 ## Related Guides
 

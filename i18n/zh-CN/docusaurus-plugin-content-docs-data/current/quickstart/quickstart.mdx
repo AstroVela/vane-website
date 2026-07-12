@@ -3,14 +3,14 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据和本地执行，不需要 Ray 集群、GPU、PyArrow 或模型 provider 凭据。
+这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据和本地执行，不需要 Ray 集群、GPU 或模型 provider 凭据。
 
 你将创建三行数据，把一个 Python 函数注册为 SQL alias，在 `SELECT` 中调用它，并看到结果。
 
 ## 安装 Vane Data
 
 ```bash
-python -m pip install vane-ai
+python -m pip install 'vane-ai[all]'
 ```
 
 ## 运行第一个 SQL Expression UDF
