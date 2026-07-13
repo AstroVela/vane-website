@@ -10,53 +10,35 @@ import EnterpriseContextAnimation from '../components/EnterpriseContextAnimation
 import { pickLocale, type SiteLocale, useSiteLocale } from '../siteI18n'
 import { ENTERPRISE_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 
-const AUDIT_CODE = `from pydantic import BaseModel
-import vane
+const AUDIT_CODE = `import vane
 
-class AuditResult(BaseModel):
-    status: str
-    reason: str
+@vane.func(return_dtype="VARCHAR")
+def policy_check(text):
+    return "missing_signature" if "missing signature" in text.lower() else None
 
 con = vane.connect()
-docs = con.sql("""
-    select document_id, claim_id, document_type, text, source_uri
-    from read_parquet('data/insurance_documents/*.parquet')
-    where text is not null
-""")
-docs.to_table("docs")
-
-rule_hits = con.sql("""
-    select document_id, claim_id, document_type, source_uri,
-           case
-             when lower(text) like '%missing signature%' then 'missing_signature'
-             when lower(text) like '%expired%' then 'expired_reference'
-           end as rule_hit
-    from docs
-    where lower(text) like '%missing signature%'
-       or lower(text) like '%expired%'
-""")
-
-audit_only = docs.prompt(
-    "text",
-    provider="openai",
-    system_message="Audit the insurance document for missing evidence. Return JSON.",
-    return_format=AuditResult,
-    output_column="audit_json",
-    execution_backend="subprocess_actor",
+vane.attach_function(
+    policy_check,
+    parameters=["VARCHAR"],
+    connection=con,
 )
 
-docs_table = docs.to_arrow_table()
-audit_table = audit_only.to_arrow_table()
-if docs_table.num_rows != audit_table.num_rows:
-    raise ValueError("model output row count changed")
+findings = con.sql("""
+    SELECT claim_id, document_id,
+           policy_check(text) AS rule_hit,
+           ai_prompt(
+               text,
+               struct_pack(
+                   provider := 'openai',
+                   model := 'gpt-4o-mini',
+                   system_message := 'Find missing claim evidence.'
+               )
+           ) AS ai_finding,
+           source_uri
+    FROM read_parquet('claims/*.parquet')
+""")
 
-audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
-audited.to_table("audited")
-
-final = con.sql("""
-    select claim_id, document_id, document_type, rule_hit, audit_json, source_uri
-    from audited join rule_hits using (document_id, claim_id, document_type, source_uri)
-""")`
+findings.write_parquet("audit_findings.parquet")`
 
 const INSURANCE_AUDIT_DOC = '/docs/data/examples/insurance-document-audit'
 
@@ -171,14 +153,14 @@ const HOW_CARDS: Array<{
   {
     title: 'Make source references part of the output',
     titleZh: '把来源引用保留到最终结果里',
-    copy: 'AI helpers return the configured output column, so final review rows should explicitly keep document IDs, rule hits, audit JSON, and source URIs together.',
-    copyZh: 'AI Function 会返回配置好的输出列，显式保留文档 ID、规则命中、审计 JSON 和来源 URI。',
+    copy: 'SQL ai_prompt returns a scalar result; alias it in the projection, then keep document IDs, rule hits, the model response, and source URIs together in the same review row.',
+    copyZh: 'SQL ai_prompt 返回标量结果；在 projection 中为它设置别名，并在同一审查行保留文档 ID、规则命中、模型响应和来源 URI。',
     inputs: ['model output'],
     inputsZh: ['模型输出'],
     result: 'review row',
     resultZh: '证据追溯',
-    fields: 'document ID · rule hit · audit JSON · source URI',
-    fieldsZh: '文档 ID · 规则命中 · 审计 JSON · 来源 URI',
+    fields: 'document ID · rule hit · model response · source URI',
+    fieldsZh: '文档 ID · 规则命中 · 模型响应 · 来源 URI',
   },
   {
     title: 'Move to Ray after local validation',
@@ -230,16 +212,14 @@ const DOC_ROWS_ZH = [
   { id: 'DOC-1030', text: 'policy expired', src: 'policy.pdf' },
   { id: 'DOC-1031', text: 'coverage limit', src: 'memo.pdf' },
 ]
-const PIPELINE_STAGES_EN = ['SQL rules', 'model review', 'audit rows']
-const PIPELINE_STAGES_ZH = ['SQL 规则', '模型推理', '文件处理']
-// The audit row's produced columns, straight from the final relation in
-// AUDIT_CODE (rule_hit, audit_json, source_uri) — keeps the figure honest to the
-// code below and reinforces the page's source-reference / evidence-chain point.
-const AUDIT_OUTPUTS_EN = ['rule hit', 'audit JSON', 'source URI']
-const AUDIT_OUTPUTS_ZH = ['业务洞察', '决策建议', '证据链']
+const PIPELINE_STAGES_EN = ['Python rule', 'SQL AI review', 'audit rows']
+const PIPELINE_STAGES_ZH = ['Python 规则', 'SQL AI 审查', '审核结果']
+// Keep the diagram labels aligned with the columns produced by AUDIT_CODE.
+const AUDIT_OUTPUTS_EN = ['rule hit', 'AI finding', 'source URI']
+const AUDIT_OUTPUTS_ZH = ['规则命中', 'AI 发现', '来源 URI']
 
-/* Real-example flow: a parsed document table feeds one Vane pipeline (SQL rules
-   -> model review -> audit rows) that produces auditable outputs. Three equal-
+/* Real-example flow: a parsed document table feeds one Vane pipeline (Python rule
+   -> SQL AI review -> audit rows) that produces auditable outputs. Three equal-
    height panels share one row anatomy; the middle is the green-accented hero. */
 function ExamplePipelineDiagram({ locale }: { locale: SiteLocale }) {
   const copy = pickLocale(
@@ -332,7 +312,7 @@ export default function EnterpriseAgentUseCase() {
       howTitle: 'source rows → auditable outputs, as one relation pipeline.',
       example: 'Real Example',
       exampleTitle: 'Insurance document audit pattern',
-      exampleLead: 'Start from parsed claim documents and source references, then apply deterministic rules and optional model review in one auditable relation.',
+      exampleLead: 'Register a Python policy rule once, then call it beside ai_prompt in SQL. Business IDs and source references stay on every audit row.',
       ctaTitle: 'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
     },
     {
@@ -353,7 +333,7 @@ export default function EnterpriseAgentUseCase() {
       howTitle: '以一条关系语义的SQL流水线，从多模数据变成可信决策',
       example: '真实示例',
       exampleTitle: '保险审核流水线',
-      exampleLead: '从理赔申请和原始理赔材料出发，在一条SQL流水线里完成非结构数据处理、模型推理和规则检查。',
+      exampleLead: 'Python 规则注册一次后即可在 SQL 中与 ai_prompt 并排调用；业务 ID 和来源引用始终保留在每条审核结果中。',
       ctaTitle: '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
     },
   )

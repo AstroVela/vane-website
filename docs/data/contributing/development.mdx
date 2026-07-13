@@ -91,4 +91,4 @@ python -m pytest tests/fast/test_udf_process.py
 
 ## Contribution rule of thumb
 
-Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.configure`, or AI helpers, update docs and tests in the same change.
+Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.func`, `vane.cls`, `vane.attach_function`, `vane.configure`, or AI helpers, update docs and tests in the same change. SQL is the recommended Expression entry point; public UDF contracts are in the [UDF API Reference](/docs/data/reference/udf-api), and AI helper contracts are in the [AI Function API Reference](/docs/data/reference/ai-api).

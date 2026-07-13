@@ -73,7 +73,7 @@ export default function Blog() {
         <div className="wrap">
           <Cta>
             <Button solid to="/docs" arrow>{copy.readDocs}</Button>
-            <Button to="/use-cases">{copy.explore}</Button>
+            <Button to="/solutions">{copy.explore}</Button>
           </Cta>
         </div>
       </section>

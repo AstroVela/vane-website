@@ -115,6 +115,8 @@ classified = with_bytes.map_batches(
     },
     batch_size=16,
     execution_backend="subprocess_actor",
+    gpus=0.0,
+    actor_number=1,
 )
 ```
 
@@ -150,7 +152,9 @@ curated = con.sql("""
     from classified_media
 """)
 
-curated.write_parquet("output/classified_media/")
+output_path = Path("output/classified_media/part-00000.parquet")
+output_path.parent.mkdir(parents=True, exist_ok=True)
+curated.write_parquet(str(output_path))
 ```
 
 ## 迁移到 Ray
@@ -178,11 +182,13 @@ classified = with_bytes.map_batches(
     batch_size=16,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
 每个 Ray worker 都必须能够导入 UDF 类，并访问相同的存储、凭证、模型文件和 Python 依赖。
+
+本指南中的多列阶段应继续使用 Python Relation UDF。对于后续的单列、保持行数的数据富集，请优先使用 Expression API，让 ID 和源元数据留在同一个 projection 中。当该阶段属于 SQL pipeline 时，使用已注册的 SQL alias；Python 组合更清晰时，则使用 Python expression。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
 ## 实用检查
 

@@ -154,11 +154,13 @@ out = rel.map_batches(
     batch_size=64,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
 将 `decode_batch` 和 `ModelBatch` 替换为你自己的函数或可调用类。当后续阶段需要把模型输出关联回源记录时，请从每个 UDF 返回稳定 ID。每个 Ray worker 都必须能够导入可调用对象，并访问相同的存储、模型文件和凭证。
+
+这里的多列解码和模型阶段应使用 Python Relation API。如果后续步骤只是在源列旁增加一个有类型、保持行数的结果，请优先使用 Expression API：当该步骤属于 SQL pipeline 时，使用已注册的 SQL alias；在 Python 中组合 projection 时，使用 `vane.func` 或 `vane.func.batch(..., row_preserving=True)`。详见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
 ## 实用检查
 

@@ -1,0 +1,896 @@
+---
+title: UDF API 参考
+---
+
+本参考用于查询公开 UDF 的签名、参数、返回值和调用限制。完整任务请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)；执行语义和设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。
+
+Vane 有两种 UDF 模型。Expression API 是默认模型，生成一个有类型的输出列；本页先介绍推荐的 SQL 入口，再介绍语义等价的 Python 入口。Relation API 是专门处理表形转换、行展开和显式 Relation 执行控制的模型。
+
+## Expression API
+
+Expression UDF 参与 projection，并且通常让每个输入行对应一个输出行。推荐做法是把 Python callable 注册为 SQL alias；也可以用 Python expression 构造相同模型。
+
+### SQL 入口（推荐）
+
+`vane.attach_function` 和 `vane.detach_function` 是 SQL Expression 调用的 Python 注册控制接口，不构成独立的 API 模型。
+
+注册对象兼容矩阵：
+
+| 注册对象 | 必需或允许的参数 | 禁止或固定的参数 |
+| --- | --- | --- |
+| 已装饰的 `VaneFunction` | `parameters`；decorator 或 attach call 提供有效 `return_dtype` | 禁止 `input_names`、`schema`、`batch_size`、`gpus` 和 `actor_number`。 |
+| Raw scalar callable | `parameters` 和 `return_dtype` | 禁止所有 batch 与 actor 参数。 |
+| Raw batch function | `parameters`、`input_names` 和单列 `schema`；可选 `batch_size` 和 `gpus` | 禁止 `return_dtype` 和 `actor_number`。 |
+| 零参数 raw batch callable class | Raw batch 参数加正整数 `actor_number` | 禁止 constructor 参数和 `return_dtype`；这是 actor-backed 复用，不是 `vane.cls` 状态契约。 |
+| 已实例化的 `VaneClassInstance` | `parameters`；可选显式 `input_names` 和 `batch_size` 覆盖 | `return_dtype`、`schema`、`gpus` 和 `actor_number` 不能覆盖 decorator；行数保持是固定契约。 |
+| 已实例化的 `VaneClassBatchInstance` | `parameters` 和 `input_names`；可选 `schema` 和 `batch_size` 覆盖 | `return_dtype`、`gpus` 和 `actor_number` 不能覆盖 decorator；decorator 必须设置 `row_preserving=True`。 |
+
+未实例化的 Vane class wrapper 必须先捕获 constructor 参数，例如调用 `Counter()`，然后才能注册。
+
+#### `vane.attach_function`
+
+##### 用途
+
+把受支持的 Python callable 或 Vane wrapper 注册为 connection 作用域的 SQL Expression alias。
+
+##### 签名
+
+```python
+vane.attach_function(
+    fn_or_function: Any,
+    alias: str | None = None,
+    *,
+    connection: Any | None = None,
+    replace: bool = False,
+    parameters: Any = None,
+    return_dtype: Any | None = None,
+    input_names: Any = None,
+    schema: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    gpus: float | None = None,
+    actor_number: int | None = None,
+) -> None
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `fn_or_function` | 已装饰的 `VaneFunction`、raw callable、零参数 raw batch callable class，或已实例化的 Vane class wrapper。 |
+| `alias` | SQL 函数名。`None` 表示从 wrapper 或 callable 推导。 |
+| `connection` | alias 所属 connection。`None` 使用 `duckdb.default_connection()`。 |
+| `replace` | `False` 会拒绝已存在的 signature；`True` 只能替换同一 connection 拥有且 SQL signature 相同的 Vane alias。 |
+| `parameters` | SQL 输入类型 list 或 tuple；是否必需由上方对象兼容矩阵决定。 |
+| `return_dtype` | scalar 输出类型；兼容矩阵允许时可来自 decorator。 |
+| `input_names` | 有序的 batch SQL 参数名；必须非空、数量匹配 `parameters`，且忽略大小写后唯一。 |
+| `schema` | batch 输出 mapping；SQL batch alias 必须恰好声明一个输出列。 |
+| `batch_size` | 可选正整数 batch 大小。 |
+| `gpus` | 可选非负 batch 或 raw actor GPU 资源请求。 |
+| `actor_number` | 零参数 raw batch callable class 的正整数 actor 数；不能覆盖 Vane class decorator。 |
+
+##### 返回值
+
+alias 在所选 connection 上注册成功后返回 `None`。
+
+##### 行为与数据契约
+
+alias 由所选 connection 拥有，只有在该 connection 上规划的 query 才能使用。进入 catalog 变更前会先完成 Python preflight 校验。Batch alias 支持大小写不敏感的 SQL named arguments，并根据 `input_names` 重新排序；scalar alias 只接受位置参数。`replace=True` 仅适用于同一 connection 拥有且 signature 相同的 Vane alias。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+
+def add_one(value):
+    return value + 1
+
+vane.attach_function(
+    add_one,
+    alias="add_one_sql",
+    connection=con,
+    parameters=["INTEGER"],
+    return_dtype="INTEGER",
+)
+
+try:
+    rows = con.sql(
+        "SELECT value, add_one_sql(value) AS next_value "
+        "FROM (VALUES (1), (2)) AS items(value)"
+    ).fetchall()
+finally:
+    vane.detach_function("add_one_sql", connection=con)
+```
+
+##### 限制与错误
+
+不支持的对象、缺少类型、非法选项组合、重复的 `input_names`，以及未实例化的 Vane class wrapper 都会在 Python preflight 阶段失败。应在 active transaction 外执行注册，因为 DuckDB catalog apply 可能取消当前 transaction。上方共用兼容矩阵是允许覆盖参数的规范。
+
+##### 相关页面
+
+[在完整任务中注册并使用 UDF](/zh-CN/docs/data/guides/custom-python-udfs) · [SQL 与 Python 为何共享 Expression 语义](/zh-CN/docs/data/concepts/udfs)
+
+#### `registered_alias(...args)`
+
+##### 用途
+
+把已注册的 Python UDF 作为推荐的 SQL Expression 入口调用。
+
+##### 签名
+
+```sql
+registered_alias(argument [, ...]) -> declared_return_type
+```
+
+##### 参数
+
+`argument [, ...]` 必须匹配注册时声明的 SQL `parameters`。Raw batch alias 也可以使用 `input_names` 声明的、大小写不敏感的 named arguments；scalar alias 拒绝 named arguments。
+
+##### 返回值
+
+每个输入行返回一个注册时声明的 `declared_return_type` 值。
+
+##### 行为与数据契约
+
+alias 只在所属 connection 内有效，并且在 v1 中保持行数。它可出现在 `SELECT projection` 中并与普通列组合，因此同一 projection 可以保留 ID 和源字段。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+
+def add_tax(amount):
+    return amount * 1.1
+
+vane.attach_function(
+    add_tax,
+    alias="add_tax",
+    connection=con,
+    parameters=["DOUBLE"],
+    return_dtype="DOUBLE",
+)
+
+try:
+    rows = con.sql(
+        "SELECT order_id, amount, add_tax(amount) AS total "
+        "FROM (SELECT 1 AS order_id, 10.0::DOUBLE AS amount) AS orders"
+    ).fetchall()
+finally:
+    vane.detach_function("add_tax", connection=con)
+```
+
+##### 限制与错误
+
+注册 alias 不支持 `WHERE`、`GROUP BY`、`HAVING`、join condition、aggregate argument，也不能放进需要短路语义的 `CASE`、`AND`、`OR` 或 `COALESCE` expression。非法位置会在 planning 阶段失败，不会退回逐行 Python 执行。v1 SQL alias 不支持会改变行数的 `row_preserving=False` 契约。
+
+##### 相关页面
+
+[SQL-first UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Expression 位置模型](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.detach_function`
+
+##### 用途
+
+从所选 connection 移除已注册的 SQL Expression alias。
+
+##### 签名
+
+```python
+vane.detach_function(
+    alias: str,
+    *,
+    connection: Any | None = None,
+) -> None
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `alias` | 要移除的 SQL alias 名称。 |
+| `connection` | 从哪个 connection 移除。`None` 使用 `duckdb.default_connection()`。 |
+
+##### 返回值
+
+alias 移除后返回 `None`。
+
+##### 行为与数据契约
+
+移除操作只作用于指定 connection；`connection=None` 时作用于默认 connection。内部调用该 connection 的函数移除操作。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+
+def identity(value):
+    return value
+
+vane.attach_function(
+    identity,
+    alias="identity_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+    return_dtype="VARCHAR",
+)
+vane.detach_function("identity_sql", connection=con)
+```
+
+##### 限制与错误
+
+必须使用拥有该 alias 的同一个 connection。alias 不存在或 connection 不匹配时，由 connection 的移除操作报告错误；从一个 connection 移除不会影响其他 connection 的 alias。
+
+##### 相关页面
+
+[SQL alias 生命周期任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Connection 与执行语义](/zh-CN/docs/data/concepts/udfs)
+
+### Python 入口
+
+Python constructor 和 wrapper 构造同一个单列 Expression 模型。输入中出现 `Expression` 时保持 lazy；在注明的接口中，普通 Python 值使用 eager 执行。
+
+#### `vane.col`
+
+##### 用途
+
+构造对 relation 中命名列的引用。
+
+##### 签名
+
+```python
+vane.col(name: str) -> Expression
+```
+
+##### 参数
+
+`name` 是要在消费该 expression 的 relation 上解析的列名。
+
+##### 返回值
+
+表示列引用的 DuckDB `Expression`。
+
+##### 行为与数据契约
+
+该引用是 lazy 的，在 `select` 等 relation 操作中使用时绑定。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+rel = con.sql("SELECT 1 AS id, 'hello' AS text")
+result = rel.select(vane.col("id"), vane.col("text"))
+```
+
+##### 限制与错误
+
+`name` 必须能在消费它的 relation 中解析。列不存在或有歧义会在 binding 阶段失败。
+
+##### 相关页面
+
+[Python Expression UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Expression 模型](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.lit`
+
+##### 用途
+
+从 Python literal 构造常量 expression。
+
+##### 签名
+
+```python
+vane.lit(value: Any) -> Expression
+```
+
+##### 参数
+
+`value` 是可以转换为 DuckDB literal 的 Python 值。
+
+##### 返回值
+
+常量 DuckDB `Expression`。
+
+##### 行为与数据契约
+
+该 literal 是 lazy projection 的一部分，并按 relation 行数重复。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+rel = con.sql("SELECT 1 AS id")
+result = rel.select(
+    vane.col("id"),
+    vane.lit("ready").alias("status"),
+)
+```
+
+##### 限制与错误
+
+无法转换为 DuckDB literal 的值会在 expression 构造或绑定时被拒绝。
+
+##### 相关页面
+
+[Python Expression UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Expression 模型](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.sql_expr`
+
+##### 用途
+
+从 SQL expression 文本构造 DuckDB expression。
+
+##### 签名
+
+```python
+vane.sql_expr(sql: str) -> Expression
+```
+
+##### 参数
+
+`sql` 是一个 SQL expression，不是完整 query。
+
+##### 返回值
+
+解析后的 DuckDB `Expression`。
+
+##### 行为与数据契约
+
+SQL 文本中的列名会在消费它的 relation 上解析，结果可与其他 Python expression 组合。
+
+##### 最小示例
+
+```python
+import vane
+
+con = vane.connect()
+rel = con.sql("SELECT 3 AS quantity, 4.5 AS price")
+result = rel.select(
+    vane.sql_expr("quantity * price").alias("subtotal"),
+)
+```
+
+##### 限制与错误
+
+非法 SQL expression 文本和无法解析的名称会在 parsing 或 binding 阶段失败。不要把不可信文本插入 `sql`。
+
+##### 相关页面
+
+[Python Expression UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [SQL 与 Python 入口](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.func`
+
+##### 用途
+
+包装无状态 scalar Python callable，使其同时支持 eager 调用和单列 Expression 执行。
+
+##### 签名
+
+```python
+vane.func(
+    fn: Callable | None = None,
+    *,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+) -> VaneFunction | decorator
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `fn` | 要包装的 callable。`None` 支持参数化 decorator。 |
+| `return_dtype` | 单列输出类型。只做 eager 调用时可省略，Expression 或 SQL 执行时必需。 |
+| `name` | 显示名和默认 SQL 名。`None` 表示从 callable 推导，最终 fallback 为 `map_udf`。 |
+
+##### 返回值
+
+返回 `VaneFunction` wrapper；`fn=None` 时返回 decorator。调用 wrapper 时根据输入返回 eager Python 结果或 DuckDB `Expression`。
+
+##### 行为与数据契约
+
+所有参数都是普通 Python 值时，原 callable 会立即在当前进程执行。任一位置参数是 `Expression` 时，调用构造 lazy、无状态的 scalar expression，并使用 task backend。普通 keyword 值仍是 Python 参数；不会跨 batch 保留可变状态。
+
+##### 最小示例
+
+```python
+import vane
+
+@vane.func(return_dtype="INTEGER", name="add_one")
+def add_one(value):
+    return value + 1
+
+assert add_one(1) == 2
+
+con = vane.connect()
+rel = con.sql("SELECT 1::INTEGER AS value")
+result = rel.select(
+    vane.col("value"),
+    add_one(vane.col("value")).alias("next_value"),
+)
+```
+
+##### 限制与错误
+
+Expression 输入必须使用位置参数；keyword argument 中出现 `Expression` 会被拒绝。Expression 执行要求 `return_dtype`，并遵守共用的 projection 和短路位置限制。
+
+##### 相关页面
+
+[构建 scalar UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Eager 与 Expression 执行](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.func.batch`
+
+##### 用途
+
+把无状态 Arrow batch callable 包装为一个有类型的输出 Expression。
+
+##### 签名
+
+```python
+vane.func.batch(
+    fn: Callable[[pyarrow.Table], Any],
+    *,
+    inputs: Mapping[str, Any],
+    schema: Mapping[str, Any] | None = None,
+    name: str | None = None,
+    batch_size: int | None = None,
+    row_preserving: bool = False,
+    gpus: float | None = None,
+) -> Any | Expression
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `fn` | 接收 `pyarrow.Table` 的 callable。 |
+| `inputs` | 非空的 name-to-literal-or-expression mapping；key 成为 Arrow 输入列名。 |
+| `schema` | Expression 输出 mapping；必须非空且恰好包含一个列。 |
+| `name` | UDF 名。`None` 表示从 callable 推导，fallback 为 `map_batches_udf`。 |
+| `batch_size` | 可选正整数输入 batch 大小。 |
+| `row_preserving` | `False` 允许作为 result-only projection 改变行数；`True` 要求每个输入行对应一个输出行。 |
+| `gpus` | 可选非负执行资源声明。 |
+
+##### 返回值
+
+所有输入都是 literal 时返回 eager callable 结果；任一输入是 `Expression` 时返回一个 DuckDB `Expression`。
+
+##### 行为与数据契约
+
+Eager 路径会构造 `pa.table(inputs)` 并立即调用 `fn`。Expression 路径使用 `inputs` 的 key 命名输入列，并通过无状态 task backend 执行。`row_preserving=True` 会检查输入和输出行数相等，并允许结果与普通 projection 列组合。
+
+##### 最小示例
+
+```python
+import pyarrow as pa
+import vane
+
+def normalize_batch(table: pa.Table) -> pa.Table:
+    values = table.column("text").to_pylist()
+    return pa.table({"normalized": [value.strip().lower() for value in values]})
+
+con = vane.connect()
+rel = con.sql("SELECT 1 AS id, ' Hello ' AS text")
+normalized = vane.func.batch(
+    normalize_batch,
+    inputs={"text": vane.col("text")},
+    schema={"normalized": "VARCHAR"},
+    row_preserving=True,
+).alias("normalized")
+result = rel.select(vane.col("id"), normalized)
+```
+
+##### 限制与错误
+
+`inputs` 必须非空。Expression schema 必须恰好声明一个输出列。`row_preserving=False` 可以改变行数，但 batch expression 必须是唯一的顶层 projection；SQL 注册只接受保持行数的 batch wrapper。
+
+##### 相关页面
+
+[Batch Expression 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [行数契约](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.cls`
+
+##### 用途
+
+装饰 scalar callable class，使一个 actor 在单次 query 内复用其可变状态。
+
+##### 签名
+
+```python
+vane.cls(
+    class_: type | None = None,
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+    gpus: float | None = 0,
+) -> VaneClass | decorator
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `class_` | 要装饰的 class。`None` 支持参数化 decorator。 |
+| `actor_number` | 签名默认 `None`；v1 要求显式传入精确整数 `1`。 |
+| `return_dtype` | 必需的 scalar 输出类型。 |
+| `name` | UDF 名。`None` 表示从 class 推导，fallback 为 `class_udf`。 |
+| `gpus` | 每个 actor 的 GPU 资源请求，默认 `0`。 |
+
+##### 返回值
+
+返回 `VaneClass` wrapper；`class_=None` 时返回 decorator。调用已装饰 class 会把 constructor 参数捕获到 instance wrapper；调用该 instance 时返回 eager 值或 `Expression`。
+
+##### 行为与数据契约
+
+普通值调用复用一个本地 eager instance。Expression 输入会在一个 worker actor 内创建真实 class，并在该 actor 处理的 batch 之间复用。Expression 执行保持行数。在 Expression 和 SQL 执行中，任一 SQL NULL 输入都会直接产生 NULL，不调用 class；eager Python 调用保留 Python 行为，把 `None` 传给用户代码。
+
+##### 最小示例
+
+```python
+import vane
+
+@vane.cls(actor_number=1, return_dtype="BIGINT")
+class Counter:
+    def __init__(self, start=0):
+        self.value = start
+
+    def __call__(self, delta):
+        self.value += delta
+        return self.value
+
+counter = Counter(10)
+con = vane.connect()
+rel = con.sql("SELECT 1::BIGINT AS delta")
+result = rel.select(counter(vane.col("delta")).alias("running_value"))
+```
+
+##### 限制与错误
+
+v1 只接受精确整数 `actor_number=1`，拒绝 `True`、`1.0` 和其他整数。Expression 输入必须是位置参数，不能放在 keyword argument 中。状态只在查询作用域内有效，位于 actor 内且是临时、非持久状态；它不会 checkpoint，也不提供 exactly-once，actor 丢失会导致 query 失败。
+
+##### 相关页面
+
+[有状态 UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [状态与失败语义](/zh-CN/docs/data/concepts/udfs)
+
+#### `vane.cls.batch`
+
+##### 用途
+
+装饰 Arrow batch callable class，使一个 actor 在单次 query 内复用其可变状态。
+
+##### 签名
+
+```python
+vane.cls.batch(
+    class_: type | None = None,
+    *,
+    actor_number: int | None = None,
+    schema: Mapping[str, Any] | None = None,
+    name: str | None = None,
+    batch_size: int | None = None,
+    row_preserving: bool = False,
+    gpus: float | None = 0,
+) -> VaneClassBatch | decorator
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `class_` | 要装饰的 batch callable class。`None` 支持参数化 decorator。 |
+| `actor_number` | 签名默认 `None`；v1 要求显式传入精确整数 `1`。 |
+| `schema` | 必需的非空 mapping，且恰好包含一个输出列。 |
+| `name` | UDF 名。`None` 表示从 class 推导，fallback 为 `class_batch_udf`。 |
+| `batch_size` | 可选正整数输入 batch 大小。 |
+| `row_preserving` | `False` 允许作为唯一顶层 projection 改变行数；`True` 要求输入和输出行数相等。 |
+| `gpus` | 每个 actor 的 GPU 资源请求，默认 `0`。 |
+
+##### 返回值
+
+返回 `VaneClassBatch` wrapper；`class_=None` 时返回 decorator。实例化 wrapper 会捕获 constructor 参数；以 `instance(**inputs)` 调用该 instance 时，返回 eager batch 结果或 `Expression`。
+
+##### 行为与数据契约
+
+输入 mapping 的 key 会成为 Arrow 列名。普通值构造本地 Arrow table 并复用一个本地 instance；Expression 值会在一个 worker actor 内创建并复用 class。状态生命周期与 `vane.cls` 相同，只在当前 query 内有效。
+
+##### 最小示例
+
+```python
+import pyarrow as pa
+import vane
+
+@vane.cls.batch(
+    actor_number=1,
+    schema={"normalized": "VARCHAR"},
+    row_preserving=True,
+)
+class Normalizer:
+    def __call__(self, table: pa.Table) -> pa.Table:
+        values = table.column("text").to_pylist()
+        return pa.table({"normalized": [value.strip().lower() for value in values]})
+
+normalizer = Normalizer()
+con = vane.connect()
+rel = con.sql("SELECT 1 AS id, ' Hello ' AS text")
+normalized = normalizer(text=vane.col("text")).alias("normalized")
+result = rel.select(vane.col("id"), normalized)
+```
+
+##### 限制与错误
+
+v1 要求精确整数 `actor_number=1`，schema 必须恰好包含一个输出列。`row_preserving=False` 可以改变行数，但必须是唯一顶层 projection。SQL 注册要求 decorator 设置 `row_preserving=True`。状态只在查询作用域内有效，是 actor 内局部且临时的状态；它不会 checkpoint，也不提供 exactly-once。
+
+##### 相关页面
+
+[有状态 batch UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [状态与行数语义](/zh-CN/docs/data/concepts/udfs)
+
+## Relation API
+
+### Python 入口
+
+Relation method 是专门的 Python table stage，可以返回新的表形，或公开显式 backend 和 actor pool 控制。Vane 不提供这些 Relation UDF 的 SQL table-function 语法。
+
+#### `rel.map_batches`
+
+##### 用途
+
+把 Arrow batch 转换为声明的表形，包括多列输出。
+
+##### 签名
+
+```python
+rel.map_batches(
+    function: Callable[..., Any],
+    schema: dict[str, DuckDBPyType] | None = None,
+    *,
+    batch_size: int | None = None,
+    output_batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: Literal[
+        "subprocess_task", "subprocess_actor", "ray_task", "ray_actor"
+    ] | None = None,
+    actor_number: int | None = None,
+    streaming_breaker: bool | None = None,
+    queue_depth: int | None = None,
+    max_outstanding_batches: int | None = None,
+    max_ready_rows: int | None = None,
+    generator_backpressure_num_objects: int | None = None,
+) -> DuckDBPyRelation
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `function` | 消费 Arrow table/batch 并返回 Arrow-compatible table 输出的 function 或零参数 callable class。 |
+| `schema` | 输出列到类型的 mapping。签名默认 `None`，但当前调用契约要求 schema dict。 |
+| `batch_size` | 可选正整数输入 batch 大小。 |
+| `output_batch_size` | 可选正整数输出分块大小。 |
+| `cpus`、`gpus` | 可选非负执行资源请求。 |
+| `execution_backend` | 显式 subprocess/Ray task 或 actor backend。`None` 根据 active runner 和 callable 形态解析。 |
+| `actor_number` | Actor backend 的正整数 actor 数。 |
+| `streaming_breaker` | 控制 table-stage streaming 边界；`None` 使用当前启用的默认行为。 |
+| `queue_depth`、`max_outstanding_batches` | 可选正整数 admission 与 in-flight 限制。 |
+| `max_ready_rows` | 可选正整数 ready output row 上限。 |
+| `generator_backpressure_num_objects` | 可选正整数 generator backpressure 限制。 |
+
+##### 返回值
+
+包含 `schema` 所声明列的 lazy `DuckDBPyRelation`。
+
+##### 行为与数据契约
+
+callable 接收使用 relation 输入列名的 Arrow batch。输出名称、类型和表形由 `schema` 决定；多列结果会展开成普通 relation 列。该 stage 可以返回不同的行数，也不会自动保留输入列。
+
+##### 最小示例
+
+这里需要 Relation API，因为 callable 输出的是双列表 stage，而不是一个 Expression 列。
+
+```python
+import duckdb
+import pyarrow as pa
+import vane
+
+def build_features(table: pa.Table) -> pa.Table:
+    ids = table.column("id").to_pylist()
+    texts = table.column("text").to_pylist()
+    return pa.table({
+        "id": ids,
+        "normalized": [text.strip().lower() for text in texts],
+    })
+
+con = vane.connect()
+rel = con.sql("SELECT 1::BIGINT AS id, ' Hello ' AS text")
+schema = {
+    "id": duckdb.sqltypes.BIGINT,
+    "normalized": duckdb.sqltypes.VARCHAR,
+}
+features = rel.map_batches(build_features, schema=schema, batch_size=1024)
+```
+
+##### 限制与错误
+
+`schema` 必须是 dict，callable 输出必须匹配其名称、类型和列数。Batch、queue 和 actor 数必须为正，资源必须非负。Task backend 接受 function 并拒绝 actor-only 选项；actor backend 要求 callable class 和显式 actor 资源。
+
+##### 相关页面
+
+[多列 Relation UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Relation 执行模型](/zh-CN/docs/data/concepts/udfs)
+
+#### `rel.flat_map`
+
+##### 用途
+
+对每行调用 callable，并根据声明的 schema 输出零行、一行或多行。
+
+##### 签名
+
+```python
+rel.flat_map(
+    function: Callable[..., Any],
+    schema: dict[str, DuckDBPyType] | None = None,
+    *,
+    batch_size: int | None = None,
+    output_batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: Literal[
+        "subprocess_task", "subprocess_actor", "ray_task", "ray_actor"
+    ] | None = None,
+    actor_number: int | None = None,
+    streaming_breaker: bool | None = None,
+    queue_depth: int | None = None,
+    max_outstanding_batches: int | None = None,
+    max_ready_rows: int | None = None,
+    generator_backpressure_num_objects: int | None = None,
+) -> DuckDBPyRelation
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `function` | 返回 `None`、一个 mapping，或 mapping iterable/generator 的 row callable。 |
+| `schema` | 输出 mapping。签名默认 `None`，但当前调用契约要求 schema dict。 |
+| `batch_size`、`output_batch_size` | 可选正整数输入和输出 batch 大小。 |
+| `cpus`、`gpus` | 可选非负执行资源请求。 |
+| `execution_backend` | 显式 subprocess/Ray task 或 actor backend；`None` 根据 runner 和 callable 形态解析。 |
+| `actor_number` | Actor 执行的正整数 actor 数。 |
+| `streaming_breaker` | 控制 stage 边界；`None` 使用当前启用的默认行为。 |
+| `queue_depth`、`max_outstanding_batches` | 可选正整数 admission 与 in-flight 限制。 |
+| `max_ready_rows`、`generator_backpressure_num_objects` | 可选正整数输出和 backpressure 限制。 |
+
+##### 返回值
+
+返回 lazy `DuckDBPyRelation`；每个输入行对应零个、一个或多个输出行，列由 `schema` 声明。
+
+##### 行为与数据契约
+
+返回 `None` 表示不输出行；返回一个 mapping 表示输出一行；yield 多个 mapping 表示输出多行。只生成 output schema 中声明的字段，因此需要显式包含要透传的值。
+
+##### 最小示例
+
+这里需要 Relation API，因为一个输入行会展开为多个输出行。
+
+```python
+import duckdb
+import vane
+
+def split_words(row):
+    for word in row["text"].split():
+        yield {"id": row["id"], "word": word}
+
+con = vane.connect()
+rel = con.sql("SELECT 1::INTEGER AS id, 'hello vane' AS text")
+schema = {
+    "id": duckdb.sqltypes.INTEGER,
+    "word": duckdb.sqltypes.VARCHAR,
+}
+words = rel.flat_map(split_words, schema=schema)
+```
+
+##### 限制与错误
+
+每个输出 mapping 都必须符合 `schema`。这是显式的行数变化边界，不能表示为注册的 SQL Expression alias。非法 backend/callable 组合以及非正数 batch、queue 或 actor 控制会在 preflight 阶段失败。
+
+##### 相关页面
+
+[行展开 UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [行数模型](/zh-CN/docs/data/concepts/udfs)
+
+#### `rel.map`
+
+##### 用途
+
+对 relation 的所有列应用 row-wise scalar Python UDF，并追加有类型的结果。
+
+##### 签名
+
+```python
+rel.map(
+    map_function: Callable[..., Any],
+    *,
+    return_type: DuckDBPyType,
+    batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: Literal[
+        "subprocess_task", "subprocess_actor", "ray_task", "ray_actor"
+    ] | None = None,
+    actor_number: int | None = None,
+    queue_depth: int | None = None,
+    max_outstanding_batches: int | None = None,
+    side_effects: bool = False,
+) -> DuckDBPyRelation
+```
+
+##### 参数
+
+| 参数 | 契约 |
+| --- | --- |
+| `map_function` | 以位置参数接收输入行各列值的 scalar callable。 |
+| `return_type` | 必需的 DuckDB 类型，声明追加的 scalar 结果。 |
+| `batch_size` | 可选正整数执行 batch 大小。 |
+| `cpus`、`gpus` | 可选非负执行资源请求。 |
+| `execution_backend` | 显式 subprocess/Ray task 或 actor backend；`None` 根据 runner 和 callable 形态解析。 |
+| `actor_number` | Actor 执行的正整数 actor 数。 |
+| `queue_depth`、`max_outstanding_batches` | 可选正整数 admission 与 in-flight 限制。 |
+| `side_effects` | 标记 callable 是否有副作用，默认 `False`；它不会增加 transaction 或 exactly-once 保证。 |
+
+##### 返回值
+
+包含所有输入列，并把 scalar 结果追加为 `value` 列的 lazy `DuckDBPyRelation`。
+
+##### 行为与数据契约
+
+该方法保持行数：每个输入行追加一个 scalar 结果。未显式指定 backend 时，由 active runner 和 callable 形态选择。可在后续 projection 中重命名或选择 `value` 列。
+
+##### 最小示例
+
+这里使用 Relation API，是因为该 stage 需要显式 Relation execution backend，以及标准的输入列透传加 `value` 契约。
+
+```python
+import duckdb
+import vane
+
+def plus_one(value):
+    return value + 1
+
+con = vane.connect()
+rel = con.sql("SELECT 1::INTEGER AS id")
+mapped = rel.map(
+    plus_one,
+    return_type=duckdb.sqltypes.INTEGER,
+    execution_backend="subprocess_task",
+)
+result = mapped.project("id, value AS next_id")
+```
+
+##### 限制与错误
+
+`return_type` 是必需参数。Function callable 使用 task backend；callable class 使用 actor backend，并要求合法 actor/resource 控制。`side_effects=True` 只记录副作用边界，不会让外部写入具备 transaction、幂等或 exactly-once 语义。
+
+##### 相关页面
+
+[Relation UDF 任务](/zh-CN/docs/data/guides/custom-python-udfs) · [Relation 执行与副作用](/zh-CN/docs/data/concepts/udfs)
+
+## UDF 共有限制
+
+| 范围 | 查询规则 |
+| --- | --- |
+| Expression 与 SQL 输出类型 | 声明接受 SQL type string、`DuckDBPyType` 和受支持的 `pyarrow.DataType`。支持 boolean、signed/unsigned 8/16/32/64-bit integer、`FLOAT`/`DOUBLE`、`VARCHAR`/`BLOB`、decimal128、`DATE`、无时区 timestamp、递归 list 和 fixed-size array/list。 |
+| 不支持的 Expression 输出 | 当前 output adapter 不支持 `TIME`、`INTERVAL`、`UUID`、`ENUM`、`STRUCT`、`MAP`、带时区 timestamp、Arrow duration/dictionary 及其他未映射 Arrow 类型。Relation `map_batches` schema 是独立且更宽的表契约。 |
+| 位置 | Expression UDF 和注册 alias 只能在 `SELECT projection` 执行，不支持 `WHERE`、`GROUP BY`、`HAVING`、join condition、aggregate argument、`CASE`、`AND`、`OR` 和 `COALESCE`。 |
+| 行数 | Scalar Expression 和 SQL alias 保持行数。Batch `row_preserving=True` 要求每个输入行对应一个输出行，可与普通列组合；`row_preserving=False` 只能作为唯一顶层 projection 改变行数。Relation stage 定义自己的输出表形。 |
+| 有状态 class 契约 | v1 要求精确的 `actor_number=1`。状态只在查询作用域内有效，是 actor 内局部、临时且非持久的状态；不会 checkpoint，也不提供 exactly-once。它不是 keyed、shared、global 或 durable state。Actor 丢失会让 query 失败，不会用空状态重建。 |
+| 失败、重试与副作用 | Distributed fragment 的 retry 或 replay 可能再次执行用户代码。外部副作用不会随失败的 SQL query 回滚；有副作用时应让 callable 幂等或提供去重。 |
+| GPU 资源 | 在 Ray 上，`gpus` 会成为 task 或 actor 资源请求。本地 subprocess 不会 reserve 或隔离 GPU，只继承进程可见设备，并在非零请求时发出 warning。 |
+| 并发参数名称 | Relation actor pool 使用 `actor_number`。AI provider 的 `concurrency` 是映射到 provider actor 的独立选项，不是 `rel.map_batches` 参数。 |
+
+完整 setup、校验和输出 workflow 请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)。位置、行数、状态和失败规则的设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)和[执行模型](/zh-CN/docs/data/concepts/execution-model)。

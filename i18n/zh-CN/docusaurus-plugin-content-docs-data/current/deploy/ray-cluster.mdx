@@ -51,7 +51,7 @@ out = rel.map_batches(
 )
 ```
 
-有状态/GPU：
+Actor-backed/GPU：
 
 ```python
 out = rel.map_batches(
@@ -60,11 +60,11 @@ out = rel.map_batches(
     batch_size=64,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
-当下游阶段需要将输出关联回源行时，请从分布式 UDF 返回标识符或元数据。
+当下游阶段需要将输出关联回源行时，请从分布式 relation UDF 返回标识符或元数据。如果每行结果应留在源列旁，请使用保持行数的 expression。
 
 ## 兼容 S3 的存储
 
@@ -86,7 +86,10 @@ export AWS_REGION=us-east-1
 - 确认包含 UDF 的模块可以在 worker 上导入。
 - 确认模型文件在每个 worker 上可用，或可以下载。
 - 确认输出路径是共享路径或远端路径。
-- 检查 Ray 报告的 CPU/GPU 资源足以支撑你的 `concurrency` 和 `gpus` 选择。
+- 检查 Ray 报告的 CPU/GPU 资源足以支撑你的 `actor_number` 和 `gpus` 选择。
+- 把 `vane.cls` 状态视为单 actor、query scope、actor-local 且临时的状态；actor 丢失后不会恢复。
+
+Relation、Expression、状态和 GPU 的能力边界见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
 ## 关闭
 

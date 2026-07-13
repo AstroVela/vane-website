@@ -29,4 +29,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - name: Basic content checks
+        run: |
+          npm run home:content:check
+          npm run training:content:check
+          npm run enterprise:content:check
+          npm run solutions:content:check
       - run: npm run build

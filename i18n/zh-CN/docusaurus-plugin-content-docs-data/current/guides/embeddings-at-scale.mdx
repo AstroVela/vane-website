@@ -8,31 +8,34 @@ title: 大规模 Embedding
 
 1. 用 SQL 读取并过滤源行。
 2. 将长文本切成稳定的分块。
-3. 用 `rel.embed_text(...)` 或自定义 UDF 对分块做 embedding。
+3. 优先用 SQL `ai_embed(...)` 对分块做 embedding；当配置更适合放在 Python 中时，也可以使用 Python Expression API。
 4. 带着稳定的文档 ID 和分块 ID 写出 embedding。
 
 ## 基本文本 embedding
+
+推荐从 SQL Expression API 开始。`ai_embed` 为每个输入行增加一个 embedding 值，因此标识符和源字段可以保留在同一个 projection 中：
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select id, text
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
+embedded = con.sql("""
+    SELECT
+        id,
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2'
+            )
+        ) AS embedding
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
 """)
-
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
 ```
 
-`embed_text` 返回一个 relation，其中包含已配置的 embedding 输出列。这个高层辅助函数会把 embedding 写成 `FLOAT[]`；它不会自动带上 `id` 或 `text` 等源列。
+`ai_embed` 在 `SELECT` projection 中执行，可以和普通列组合。未指定 `dimensions` 时，其结果类型是 `FLOAT[]`。options 参数是整个任务共用的常量 `STRUCT`，不是逐行取值的列。
 
 ## 先切分长文本
 
@@ -61,6 +64,12 @@ def chunk_rows(batch: pa.Table) -> pa.Table:
         "chunk_text": out_text,
     })
 
+rel = con.sql("""
+    SELECT id, text
+    FROM read_parquet('data/documents/*.parquet')
+    WHERE text IS NOT NULL
+""")
+
 chunks = rel.map_batches(
     chunk_rows,
     schema={
@@ -71,64 +80,106 @@ chunks = rel.map_batches(
     batch_size=512,
     execution_backend="subprocess_task",
 )
+chunks.to_table("document_chunks")
+con.sql("SELECT * FROM document_chunks").write_parquet("data/document-chunks.parquet")
 ```
 
-生产系统中，应使用能感知 tokenizer 的分块器，使其匹配模型上下文窗口，并保留足够的重叠区间以保证检索质量。
+这里使用 Relation API，是因为一篇文档可能产生多个输出行。写出的 Parquet 副本会作为下方独立 Ray 示例的输入。生产系统中，应使用能感知 tokenizer 的分块器，使其匹配模型上下文窗口，并保留足够的重叠区间以保证检索质量。
 
 ## 使用本地 embedding 模型
 
-本地模型通常最适合 actor backend，因为模型初始化成本较高：
+本地模型通常最适合 actor 执行，因为模型初始化成本较高。SQL `ai_embed` 会创建相应的执行路径，同时把源列保留在 projection 中：
 
 ```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
+embedded_local = con.sql("""
+    SELECT
+        id,
+        chunk_id,
+        chunk_text,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM document_chunks
+""")
+```
+
+当 typed 配置或 Python 组合更方便时，可以改用 Python Expression API：
+
+```python
+embedded_python = chunks.select(
+    vane.col("id"),
+    vane.col("chunk_id"),
+    vane.col("chunk_text"),
+    vane.ai.embed(
+        vane.col("chunk_text"),
+        provider="transformers",
+        model="sentence-transformers/all-MiniLM-L6-v2",
+    ).alias("embedding"),
 )
 ```
 
-当 provider 检测到可用 GPU 资源时，可能会向 UDF 执行层传递 GPU 资源请求。如果需要严格控制设备，或需要包含 ID 的完整输出行，请使用自定义 `map_batches` 可调用类返回标识符、文本和 embedding。
+两种写法都是保持行数的 Expression 操作。当 provider 检测到可用 GPU 资源时，可能会向 UDF 执行层申请 GPU。
 
 ## 使用托管 embedding API
 
-当你希望使用托管模型，并且可以接受 API 延迟和速率限制时，托管 provider 很有用：
+当你希望使用托管模型，并且可以接受 API 延迟和速率限制时，托管 provider 很有用。SQL 形式仍然是首选入口：
 
 ```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="openai",
-    model="text-embedding-3-small",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-    batch_size=64,
-    concurrency=8,
-)
+embedded_hosted = con.sql("""
+    SELECT
+        id,
+        chunk_id,
+        chunk_text,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                dimensions := 512,
+                normalize := true,
+                batch_size := 64,
+                concurrency := 8
+            )
+        ) AS embedding
+    FROM document_chunks
+""")
 ```
 
-请谨慎调节 `batch_size` 和 `concurrency`。更高的并发度可以提升吞吐量，但也可能触发 `provider` 速率限制或放大重试。如果在辅助函数调用之后把 provider 输出与源列组合，请在该步骤中校验行数并保持稳定顺序。
+请在每个 worker 的环境中设置 `OPENAI_API_KEY` 等凭据；SQL options 会拒绝 credential-like 字段。`concurrency` 控制 AI actor 数量，请求级并发则取决于具体 provider。只有在有界输入上测量过速率限制、retry 和成本后，才应提高它们。
 
 ## 使用 Ray 处理更大任务
 
-本地路径正确后，再迁移到 Ray：
+本地路径正确后，再迁移到 Ray。应在创建连接或输入 relation 前配置 runner；SQL Expression 本身不需要改变：
 
 ```python
 import vane
 
 vane.configure(runner="ray")
+con = vane.connect()
 
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="ray_actor",
-)
+embedded_ray = con.sql("""
+    SELECT
+        id,
+        chunk_id,
+        chunk_text,
+        ai_embed(
+            chunk_text,
+            struct_pack(
+                provider := 'transformers',
+                model := 'sentence-transformers/all-MiniLM-L6-v2',
+                batch_size := 64
+            )
+        ) AS embedding
+    FROM read_parquet('data/document-chunks.parquet')
+""")
 ```
 
-每个 Ray worker 都必须能够 import provider 库，并访问模型文件或 provider 凭证。
+每个 Ray worker 都必须能够 import provider 库，并访问模型文件或 provider 凭证。本地 subprocess 执行只会继承可见设备，不会预留或隔离 GPU；需要明确的资源调度时应使用 Ray。
 
 ## 输出形态
 
@@ -142,22 +193,21 @@ embedding_only = chunks.embed_text(
 - 模型名和 provider
 - 需要时记录创建时间戳或 run ID
 
-使用 relation writer 写出结果：
+Expression API 会把标识符和 embedding 保留在同一个 projection 中，因此校验后可以直接写出结果：
 
 ```python
-embedded_with_ids.write_parquet("output/embeddings/")
+embedded_hosted.write_parquet("output/embeddings/part-00000.parquet")
 ```
 
-`embedded_with_ids` 应包含上面列出的标识符和元数据列。它可以来自返回完整 schema 的自定义 embedding UDF，也可以来自 AI 辅助函数输出与源行的显式组合；组合前需要校验行数和顺序。
-
-对于分布式写出，请确保每个 worker 都能访问输出文件系统。
+写出前应校验行数、稳定 ID、null 和向量维度。对于分布式写出，请确保每个 worker 都能访问输出文件系统。
 
 ## 调优清单
 
 - 在 embedding 前先过滤并投影。
 - 保持分块边界清晰且结果具有确定性。
-- 本地模型使用 actor backend。
+- 本地模型使用 actor 执行。
 - 增大 `batch_size`，直到延迟或内存成为瓶颈。
-- 只有 worker 或 API quota 仍有余量时，才增大 `concurrency`。
-- 当扫描、推理或写入吞吐量超出单进程能力时使用 Ray。
+- 只有 worker 和 API quota 仍有余量时，才增大 actor 数或 provider 请求并发。
+- 当扫描、推理或写入吞吐量超出单进程能力，或需要资源调度时使用 Ray。
 - 使用稳定的文档 ID 和分块 ID，使输出行保持确定性。
+- 只有 provider 和 model 支持目标向量大小时，才设置固定的 `dimensions`。

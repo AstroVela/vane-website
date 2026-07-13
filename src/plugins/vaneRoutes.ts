@@ -24,19 +24,19 @@ const vaneRoutesPlugin: PluginModule = (context) => {
       })
 
       addRoute({
-        path: routePath('/use-cases'),
+        path: routePath('/solutions'),
         component: '@site/src/pages/UseCases.tsx',
         exact: true,
       })
 
       addRoute({
-        path: routePath('/use-cases/training'),
+        path: routePath('/solutions/training'),
         component: '@site/src/pages/TrainingUseCase.tsx',
         exact: true,
       })
 
       addRoute({
-        path: routePath('/use-cases/enterprise-agent'),
+        path: routePath('/solutions/enterprise-agent'),
         component: '@site/src/pages/EnterpriseAgentUseCase.tsx',
         exact: true,
       })

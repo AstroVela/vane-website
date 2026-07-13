@@ -81,8 +81,8 @@ export default function Footer({ home = false }: { home?: boolean }) {
 
           <div>
             <h4>{copy.product}</h4>
-            <Link to="/use-cases/training">{copy.training}</Link>
-            <Link to="/use-cases/enterprise-agent">{copy.enterprise}</Link>
+            <Link to="/solutions/training">{copy.training}</Link>
+            <Link to="/solutions/enterprise-agent">{copy.enterprise}</Link>
             <Link to="/benchmarks">{copy.benchmarks}</Link>
           </div>
 

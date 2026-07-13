@@ -51,7 +51,7 @@ out = rel.map_batches(
 )
 ```
 
-Stateful/GPU:
+Actor-backed/GPU:
 
 ```python
 out = rel.map_batches(
@@ -60,11 +60,11 @@ out = rel.map_batches(
     batch_size=64,
     execution_backend="ray_actor",
     gpus=1,
-    concurrency=4,
+    actor_number=4,
 )
 ```
 
-Return identifiers or metadata from distributed UDFs when downstream stages need to join outputs back to source rows.
+Return identifiers or metadata from distributed relation UDFs when downstream stages need to join outputs back to source rows. Use a row-preserving expression when one result should stay beside source columns.
 
 ## S3-compatible storage
 
@@ -86,7 +86,10 @@ Before scaling:
 - Confirm the module containing the UDF is importable on workers.
 - Confirm model files are available on every worker or downloadable.
 - Confirm output paths are shared or remote.
-- Check that Ray reports enough CPU/GPU resources for your `concurrency` and `gpus` choices.
+- Check that Ray reports enough CPU/GPU resources for your `actor_number` and `gpus` choices.
+- Treat `vane.cls` state as one-actor, query-scoped, actor-local, and ephemeral; it is not recovered after actor loss.
+
+See the [UDF API Reference](/docs/data/reference/udf-api) for Relation, Expression, state, and GPU boundaries.
 
 ## Shutdown
 

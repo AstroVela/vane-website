@@ -24,18 +24,24 @@ load source rows -> build prompt column -> keep IDs and source metadata -> run v
 
 ## Vane 中的 vLLM
 
-Vane 通过 AI Function `prompt(...)` 暴露 vLLM：
+对于普通的保持行数提示词增强，优先使用 SQL Expression AI Function `ai_prompt(...)`：
 
-```python
-response_only = prompts.prompt(
-    "prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    output_column="response_text",
-    batch_size=8,
-    execution_backend="subprocess_actor",
-)
+```sql
+select
+    case_id,
+    document_id,
+    ai_prompt(
+        prompt,
+        struct_pack(
+            provider := 'vllm',
+            model := 'Qwen/Qwen3-1.7B',
+            batch_size := 8
+        )
+    ) as response_text
+from gpu_prompts
 ```
+
+`vane.ai.prompt(...)` 是同一 projection 模型的 Python Expression 备选入口。只有任务需要结构化或多模态输出、显式 Relation 执行控制等 Relation-only 能力时，才使用 Python Relation 方法 `rel.prompt(...)`。
 
 ## 构建提示词 relation
 
@@ -60,6 +66,7 @@ prompts = con.sql("""
     limit 50
 """)
 
+prompts.to_table("gpu_prompts")
 prompt_table = prompts.to_arrow_table()
 ```
 
@@ -77,75 +84,75 @@ prompt_table = prompts.to_arrow_table()
 
 ## 运行本地 vLLM 样例
 
-在引入 Ray actor pool 的复杂度前，先使用本地路径验证模型、提示词形态、输出长度和 GPU 内存行为。
+在引入 Ray actor pool 的复杂度前，先通过推荐的 SQL Expression 路径验证模型、提示词形态、输出长度和 GPU 内存行为。
 
 ```python
-response_only = prompts.prompt(
-    "prompt",
-    provider="vllm",
-    model="Qwen/Qwen3-1.7B",
-    system_message="Return concise JSON-like business notes.",
-    output_column="response_text",
-    batch_size=8,
-    execution_backend="subprocess_actor",
-    engine_args={
-        "trust_remote_code": True,
-        "max_model_len": 2048,
-    },
-    generate_args={
-        "sampling_params": {
-            "temperature": 0.0,
-            "max_tokens": 128,
-        }
-    },
-    on_error="log",
-)
+response_rows = con.sql("""
+    select
+        case_id,
+        document_id,
+        source_uri,
+        document_type,
+        prompt,
+        ai_prompt(
+            prompt,
+            struct_pack(
+                provider := 'vllm',
+                model := 'Qwen/Qwen3-1.7B',
+                batch_size := 8,
+                concurrency := 1,
+                gpus_per_actor := 1.0,
+                max_retries := 0,
+                on_error := 'log',
+                system_message := 'Return concise JSON-like business notes.',
+                engine_args_json := '{"max_model_len": 2048}',
+                generate_args_json := '{"sampling_params":{"temperature":0.0,"max_tokens":128}}'
+            )
+        ) as response_text
+    from gpu_prompts
+    order by case_id, document_id
+""")
+
+response_rows.to_table("gpu_responses")
 ```
 
-`execution_backend="subprocess_actor"` 会将 vLLM prompter 状态保留在 actor 进程中，使引擎可以在同一次运行的多个 batch 之间复用。第一次正确性检查不需要 Ray。
+options 参数是整条 query 共用的一个可折叠常量 `STRUCT`。使用本地 runner 时，Vane 会创建 subprocess actor，并在该 worker 中延迟初始化 vLLM engine，因此同一次运行的多个 batch 可以复用 engine。非零 `gpus_per_actor` 不会在本地预留或隔离 GPU；subprocess 只会继承 driver 可见的设备。第一次正确性检查不需要 Ray。
 
 ## 保留 ID 并写出结果
 
-在将辅助输出追加到原始 relation 前，先完成校验。
+Expression 结果保留在同一个 SQL projection 中，因此稳定 ID 和源元数据无需按位置重新拼接 Arrow 数据。写出前应校验带 key 的结果。
 
 ```python
-import pyarrow as pa
+results = con.sql("""
+    select
+        case_id,
+        document_id,
+        source_uri,
+        document_type,
+        prompt,
+        response_text,
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'error'
+            else 'ok'
+        end as status,
+        case
+            when response_text is null or trim(response_text) = ''
+                then 'vLLM returned null or empty output'
+            else null
+        end as error_message,
+        'Qwen/Qwen3-1.7B' as model,
+        'claims-vllm-validation-001' as run_id
+    from gpu_responses
+    order by case_id, document_id
+""")
 
-response_table = response_only.to_arrow_table()
-
-if response_table.num_rows != prompt_table.num_rows:
+if results.count("*").fetchone()[0] != prompt_table.num_rows:
     raise ValueError("vLLM output row count does not match prompt row count")
 
-responses = response_table["response_text"].to_pylist()
-status = ["ok" if value else "error" for value in responses]
-error_message = [
-    None if value else "vLLM returned null or empty output"
-    for value in responses
-]
-
-result_table = prompt_table.append_column(
-    "response_text",
-    pa.array(responses, type=pa.string()),
+results.write_parquet(
+    "output/claims-vllm-validation-001/part-00000.parquet"
 )
-result_table = result_table.append_column(
-    "status",
-    pa.array(status, type=pa.string()),
-)
-result_table = result_table.append_column(
-    "error_message",
-    pa.array(error_message, type=pa.string()),
-)
-result_table = result_table.append_column(
-    "model",
-    pa.array(["Qwen/Qwen3-1.7B"] * prompt_table.num_rows, type=pa.string()),
-)
-result_table = result_table.append_column(
-    "run_id",
-    pa.array(["claims-vllm-validation-001"] * prompt_table.num_rows, type=pa.string()),
-)
-
-results = con.from_arrow(result_table)
-results.write_parquet("output/claims-vllm-validation-001/")
 ```
 
 建议的输出列：
@@ -160,7 +167,7 @@ results.write_parquet("output/claims-vllm-validation-001/")
 | `error_message` | 用于审核的可空诊断列。 |
 | `model`、`run_id` 和配置摘要 | 比较不同运行，而无需猜测哪些设置发生了变化。 |
 
-对于更严格的结构化输出，将 `return_format` 传给 `prompt(...)`，并在写入最终表之前校验返回的 JSON 字符串。
+对于更严格的结构化或多模态输出，请使用 Relation `prompt(...)` 路径，并在写出最终表前校验其声明的结果。
 
 ## 本地 vLLM 与基于 Ray 的 vLLM
 
@@ -172,7 +179,7 @@ results.write_parquet("output/claims-vllm-validation-001/")
 | Ray actor 执行 | 多 GPU 校验、actor 复用和更大的提示词 batch。 | Ray 能看到预期 GPU，worker 能导入 vLLM，并且每个 actor 都有模型文件和依赖。 |
 | 原生 vLLM Ray actor pool | 更大规模的 batch 推理，Vane 需要复用 vLLM actor 并在它们之间路由工作。 | actor pool 大小、GPU 分配、共享池复用、进行中负载分布和吞吐量。 |
 
-对于基于 Ray 的 vLLM 校验，请在构建分布式运行前配置 Ray，并保持模型选项与本地样例一致。
+对于基于 Ray 的 vLLM 校验，请在构建分布式运行前配置 Ray，并保持模型选项与本地样例一致。下面的高级示例会显式选择 Relation backend 和原生 vLLM actor-pool 控制，因此有意使用 Relation 路径。
 
 ```python
 import vane
@@ -258,7 +265,7 @@ prompts = con.sql("""
 
 ### 联合调优 batch 和并发度
 
-为 relation 中的 vLLM 提示词显式设置 `batch_size`。更大的 batch 可以改善 GPU 利用率和 vLLM continuous batching，但也可能增加延迟、内存压力和故障影响范围。
+为 vLLM 提示词显式设置 `batch_size`。更大的 batch 可以改善 GPU 利用率和 vLLM continuous batching，但也可能增加延迟、内存压力和故障影响范围。
 
 只有在 GPU 和 actor 内存有余量时，才增加 `concurrency`。一个简单的容量检查是：
 
@@ -272,7 +279,7 @@ required GPUs = concurrency * gpus_per_actor
 
 | 概念 | 出现位置 | 建议 |
 | --- | --- | --- |
-| `model` | `prompt(..., model=...)` | 使用你已在本地验证过的准确模型标识符。 |
+| `model` | `ai_prompt` options 或 `prompt(..., model=...)` | 使用你已在本地验证过的准确模型标识符。 |
 | `engine_args` | vLLM 引擎配置 | 放置模型加载和引擎级设置，例如上下文长度或信任设置。 |
 | `generate_args` | vLLM 生成请求 | 放置采样参数，通常位于 `sampling_params` 下。 |
 | `batch_size` | Vane UDF batch 和 vLLM 提交 | 从小值开始，然后增大到 GPU 利用率、延迟或内存成为瓶颈。 |
@@ -285,7 +292,7 @@ Vane 为原生 vLLM 引擎调度器应用面向吞吐量的默认值，你可以
 
 ## 边界
 
-本指南不是 vLLM 手册。它展示如何将 vLLM batch 推理放入 Vane relation workflow，以及在扩大规模前需要验证什么。
+本指南不是 vLLM 手册。它展示如何将 vLLM batch 推理放入以 Expression 为先的 Vane workflow，以及在扩大规模前需要验证什么。
 
 它也不是生产服务指南，不覆盖自动扩缩容、SLA、流量管理、在线请求路由或长期运行服务的运维。
 

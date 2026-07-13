@@ -2,165 +2,92 @@
 title: AI 函数
 ---
 
-Vane Data AI Function 将常见模型操作封装为 relation 方法。它们把 embedding、标签、提示词响应和结构化响应输出为表列，同时保留与 UDF 相同的执行控制。
+Vane Data AI Function 有两种语义输出模型：**Expression API** 和 **Relation API**。它们不是三种语法入口。需要在源列旁为每行增加一个保持行数的 AI 结果时，先从 Expression 内的 SQL 入口开始。
 
-当所需操作符合内置 provider 模式时，使用 AI Function。当你需要完全控制模型加载、batch 处理、重试、输出形态或 provider 行为时，使用自定义 UDF。
+两种模型使用同一个 provider 与 UDF 执行层。区别在于操作产出一个 projection 结果，还是一次专用表转换。
 
-## Relation 方法
+## Expression API
 
-relation 方法包括：
+Expression API 在 `SELECT` projection 中生成一个保持行数的 AI 列。SQL 是推荐的默认入口：稳定标识和源字段可以明确地保留在模型结果旁边。
 
-- `rel.embed_text(...)`
-- `rel.classify_text(...)`
-- `rel.prompt(...)`
+### SQL 入口（推荐）
 
-也可以通过 `vane.ai` 和 `vane.ai.functions` 使用函数式 API。
-
-AI Function 会返回已配置的输出列。如果下游阶段还需要 ID、文本等源列，请使用返回完整 schema 的自定义 UDF，或者在一个经过校验的步骤中显式地将 AI Function 输出与源行组合起来，并确保行数和顺序保持一致。
-
-## provider 支持
-
-| 方法 | 默认 provider | 支持的 provider |
-| --- | --- | --- |
-| `embed_text` | `transformers` | `transformers`, `openai`, `google` |
-| `classify_text` | `transformers` | `transformers` |
-| `prompt` | `openai` | `openai`, `vllm`, `anthropic`, `google` |
-
-provider 库会按需懒加载。请为你实际使用的 provider 安装对应库。
-
-## 文本 embedding
-
-使用 `embed_text` 从文本列生成向量列。
+当每一输入行旁只需要一个模型结果时，使用 SQL `ai_prompt` 或 `ai_embed`。下面的短 projection 会保留生成每个 response 的标识与 prompt：
 
 ```python
-embedding_only = rel.embed_text(
-    "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
+import vane
+
+con = vane.connect()
+source = con.sql("""
+    SELECT *
+    FROM (VALUES
+        (1, 'Summarize the refund request'),
+        (2, 'Summarize the shipping delay')
+    ) AS t(document_id, prompt)
+""")
+
+reviewed = con.sql("""
+    SELECT
+        document_id,
+        prompt,
+        ai_prompt(prompt) AS response
+    FROM source
+""")
+```
+
+SQL 调用仍属于 Expression API。它的 provider options 是常量规划输入，`document_id` 和 `prompt` 则继续作为普通 relation 列流动。
+
+### Python 入口
+
+Python Expression 是语义等价的语法，具有相同的保持行数 projection 语义。当周围的 projection 已经用 Python expression 组合时，它更方便：
+
+```python
+projected = source.select(
+    vane.col("document_id"),
+    vane.col("prompt"),
+    vane.ai.prompt(vane.col("prompt")).alias("response"),
 )
 ```
 
-AI Function 会将 embedding 结果写入一个 `FLOAT[]` 输出列。
+从 SQL 改成 Python 不会改变输出模型。两种形式都会增加一个 AI 结果列，并通过显式 projection 保留源字段。
 
-对于长文本输入，可以使用可选的文本分块参数：
+## Relation API
 
-- `max_chunk_chars`
-- `chunk_overlap_chars`
+只有当某项能力需要表转换而不是普通的单个 projection 结果时，才转到 Relation AI：
 
-## 文本分类
+- `rel.embed_text` 通过 `max_chunk_chars` 提供内置分块。
+- `rel.classify_text` 提供内置分类。
+- `rel.prompt` 通过 `return_format` 提供结构化输出，通过 `image_columns` 提供多模态输入，并通过 `output_column` 命名 Relation 输出。
+- Relation 方法可以显式选择 `execution_backend`，以及 provider `concurrency` 或 `actor_number` 控制。
 
-使用 `classify_text` 生成 zero-shot 文本标签。
+内置分类需要 Relation API，因此最后这个示例使用 Relation 方法，而不会假装分类是 SQL table function：
 
 ```python
-label_only = rel.classify_text(
-    "text",
-    labels=["invoice", "claim", "other"],
-    provider="transformers",
+classified = source.classify_text(
+    "prompt",
+    labels=["refund", "shipping", "other"],
     output_column="label",
 )
 ```
 
-输出列类型为 `VARCHAR`。
+Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以在 Relation 调用之前过滤、projection 输入，也可以在调用之后消费结果，但专用 Relation 方法本身目前仍通过 Python 调用。
 
-## 提示词调用
+## Provider 与 Runner 生命周期
 
-使用 `prompt` 从文本提示词列生成响应列。
+Provider descriptor 会跨越执行计划边界，而不会把客户端或模型放进执行计划。所选客户端或模型会延迟到 worker 才实例化并复用，复用范围是每个 actor；这样既不会为没有执行的行初始化资源，也能在多个 batch 之间摊薄 setup 成本。
 
-```python
-response_only = rel.prompt(
-    "prompt",
-    provider="openai",
-    output_column="response",
-)
-```
+对于 SQL 和 Python Expression，active runner 会在查询规划阶段选择 actor backend：local 执行使用 subprocess actor，Ray run 使用 Ray actor。Relation 方法还可以显式选择 backend。Provider 默认值和精确参数应留在 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，而不是放进这里的概念性生命周期说明。
 
-输出列类型为 `VARCHAR`。
+## 凭据与外部副作用
 
-## 多模态提示词调用
+凭据应放在 worker 环境中，因为 provider 客户端是在 worker 上创建的。SQL option binding 会拒绝类似凭据的字段，因此 API key、token 和 secret 不应嵌入 SQL 执行计划。
 
-当选择的 provider 和模型支持多模态输入时，`prompt` 可以通过 `image_columns` 接收包含图像数据的行。
+Provider 调用是在 SQL 事务之外发生的外部副作用，不提供 exactly-once：失败或 retry 的 query 可能重复 request，transaction rollback 也无法撤销已经完成的 provider 调用。请让稳定 ID 随 projection 一起传递，保留可审查的输入与输出，并在重复调用会造成影响时使用幂等的下游写入。
 
-```python
-answer_only = rel.prompt(
-    "question",
-    image_columns=["image"],
-    provider="anthropic",
-    output_column="answer",
-)
-```
+## 选择模型
 
-不同 provider 和模型的能力边界不同。在运行大规模任务之前，请先用小样本验证所选 provider 和模型。
+- 每一输入行只需要一个 prompt response 或 embedding 时，首先选择 SQL Expression。
+- 需要 Python 组合方式但仍是同一个保持行数结果时，选择 Python Expression。
+- 只有在需要内置分块或分类、结构化或多模态 prompt、命名 Relation 输出或显式 Relation 执行控制时，才选择 Relation。
 
-## 结构化输出
-
-对于支持结构化输出的 provider，`prompt` 接受 `return_format`。
-
-```python
-from pydantic import BaseModel
-
-class Decision(BaseModel):
-    label: str
-    reason: str
-
-decision_only = rel.prompt(
-    "prompt",
-    provider="openai",
-    return_format=Decision,
-    output_column="decision_json",
-)
-```
-
-relation 输出列是 JSON 字符串。把它当作普通表列处理：先进行校验；如有需要，在下游解析；同时保留原始提示词输入以便审计。
-
-## provider 依赖
-
-直接安装 provider 库：
-
-```bash
-# Local embedding and classification models
-python -m pip install sentence-transformers transformers torch
-
-# Hosted model providers
-python -m pip install openai numpy
-python -m pip install anthropic
-python -m pip install google-genai numpy
-
-# vLLM-backed prompting
-python -m pip install vllm
-```
-
-## 执行控制
-
-AI Function 接受 `execution_backend`，provider 选项也可能影响传给 `map_batches` 的 UDF 设置。
-
-常见控制项包括：
-
-- `batch_size`
-- `concurrency`
-- 在支持的 provider API 调用中使用 `max_api_concurrency`
-- 特定 provider 的 GPU 选项，例如 vLLM provider 的 `gpus_per_actor`
-- 特定 provider 的重试和错误行为
-
-示例：
-
-```python
-embedding_only = rel.embed_text(
-    "text",
-    provider="openai",
-    execution_backend="subprocess_actor",
-    concurrency=8,
-)
-```
-
-谨慎使用 provider API 并发度。提高并发度可以改善吞吐量，但也可能触发速率限制或放大失败影响。
-
-## 生产建议
-
-- 调用 AI Function 前，先过滤并投影输入列。
-- 保持提示词输入、模型和 provider 名称以及输出列名显式。
-- 从小样本开始，并在扩展前检查输出。
-- 当模型初始化成本较高时，使用 actor backend。
-- 只有在本地执行路径正确后，才使用 Ray。
-- 将模型输出存储在带类型的列中，并保留足够的元数据便于调试。
+精确签名和 provider 参数规则请查阅 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。包含 setup、校验和输出处理的完整任务请使用 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions)。

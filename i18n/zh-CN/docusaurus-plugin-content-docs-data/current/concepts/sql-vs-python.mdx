@@ -2,158 +2,130 @@
 title: SQL 与 Python
 ---
 
-Vane Data 面向需要同时使用 SQL 与 Python 的关系型 workflow。两者可以在同一条 pipeline 中协作，而不是把关系型处理和 Python 逻辑割裂成两套系统。
+Vane Data 不会把一条 pipeline 划分成相互竞争的“SQL 工作负载”和“Python 工作负载”。SQL 与 Python 是 **Expression API** 的两个入口；**Relation API** 则是处理表形工作的专用路径。一条 pipeline 可以同时使用它们。
 
-关系型处理交给 SQL。某个步骤需要 Python 库、自定义状态、模型调用或行展开时，使用 Python UDF。操作符合内置 embedding、分类或提示词模式时，使用 AI Function。
+先选择语义输出模型，再选择最适合表达该阶段的语法。
 
-## 决策指南
+## 先选择输出模型，再选择语法
 
-| 需求 | 使用 | 原因 |
+首先判断该阶段必须产生什么。如果是在每个输入行旁增加一个有类型的结果，就选择 Expression；如果要控制新的表形、多列输出或基数，就选择 Relation。确定模型之后，再判断 Expression 用 SQL 还是 Python 表达更清楚。
+
+| 输出契约 | 模型与入口 | 选择原因 |
 | --- | --- | --- |
-| 过滤行、投影列、连接表、聚合指标 | SQL | 声明式、可检查，并且可优化 |
-| 解码媒体、调用 Python 库、运行自定义模型 | Python UDF | 让非 SQL 逻辑保持显式且可测试 |
-| 生成 embedding、文本分类、用提示词调用模型 | AI Function | 提供针对 provider 的封装，并继承 Vane Data 的执行控制 |
-| 复用初始化成本较高的模型或客户端 | Actor UDF backend | 初始化一次，然后处理多个 batch |
-| 扩展无状态转换 | `ray_task` | 将函数调用分发到 Ray worker |
-| 扩展模型推理或 GPU 工作负载 | `ray_actor` | 结合 actor 复用与 Ray 资源调度 |
+| 在每个输入行旁增加一个有类型的结果 | Expression API — SQL（推荐） | 直接组合进 `SELECT` projection，并保留可见的标识符与源列。 |
+| 保持相同的 projection 契约，但 callable 或配置更适合在 Python 中构造 | Expression API — Python | 使用 Python 对象构建同一个 lazy、通常保持行数的 projection。 |
+| 产生表形结果、多列输出、改变基数，或使用 Relation 专属 AI 能力 | Relation API — Python Relation 方法 | 让操作控制输出表，并使用专门的 Relation 控制项。 |
 
-## 使用 SQL 处理关系型工作
+经验法则：要增加有类型的增强列，先从 SQL Expression 开始；构造逻辑属于 Python 时使用 Python Expression；只有输出契约或能力确实要求时才切换到 Relation。
 
-天然属于表转换的操作应由 SQL 负责：
+## Expression API
 
-- 读取 Parquet、CSV、JSON 以及其他 DuckDB 支持的数据源。
-- 在昂贵步骤之前过滤行。
-- 只选择下一阶段需要的列。
-- 连接元数据表。
-- 聚合质量指标。
-- 写出干净的表格化输出。
+Expression 调用会向 projection 增加一个有类型的输出列，通常为每个输入行保留一个输出行。SQL 与 Python 共享这一语义模型；更换入口不会把工作变成另一类 pipeline。
+
+### SQL 入口（推荐）
+
+注册的 UDF alias、`ai_prompt` 和 `ai_embed` 都属于 SQL `SELECT` projection。推荐默认使用这个入口，因为普通 SQL 可以继续过滤和投影 relation，同时让自定义结果或 AI 结果与稳定 ID、源字段保持可组合关系。
 
 ```python
-raw = con.sql("""
-    select id, uri, text
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
-      and length(text) > 80
-""")
+import vane
+
+con = vane.connect()
+
+def normalize_text(value):
+    return str(value).strip().lower()
+
+vane.attach_function(
+    normalize_text,
+    alias="normalize_text_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+    return_dtype="VARCHAR",
+)
+
+try:
+    projected = con.sql("""
+        SELECT
+            document_id,
+            text,
+            normalize_text_sql(text) AS normalized_text
+        FROM (VALUES
+            (1, ' Refund requested ')
+        ) AS documents(document_id, text)
+    """)
+    rows = projected.fetchall()
+finally:
+    vane.detach_function("normalize_text_sql", connection=con)
 ```
 
-## 使用 Python UDF 处理自定义工作
+`fetchall()` 会在 alias 仍然挂载时物化 projection。结果会把 `document_id` 和 `text` 保留在自定义 Expression 结果旁；配置好 provider 的 SQL AI 调用使用相同的 projection 模式。
 
-需要运行时库或自定义逻辑的操作应由 Python 负责：
+### Python 入口
 
-- batch 模型推理。
-- 图片、音频、视频或 PDF 解码。
-- 使用 Python 包做文本规范化。
-- 调用私有服务或客户端。
-- 每个输入行生成多行输出。
-- 返回带有显式 schema 的自定义列。
+当相同的 projection 更适合用 Python callable 或有类型的配置对象来组装时，使用 Python Expression。`vane.func` 与 `vane.func.batch`、`vane.cls` 与 `vane.cls.batch`，以及 `vane.ai.prompt` 与 `vane.ai.embed`，都是同一个 Expression 模型的 Python builder。
 
 ```python
-import pyarrow as pa
+import vane
 
-def split_sentences(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    out_id: list[int] = []
-    out_sentence: list[str] = []
+con = vane.connect()
+source = con.sql("""
+    SELECT 1 AS document_id, ' Refund requested '::VARCHAR AS text
+""")
 
-    for doc_id, text in zip(ids, texts):
-        for sentence in str(text).split("."):
-            sentence = sentence.strip()
-            if sentence:
-                out_id.append(doc_id)
-                out_sentence.append(sentence)
+@vane.func(return_dtype="VARCHAR")
+def normalize_text(value):
+    return str(value).strip().lower()
 
-    return pa.table({"id": out_id, "sentence": out_sentence})
-
-sentences = raw.map_batches(
-    split_sentences,
-    schema={"id": "BIGINT", "sentence": "VARCHAR"},
-    batch_size=512,
-    execution_backend="subprocess_task",
+projected = source.select(
+    vane.col("document_id"),
+    vane.col("text"),
+    normalize_text(vane.col("text")).alias("normalized_text"),
+    vane.ai.prompt(vane.sql_expr("'Summarize: ' || text")).alias("summary"),
+    vane.ai.embed(vane.col("text")).alias("embedding"),
 )
 ```
 
-## 使用 AI Function 处理常见 AI 任务
+这种替代语法仍然产生有类型、通常保持行数的 projection。Python batch Expression 的 `row_preserving=False` 是一个范围很窄的例外：它可以改变基数，但结果必须是唯一的顶层 projection。这个例外不适用于注册的 SQL alias；v1 中的 SQL alias 仍然保持行数。
 
-当操作匹配内置 provider 模式时，AI Function 是更合适的选择：
+## Relation API
+
+当 callable 或 helper 需要控制表形时，选择 Relation：例如多列输出、完整的表阶段或基数变化。自定义方法包括 `rel.map_batches`、`rel.flat_map`，以及逐行 scalar 的 `rel.map`；`rel.map` 不是 pandas batch transform。Relation AI 则通过 `rel.embed_text` 提供内置分块，通过 `rel.classify_text` 提供内置分类，并通过 `rel.prompt` 提供结构化或多模态 prompting；必要时，这些方法还可以暴露显式 Relation execution backend。
+
+这些目前都是 Python Relation 方法。Vane 不提供直接的 SQL Relation API，也没有对应的 SQL table-function 入口。
+
+## 同一条 Pipeline，而非互斥的工作负载
+
+SQL 可以在 Python Relation 调用之前创建、连接并过滤输入 relation，也可以在调用之后检查、聚合或写出返回的 relation。以这种方式混合两种语言，并不会让中间的方法变成 SQL Relation API；每个阶段仍然使用与其输出匹配的模型。
+
+当前 API 中的内置分类是 Relation 专属能力，因此专用调用可以放在普通 SQL 阶段之间：
 
 ```python
-embedded = raw.embed_text(
+import vane
+
+con = vane.connect()
+rel = con.sql("""
+    SELECT text
+    FROM (VALUES
+        ('The invoice total is wrong'),
+        ('My parcel has not arrived'),
+        (NULL)
+    ) AS documents(text)
+    WHERE text IS NOT NULL
+""")
+
+classified = rel.classify_text(
     "text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
+    labels=["billing", "delivery", "other"],
+    output_column="label",
 )
-```
 
-AI Function 会返回一个包含已配置输出列的 relation。如果下游阶段还需要源 ID、文本或元数据，请使用自定义 UDF 返回完整 schema，或者在经过校验的步骤中显式地将 AI Function 的输出与源行组合起来。
-
-## 推荐的 pipeline 形态
-
-先用 SQL 完成扫描、过滤和投影；只有在昂贵或自定义步骤中切换到 Python；随后回到 SQL 做校验和输出。
-
-```python
-raw = con.sql("""
-    select id, uri, text
-    from read_parquet('s3://bucket/raw/*.parquet')
-    where text is not null
+label_counts = con.sql("""
+    SELECT label, count(*) AS documents
+    FROM classified
+    GROUP BY label
+    ORDER BY documents DESC
 """)
-
-features = raw.map_batches(
-    ModelBatch,
-    schema={"id": "BIGINT", "label": "VARCHAR"},
-    batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
-
-features.to_table("features")
-
-con.sql("""
-    select label, count(*) as n
-    from features
-    group by label
-    order by n desc
-""").show()
 ```
 
-将 `ModelBatch` 替换为一个会加载并复用模型的可调用类。
+## 后续阅读
 
-## Python 优先的工作负载
-
-在以下场景中选择 Python 优先路径：
-
-- 模型吞吐量是主要瓶颈。
-- 模型或服务客户端需要 actor 复用。
-- 转换用 batch 函数表达比 SQL 更清晰。
-- 你正在调优 `batch_size`、`gpus`、`cpus`、`concurrency` 和 Ray 资源。
-
-推荐路径：
-
-1. 使用 SQL 做扫描和剪枝。
-2. 使用 `map_batches` 执行模型或解码工作。
-3. 初始化成本较高时，在本地使用 `subprocess_actor`。
-4. 只有在本地 actor 路径正确后，才切换到 `ray_actor`。
-5. 使用有代表性的数据进行调优。
-
-## SQL 优先的工作负载
-
-在以下场景中选择 SQL 优先路径：
-
-- 数据可以放在单机或单个分析引擎中处理。
-- 转换需要易于检查和审计。
-- Python UDF 只是一个小型补充增强步骤。
-- 输出会被另一个 SQL 系统、数据仓库、湖仓或 BI pipeline 消费。
-
-推荐路径：
-
-1. 将数据保持在 relation、表和视图中。
-2. 只在非 SQL 步骤中使用 Python。
-3. 写出 Parquet 或其他 DuckDB 支持的输出格式。
-4. 通过下游系统自身的数据导入路径完成交接。
-
-## 经验法则
-
-如果操作可以用 SQL 清晰表达，就留在 SQL 中。如果它需要 Python 状态、外部库、模型执行或 provider 调用，就放到 UDF 或 AI Function 中，并保持输入和输出 schema 显式。
+精确签名、参数、返回契约和位置限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api) 与 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。从设置到输出的完整任务请按照 [自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs) 与 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions) 操作。有关这些边界背后的执行原因，请阅读 [UDF 概念](/zh-CN/docs/data/concepts/udfs)、[AI Function 概念](/zh-CN/docs/data/concepts/ai-functions) 和[执行模型](/zh-CN/docs/data/concepts/execution-model)。

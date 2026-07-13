@@ -295,7 +295,15 @@ section.hero { background: transparent; color: inherit; }
 .hero-grid { display: grid; grid-template-columns: 1.618fr 1fr; gap: 40px; align-items: center; }
 .home-hero-grid { gap: 48px; align-items: start; }
 /* Offset the code window so its top lines up with the H1, not the small eyebrow above it. */
-.home-hero-grid > .term { margin-top: 40px; }
+.home-hero-code { min-width: 0; margin-top: 40px; }
+.home-hero-code .term { width: 100%; }
+.home-hero-code-note {
+  margin: 12px 4px 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.home-hero-code-note code { color: var(--ink); font-size: 0.95em; }
 .hero-h1 { font-size: clamp(32px, 4vw, 46px); line-height: 1.05; }
 .tagchip { display: inline-flex; align-items: center; gap: 9px; border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; background: var(--paper-2); }
 .tagchip .v { background: var(--ink); color: var(--paper); border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
@@ -3056,7 +3064,7 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
 }
 @media (max-width: 900px) {
   .hero-grid, .vs, .calc-grid { grid-template-columns: 1fr; }
-  .home-hero-grid > .term { margin-top: 0; }
+  .home-hero-code { margin-top: 0; }
   .uc-grid,
   .tg3,
   .scenario-grid,

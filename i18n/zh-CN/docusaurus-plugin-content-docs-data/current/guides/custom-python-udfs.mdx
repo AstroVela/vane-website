@@ -4,20 +4,58 @@ title: 自定义 Python UDF
 
 当 Vane Data pipeline 中的 Python 逻辑不适合用 SQL 或内置 AI Function 表达时，可以使用 Custom Python UDF：外部库、自定义规则、媒体处理、模型预处理、自定义推理、私有客户端，或完全可控的 output schema。
 
-本文聚焦 UDF 的类型，以及不同场景下的选择方式。
+本文聚焦 UDF 的类型，以及不同场景下的选择方式。如果只需在现有列旁增加一个有类型的结果，优先使用 Expression UDF：推荐通过 SQL alias 进入 SQL 工作流，也可以用 Python Expression API 构造同一个 projection。只有当 UDF 负责多列输出或改变行数的表阶段时，才使用 Relation API。
 
 ## 选择 UDF 类型
 
-先确定可调用对象形态；backend 是另一层选择，它决定可调用对象在哪里执行。
+先确定输出形态，再确定可调用对象形态；backend 是另一层选择，它决定可调用对象在哪里执行。
 
-| UDF 类型 | API | 可调用对象形态 | 本地 backend | Ray backend | 适用场景 |
-| --- | --- | --- | --- | --- | --- |
-| 无状态 batch UDF | `map_batches` | Python 函数 | `subprocess_task` | `ray_task` | 逻辑不需要可复用模型、客户端、缓存或其他状态。 |
-| 有状态 batch UDF | `map_batches` | 可调用类 | `subprocess_actor` | `ray_actor` | 初始化成本高，需要跨 batch 复用。 |
-| 行扩展 UDF | `flat_map` | 行函数 | `subprocess_task` | `ray_task` | 一个输入行可能产生零行、一行或多行输出。 |
-| 标量 UDF | `map` | 标量函数 | `subprocess_task` | `ray_task` | 只需要简单的逐行标量转换。 |
+| UDF 类型 | 推荐 API | 可调用对象形态 | 适用场景 |
+| --- | --- | --- | --- |
+| 无状态 scalar Expression UDF | 注册 SQL alias；在 Python 中构造 expression 时使用 `vane.func` | Scalar 函数 | 在现有列旁增加一个有类型、保持行数的值。 |
+| 无状态 batch Expression UDF | 注册 SQL alias；在 Python 中构造 expression 时使用 `vane.func.batch` | Arrow 函数 | Batch 处理有帮助，但结果仍是一个有类型的列。 |
+| 有状态 Expression UDF | 注册 SQL alias；Python 使用 `vane.cls` 或 `vane.cls.batch` | 可调用类 | 一个有类型的结果需要 query scope 的 actor 状态。 |
+| 无状态 batch Relation UDF | `map_batches` | Python 函数 | 返回多列或完整表结果，且不需要复用状态。 |
+| 有状态 batch Relation UDF | `map_batches` | 可调用类 | 返回表形结果，同时跨 batch 复用昂贵的初始化结果。 |
+| 行扩展 Relation UDF | `flat_map` | 行函数 | 一个输入行可能产生零行、一行或多行输出。 |
+| Scalar Relation UDF | `map` | Scalar 函数 | 需要显式 Relation executor 及其透传结果形态。 |
 
-大多数生产 UDF 应该先判断是无状态 batch UDF 还是有状态 batch UDF。需要分块这类行扩展时使用 `flat_map`，只有简单的标量补充才使用 `map`。
+普通的保持行数补充列任务，应先从 connection scope 的 SQL alias 开始。过滤、join 和源列选择仍然使用普通 SQL，Python callable 只提供一个有类型的 projection 值：
+
+```python
+import vane
+
+con = vane.connect()
+
+
+def normalize_document_type(value):
+    return str(value or "unknown").strip().lower()
+
+
+vane.attach_function(
+    normalize_document_type,
+    alias="normalize_document_type_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+    return_dtype="VARCHAR",
+)
+
+try:
+    normalized = con.sql("""
+        select
+            document_id,
+            normalize_document_type_sql(document_type) as document_type
+        from (values
+            ('doc-001', ' Invoice '),
+            ('doc-002', null)
+        ) as documents(document_id, document_type)
+    """)
+    normalized.show()
+finally:
+    vane.detach_function("normalize_document_type_sql", connection=con)
+```
+
+Alias 只属于 `con`，并且支持在 `SELECT` projection 中使用。应在 UDF projection 之前完成过滤、join 和分组。当 projection 需要作为 Python Expression 对象组装时，再使用 `vane.func`、`vane.func.batch`、`vane.cls` 或 `vane.cls.batch`。注册签名和放置限制见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
 ## 无状态 Batch UDF
 
@@ -30,7 +68,7 @@ title: 自定义 Python UDF
 - 确定性特征提取
 - 不需要可复用状态的 Python 库调用
 
-无状态 batch UDF 是一个 Python 函数，接收 `pyarrow.Table`，返回 `pyarrow.Table`。
+无状态 batch UDF 是一个 Python 函数，接收 `pyarrow.Table`，返回 `pyarrow.Table`。如果它只产出一个有类型的列并保持输入行数，可以把它注册为 SQL Expression alias，或通过 Python `vane.func.batch(..., row_preserving=True)` 使用。下面的示例会同时返回源字段、诊断字段和多个派生列，因此更适合使用表形的 `map_batches` Relation API。
 
 ```python
 import re
@@ -140,6 +178,34 @@ prepared.show()
 
 返回的表同时包含新字段和后续阶段需要的源字段。`map_batches` 返回 UDF 产出的列，不会自动保留上游列。
 
+作为对比，保持行数的 Python batch Expression 会显式命名输入列，并且只声明一个输出列：
+
+```python
+def normalize_text_batch(table: pa.Table) -> pa.Table:
+    values = table.column("text").to_pylist()
+    return pa.table({
+        "normalized_text": [
+            None if value is None else str(value).strip().lower()
+            for value in values
+        ]
+    })
+
+
+normalized_text = vane.func.batch(
+    normalize_text_batch,
+    inputs={"text": vane.col("text")},
+    schema={"normalized_text": "VARCHAR"},
+    row_preserving=True,
+).alias("normalized_text")
+
+normalized = documents.select(
+    vane.col("document_id"),
+    normalized_text,
+)
+```
+
+如果这个 projection 属于 SQL pipeline，使用已注册的 SQL 形式；如果需要动态组装 expression，则使用这里的 Python 形式。
+
 增大 batch size 或迁移到 Ray 之前，先校验这个无状态 UDF：
 
 ```python
@@ -187,7 +253,9 @@ ray_prepared = documents.map_batches(
 - 查找表或缓存
 - GPU 模型状态
 
-有状态 UDF 是可调用类。传给 `map_batches` 的应该是类本身，而不是已经创建好的实例。Actor backend 会在 worker 内构造这个类，并在多个 batch 间复用同一个对象。
+有状态 UDF 是可调用类。对于只返回一个有类型、保持行数的 Expression 结果，可以使用 `vane.cls` 或 `vane.cls.batch`，实例化被装饰的类，再把该实例注册为 SQL alias，或在 Python projection 中调用。v1 Expression 契约每个 query 使用一个 actor，其状态仅限 query scope 且是临时的。
+
+下面的示例返回多列表，因此使用 Relation 形式：传给 `map_batches` 的应该是类本身，而不是已经创建好的实例。Actor backend 会在 worker 内构造这个类，并在多个 batch 间复用同一个对象。
 
 Actor 类不应有必填构造参数。可以把配置放在环境变量、类级默认值、带默认值的可选参数，或无参数包装类中。
 
@@ -260,7 +328,8 @@ prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=64,
     execution_backend="subprocess_actor",
-    concurrency=2,
+    actor_number=2,
+    gpus=0.0,
 )
 ```
 
@@ -274,7 +343,8 @@ ray_prompts = prepared.map_batches(
     schema=prompt_schema,
     batch_size=128,
     execution_backend="ray_actor",
-    concurrency=4,
+    actor_number=4,
+    gpus=0.0,
 )
 ```
 
@@ -312,19 +382,21 @@ embedded = prepared.map_batches(
     },
     batch_size=32,
     execution_backend="ray_actor",
-    concurrency=2,
+    actor_number=2,
     cpus=0.0,
     gpus=1.0,
 )
 ```
 
-`gpus=1.0` 是每个 actor 的资源请求。使用 `concurrency=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
+`gpus=1.0` 是每个 actor 的资源请求。使用 `actor_number=2` 时，Ray 需要两个可用 GPU 资源位才能满并行运行。更多 GPU 执行模式，请参考 [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)。
 
 每个 Ray worker 都必须能够导入该可调用对象，并访问相同的数据路径、模型文件、凭据和 Python 依赖。
 
 ## 行扩展 UDF
 
 当一个输入行可能产生零行、一行或多行输出时，使用 `flat_map`。典型场景包括文档分块、帧提取摘要、嵌套记录规范化、URL 展开，以及通过返回空结果来过滤行。
+
+Python `vane.func.batch(..., row_preserving=False)` 也可以生成改变行数的 batch Expression，但它必须是唯一的顶层 projection，而且 v1 不能把它注册为 SQL alias。当转换天然表示为显式的零行或多行输出时，优先使用 `flat_map`。
 
 可调用对象接收一行 Python `dict`。它可以返回 `None`、一个输出 `dict`，或多个输出 `dict` 组成的可迭代对象。
 
@@ -359,7 +431,7 @@ chunks = prepared.flat_map(
 
 ## 标量 UDF
 
-当只需要简单的逐行标量转换，并且 batch UDF 显得过重时，使用 `map`。
+如果只需在现有列旁增加一个简单的逐行值，优先使用上文展示的已注册 SQL scalar Expression；当 projection 在 Python 中构造时，使用 `vane.func`。只有明确需要 Relation executor 及其透传结果形态时，才使用 Relation `map`。
 
 ```python
 def normalize_document_type(document_type: str) -> str:
@@ -373,20 +445,20 @@ normalized_types = documents.project("document_type").map(
 )
 ```
 
-对于模型调用、媒体解码、embedding、LLM 调用，或任何可以从 batch 处理中获益的操作，优先使用 `map_batches`。
+对于标准 embedding 或 LLM 调用，优先使用内置 AI Function。对于自定义模型调用、媒体解码或任何可以从 batch 处理中获益的操作，一个有类型且保持行数的结果使用 batch Expression，表形结果使用 `map_batches`。
 
 ## 共同输出契约
 
-请把 UDF 输出视为表契约。
+请把每个 UDF 输出都视为显式契约。Expression UDF 向 projection 增加一个声明过的结果列；Relation UDF 则负责它返回的表形。
 
 | 主题 | 建议 |
 | --- | --- |
-| 返回列 | 对 `map_batches` 和 `flat_map`，精确返回 `schema` 中声明的列。 |
-| 源字段 | 返回下游所需的稳定 ID、源 URI/path、媒体类型、业务键、文本或元数据。 |
+| 返回列 | Expression batch schema 只声明一个输出列。对于 Relation `map_batches` 和 `flat_map`，精确返回 `schema` 中声明的列。 |
+| 源字段 | 在 Expression 结果旁选择源字段。Relation UDF 的后续阶段需要哪些源字段，就显式返回哪些字段。 |
 | 行诊断 | 当失败行需要保持可审查时，返回显式 `status` 和 `error` 列。 |
 | 类型 | 使用 Arrow 兼容值：字符串、数字、布尔值、bytes、list、struct 或 Arrow array。 |
 | Null | 保持 null 行为显式，尤其是数值型、bytes、list 和模型输出列。 |
-| 行数 | `map_batches` UDF 通常每个输入行返回一个输出行。当输出可能为零行或多行时，使用 `flat_map`。 |
+| 行数 | 保持行数的 Expression 必须为每个输入行返回一个输出行。Relation `map_batches` 通常也如此；显式零行或多行输出使用 `flat_map`。 |
 
 如果 Arrow 无法推断你需要的类型，请构造显式 array：
 
@@ -401,7 +473,7 @@ return pa.table({
 
 ## Backend 与扩展
 
-Backend 选择应该跟随 UDF 类型：
+Expression UDF 根据可调用对象确定执行形态：`vane.func` 和 `vane.func.batch` 使用 task，`vane.cls` 和 `vane.cls.batch` 使用 actor。通过 Vane runner 配置选择本地或 Ray 执行。Relation UDF 则直接提供 `execution_backend`，应根据可调用对象形态选择：
 
 | Backend | 可调用对象形态 | 适用场景 |
 | --- | --- | --- |
@@ -422,11 +494,12 @@ Backend 选择应该跟随 UDF 类型：
 
 `batch_size` 控制 Vane 每次 `map_batches` 调用传入多少输入行。batch size 不应改变结果语义。如果调整 `batch_size` 后输出发生变化，UDF 很可能依赖了隐藏的 batch 状态。
 
-`concurrency` 支持 `subprocess_task`、`subprocess_actor` 和 `ray_actor`；不要将它与 `ray_task` 一起使用。
+使用 `actor_number` 设置 `subprocess_actor` 和 `ray_actor` 的 actor 池大小。Task backend 不接受这个 actor 池选项。
 
 ## 相关文档
 
 - 当主要任务是表形态清理、join、去重、校验或输出整理时，使用 [结构化转换](/zh-CN/docs/data/guides/structured-transformation)。
 - 当 UDF 需要读取 bytes、解码文件、提取媒体特征，或记录逐阶段状态和错误时，使用 [多模态 Pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)。
 - 对于标准 embedding、文本分类或提示词增强，使用 [AI 函数](/zh-CN/docs/data/guides/ai-functions)。当你需要自定义模型、自定义 output schema、外部客户端行为，或完全控制预处理与后处理时，使用自定义 Python UDF。
-- 阅读 [UDF](/zh-CN/docs/data/concepts/udfs)，了解 `map_batches`、可调用类和执行 backend 背后的概念模型。
+- 使用 [UDF API 参考](/zh-CN/docs/data/reference/udf-api) 查询 SQL 注册、Python Expression 和 Relation API 的精确签名与限制。
+- 阅读 [UDF](/zh-CN/docs/data/concepts/udfs)，了解 Expression projection、Relation 表阶段、可调用类和执行 backend 背后的概念模型。

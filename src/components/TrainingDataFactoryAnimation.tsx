@@ -244,7 +244,7 @@ export default function TrainingDataFactoryAnimation() {
             </div>
             <div className="tl-flow">
               <figure className="tl-sample">
-                <img src="/img/use-cases/hero-driving-intersection.webp" alt={copy.imageAlt} />
+                <img src="/img/solutions/hero-driving-intersection.webp" alt={copy.imageAlt} />
                 <figcaption>{copy.caption}</figcaption>
               </figure>
               <div className="tl-flow-main" aria-label={copy.stagesAria}>

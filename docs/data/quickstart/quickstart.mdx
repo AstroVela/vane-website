@@ -3,297 +3,130 @@ title: Quickstart
 slug: /quickstart/quickstart
 ---
 
-This quickstart shows Vane Data as a small multimodal AI data pipeline: represent documents, images, and audio as rows, use SQL to choose a representative slice, add Python logic for review fields, optionally call an AI function, then validate and write a tabular result.
+This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs locally, and needs no Ray cluster, GPU, or model-provider credentials.
 
-The required path runs locally with inline data. You do not need Ray, a GPU, remote storage, real media files, or model provider credentials for the required steps. The AI call is optional and clearly marked.
+You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
-## Before you start
-
-Install Vane Data and verify that `import vane` works:
+## Install Vane Data
 
 ```bash
-python -m pip install vane-ai
+python -m pip install 'vane-ai[all]'
 ```
 
-This quickstart also uses PyArrow for the Python UDF return value:
+## Run Your First SQL Expression UDF
 
-```bash
-python -m pip install pyarrow
-```
-
-If you want to run the optional hosted AI step, install the provider package and set the provider credentials required by that provider:
-
-```bash
-python -m pip install openai
-```
-
-## 1. Create a connection
+Copy this into a Python file and run it:
 
 ```python
-import pyarrow as pa
 import vane
 
 con = vane.connect()
+
+con.execute("""
+    CREATE TABLE documents AS
+    SELECT *
+    FROM (VALUES
+        ('doc-001', 'Signed claim form received.'),
+        ('doc-002', 'Invoice is missing approval metadata.'),
+        ('doc-003', 'Policy reference has expired.')
+    ) AS rows(document_id, source_text)
+""")
+
+
+def review_status(source_text):
+    text = str(source_text).lower()
+    if "missing" in text or "expired" in text:
+        return "needs_review"
+    return "ready"
+
+
+vane.attach_function(
+    review_status,
+    alias="review_status_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+    return_dtype="VARCHAR",
+)
+
+reviewed = con.sql("""
+    SELECT
+        document_id,
+        source_text,
+        review_status_sql(source_text) AS review_status
+    FROM documents
+    ORDER BY document_id
+""")
+
+reviewed.show()
+vane.detach_function("review_status_sql", connection=con)
 ```
 
-Run a minimal SQL query to confirm the connection works:
+The result contains the original columns plus one typed `review_status` column:
 
-```python
-con.sql("select 42 as answer").show()
+| document_id | review_status |
+| --- | --- |
+| doc-001 | ready |
+| doc-002 | needs_review |
+| doc-003 | needs_review |
+
+## What Just Happened
+
+- `vane.attach_function(...)` registered the raw Python callable on `con`.
+- `review_status_sql(...)` became a SQL Expression that could run in a `SELECT` projection.
+- The Expression added one result beside each input row, so IDs and source text stayed in the same relation.
+- `vane.detach_function(...)` removed the alias after the lazy result had been materialized by `show()`.
+
+For exception-safe cleanup, batch functions, callable classes, and Relation transformations, continue with [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For exact signatures and restrictions, use the [UDF API Reference](/docs/data/reference/udf-api).
+
+## Optional: Add an AI Function
+
+This is not required for the Quickstart. To try a hosted provider, install its package and set credentials in the worker environment:
+
+```bash
+python -m pip install openai
+export OPENAI_API_KEY="<your-key>"
 ```
 
-## 2. Create a multimodal relation
-
-For the first run, use an inline manifest. It has the same shape as a real multimodal workflow: stable IDs, source locations, media types, text or extracted text, and business metadata.
+Then add an AI result with the SQL Expression function `ai_prompt`:
 
 ```python
-assets = con.sql("""
-    select *
-    from (
-        values
-            (
-                'asset-001',
-                's3://sample-bucket/claims/claim-001.pdf',
-                'application/pdf',
-                'claim',
-                'high',
-                'Customer submitted a signed claim form with supporting notes.'
-            ),
-            (
-                'asset-002',
-                's3://sample-bucket/invoices/invoice-018.png',
-                'image/png',
-                'invoice',
-                'high',
-                'Invoice image is missing approval metadata.'
-            ),
-            (
-                'asset-003',
-                's3://sample-bucket/calls/call-077.wav',
-                'audio/wav',
-                'support_call',
-                'normal',
-                'Transcript mentions an expired policy reference.'
-            ),
-            (
-                'asset-004',
-                's3://sample-bucket/memos/memo-009.txt',
-                'text/plain',
-                'memo',
-                'low',
-                'Internal follow-up note.'
+with_ai = con.sql("""
+    SELECT
+        document_id,
+        ai_prompt(
+            source_text,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini'
             )
-    ) as t(asset_id, source_uri, media_type, document_type, priority, text)
+        ) AS review_note
+    FROM documents
+    ORDER BY document_id
 """)
 
-assets.show()
+with_ai.show()
 ```
 
-A relation represents table-shaped work. In your own data, `source_uri` might point to PDFs, images, audio, video, or extracted text. The important part is that every asset has a stable row that can be filtered, enriched, validated, and written back out.
+Provider calls can incur cost and send data outside your environment. Keep the first input small and read [AI Functions](/docs/data/guides/ai-functions) before building a larger workflow.
 
-## 3. Use SQL to choose the candidate slice
+## Scale from Local to Ray
 
-Use SQL before Python, AI, or model work. Filter by media type, business priority, document type, date range, or any metadata that keeps the first run small and meaningful.
+The Quickstart uses the default local runner. To distribute the same UDF or AI Expression work, configure Ray **before** creating the connection:
 
 ```python
-assets.to_table("assets")
+import vane
 
-candidates = con.sql("""
-    select
-        asset_id,
-        source_uri,
-        media_type,
-        document_type,
-        priority,
-        text
-    from assets
-    where priority in ('high', 'normal')
-      and media_type in ('application/pdf', 'image/png', 'audio/wav')
-      and text is not null
-    order by asset_id
-""")
-
-candidates.show()
+vane.configure(runner="ray")
+con = vane.connect()
 ```
 
-This stage is where Vane's table-oriented multimodal model matters: the media can be different, but the candidate slice is still a relation with explicit columns.
+The SQL projection and registered callable can stay the same. For a larger job, replace the inline `VALUES` table with a shared source such as Parquet or object storage.
 
-## 4. Add Python logic for AI-ready fields
+Every Ray worker must be able to import the UDF and its dependencies and access the same data, model files, and credentials required by its work. See [Ray Cluster Deployment](/docs/data/deploy/ray-cluster) before running on a cluster.
 
-Use `map_batches(...)` when custom Python code should process Arrow batches and return explicit output columns. This example prepares review metadata and a prompt column that can be sent to an AI function.
+## Next Steps
 
-```python
-def prepare_review_rows(batch: pa.Table) -> pa.Table:
-    asset_ids = batch.column("asset_id").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-    document_types = batch.column("document_type").to_pylist()
-    priorities = batch.column("priority").to_pylist()
-    texts = batch.column("text").to_pylist()
-
-    review_priority = []
-    status = []
-    prompts = []
-
-    for media_type, document_type, priority, text in zip(
-        media_types,
-        document_types,
-        priorities,
-        texts,
-    ):
-        normalized = str(text or "").strip()
-        lower_text = normalized.lower()
-
-        if not normalized:
-            status.append("missing_text")
-            review_priority.append("skip")
-            prompts.append("")
-            continue
-
-        status.append("ready")
-        if priority == "high" or "missing" in lower_text or "expired" in lower_text:
-            review_priority.append("high")
-        else:
-            review_priority.append("normal")
-
-        prompts.append(
-            "Review this "
-            + document_type
-            + " asset of type "
-            + media_type
-            + ". Return one short business note: "
-            + normalized
-        )
-
-    return pa.table({
-        "asset_id": asset_ids,
-        "source_uri": source_uris,
-        "media_type": media_types,
-        "document_type": document_types,
-        "priority": priorities,
-        "text": texts,
-        "text_length": [len(str(value or "")) for value in texts],
-        "review_priority": review_priority,
-        "status": status,
-        "prompt": prompts,
-    })
-
-review_rows = candidates.map_batches(
-    prepare_review_rows,
-    schema={
-        "asset_id": "VARCHAR",
-        "source_uri": "VARCHAR",
-        "media_type": "VARCHAR",
-        "document_type": "VARCHAR",
-        "priority": "VARCHAR",
-        "text": "VARCHAR",
-        "text_length": "BIGINT",
-        "review_priority": "VARCHAR",
-        "status": "VARCHAR",
-        "prompt": "VARCHAR",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-
-review_rows.show()
-```
-
-`map_batches` returns the UDF output columns, so return identifiers and source metadata such as `asset_id`, `source_uri`, and `media_type` when later stages still need them.
-
-## 5. Optional: call an AI function
-
-The required quickstart path has already shown the multimodal relation shape and the AI-ready prompt column. If you have provider credentials configured, you can run a small hosted AI call with `prompt(...)`.
-
-```python
-ai_only = review_rows.prompt(
-    "prompt",
-    provider="openai",
-    model="gpt-4o-mini",
-    system_message="You review business assets. Return one concise note.",
-    output_column="ai_review_note",
-    batch_size=4,
-    execution_backend="subprocess_actor",
-)
-```
-
-AI helpers return the configured output column. If your final output needs IDs and source fields, combine the helper output with the source rows after checking row counts:
-
-```python
-review_table = review_rows.to_arrow_table()
-ai_table = ai_only.to_arrow_table()
-
-if ai_table.num_rows != review_table.num_rows:
-    raise ValueError("AI output row count does not match source row count")
-
-reviewed_with_ai = con.from_arrow(
-    review_table.append_column("ai_review_note", ai_table["ai_review_note"])
-)
-```
-
-For the first run on your own data, run 10-100 rows before increasing `batch_size`, `concurrency`, or moving the AI stage to Ray.
-
-## 6. Validate the tabular result
-
-Use SQL again to check the output before writing it.
-
-```python
-review_rows.to_table("review_rows")
-
-summary = con.sql("""
-    select
-        media_type,
-        review_priority,
-        status,
-        count(*) as rows,
-        avg(text_length) as avg_text_length
-    from review_rows
-    group by media_type, review_priority, status
-    order by media_type, review_priority, status
-""")
-
-summary.show()
-```
-
-Before moving to your own data, check the same things you would check in your own workflow:
-
-- Row counts match your expectation.
-- Stable IDs are still present.
-- Source URIs and media types are still present.
-- Rows that should be skipped have explicit `status`.
-- Prompt text contains only the fields the model should see.
-- A few sample rows make business sense.
-
-## 7. Write the result
-
-Write a tabular output when the result is ready for review or handoff.
-
-```python
-review_rows.write_parquet("quickstart-multimodal-review/")
-```
-
-If you ran the optional AI step, write `reviewed_with_ai` instead:
-
-```python
-reviewed_with_ai.write_parquet("quickstart-multimodal-ai-review/")
-```
-
-For your own data, write to a run-specific path and keep enough source metadata to reproduce or explain every output row.
-
-## Use the same shape with your data
-
-The inline manifest in this page removes setup noise. The shape you should carry into your own workflow is:
-
-```text
-load a small multimodal slice -> SQL select candidates -> prepare AI-ready fields -> optional AI function -> SQL validation -> write tabular output
-```
-
-Start locally. Move to Ray, vLLM, GPU inference, or larger media decoding only after the local data contract, IDs, prompts, output schema, and validation checks are correct.
-
-## Next
-
-- [Multimodal Ingest](/docs/data/guides/multimodal-ingest)
-- [AI Functions](/docs/data/guides/ai-functions)
 - [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
+- [AI Functions](/docs/data/guides/ai-functions)
+- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale)
 - [GPU Inference](/docs/data/guides/gpu-inference)
-- [SQL vs Python](/docs/data/concepts/sql-vs-python)

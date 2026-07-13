@@ -2,184 +2,108 @@
 title: UDFs
 ---
 
-Vane Data UDFs let you run Python inside a relation pipeline without giving up explicit schemas, batch control, or a path to distributed execution.
+Vane Data UDFs have two semantic output models: the **Expression API** and the **Relation API**. They are not three syntax surfaces. SQL and Python are entry points into the same Expression model; Relation is the separate model for table-shaped work.
 
-Use UDFs when a step needs Python libraries, model state, custom decoding, external clients, or row expansion. Keep relational work in SQL, then use UDFs for the part SQL should not own.
+This distinction is about what a query stage produces. Choose the model from the output contract, then choose syntax and execution controls.
 
-## Public APIs
+## Expression API
 
-Vane Data exposes three relation-level UDF APIs:
+The Expression API adds one typed output column to a `SELECT` projection and is normally row-preserving. SQL is the recommended default entry point because it keeps filtering, projection, source columns, and the UDF result visible in one relational statement.
 
-| API | Shape | Typical use |
-| --- | --- | --- |
-| `map_batches(function, schema=..., ...)` | Arrow batch to Arrow batch | Vectorized transforms, model inference, decoding |
-| `flat_map(function, schema=..., ...)` | Row to zero, one, or many rows | Chunking, splitting, expanding nested records |
-| `map(map_function, return_type=..., ...)` | Row-wise scalar value | Small scalar enrichments |
+### SQL Entry Point (Recommended)
 
-Core parameters:
-
-- `schema`: output columns and types for relation-producing UDFs.
-- `return_type`: scalar output type for `map`.
-- `batch_size`: rows per `map_batches` call.
-- `execution_backend`: where the callable runs.
-- `cpus` and `gpus`: resource requests where supported.
-- `concurrency`: number of executors or actors where supported.
-- `streaming_breaker`: advanced `map_batches` execution-boundary control.
-
-Unsupported keyword arguments are rejected early, before the relation is rendered.
-
-## Execution backends
-
-| Backend | Callable shape | Best for |
-| --- | --- | --- |
-| `subprocess_task` | Python function | Local stateless batch transforms |
-| `subprocess_actor` | Callable class | Local model or client reuse |
-| `ray_task` | Python function | Distributed stateless transforms |
-| `ray_actor` | Callable class | Distributed stateful inference, GPU-backed models |
-
-Pass a function to task backends. Pass a class, not a pre-created instance, to actor backends so Vane Data can construct and reuse the object inside the executor.
-
-## Batch UDF contract
-
-`map_batches` receives Arrow data and returns Arrow data. The returned table must match the declared output schema.
+Registering a Python callable with `vane.attach_function` gives the Expression API a SQL name; registration is a control for that model, not a third model. The registered alias then behaves as one projection expression. SQL aliases remain row-preserving in v1.
 
 ```python
-import pyarrow as pa
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    select *
-    from (
-        values
-            (1, 'hello'),
-            (2, 'vane data')
-    ) as t(id, text)
+source = con.sql("""
+    SELECT *
+    FROM (VALUES
+        (1, '  Hello  '),
+        (2, ' Vane Data ')
+    ) AS t(id, text)
 """)
 
-def add_features(batch: pa.Table) -> pa.Table:
-    values = batch.column("text").to_pylist()
-    return pa.table({
-        "length": [len(str(value)) for value in values],
-        "upper_text": [str(value).upper() for value in values],
-    })
+@vane.func(return_dtype="VARCHAR")
+def normalize_text(value):
+    return str(value).strip().lower()
 
-features = rel.map_batches(
-    add_features,
-    schema={
-        "length": "BIGINT",
-        "upper_text": "VARCHAR",
-    },
-    batch_size=1024,
-    execution_backend="subprocess_task",
-)
-
-features.show()
-```
-
-Batch UDFs are the default choice for model and media workloads because they amortize Python overhead and let model libraries process multiple rows at once.
-
-## Stateful class UDFs
-
-Use actor backends when setup is expensive and should be reused across batches.
-
-```python
-import pyarrow as pa
-
-class EmbedBatch:
-    def __init__(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        text = batch.column("text").to_pylist()
-        embeddings = self.model.encode(text).tolist()
-        return pa.table({"embedding": embeddings})
-
-embedded = rel.map_batches(
-    EmbedBatch,
-    schema={"embedding": "FLOAT[]"},
-    batch_size=64,
-    execution_backend="subprocess_actor",
-    concurrency=2,
-)
-```
-
-This relation contains the declared `embedding` column. Return source identifiers from the UDF as well when later stages need to join embeddings back to input rows.
-
-For distributed GPU inference, use the same callable class shape with `ray_actor`:
-
-```python
-embedded = rel.map_batches(
-    EmbedBatch,
-    schema={"embedding": "FLOAT[]"},
-    batch_size=64,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
-```
-
-Every Ray worker must be able to import the class and access the required model files or credentials.
-
-## One-to-many transforms
-
-Use `flat_map` when one input row can produce zero, one, or many output rows.
-
-```python
-def split_terms(row: dict) -> list[dict]:
-    return [{"term": term} for term in str(row["text"]).split()]
-
-terms = rel.flat_map(
-    split_terms,
-    schema={"term": "VARCHAR"},
-    execution_backend="subprocess_task",
-)
-```
-
-Typical uses include document chunking, URL expansion, nested record normalization, and filtering by returning an empty list.
-
-## Scalar transforms
-
-Use `map` for small row-wise scalar enrichments where a batch UDF would be unnecessary.
-
-```python
-def normalize_text(text: str) -> str:
-    return text.strip().lower()
-
-normalized = rel.project("text").map(
+vane.attach_function(
     normalize_text,
-    return_type="VARCHAR",
+    alias="normalize_text_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+normalized = con.sql("""
+    SELECT id, text, normalize_text_sql(text) AS normalized_text
+    FROM source
+""")
+normalized.show()
+vane.detach_function("normalize_text_sql", connection=con)
+```
+
+Keeping `id` and `text` in the projection makes the row-preserving contract visible and leaves ordinary SQL in charge of the surrounding table logic.
+
+### Python Entry Point
+
+Python Expression is alternate syntax for the same projection model. A call that receives `vane.col(...)` builds a lazy expression instead of eagerly invoking the Python function:
+
+```python
+projected = source.select(
+    vane.col("id"),
+    vane.col("text"),
+    normalize_text(vane.col("text")).alias("normalized_text"),
+)
+```
+
+The normal contract is one typed, row-preserving output column. Python batch Expression has one explicit exception: `row_preserving=False` may change cardinality, but that expression must be the sole top-level projection. It cannot be composed beside passthrough columns. This exception does not extend to registered SQL aliases, which remain row-preserving in v1.
+
+## Relation API
+
+Use the Relation API when the result is table-shaped: multi-column output, a complete table stage, or an explicit cardinality change. Current methods include `rel.map_batches`, `rel.flat_map`, and `rel.map`; `rel.map` is the row-wise scalar Relation API, not a pandas batch transform.
+
+For example, token expansion belongs to Relation because one input row may produce several output rows:
+
+```python
+def split_terms(row):
+    return [
+        {"id": row["id"], "term": term}
+        for term in str(row["text"]).split()
+    ]
+
+terms = source.flat_map(
+    split_terms,
+    schema={"id": "BIGINT", "term": "VARCHAR"},
     execution_backend="subprocess_task",
 )
 ```
 
-For model calls, media decoding, or anything that benefits from vectorization, prefer `map_batches`.
+Vane exposes no direct SQL Relation or table-function API. SQL can prepare the input relation and consume a Relation result, but the cardinality-changing or table-shaped method call itself is currently Python Relation API.
 
-## Resources and concurrency
+## Shared Planning and Execution
 
-Keep these controls separate:
+Both models participate in the same lazy planning and execution layer. SQL aliases and Python expressions become planned projection work; Relation methods become planned table stages. Execution moves typed data through Arrow batches, so batching, worker placement, and resource choices do not change the semantic output model.
 
-- `batch_size`: rows per batch passed to `map_batches`.
-- `gpus`: GPU resource request per callable execution where supported.
-- `cpus`: CPU resource request per callable execution where supported.
-- `concurrency`: number of executors or actors where supported.
+That shared layer is why the SQL and Python Expression entry points have the same projection and row-preservation rules. It is also why Relation is selected for its table contract, not simply because the callable happens to use Python.
 
-Increase `batch_size` before increasing concurrency if the bottleneck is model throughput. Increase concurrency when workers are underutilized and memory headroom is available.
+## Actor Reuse and Mutable State
 
-Some backends do not accept every resource or concurrency option. Validate settings on a representative sample before scaling.
+Actor-backed execution reuses a callable instance—and therefore a loaded model, client, or cache—within each actor. This is a lifecycle and throughput tool; multiple actors do not create shared state semantics.
 
-## Streaming behavior
+`vane.cls` and `vane.cls.batch` provide the narrower mutable-state contract for Expression UDFs. In v1 they use `actor_number=1` so one actor instance can carry state across the batches of one query. General actor-backed callable reuse should not be described as durable application state.
 
-`map_batches` exposes `streaming_breaker` for advanced execution-boundary control. Leave it unset unless you are measuring a specific pipeline behavior or debugging a boundary.
+## State, Failure, and Side Effects
 
-## Backend selection
+Mutable `vane.cls` state is query-scoped, actor-local, and ephemeral. It is not checkpointed, is neither global state nor keyed state, and provides no exactly-once guarantee. For a stateful Expression UDF, actor loss makes the query fail rather than rebuilding an actor with empty state.
 
-Use this progression:
+External effects performed by any UDF are not rolled back when the SQL transaction or query fails, and retries can repeat them. There is also no stable global row order across distributed relation execution. State-dependent logic should therefore avoid relying on input order, and external writes should use stable identifiers and idempotent handling.
 
-1. Build the UDF locally with `subprocess_task` or `subprocess_actor`.
-2. Verify schema, row counts, and error behavior on a representative sample.
-3. Move stateless functions to `ray_task` only when distribution helps.
-4. Move stateful model classes to `ray_actor` only when actor reuse, GPUs, or cluster placement are required.
-5. Tune batch size, resource requests, and concurrency with production-like data.
+## Choosing a Model
+
+- Choose SQL Expression first when one typed result belongs beside existing rows.
+- Choose Python Expression when Python composition is clearer but the same projection contract still fits.
+- Choose Relation when the callable owns table shape, multiple columns, or cardinality.
+
+For exact signatures and parameter rules, use the [UDF API Reference](/docs/data/reference/udf-api). For a complete task with setup, validation, and output, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs).

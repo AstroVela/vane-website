@@ -18,39 +18,38 @@ const PIPELINE_CODE = `import vane
 vane.configure(runner="ray")
 con = vane.connect()
 
-# Select train records from the raw manifest.
 raw = con.sql("""
-select id, uri, media_type, text, metadata, content_hash
-from read_parquet('s3://training-corpus/manifest/*.parquet')
-where split = 'train'
+    SELECT id, uri, media_type, content_hash
+    FROM read_parquet('s3://training-corpus/*.parquet')
+    WHERE split = 'train'
 """)
 
-# Decode media and run captioning / labeling on Ray actors.
 labeled = raw.map_batches(
-    CaptionAndScore, schema=release_schema,
-    execution_backend="ray_actor", gpus=1, batch_size=64,
+    CaptionAndScore,
+    schema=release_schema,
+    gpus=1,
+    actor_number=4,
 )
 labeled.to_table("labeled")
 
-# Filter by quality, dedupe by content hash, then embed captions.
 release = con.sql("""
-select * exclude rn
-from (
-  select *, row_number() over (
-    partition by content_hash order by quality_score desc
-  ) as rn
-  from labeled
-  where quality_score >= 0.8
-)
-where rn = 1
-""").embed_text(
-    "caption",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
+    SELECT id, uri, caption, quality_score,
+           ai_embed(
+               caption,
+               struct_pack(
+                   provider := 'transformers',
+                   model := 'sentence-transformers/all-MiniLM-L6-v2'
+               )
+           ) AS caption_embedding
+    FROM labeled
+    WHERE quality_score >= 0.8
+    QUALIFY row_number() OVER (
+        PARTITION BY content_hash
+        ORDER BY quality_score DESC
+    ) = 1
+""")
 
-# Publish a versioned training-data release.
-release.write_parquet("s3://dataset-releases/mm-v42/")`
+release.write_parquet("s3://dataset-releases/mm-v42/part-00000.parquet")`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -198,7 +197,7 @@ export default function TrainingUseCase() {
       codeLead: 'File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline.',
       codeAria: 'Pipeline stages shown in the representative code',
       codeSteps: ['SQL selection', 'Ray GPU UDF', 'SQL quality gate', 'Embedding + release'],
-      note: 'CaptionAndScore is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns.',
+      note: 'CaptionAndScore is your GPU batch UDF. Vane reuses it across Ray actors; remove the runner configuration to execute the same pipeline locally.',
       ctaTitle: 'Build a reproducible multimodal training-data pipeline.',
       designPartner: 'Become a design partner',
       readDocs: 'Read the docs',
@@ -237,7 +236,7 @@ export default function TrainingUseCase() {
       codeLead: '文件选择、媒体解码、GPU caption/自动标注、质量过滤、去重、embedding 和发布打包都在同一条可读流水线里完成。',
       codeAria: '代表性代码中展示的流水线阶段',
       codeSteps: ['SQL 选择', 'Ray GPU UDF', 'SQL 质量门', 'Embedding + 发布'],
-      note: 'CaptionAndScore 是你的 batch UDF，用于解码媒体、运行 GPU caption 或标注，并返回稳定的发布列。',
+      note: 'CaptionAndScore 是你的 GPU batch UDF。Vane 会在 Ray actors 中复用它；删除 runner 配置即可让同一条流水线在本地执行。',
       ctaTitle: '构建高效简单的多模态训练数据流水线',
       designPartner: '成为设计伙伴',
       readDocs: '阅读文档',

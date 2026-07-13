@@ -2,80 +2,189 @@
 title: 执行模型
 ---
 
-Vane Data 的 pipeline 是以 relation 为核心的 pipeline。每一步都描述一次表格转换；只有在通过显示、拉取、转换或写出结果来物化 relation 时，实际工作才会开始执行。
+Vane Data pipeline 是惰性的 relation plan。projection 工作默认先经由 SQL Expression
+执行。Python Expression 是同一个有类型 projection 模型的另一种语法，
+Relation API 则处理专用的表形阶段。顶层输出模型只有 Expression 和 Relation
+两种；SQL 是入口，而不是另一个模型。
 
-借助这种模型，Vane Data 可以组合三类工作：
+执行边界取决于结果的形态，而不是用户使用 SQL 还是 Python。
 
-- 用兼容 DuckDB 的 SQL 表达关系型处理。
-- 用 UDF 表达 Python 处理。
-- 用 AI Function 的 relation 方法表达 AI 处理。
+## Relation 与惰性计划构成执行上下文
 
-## Relation 是 pipeline 的基本单元
-
-relation 表示一个表格形态的计算。你可以用 SQL 构建 relation：
+relation 表示一个表形计算。创建 relation 只会记录工作，不会立即读取所有行，
+也不会立即调用 Python 或 AI worker：
 
 ```python
-rel = con.sql("""
-    select id, text
-    from read_parquet('data/documents/*.parquet')
-    where text is not null
+import vane
+
+con = vane.connect()
+source = con.sql("""
+    SELECT id, text
+    FROM (VALUES
+        (1, '  Hello  '),
+        (2, ' Vane Data ')
+    ) AS t(id, text)
+    WHERE text IS NOT NULL
 """)
 ```
 
-然后添加 Python 或 AI 阶段：
+每个 projection 或表阶段都会返回另一个 relation。因此，惰性计划可以保留 filter、
+源列以及 Python 或 AI 转换，直到 fetch 或 write consumer 将其物化。
+
+## SQL Expression 是默认 projection 路径
+
+Expression API 在 `SELECT` projection 中增加一个有类型的结果列，通常每一输入行
+对应一输出行。SQL 是推荐入口，因为源字段及其派生值可以在同一条关系语句中清楚呈现。
+
+### 已注册的 UDF alias
+
+`vane.attach_function` 为 Python callable 提供 SQL alias。这个 alias 随后是一个
+projection expression，而不是单独的执行模型：
 
 ```python
-features = rel.map_batches(
-    model_batch,
-    schema={"id": "BIGINT", "label": "VARCHAR"},
-    batch_size=64,
+@vane.func(return_dtype="VARCHAR")
+def normalize_text(value):
+    return str(value).strip().lower()
+
+vane.attach_function(
+    normalize_text,
+    alias="normalize_text_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+
+normalized = con.sql("""
+    SELECT
+        id,
+        text,
+        normalize_text_sql(text) AS normalized_text
+    FROM source
+""")
+```
+
+注册把 alias 与其 callable 和类型契约关联起来。在 `SELECT` 中绑定 alias 时，
+Vane 会在惰性计划中记录一个有类型的 projection，并把它下沉到共享的 Expression
+执行路径；组装 query 时不会调用 Python callable。
+
+### SQL AI 函数
+
+SQL `ai_prompt` 和 `ai_embed` 使用同一条 projection 路径：
+
+```python
+ai_enriched = con.sql("""
+    SELECT
+        id,
+        text,
+        ai_prompt(text) AS response,
+        ai_embed(text) AS embedding
+    FROM source
+""")
+```
+
+绑定每个 SQL AI 调用时，都会记录一个有类型、保持行数的 Expression 结果。
+Provider 配置是规划数据；构建 relation 时不会创建实际的 client 或 model。
+注册的 SQL alias 在 v1 中仍然保持行数，SQL AI 调用也遵守同一个保持行数的
+projection 边界。
+
+## Python Expression 是另一种语法
+
+当周围逻辑更适合用 Python 组合时，Python Expression 构建的仍是同一个有类型的
+projection 模型：
+
+```python
+python_enriched = source.select(
+    vane.col("id"),
+    vane.col("text"),
+    normalize_text(vane.col("text")).alias("normalized_text"),
+    vane.ai.prompt(vane.col("text")).alias("response"),
+    vane.ai.embed(vane.col("text")).alias("embedding"),
+)
+```
+
+传入 `vane.col("text")` 这样的 Expression 会构建惰性工作，而不是立即调用被装饰的
+函数。从 SQL 入口切换到这个 Python 入口，不会改变类型、projection、物化或 worker
+语义。
+
+Python batch Expression 只有一个显式例外：`row_preserving=False` 可以改变基数，
+但它必须是唯一的顶层 projection，不能与 passthrough 列或另一个顶层结果并列。
+注册的 SQL alias 不能使用这个例外，在 v1 中仍然保持行数。
+
+## Relation API 执行表形阶段
+
+当一个阶段负责表形时使用 Relation API：它可以返回多列、替换当前表，或改变基数。
+内置分块或分类、结构化或多模态 prompting，以及显式 Relation 执行控制等专用 AI
+工作也属于这个模型。
+
+例如，把一行输入拆成多行输出属于 Relation 操作：
+
+```python
+def split_terms(row):
+    return [
+        {"id": row["id"], "term": term}
+        for term in str(row["text"]).split()
+    ]
+
+terms = source.flat_map(
+    split_terms,
+    schema={"id": "BIGINT", "term": "VARCHAR"},
     execution_backend="subprocess_task",
 )
 ```
 
-每个阶段都会返回另一个 relation，因此 pipeline 仍然可组合。UDF 阶段返回 UDF 产出的列；如果后续阶段需要标识符和元数据，也要一并返回。
+公开的 UDF 方法包括 `rel.map_batches`、`rel.flat_map` 和 `rel.map`；`rel.map`
+是逐行 scalar 操作，不是 pandas batch 转换。专用 AI 方法包括 `rel.prompt`、
+`rel.embed_text` 和 `rel.classify_text`。Relation 阶段返回由该阶段定义的列与行数，
+不会自动保留全部输入列。
 
-## 执行从物化开始
+Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以在 Python
+Relation 调用之前生成输入 relation，也可以在调用之后消费其输出，但表形方法调用
+本身不是 SQL projection。
 
-与执行相比，构建 relation 的成本很低。只有调用消费操作时，工作才会开始，例如：
+## 物化开始执行
+
+relation 的构建与组合始终是惰性的。consumer 请求数据或写出结果时才开始执行，例如：
 
 - `show()`
 - `fetchall()`
 - `to_arrow_table()`
-- `to_record_batch()`
+- `to_arrow_reader()`
 - `write_parquet(...)`
 - `to_table(...)`
 
-这样 Vane Data 可以先把 SQL、Python 和 AI 阶段放在一起，再决定如何执行 pipeline。
+物化时，Vane Data 会运行累积的关系算子，并通过 active runner 调度 Expression 或
+Relation worker 阶段。因此，可以在昂贵的 Python 或 provider 工作开始前检查并缩小
+同一个惰性计划。
 
 ## Arrow batch 连接 SQL 与 Python
 
-`map_batches` 是 relation 执行与 Python 代码之间的主要边界。
+Arrow batch 是 relation 执行与 Python worker 之间的有类型数据边界。已注册的 alias
+和 SQL AI 函数通过共享的 Expression 路径到达这一边界；Python Expression 与
+Relation 方法则直接使用这一边界。
 
-- 输入以 Arrow 数据的形式进入。
-- Python 可调用对象返回 Arrow 数据。
-- 输出 schema 在 relation 边界声明。
-- `batch_size` 控制每次 UDF 调用处理的行数。
+- Expression worker 只生成一个有类型的结果列。通常的保持行数契约让该列可以在同一个
+  projection 中与 passthrough 列对齐。
+- Relation worker 接收表形输入并返回声明的表形。输出可以包含多列，也可以具有不同的
+  行数。
+- Batch 大小只改变调度与内存行为，不会改变操作所属的语义模型。
 
-这样 schema 变更会保持显式，而不是隐藏在 Python 对象内部。
+在这一边界显式保留 schema 与标识符，可以让 SQL 到 Python 的数据移动易于检查，
+也让后续 SQL 阶段能继续消费普通 relation 列。
 
 ## 本地执行
 
-本地执行适合作为以下场景的起点：
+本地执行是开发、调试、单节点预处理，以及在扩展前验证代表性样本的起点。local runner
+把关系工作留在本机，并使用 subprocess worker 执行 Python 工作：
 
-- 开发和调试。
-- 单节点预处理。
-- 小中型数据 pipeline。
-- 在扩展规模之前校验 UDF 正确性。
+- `subprocess_task` 执行无状态函数。
+- `subprocess_actor` 在一个 actor 的多个 batch 间复用 callable class、model 或
+  client。
 
-优先使用本地 UDF backend：
-
-- 对无状态函数使用 `subprocess_task`。
-- 对具有可复用状态的可调用类使用 `subprocess_actor`。
+由 provider 支持的 SQL 与 Python AI Expression 也由 active local runner 解析；
+只有执行真正到达该阶段时，才会在 subprocess actor 中创建 provider。
 
 ## Ray 执行
 
-使用以下方式选择 Ray runner：
+可以用代码选择 Ray runner：
 
 ```python
 import vane
@@ -83,57 +192,91 @@ import vane
 vane.configure(runner="ray")
 ```
 
-或：
+或通过环境变量选择：
 
 ```bash
 export VANE_RUNNER=ray
 ```
 
-Ray 执行适用于：
+Ray 可以分布式执行 scan、write、使用 `ray_task` 的无状态 UDF，以及使用
+`ray_actor` 的 actor-backed 模型工作，也可以在集群中放置 CPU 和 GPU 请求。
+把阶段迁移到 Ray 会改变 placement 与并行度，但不会改变其 Expression 或 Relation
+输出契约。
 
-- 大文件扫描。
-- 分布式写入。
-- 使用 `ray_task` 的分布式无状态 UDF。
-- 使用 `ray_actor` 的有状态模型 worker。
-- 跨 Ray 集群的 CPU 和 GPU 资源放置。
+每个可能执行该阶段的 Ray worker 都必须能够导入相应 Python 模块、访问 storage 与
+provider endpoint，并获取所需凭据或 model artifact。
 
-为了获得可预测结果，请确认每个 Ray worker 都能导入相同的 Python 模块、访问相同的存储系统，并看到 UDF 所需的凭证或模型文件。
+## Task、Actor 与 AI worker 调度
 
-## UDF 调度
+根据 callable 生命周期和资源需求选择 task 或 actor 执行：
 
-根据可调用对象形态和资源模式选择 backend：
-
-| 工作负载 | 可调用对象形态 | Backend |
+| 工作负载 | Callable 或 worker 形态 | Backend |
 | --- | --- | --- |
 | 简单的本地 batch 转换 | Python 函数 | `subprocess_task` |
-| 本地模型或客户端复用 | 可调用类 | `subprocess_actor` |
+| 本地 model 或 client 复用 | Callable class | `subprocess_actor` |
 | 分布式无状态转换 | Python 函数 | `ray_task` |
-| 分布式模型复用或 GPU 推理 | 可调用类 | `ray_actor` |
+| 分布式 model 复用或 GPU 推理 | Callable class | `ray_actor` |
 
-对不需要长期状态的函数使用 task backend。当初始化成本较高，且应在每个 worker 或 actor 上只发生一次时，使用 actor backend。
+不依赖长生命周期 instance 的无状态工作适合 task。初始化昂贵、需要跨 batch 复用资源的
+工作适合 actor。Actor 复用是一种生命周期与吞吐量工具，不是持久或共享状态。
 
-## 流式阶段与阻塞阶段
+AI plan 会让轻量的 provider descriptor 跨越计划边界。worker 会延迟创建实际的
+client 或 model，并在所属 actor 内复用。Provider `concurrency` 控制 provider
+actor，Relation `actor_number` 控制 Relation actor pool；精确默认值与限制请查阅
+[AI Function API 参考](/zh-CN/docs/data/reference/ai-api)和
+[UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
 
-许多 relation 阶段可以让 batch 流式穿过 pipeline。有些阶段则需要先收集或协调数据，才能产生输出。
+有状态的 `vane.cls` Expression 工作在 v1 中采用更窄的契约：它只使用一个 actor，
+可变状态仅限 query scope、actor 内局部且临时。
 
-常见的阻塞或部分阻塞阶段包括：
+## 流式、阻塞与背压
 
-- 全局聚合。
-- 需要数据交换的 join。
-- 排序和 shuffle。
-- 写入。
-- 引入执行边界的 UDF 阶段。
+许多 scan、projection 与 Relation 阶段都可以在 Arrow batch 就绪时继续向下游传递。
+另一些阶段必须先收集或协调数据才能输出。常见的阻塞或部分阻塞工作包括全局聚合、
+需要大量 exchange 的 join、sort 与 shuffle、write，以及主动设置的 UDF 流式边界。
 
-做性能调优时，把过滤和列投影放在昂贵的 UDF 与模型调用之前。这样可以减少进入 Python 的数据；在 Ray 模式下，也会减少集群内的数据移动。
+背压（backpressure）会限制已准入或正在处理的 batch，以及已经就绪的输出量。当下游
+较慢时，这些限制会让上游等待，避免排队的行或对象无限增长。因此，需要一起调优
+concurrency、batch 大小与背压；单纯增加 worker 数量无法消除阻塞边界。
+
+把 filter 与列 projection 放在昂贵的 UDF 和 model 调用之前。这样可以减少跨入
+Python 的 Arrow 数据；在 Ray 模式下，也能减少集群数据移动。操作流程请参阅
+[性能调优](/zh-CN/docs/data/guides/performance-tuning)，精确控制项请查阅 UDF 参考。
+
+## 失败边界与外部副作用
+
+worker 丢失或 callable 报错可能让 query 失败，retry 路径也可能再次执行调用。
+`vane.cls` 的 query-scoped 状态不会 checkpoint；失去它的单个 actor 会使 query
+失败，而不是用空状态重新创建替代 actor。分布式执行也不为依赖状态的逻辑提供稳定的
+全局行顺序。
+
+Provider request 与其他 UDF 外部副作用位于 SQL transaction 边界之外，也不提供
+exactly-once。rollback 无法撤销已完成的 request 或 write，retry 也可能重复执行。
+请让稳定标识符随 projection 传递、保留可审查的结果，并在重复执行会造成影响时，让
+外部写入保持幂等。Provider client 在 worker 上创建，因此凭据应放在 worker 环境中，
+而不是惰性计划里。
+
+完整的状态、retry、凭据与副作用契约请阅读 [UDF 概念](/zh-CN/docs/data/concepts/udfs)、
+[AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)及其 API 参考。
 
 ## 操作检查清单
 
-将 pipeline 从本地执行迁移到 Ray 之前：
+- 当每一输入行旁需要一个有类型的结果时，先使用 SQL Expression。只有当 Python 组合
+  更清楚且仍符合相同 projection 契约时，才使用 Python Expression；表形或专用工作
+  则使用 Relation API。
+- 先在本地物化有代表性的样本，并在扩展前校验输出类型、保留的标识符和行数。
+- 在 Python 或 provider 阶段前完成 filter，并去掉不需要的列。
+- 显式声明 Expression 结果类型与 Relation 输出 schema。
+- 结合内存、延迟、流式行为与背压调优 batch 大小。
+- 无状态工作使用 task backend；只有当复用或资源放置有价值时才使用 actor backend。
+- 只有当分布式执行、actor pool、GPU 或集群 placement 能改善工作负载时，才迁移到
+  Ray。
+- 确认每个 worker 都能访问 storage、dependency、凭据与 model artifact。
+- 每次改变执行方式后，度量吞吐量、内存、retry、外部 request 数量与输出行数。
 
-1. 在有代表性的样本上本地运行 pipeline。
-2. 显式声明 UDF 输出 schema。
-3. 先在本地调优 `batch_size`。
-4. 只有当分布式执行确实有帮助时，才把无状态函数迁移到 `ray_task`。
-5. 只有当需要 actor 复用、GPU 或集群资源放置时，才把有状态模型类迁移到 `ray_actor`。
-6. 确认存储、凭证、Python 依赖和模型文件对每个 Ray worker 都可见。
-7. 度量吞吐量、内存使用、重试次数和输出行数。
+## 相关文档
+
+完整任务请阅读[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)与
+[AI Function 指南](/zh-CN/docs/data/guides/ai-functions)。精确签名、参数与限制请查阅
+[UDF API 参考](/zh-CN/docs/data/reference/udf-api)和
+[AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。
