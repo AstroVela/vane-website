@@ -18,6 +18,7 @@ headerless `CodeWindow`; remove the complete `afterCode` panel and all panel-onl
 ### Task F1: Lock the code-only contract
 
 **Files:**
+
 - Modify: `scripts/home-content-check.mjs`
 
 - [ ] Assert that the extracted `HERO_PIPELINE_CODE` equals the complete pre-revision string.
@@ -28,6 +29,7 @@ headerless `CodeWindow`; remove the complete `afterCode` panel and all panel-onl
 ### Task F2: Remove the execution panel structurally
 
 **Files:**
+
 - Modify: `src/components/HomeHeroExecution.tsx`
 - Modify: `src/index.css`
 
@@ -40,6 +42,7 @@ headerless `CodeWindow`; remove the complete `afterCode` panel and all panel-onl
 ### Task F3: Verify and preserve acceptance service
 
 **Files:**
+
 - Test: `scripts/home-content-check.mjs`
 
 - [ ] Run `npm run lint`, `npm run build`, and `git diff --check`.
@@ -56,6 +59,7 @@ retain their existing chrome and copy behavior.
 ### Task A: Lock the compact Hero structure
 
 **Files:**
+
 - Modify: `scripts/home-content-check.mjs`
 
 - [ ] Add assertions for `showHeader?: boolean`, `showHeader = true`, and the Hero's
@@ -69,6 +73,7 @@ retain their existing chrome and copy behavior.
 ### Task B: Implement the structural removals
 
 **Files:**
+
 - Modify: `src/components/CodeWindow.tsx`
 - Modify: `src/components/HomeHeroExecution.tsx`
 - Modify: `src/index.css`
@@ -85,6 +90,7 @@ retain their existing chrome and copy behavior.
 ### Task C: Verify and preserve the acceptance service
 
 **Files:**
+
 - Test: `scripts/home-content-check.mjs`
 
 - [ ] Run `npm run lint` and `npm run build`; verify both locales compile.
@@ -103,6 +109,7 @@ retain their existing chrome and copy behavior.
 ### Task 1: Add backward-compatible CodeWindow composition slots
 
 **Files:**
+
 - Modify: `scripts/home-content-check.mjs:1-13`
 - Modify: `src/components/CodeWindow.tsx:1-104`
 
@@ -198,6 +205,7 @@ git commit -m "feat: add code window composition slots"
 ### Task 2: Replace the generic Hero example with the multimodal execution component
 
 **Files:**
+
 - Create: `src/components/HomeHeroExecution.tsx`
 - Modify: `scripts/home-content-check.mjs:1-25`
 - Modify: `src/pages/Home.tsx:1-31,126-229`
@@ -373,9 +381,9 @@ In `src/pages/Home.tsx`:
 import HomeHeroExecution from '../components/HomeHeroExecution'
 ```
 
-2. Delete the entire `HERO_CODE` constant.
-3. Delete `heroCodeLocal` and `heroCodeRay` from both locale objects.
-4. Replace the existing Hero code window and note with:
+1. Delete the entire `HERO_CODE` constant.
+2. Delete `heroCodeLocal` and `heroCodeRay` from both locale objects.
+3. Replace the existing Hero code window and note with:
 
 ```tsx
           <div className="home-hero-code">
@@ -404,6 +412,7 @@ git commit -m "feat: show multimodal execution in homepage hero"
 ### Task 3: Style the execution topology, overlap animation, and responsive fallback
 
 **Files:**
+
 - Modify: `scripts/home-content-check.mjs:1-40`
 - Modify: `src/index.css:293-347,3065-3125`
 
@@ -711,6 +720,7 @@ git commit -m "feat: animate homepage execution model"
 ### Task 4: Verify production behavior and leave the acceptance server running
 
 **Files:**
+
 - Modify only if verification reveals a concrete defect in the files from Tasks 1-3.
 - Temporary screenshots: `/tmp/vane-home-hero-en-desktop.png`, `/tmp/vane-home-hero-zh-mobile.png`.
 
