@@ -1,5 +1,19 @@
 # 首页 Hero 多模态执行透视窗设计
 
+## 最终验收修订：只保留代码
+
+本节覆盖下文所有关于 Hero 执行说明和执行图的设计。最终首页 Hero 右侧只显示当前
+Python 示例本身：终端标题栏继续关闭，`HERO_PIPELINE_CODE` 的内容逐字保持不变。
+
+以下内容及其整个下方面板从 DOM 中删除：价值句、INPUT/IMG/VID/AUD、ONE RELATION、
+S3 SCAN、CPU DECODE、GPU INFER、PARQUET WRITE、连线、actor 指示和执行面板背景。
+`HomeHeroExecution` 不再传入 `afterCode`，不保留隐藏节点；只服务于该面板的 React
+常量、辅助组件、本地化逻辑、CSS、关键帧和响应式规则一并删除。
+
+共享 `CodeWindow` 的 `showHeader` 与 `afterCode` API 保持不变，避免影响其他消费者。
+最终验收要求：Hero 内只有无标题栏的 Python 代码卡片，代码文本与本次修订前完全一致，
+英文和中文路由均不渲染 `.home-hero-execution` 或任何 `.home-execution-*` 节点。
+
 ## 背景
 
 首页 Hero 右侧目前展示一条 `Parquet → ai_embed → Parquet` 的文本 embedding

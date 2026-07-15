@@ -10,6 +10,43 @@
 
 ---
 
+## Final acceptance revision: code-only Hero card
+
+This section supersedes the earlier execution-panel tasks. Keep the exact Python string and the
+headerless `CodeWindow`; remove the complete `afterCode` panel and all panel-only implementation.
+
+### Task F1: Lock the code-only contract
+
+**Files:**
+- Modify: `scripts/home-content-check.mjs`
+
+- [ ] Assert that the extracted `HERO_PIPELINE_CODE` equals the complete pre-revision string.
+- [ ] Add negative assertions for `afterCode`, `home-hero-execution`, every `home-execution-*`
+  selector, `homeExecution` keyframes, panel labels, ReactNode, and locale helpers.
+- [ ] Run `npm run home:content:check`; expect failure on the still-present `afterCode` panel.
+
+### Task F2: Remove the execution panel structurally
+
+**Files:**
+- Modify: `src/components/HomeHeroExecution.tsx`
+- Modify: `src/index.css`
+
+- [ ] Reduce `HomeHeroExecution` to the unchanged `HERO_PIPELINE_CODE` plus a headerless
+  `CodeWindow`; delete panel constants, helper components, localization, and `afterCode`.
+- [ ] Delete `.home-hero-execution`, every `.home-execution-*` rule, all `homeExecution*`
+  keyframes, and their responsive/reduced-motion overrides.
+- [ ] Run `npm run home:content:check` and `npm run typecheck`; expect both to pass.
+
+### Task F3: Verify and preserve acceptance service
+
+**Files:**
+- Test: `scripts/home-content-check.mjs`
+
+- [ ] Run `npm run lint`, `npm run build`, and `git diff --check`.
+- [ ] In both locales, verify the Hero has one code `<pre>`, no `.term-bar`, no `afterCode` panel,
+  no page overflow, and exactly the expected Python text.
+- [ ] Commit the revision and keep the existing port `4328` development service running.
+
 ## Acceptance revision: reduce the execution window height
 
 The accepted follow-up removes the homepage-only terminal header, the execution eyebrow, and the
