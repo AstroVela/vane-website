@@ -18,7 +18,6 @@ dist-ssr
 
 # Local agent configuration
 .claude/
-docs/superpowers/
 
 # Editor directories and files
 .vscode/*
