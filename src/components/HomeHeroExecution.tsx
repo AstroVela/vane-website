@@ -58,14 +58,12 @@ export default function HomeHeroExecution() {
   const copy = pickLocale(
     locale,
     {
-      eyebrow: 'Execution model',
       value: 'One relation. Overlapped multimodal decode, GPU inference, and I/O.',
-      aria: 'Images, video, and audio flow through one relation. S3 scan, CPU decode, four reusable GPU actors, and Parquet write overlap through streaming, backpressure, and dynamic batching.',
+      aria: 'Images, video, and audio flow through one relation. S3 scan, CPU decode, four reusable GPU actors, and Parquet write overlap as one execution graph.',
     },
     {
-      eyebrow: '执行模型',
       value: '一条 Relation，让多模态解码、GPU 推理与 I/O 重叠执行。',
-      aria: '图像、视频和音频记录进入同一条 Relation。S3 扫描、CPU 解码、四个可复用 GPU actor 和 Parquet 写入通过 streaming、backpressure 与 dynamic batching 重叠执行。',
+      aria: '图像、视频和音频记录进入同一条 Relation。S3 扫描、CPU 解码、四个可复用 GPU actor 和 Parquet 写入作为一张执行图重叠执行。',
     },
   )
 
@@ -74,11 +72,10 @@ export default function HomeHeroExecution() {
       filename="multimodal_features.py"
       language="python"
       code={HERO_PIPELINE_CODE}
-      headerMeta="RAY · 4 GPU ACTORS"
+      showHeader={false}
       afterCode={(
         <section className="home-hero-execution" aria-label={copy.aria}>
           <div className="home-execution-head" aria-hidden="true">
-            <span>{copy.eyebrow}</span>
             <p>{copy.value}</p>
           </div>
 
@@ -100,12 +97,6 @@ export default function HomeHeroExecution() {
             </Stage>
             <Connector className="infer-write" />
             <Stage className="write" label="PARQUET" detail="WRITE" />
-          </div>
-
-          <div className="home-execution-capabilities" aria-hidden="true">
-            <span>STREAMING</span>
-            <span>BACKPRESSURE</span>
-            <span>DYNAMIC BATCHING</span>
           </div>
         </section>
       )}
