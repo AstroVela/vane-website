@@ -7,9 +7,9 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
-  "sidebar.dataSidebar.category.Quickstart": {
+  "sidebar.dataSidebar.category.Getting Started": {
     "message": "快速开始",
-    "description": "The label for category Quickstart in sidebar dataSidebar"
+    "description": "The label for category Getting Started in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Concepts": {
     "message": "核心概念",

@@ -1,63 +1,15 @@
 ---
-title: Vane Data Docs
+title: Overview
 ---
 
-Vane Data helps teams build pipelines for multimodal data preparation, AI-ready datasets, and batch inference with DuckDB-compatible SQL, Python/Arrow UDFs, Ray-backed execution, and AI helper functions.
+Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
 
-Use it when documents, images, audio, video, text records, or model outputs need SQL filtering plus Python libraries, embeddings, prompting, model inference, GPU execution, or distributed reprocessing before they move to training, search, analytics, or downstream applications.
+<DataArchitecture />
 
-SQL is a first-class interface through `con.sql(...)` and `con.execute(...)`; Python is available through UDFs and AI helpers when the pipeline needs custom logic.
+## Key features
 
-Install `vane-ai` and import `vane`.
-
-Vane Data is a data processing layer for AI and multimodal workflows, not a model server, vector database, workflow scheduler, transactional database, or traditional structured ETL replacement.
-
-## Choose a starting point
-
-### A. Multimodal and AI performance workflows
-
-For pipelines where media processing, Python code, model inference, GPU work, provider-backed AI calls, or historical reprocessing dominate cost and runtime.
-
-1. [Quickstart](/docs/data/quickstart/quickstart)
-2. [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
-3. [AI Functions](/docs/data/guides/ai-functions)
-4. [Embeddings at Scale](/docs/data/guides/embeddings-at-scale)
-5. [GPU Inference](/docs/data/guides/gpu-inference)
-6. [Performance Tuning](/docs/data/guides/performance-tuning)
-
-### B. Table-shaped workflow setup
-
-For early runs that need source loading, SQL filtering, structured metadata handling, and validation before Python, AI, or GPU stages.
-
-1. [Quickstart](/docs/data/quickstart/quickstart)
-2. [Structured Data Load](/docs/data/guides/structured-data-load)
-3. [Structured Transformation](/docs/data/guides/structured-transformation)
-4. [SQL vs Python](/docs/data/concepts/sql-vs-python)
-5. [Single-node deployment](/docs/data/deploy/single-node)
-
-### Advanced: distributed execution
-
-For workloads where data size, scan parallelism, GPU placement, or multi-node execution becomes the main design question.
-
-1. [Architecture](/docs/data/concepts/architecture)
-2. [Execution model](/docs/data/concepts/execution-model)
-3. [Ray cluster](/docs/data/deploy/ray-cluster)
-4. [Sizing](/docs/data/deploy/sizing)
-
-### API reference
-
-For exact signatures, supported combinations, and execution boundaries:
-
-1. [UDF API Reference](/docs/data/reference/udf-api)
-2. [AI Function API Reference](/docs/data/reference/ai-api)
-
-## Documentation map
-
-- Getting started: [What is Vane Data?](/docs/data/quickstart/what-is-vane-data), [Installation](/docs/data/quickstart/installation), [Quickstart](/docs/data/quickstart/quickstart)
-- Concepts: [Architecture](/docs/data/concepts/architecture), [Execution model](/docs/data/concepts/execution-model), [SQL vs Python](/docs/data/concepts/sql-vs-python), [UDFs](/docs/data/concepts/udfs), [AI functions](/docs/data/concepts/ai-functions)
-- Task guides: [Multimodal ingest](/docs/data/guides/multimodal-ingest), [Structured data load](/docs/data/guides/structured-data-load), [Custom Python UDFs](/docs/data/guides/custom-python-udfs), [Multimodal pipeline](/docs/data/guides/multimodal-pipeline), [Structured transformation](/docs/data/guides/structured-transformation), [AI Functions](/docs/data/guides/ai-functions), [GPU inference](/docs/data/guides/gpu-inference), [Embeddings at scale](/docs/data/guides/embeddings-at-scale), [Performance tuning](/docs/data/guides/performance-tuning)
-- API reference: [UDF API Reference](/docs/data/reference/udf-api), [AI Function API Reference](/docs/data/reference/ai-api)
-- Examples: [Examples index](/docs/data/examples), [Training data pipeline](/docs/data/examples/training-data-pipeline), [Insurance document audit](/docs/data/examples/insurance-document-audit), [Tender compliance check](/docs/data/examples/tender-compliance-check), [Multimodal data lake](/docs/data/examples/multimodal-data-lake)
-- Deploy: [Single node](/docs/data/deploy/single-node), [Ray cluster](/docs/data/deploy/ray-cluster), [Sizing](/docs/data/deploy/sizing)
-- Contributing: [Development](/docs/data/contributing/development)
-- Machine-readable entries: `docs/llms.txt`, `docs/llms-full.txt`
+- **Multimodal-native processing** — Process images, video, audio, text, documents, events, sensor data, and tables through a unified type system. Dynamic batching and backpressure control handle variations in data size and computational cost.
+- **Python and SQL interfaces** — Build data and AI pipelines with DuckDB SQL or the Python Relation API.
+- **Built-in AI operations** — Invoke LLMs, generate embeddings, and run batch inference through OpenAI and Anthropic APIs or native vLLM integration. Prefix-aware bucketing improves vLLM prefix-cache hit rates and inference throughput.
+- **Heterogeneous execution** — Overlap CPU, GPU, I/O, and model inference workloads through asynchronous scheduling.
+- **Local-to-cloud execution** — Run the same pipeline locally or across distributed Ray clusters, with a foundation for future edge-cloud coordination.

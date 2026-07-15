@@ -300,7 +300,7 @@ export default function EnterpriseAgentUseCase() {
       ogTitle: 'Turn messy multimodal business materials into auditable facts.',
       ogDescription: 'Keep source rows, rules, model output, and source references together for enterprise review workflows.',
       eyebrow: 'Enterprise Multimodal Data Infrastructure',
-      heading: 'Turn messy multimodal business materials into auditable facts.',
+      heading: 'Transform messy multimodal business data into trusted, auditable insights.',
       lead: 'Bring parsed document rows, media references, tables, logs, and model outputs into one pipeline. Use SQL for deterministic checks, explicit UDF stages for extraction, and model-assisted review where it belongs.',
       runPipeline: 'Run the pipeline',
       requestDemo: 'Request a demo',
@@ -309,9 +309,9 @@ export default function EnterpriseAgentUseCase() {
       problemTitle: "The hard part isn't calling a model — it's rebuilding the evidence chain.",
       problemLead: 'Today that chain is stitched across OCR scripts, temp files, model calls, SQL jobs, and review tools.',
       how: 'How Vane Works',
-      howTitle: 'source rows → auditable outputs, as one relation pipeline.',
+      howTitle: 'From source records to auditable insights — in one unified data pipeline.',
       example: 'Real Example',
-      exampleTitle: 'Insurance document audit pattern',
+      exampleTitle: 'Insurance document audit workflow',
       exampleLead: 'Register a Python policy rule once, then call it beside ai_prompt in SQL. Business IDs and source references stay on every audit row.',
       ctaTitle: 'Have document rows, media references, logs, or model outputs to turn into auditable facts?',
     },
@@ -321,7 +321,7 @@ export default function EnterpriseAgentUseCase() {
       ogTitle: '把分散的业务材料整理成可复核的证据链',
       ogDescription: '为企业审查工作流把 source rows、规则、模型输出和 source references 放在一起。',
       eyebrow: '企业多模态Agent',
-      heading: '从繁杂的多模态文件到Agent的业务决策',
+      heading: '将混杂的多模态业务数据转化为可信、可审计的洞察',
       lead: '一个SQL流水线统筹文档、图片、视频、表格、日志处理和模型推理，Agent决策可信可追溯',
       runPipeline: '运行示例',
       requestDemo: '申请演示',
@@ -330,9 +330,9 @@ export default function EnterpriseAgentUseCase() {
       problemTitle: '为Agent构建从多模态文件到可信决策和可追溯的证据链',
       problemLead: '如今这条链通常被拼接在 OCR 脚本、临时文件、模型调用、SQL 任务和审查工具之间。',
       how: 'Vane 如何工作',
-      howTitle: '以一条关系语义的SQL流水线，从多模数据变成可信决策',
+      howTitle: '从源记录到可审计洞察，统一在一条数据流水线中完成',
       example: '真实示例',
-      exampleTitle: '保险审核流水线',
+      exampleTitle: '保险文档审计工作流',
       exampleLead: 'Python 规则注册一次后即可在 SQL 中与 ai_prompt 并排调用；业务 ID 和来源引用始终保留在每条审核结果中。',
       ctaTitle: '有文档、视频、图片、日志等多模数据需要转变为Agent可信决策吗？',
     },
@@ -406,7 +406,7 @@ export default function EnterpriseAgentUseCase() {
 
       <Divider />
 
-      {/* REAL EXAMPLE */}
+      {/* REAL USE CASE */}
       <section className="section enterprise-section">
         <div className="wrap">
           <div className="shead">

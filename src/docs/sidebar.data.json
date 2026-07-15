@@ -1,9 +1,8 @@
 [
   { "slug": "index", "label": "Overview" },
   {
-    "group": "Quickstart",
+    "group": "Getting Started",
     "items": [
-      { "slug": "quickstart/what-is-vane-data" },
       { "slug": "quickstart/installation" },
       { "slug": "quickstart/quickstart" }
     ]
@@ -11,8 +10,6 @@
   {
     "group": "Concepts",
     "items": [
-      { "slug": "concepts/architecture" },
-      { "slug": "concepts/execution-model" },
       { "slug": "concepts/sql-vs-python" },
       { "slug": "concepts/udfs" },
       { "slug": "concepts/ai-functions" }

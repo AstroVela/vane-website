@@ -9,20 +9,11 @@
   "pages": [
     {
       "slug": "index",
-      "title": "Vane Data Docs",
+      "title": "Overview",
       "source": "docs/data/index.mdx",
       "route": "/docs/data",
       "frontmatter": {
-        "title": "Vane Data Docs"
-      }
-    },
-    {
-      "slug": "quickstart/what-is-vane-data",
-      "title": "What Is Vane Data?",
-      "source": "docs/data/quickstart/what-is-vane-data.mdx",
-      "route": "/docs/data/quickstart/what-is-vane-data",
-      "frontmatter": {
-        "title": "What Is Vane Data?"
+        "title": "Overview"
       }
     },
     {
@@ -42,24 +33,6 @@
       "frontmatter": {
         "title": "Quickstart",
         "slug": "/quickstart/quickstart"
-      }
-    },
-    {
-      "slug": "concepts/architecture",
-      "title": "Architecture",
-      "source": "docs/data/concepts/architecture.mdx",
-      "route": "/docs/data/concepts/architecture",
-      "frontmatter": {
-        "title": "Architecture"
-      }
-    },
-    {
-      "slug": "concepts/execution-model",
-      "title": "Execution Model",
-      "source": "docs/data/concepts/execution-model.mdx",
-      "route": "/docs/data/concepts/execution-model",
-      "frontmatter": {
-        "title": "Execution Model"
       }
     },
     {
@@ -277,13 +250,8 @@
       "route": "/docs/data"
     },
     {
-      "group": "Quickstart",
+      "group": "Getting Started",
       "items": [
-        {
-          "slug": "quickstart/what-is-vane-data",
-          "label": "What Is Vane Data?",
-          "route": "/docs/data/quickstart/what-is-vane-data"
-        },
         {
           "slug": "quickstart/installation",
           "label": "Installation",
@@ -299,16 +267,6 @@
     {
       "group": "Concepts",
       "items": [
-        {
-          "slug": "concepts/architecture",
-          "label": "Architecture",
-          "route": "/docs/data/concepts/architecture"
-        },
-        {
-          "slug": "concepts/execution-model",
-          "label": "Execution Model",
-          "route": "/docs/data/concepts/execution-model"
-        },
         {
           "slug": "concepts/sql-vs-python",
           "label": "SQL vs Python",

@@ -893,4 +893,4 @@ result = mapped.project("id, value AS next_id")
 | GPU resources | On Ray, `gpus` becomes a task or actor resource request. A local subprocess does not reserve or isolate a GPU; it inherits process-visible devices and warns for non-zero requests. |
 | Concurrency names | Relation actor pools use `actor_number`. AI provider `concurrency` is a separate option that maps to provider actors; it is not a `rel.map_batches` argument. |
 
-For complete setup, validation, and output workflows, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs). For the reasons behind placement, cardinality, state, and failure rules, use [UDF Concepts](/docs/data/concepts/udfs) and the [Execution Model](/docs/data/concepts/execution-model).
+For complete setup, validation, and output workflows, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs). For the reasons behind placement, cardinality, state, and failure rules, use [UDF Concepts](/docs/data/concepts/udfs).

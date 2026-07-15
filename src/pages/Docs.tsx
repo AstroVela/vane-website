@@ -15,7 +15,7 @@ import {
 import {resolveLegacyDocSlug} from '../docs/legacySlugs'
 
 function dataDocPath(slug?: string) {
-  return slug ? `/docs/data/${slug}` : '/docs/data'
+  return slug && slug !== 'index' ? `/docs/data/${slug}` : '/docs/data'
 }
 
 function parseDocsPath(path: string): {product: ProductId; slug?: string} {

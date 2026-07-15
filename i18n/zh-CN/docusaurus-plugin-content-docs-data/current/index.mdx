@@ -1,63 +1,15 @@
 ---
-title: Vane Data 文档
+title: 概览
 ---
 
-Vane Data 帮助团队构建面向多模态数据准备、适合 AI 的数据集和 batch 推理的处理 pipeline。它提供兼容 DuckDB 的 SQL、Python/Arrow UDF、基于 Ray 的分布式执行，以及面向 AI 工作负载的辅助函数。
+Vane Data 是面向 AI 工作负载的高性能、多模态原生数据引擎。它基于 DuckDB 分支构建，在核心执行引擎之上扩展原生多模态处理能力，并提供统一的本地与分布式执行框架。
 
-当文档、图像、音频、视频、文本记录或模型输出在进入训练、搜索、分析或下游应用之前，需要 SQL 过滤、Python 库处理、embedding 生成、提示词调用、模型推理、GPU 工作或分布式重处理时，可以使用 Vane Data。
+<DataArchitecture />
 
-SQL 通过 `con.sql(...)` 和 `con.execute(...)` 作为一等接口提供；当 pipeline 需要自定义逻辑时，可以通过 UDF 和 AI 辅助函数接入 Python。
+## 核心能力
 
-安装 `vane-ai` 并导入 `vane`。
-
-Vane Data 是面向 AI 和多模态 workflow 的数据处理层，不是模型服务器、向量数据库、workflow 调度器、事务数据库，也不是传统结构化 ETL 的替代品。
-
-## 选择起点
-
-### A. 多模态与 AI 性能 workflow
-
-适用于媒体处理、Python 代码、模型推理、GPU 工作、托管 AI 调用或历史数据重处理占据主要成本和运行时间的 pipeline。
-
-1. [快速开始](/zh-CN/docs/data/quickstart/quickstart)
-2. [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)
-3. [AI 函数](/zh-CN/docs/data/guides/ai-functions)
-4. [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)
-5. [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)
-6. [性能调优](/zh-CN/docs/data/guides/performance-tuning)
-
-### B. 表格形态的 workflow 准备
-
-适用于早期运行阶段：在进入 Python、AI 或 GPU 阶段之前，需要完成源数据加载、SQL 过滤、结构化元数据处理和校验。
-
-1. [快速开始](/zh-CN/docs/data/quickstart/quickstart)
-2. [结构化数据加载](/zh-CN/docs/data/guides/structured-data-load)
-3. [结构化转换](/zh-CN/docs/data/guides/structured-transformation)
-4. [SQL 与 Python](/zh-CN/docs/data/concepts/sql-vs-python)
-5. [单节点部署](/zh-CN/docs/data/deploy/single-node)
-
-### 进阶：分布式执行
-
-适用于数据规模、扫描并行度、GPU 放置或多节点执行成为主要设计问题的工作负载。
-
-1. [架构](/zh-CN/docs/data/concepts/architecture)
-2. [执行模型](/zh-CN/docs/data/concepts/execution-model)
-3. [Ray 集群](/zh-CN/docs/data/deploy/ray-cluster)
-4. [容量规划](/zh-CN/docs/data/deploy/sizing)
-
-### API 参考
-
-查看精确签名、支持组合和执行边界：
-
-1. [UDF API 参考](/zh-CN/docs/data/reference/udf-api)
-2. [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)
-
-## 文档地图
-
-- 快速开始：[什么是 Vane Data？](/zh-CN/docs/data/quickstart/what-is-vane-data)、[安装](/zh-CN/docs/data/quickstart/installation)、[快速开始](/zh-CN/docs/data/quickstart/quickstart)
-- 核心概念：[架构](/zh-CN/docs/data/concepts/architecture)、[执行模型](/zh-CN/docs/data/concepts/execution-model)、[SQL 与 Python](/zh-CN/docs/data/concepts/sql-vs-python)、[UDF](/zh-CN/docs/data/concepts/udfs)、[AI 函数](/zh-CN/docs/data/concepts/ai-functions)
-- 任务指南：[多模态数据加载](/zh-CN/docs/data/guides/multimodal-ingest)、[结构化数据加载](/zh-CN/docs/data/guides/structured-data-load)、[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)、[多模态 pipeline](/zh-CN/docs/data/guides/multimodal-pipeline)、[结构化转换](/zh-CN/docs/data/guides/structured-transformation)、[AI 函数](/zh-CN/docs/data/guides/ai-functions)、[GPU 推理](/zh-CN/docs/data/guides/gpu-inference)、[大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)、[性能调优](/zh-CN/docs/data/guides/performance-tuning)
-- API 参考：[UDF API 参考](/zh-CN/docs/data/reference/udf-api)、[AI Function API 参考](/zh-CN/docs/data/reference/ai-api)
-- 示例：[示例索引](/zh-CN/docs/data/examples)、[训练数据 pipeline](/zh-CN/docs/data/examples/training-data-pipeline)、[保险文档审计](/zh-CN/docs/data/examples/insurance-document-audit)、[招标合规检查](/zh-CN/docs/data/examples/tender-compliance-check)、[多模态数据湖](/zh-CN/docs/data/examples/multimodal-data-lake)
-- 部署：[单节点](/zh-CN/docs/data/deploy/single-node)、[Ray 集群](/zh-CN/docs/data/deploy/ray-cluster)、[规格估算](/zh-CN/docs/data/deploy/sizing)
-- 贡献：[开发](/zh-CN/docs/data/contributing/development)
-- 机器可读入口：`docs/llms.txt`、`docs/llms-full.txt`
+- **多模态原生处理** — 通过统一类型系统处理图像、视频、音频、文本、文档、事件、传感器数据和表格。动态批处理与背压控制可适应数据规模和计算开销的波动。
+- **Python 与 SQL 接口** — 使用 DuckDB SQL 或 Python Relation API 构建数据与 AI 流水线。
+- **内置 AI 算子** — 通过 OpenAI 和 Anthropic API 或原生 vLLM 集成调用 LLM、生成 embedding 并执行批量推理。基于前缀感知的分桶可提升 vLLM 前缀缓存命中率与推理吞吐。
+- **异构执行** — 通过异步调度重叠 CPU、GPU、I/O 与模型推理工作负载。
+- **本地到云端的一致执行** — 同一条流水线既可在本地运行，也可扩展到分布式 Ray 集群，并为后续云边协同提供基础。
