@@ -13,8 +13,8 @@ assets = con.sql("""
 """)
 
 features = assets.map_batches(
-    DecodeAndInfer,        # model loaded once per actor
-    schema=feature_schema,
+    DecodeAndInfer,  # user UDF; 1 model load/actor
+    schema=feature_schema,  # explicit user schema
     gpus=1,
     actor_number=4,
 )

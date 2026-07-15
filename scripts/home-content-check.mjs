@@ -11,6 +11,13 @@ const styles = readFileSync('src/index.css', 'utf8')
 assert.ok(existsSync(heroExecutionPath), 'HomeHeroExecution component should exist')
 
 const heroExecution = readFileSync(heroExecutionPath, 'utf8')
+const heroPipelineCode = heroExecution.match(/const HERO_PIPELINE_CODE = `([\s\S]*?)`/)?.[1]
+
+assert.ok(heroPipelineCode, 'Hero pipeline code should be extractable')
+assert.ok(
+  heroPipelineCode.split('\n').every((line) => line.length <= 52),
+  'Hero pipeline code should fit the code window without horizontal scrolling',
+)
 
 assert.match(codeWindow, /headerMeta\?: ReactNode/)
 assert.match(codeWindow, /afterCode\?: ReactNode/)
@@ -29,7 +36,9 @@ assert.match(heroExecution, /actor_number=4/)
 assert.match(heroExecution, /write_parquet/)
 assert.match(heroExecution, /'image', 'video', 'audio'/)
 assert.match(heroExecution, /DecodeAndInfer/)
-assert.match(heroExecution, /model loaded once per actor/)
+assert.match(heroExecution, /user UDF/)
+assert.match(heroExecution, /1 model load\/actor/)
+assert.match(heroExecution, /explicit user schema/)
 assert.match(heroExecution, /STREAMING/)
 assert.match(heroExecution, /BACKPRESSURE/)
 assert.match(heroExecution, /DYNAMIC BATCHING/)
