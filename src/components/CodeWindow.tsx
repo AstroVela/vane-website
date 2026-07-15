@@ -1,4 +1,4 @@
-import type {CSSProperties} from 'react'
+import type {CSSProperties, ReactNode} from 'react'
 import { useRef, useState } from 'react'
 import { Highlight } from 'prism-react-renderer'
 import { vaneCodeTheme } from './codeTheme'
@@ -21,6 +21,8 @@ type CodeWindowProps = {
   style?: CSSProperties
   copyable?: boolean
   language?: string
+  headerMeta?: ReactNode
+  afterCode?: ReactNode
 }
 
 export default function CodeWindow({
@@ -30,6 +32,8 @@ export default function CodeWindow({
   style,
   copyable = true,
   language,
+  headerMeta,
+  afterCode,
 }: CodeWindowProps) {
   const locale = useSiteLocale()
   const preRef = useRef<HTMLPreElement>(null)
@@ -75,6 +79,7 @@ export default function CodeWindow({
             {copy.running}
           </span>
         )}
+        {headerMeta && <span className="term-meta">{headerMeta}</span>}
         {copyable && (
           <button type="button" className="term-copy" onClick={onCopy} aria-label={copy.aria}>
             {copied ? copy.copied : copy.copy}
@@ -99,6 +104,7 @@ export default function CodeWindow({
       ) : (
         <pre className="code" ref={preRef} dangerouslySetInnerHTML={{ __html: code }} />
       )}
+      {afterCode}
     </div>
   )
 }
