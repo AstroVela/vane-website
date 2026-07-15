@@ -56,21 +56,19 @@ Hero 的核心论证链是：
 
 ## 信息架构与布局
 
-右侧保持现有 `.home-hero-code` 的列宽和 Hero 页面结构，窗口内部由三部分组成。代码
-使用紧凑排版控制高度；执行面板可以让右侧窗口比当前版本适度增高，但不能形成明显
-高于左侧内容的大块悬空区域：
+右侧保持现有 `.home-hero-code` 的列宽和 Hero 页面结构，窗口内部只保留代码与执行图
+两部分。代码使用紧凑排版控制高度；不显示终端标题栏或底部能力标签，避免右侧窗口
+形成明显高于左侧内容的大块悬空区域：
 
 ```text
-┌ multimodal_features.py             RAY · 4 GPU ACTORS ┐
-│                                                       │
-│  约 16 行 Vane Pipeline                              │
-│                                                       │
-├ EXECUTION MODEL ──────────────────────────────────────┤
-│ IMG  VID  AUD                                         │
-│  ↓    ↓    ↓                                          │
-│ S3 SCAN → CPU DECODE → GPU INFER ×4 → PARQUET WRITE  │
-│           streaming · backpressure · dynamic batching │
-└───────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│  约 16 行 Vane Pipeline                                                 │
+├──────────────────────────────────────────────────────────────────────────┤
+│ One relation. Overlapped multimodal decode, GPU inference, and I/O.     │
+│ IMG  VID  AUD                                                            │
+│  ↓    ↓    ↓                                                             │
+│ S3 SCAN → CPU DECODE → GPU INFER ×4 → PARQUET WRITE                     │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 信息优先级如下：
@@ -79,13 +77,13 @@ Hero 的核心论证链是：
 2. CPU、GPU 和 I/O 属于一张持续流动的异构执行图。
 3. 代码说明如何用 Vane API 表达这张图。
 
-窗口顶部状态使用 `RAY · 4 GPU ACTORS`，不使用现有 `running` 文案或类似实时状态的
-绿色指示灯。执行区标题使用 `EXECUTION MODEL`；它明确表示这是执行模型示意，不把
-静态页面伪装成实时监控。
+Hero 调用 `CodeWindow` 时关闭整个终端标题栏，因此不渲染文件名、
+`RAY · 4 GPU ACTORS`、交通灯或复制按钮。执行区不再显示 `EXECUTION MODEL` 标签，
+英文价值句在桌面宽度保持一行；窄屏允许自然换行，页面不得横向溢出。
 
 ## 代表性代码
 
-文件名改为 `multimodal_features.py`，代码使用当前公开的 SQL Relation、
+内部源码标识保持 `multimodal_features.py`，代码使用当前公开的 SQL Relation、
 `map_batches`、GPU actor 配置和 Parquet write API：
 
 ```python
@@ -130,8 +128,8 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 | 推理 | `GPU INFER` / `4 ACTORS` | 四个 actor 各请求一块 GPU，并在批次间复用模型。 |
 | 输出 | `PARQUET` / `WRITE` | 完成的批次持续流向表形输出。 |
 
-能力标签固定为 `STREAMING`、`BACKPRESSURE` 和 `DYNAMIC BATCHING`。标签用于解释
-吞吐来源，不显示动态数值。
+执行图下方不再增加 `STREAMING`、`BACKPRESSURE` 或 `DYNAMIC BATCHING` 标签；性能
+语义由同一 Relation、重叠阶段与流动批次共同表达。
 
 动画使用一个缓慢、连续的 CSS/SVG 循环：
 
@@ -157,7 +155,8 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 为避免复制 `CodeWindow` 的标题栏、代码高亮和复制逻辑，可给 `CodeWindow` 增加两个
 可选插槽：
 
-- `headerMeta`：替代首页对 `running` 的使用，展示非实时的 Ray plan 元信息。
+- `showHeader`：默认开启；首页传入 `false`，其他消费者继续显示原有终端标题栏。
+- `headerMeta`：供仍显示标题栏的消费者展示非实时元信息。
 - `afterCode`：把执行模型面板放在同一个窗口边框内。
 
 两个插槽默认不渲染，现有 Docs、解决方案页和其他营销页调用行为保持不变。
@@ -174,8 +173,8 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 - 执行模型不会被误解为真实遥测。
 - 页面在 CSS 动画不可用时仍保留完整的静态信息。
 
-代码复制仍只复制 `<pre>` 中的 Python 源码，不包含执行图标签。Clipboard API 不可用
-时继续沿用 `CodeWindow` 当前的静默降级，不影响展示。
+首页关闭标题栏后不提供复制入口；其他 `CodeWindow` 消费者继续沿用当前复制行为与
+Clipboard API 静默降级，不受本次调整影响。
 
 ## 视觉与动效约束
 
@@ -194,9 +193,7 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 - `prefers-reduced-motion: reduce` 下停止所有位移动画，展示已经连通的静态拓扑。
 - 动画批次、装饰连线和 actor 活跃点设置为 `aria-hidden="true"`。
 - 组件提供本地化的可访问文本，完整描述“图像、视频和音频记录经过扫描、CPU 解码、
-  四个 GPU actor 推理和 Parquet 写入，并通过 streaming、backpressure 与 dynamic
-  batching 重叠执行”。
-- 代码复制按钮保持可聚焦、可键盘操作，并沿用现有双语文案。
+  四个 GPU actor 推理和 Parquet 写入，并作为一张执行图重叠执行”。
 
 ## 内容真实性边界
 
@@ -218,6 +215,7 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 - 要求出现 `map_batches`、`gpus=1`、`actor_number=4` 和 `write_parquet`。
 - 要求 image、video、audio 三种模态，以及 Ray runner 配置。
 - 要求首页使用新的 Hero 执行组件。
+- 要求 Hero 关闭标题栏，且不包含文件名、Ray 元信息、执行模型标题或底部能力标签。
 - 单独读取新的 Hero 执行组件，防止其中出现 `running`、`LIVE`、`rows/s`、`92%`、
   `3.1×` 或 `1.9×`；首页后续现有 benchmark 区块不在这条限制内。
 
@@ -233,7 +231,7 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 - 英文和中文首页在桌面宽度下保持左右两列平衡，执行窗口不高于左侧内容形成的合理范围。
 - `900px` 以下正确切换为单列。
 - 常见手机宽度下页面无横向溢出，代码只在自己的容器内滚动。
-- 复制按钮只复制 Python 代码。
+- Hero 中不存在复制按钮；其他代码窗口的复制行为不回归。
 - 默认动效能看出 CPU、GPU 和 write 同时有批次在途，不呈现严格串行。
 - 减少动画模式下没有位移动画，所有阶段与关系仍可读。
 - 键盘焦点、可访问名称和中英文说明完整。
@@ -243,6 +241,5 @@ Hero 不展开它们的实现，避免让样板代码淹没执行形态；注释
 - 首屏右侧不再是可被普通 SQL/embedding 引擎轻易替代的 provider 示例。
 - 不读完整代码也能识别 image、video、audio 和 CPU/GPU/I/O 执行链。
 - 代码只使用当前公开 API，并明确区分用户 UDF 与 Vane 能力。
-- 执行图清楚表达 streaming、backpressure、dynamic batching、GPU actor 复用和异构重叠
-  执行，但不冒充实时监控或 benchmark。
+- 执行图清楚表达 GPU actor 复用和异构重叠执行，但不冒充实时监控或 benchmark。
 - 现有首页结构、其他 `CodeWindow` 消费者和双语体验不发生回归。

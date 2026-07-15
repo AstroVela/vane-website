@@ -10,6 +10,50 @@
 
 ---
 
+## Acceptance revision: reduce the execution window height
+
+The accepted follow-up removes the homepage-only terminal header, the execution eyebrow, and the
+capability strip. The shared `CodeWindow` gains a default-on `showHeader` switch so other consumers
+retain their existing chrome and copy behavior.
+
+### Task A: Lock the compact Hero structure
+
+**Files:**
+- Modify: `scripts/home-content-check.mjs`
+
+- [ ] Add assertions for `showHeader?: boolean`, `showHeader = true`, and the Hero's
+  `showHeader={false}` usage.
+- [ ] Replace the capability-label assertions with negative assertions covering
+  `Execution model`, `执行模型`, `STREAMING`, `BACKPRESSURE`, and `DYNAMIC BATCHING`.
+- [ ] Add negative style assertions for `.home-execution-capabilities` and the homepage terminal-bar
+  mobile overrides.
+- [ ] Run `npm run home:content:check` and verify it fails because the old structure is still present.
+
+### Task B: Implement the structural removals
+
+**Files:**
+- Modify: `src/components/CodeWindow.tsx`
+- Modify: `src/components/HomeHeroExecution.tsx`
+- Modify: `src/index.css`
+
+- [ ] Add `showHeader?: boolean`, default it to `true`, and conditionally render the complete
+  `.term-bar` block only when enabled.
+- [ ] Pass `showHeader={false}` from `HomeHeroExecution`; remove `headerMeta`, both localized eyebrow
+  strings, the eyebrow `<span>`, the capability DOM, and capability wording from localized aria text.
+- [ ] Simplify `.home-execution-head`, keep its English sentence on one desktop line, restore natural
+  wrapping below `520px`, and delete the obsolete capability and homepage header rules.
+- [ ] Run `npm run home:content:check` and `npm run typecheck`; verify both pass.
+
+### Task C: Verify and preserve the acceptance service
+
+**Files:**
+- Test: `scripts/home-content-check.mjs`
+
+- [ ] Run `npm run lint` and `npm run build`; verify both locales compile.
+- [ ] Check English and Chinese runtime DOM: no `.term-bar`, no capability strip, one-line English
+  value at desktop width, no page overflow at narrow width, and reduced-motion animation remains off.
+- [ ] Commit the revision and leave the existing port `4328` development service running.
+
 ## File map
 
 - Create `src/components/HomeHeroExecution.tsx`: owns the representative Python code, localized execution explanation, multimodal inputs, stage topology, actor visualization, and capability labels.
