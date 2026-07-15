@@ -302,148 +302,6 @@ section.hero { background: transparent; color: inherit; }
   font-size: 11.25px;
   line-height: 1.48;
 }
-.home-hero-execution {
-  padding: 13px 14px 14px;
-  border-top: 1.5px solid var(--line);
-  background:
-    linear-gradient(rgba(89, 93, 103, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(89, 93, 103, 0.045) 1px, transparent 1px),
-    var(--paper-3);
-  background-size: 16px 16px;
-}
-.home-execution-head {
-  display: block;
-}
-.home-execution-head p {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 10px;
-  line-height: 1.35;
-  letter-spacing: -0.03em;
-  white-space: nowrap;
-}
-.home-execution-modalities {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 11px;
-}
-.home-execution-modalities small {
-  margin-right: 2px;
-  color: var(--ink-3);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-.home-execution-modalities span,
-.home-execution-modalities b {
-  border: 1px solid var(--line-2);
-  border-radius: 3px;
-  padding: 3px 6px;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  font-size: 8px;
-  line-height: 1;
-  letter-spacing: 0.06em;
-}
-.home-execution-modalities b {
-  margin-left: auto;
-  border-color: var(--line);
-  color: var(--ink);
-}
-.home-execution-graph {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 15px minmax(0, 1.08fr) 15px minmax(0, 1.12fr) 15px minmax(0, 1fr);
-  align-items: center;
-  margin-top: 8px;
-}
-.home-execution-stage {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 6px 3px;
-  background: rgba(244, 243, 237, 0.92);
-  text-align: center;
-}
-.home-execution-stage small {
-  color: var(--ink-3);
-  font-size: 7.5px;
-  line-height: 1.1;
-  letter-spacing: 0.04em;
-}
-.home-execution-stage b {
-  overflow: hidden;
-  max-width: 100%;
-  color: var(--ink);
-  font-size: 8.5px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-execution-stage.infer { border-color: var(--ink); }
-.home-execution-link {
-  position: relative;
-  display: block;
-  height: 1px;
-  background: var(--line);
-}
-.home-execution-link::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: -1px;
-  transform: translateY(-50%);
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
-  border-left: 4px solid var(--ink-3);
-}
-.home-execution-link i {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--green-ink);
-  opacity: 0.7;
-  transform: translate(-50%, -50%);
-  animation: homeExecutionBatch 2.8s linear infinite;
-}
-.home-execution-link i + i { animation-delay: -1.4s; }
-.home-execution-link.decode-infer i { animation-delay: -0.55s; }
-.home-execution-link.decode-infer i + i { animation-delay: -1.95s; }
-.home-execution-link.infer-write i { animation-delay: -1.05s; }
-.home-execution-link.infer-write i + i { animation-delay: -2.45s; }
-@keyframes homeExecutionBatch {
-  0% { left: 0; opacity: 0; }
-  18%, 82% { opacity: 0.8; }
-  100% { left: 100%; opacity: 0; }
-}
-.home-execution-actors {
-  display: flex;
-  gap: 3px;
-  height: 8px;
-}
-.home-execution-actors i {
-  width: 5px;
-  height: 8px;
-  border: 1px solid var(--green-ink);
-  background: transparent;
-  animation: homeExecutionActor 1.8s ease-in-out infinite;
-}
-.home-execution-actors i:nth-child(2) { animation-delay: -0.45s; }
-.home-execution-actors i:nth-child(3) { animation-delay: -0.9s; }
-.home-execution-actors i:nth-child(4) { animation-delay: -1.35s; }
-@keyframes homeExecutionActor {
-  0%, 100% { background: transparent; opacity: 0.45; }
-  45%, 70% { background: var(--green-ink); opacity: 0.9; }
-}
 .hero-h1 { font-size: clamp(32px, 4vw, 46px); line-height: 1.05; }
 .tagchip { display: inline-flex; align-items: center; gap: 9px; border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; background: var(--paper-2); }
 .tagchip .v { background: var(--ink); color: var(--paper); border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
@@ -3215,9 +3073,6 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
     padding-left: 25px;
   }
 }
-@media (max-width: 1200px) {
-  .home-execution-head p { white-space: normal; }
-}
 @media (max-width: 900px) {
   .hero-grid, .vs, .calc-grid { grid-template-columns: 1fr; }
   .home-hero-code { margin-top: 0; }
@@ -3296,41 +3151,6 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
   .home-hero-code pre.code {
     font-size: 10.75px;
     line-height: 1.48;
-  }
-  .home-execution-modalities b { display: none; }
-  .home-execution-graph {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-  .home-execution-stage {
-    min-height: 40px;
-    width: 100%;
-  }
-  .home-execution-link {
-    justify-self: center;
-    width: 1px;
-    height: 12px;
-  }
-  .home-execution-link::after {
-    top: auto;
-    right: auto;
-    bottom: -1px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-top: 4px solid var(--ink-3);
-    border-right: 3px solid transparent;
-    border-bottom: 0;
-    border-left: 3px solid transparent;
-  }
-  .home-execution-link i {
-    top: 50%;
-    left: 50%;
-    animation-name: homeExecutionBatchVertical;
-  }
-  @keyframes homeExecutionBatchVertical {
-    0% { top: 0; opacity: 0; }
-    18%, 82% { opacity: 0.8; }
-    100% { top: 100%; opacity: 0; }
   }
 }
 /* Training hero art: the composition is a fixed 486px stage, so on narrow

@@ -12,8 +12,27 @@ assert.ok(existsSync(heroExecutionPath), 'HomeHeroExecution component should exi
 
 const heroExecution = readFileSync(heroExecutionPath, 'utf8')
 const heroPipelineCode = heroExecution.match(/const HERO_PIPELINE_CODE = `([\s\S]*?)`/)?.[1]
+const expectedHeroPipelineCode = `import vane
+vane.configure(runner="ray")
+con = vane.connect()
+
+assets = con.sql("""
+    SELECT asset_id, uri, media_type
+    FROM read_parquet('s3://raw-assets/*.parquet')
+    WHERE media_type IN ('image', 'video', 'audio')
+""")
+
+features = assets.map_batches(
+    DecodeAndInfer,  # user UDF; 1 model load/actor
+    schema=feature_schema,  # explicit user schema
+    gpus=1,
+    actor_number=4,
+)
+
+features.write_parquet("s3://model-ready/features/")`
 
 assert.ok(heroPipelineCode, 'Hero pipeline code should be extractable')
+assert.equal(heroPipelineCode, expectedHeroPipelineCode, 'Hero pipeline code should remain unchanged')
 assert.ok(
   heroPipelineCode.split('\n').every((line) => line.length <= 52),
   'Hero pipeline code should fit the code window without horizontal scrolling',
@@ -43,29 +62,19 @@ assert.match(heroExecution, /user UDF/)
 assert.match(heroExecution, /1 model load\/actor/)
 assert.match(heroExecution, /explicit user schema/)
 assert.match(heroExecution, /showHeader=\{false\}/)
-assert.match(heroExecution, /<p>\{copy\.value\}<\/p>/)
 assert.doesNotMatch(heroExecution, /headerMeta=/)
-assert.doesNotMatch(heroExecution, /copy\.eyebrow/)
-assert.doesNotMatch(heroExecution, /Execution model|执行模型|STREAMING|BACKPRESSURE|DYNAMIC BATCHING/i)
+assert.doesNotMatch(heroExecution, /afterCode=/)
+assert.doesNotMatch(heroExecution, /ReactNode|pickLocale|useSiteLocale|MODALITIES|ACTORS/)
+assert.doesNotMatch(heroExecution, /function Stage|function Connector/)
+assert.doesNotMatch(heroExecution, /home-hero-execution|home-execution-/)
+assert.doesNotMatch(heroExecution, /One relation|INPUT|IMG|VID|AUD|ONE RELATION/)
+assert.doesNotMatch(heroExecution, /S3 SCAN|I\/O|CPU DECODE|PYTHON \/ ARROW|GPU INFER|PARQUET|WRITE/)
 assert.doesNotMatch(heroExecution, /RAY · 4 GPU ACTORS/)
 assert.doesNotMatch(heroExecution, /ai_embed|running|LIVE|rows\/s|92%|3\.1×|1\.9×/)
 
 assert.match(styles, /\.term-meta/)
-assert.match(styles, /\.home-hero-execution/)
-assert.match(styles, /\.home-execution-graph/)
-assert.match(styles, /\.home-execution-actors/)
-assert.match(styles, /@keyframes homeExecutionBatch/)
-assert.match(styles, /@keyframes homeExecutionActor/)
-assert.match(styles, /\.home-execution-head p \{[^}]*font-size: 10px;/)
-assert.match(styles, /\.home-execution-head p \{[^}]*letter-spacing: -0\.03em;/)
-assert.match(styles, /\.home-execution-head p \{[^}]*white-space: nowrap;/)
-assert.match(styles, /@media \(max-width: 1200px\)[\s\S]*?\.home-execution-head p \{ white-space: normal; \}/)
-assert.ok(
-  styles.indexOf('@media (max-width: 1200px)') > styles.indexOf('.home-execution-head p {'),
-  'Responsive execution copy rule should override the base nowrap rule',
-)
-assert.doesNotMatch(styles, /\.home-execution-capabilities/)
-assert.doesNotMatch(styles, /\.home-execution-head > span/)
+assert.doesNotMatch(styles, /\.home-hero-execution|\.home-execution-/)
+assert.doesNotMatch(styles, /homeExecution/)
 assert.doesNotMatch(styles, /\.home-hero-code \.term-bar/)
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/)
 assert.match(home, /\/solutions\/training/)

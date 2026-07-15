@@ -1,6 +1,4 @@
-import type {ReactNode} from 'react'
 import CodeWindow from './CodeWindow'
-import { pickLocale, useSiteLocale } from '../siteI18n'
 
 const HERO_PIPELINE_CODE = `import vane
 vane.configure(runner="ray")
@@ -21,85 +19,13 @@ features = assets.map_batches(
 
 features.write_parquet("s3://model-ready/features/")`
 
-const MODALITIES = ['IMG', 'VID', 'AUD'] as const
-const ACTORS = [1, 2, 3, 4] as const
-
-function Stage({
-  className,
-  label,
-  detail,
-  children,
-}: {
-  className: string
-  label: string
-  detail: string
-  children?: ReactNode
-}) {
-  return (
-    <span className={`home-execution-stage ${className}`}>
-      <small>{label}</small>
-      <b>{detail}</b>
-      {children}
-    </span>
-  )
-}
-
-function Connector({ className }: { className: string }) {
-  return (
-    <span className={`home-execution-link ${className}`}>
-      <i />
-      <i />
-    </span>
-  )
-}
-
 export default function HomeHeroExecution() {
-  const locale = useSiteLocale()
-  const copy = pickLocale(
-    locale,
-    {
-      value: 'One relation. Overlapped multimodal decode, GPU inference, and I/O.',
-      aria: 'Images, video, and audio flow through one relation. S3 scan, CPU decode, four reusable GPU actors, and Parquet write overlap as one execution graph.',
-    },
-    {
-      value: '一条 Relation，让多模态解码、GPU 推理与 I/O 重叠执行。',
-      aria: '图像、视频和音频记录进入同一条 Relation。S3 扫描、CPU 解码、四个可复用 GPU actor 和 Parquet 写入作为一张执行图重叠执行。',
-    },
-  )
-
   return (
     <CodeWindow
       filename="multimodal_features.py"
       language="python"
       code={HERO_PIPELINE_CODE}
       showHeader={false}
-      afterCode={(
-        <section className="home-hero-execution" aria-label={copy.aria}>
-          <div className="home-execution-head" aria-hidden="true">
-            <p>{copy.value}</p>
-          </div>
-
-          <div className="home-execution-modalities" aria-hidden="true">
-            <small>INPUT</small>
-            {MODALITIES.map((modality) => <span key={modality}>{modality}</span>)}
-            <b>ONE RELATION</b>
-          </div>
-
-          <div className="home-execution-graph" aria-hidden="true">
-            <Stage className="scan" label="S3 SCAN" detail="I/O" />
-            <Connector className="scan-decode" />
-            <Stage className="decode" label="CPU DECODE" detail="PYTHON / ARROW" />
-            <Connector className="decode-infer" />
-            <Stage className="infer" label="GPU INFER" detail="4 ACTORS">
-              <span className="home-execution-actors">
-                {ACTORS.map((actor) => <i key={actor} />)}
-              </span>
-            </Stage>
-            <Connector className="infer-write" />
-            <Stage className="write" label="PARQUET" detail="WRITE" />
-          </div>
-        </section>
-      )}
     />
   )
 }
