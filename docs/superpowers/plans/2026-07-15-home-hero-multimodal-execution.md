@@ -40,8 +40,9 @@ retain their existing chrome and copy behavior.
   `.term-bar` block only when enabled.
 - [ ] Pass `showHeader={false}` from `HomeHeroExecution`; remove `headerMeta`, both localized eyebrow
   strings, the eyebrow `<span>`, the capability DOM, and capability wording from localized aria text.
-- [ ] Simplify `.home-execution-head`, keep its English sentence on one desktop line, restore natural
-  wrapping below `520px`, and delete the obsolete capability and homepage header rules.
+- [ ] Simplify `.home-execution-head`, keep its English sentence on one wide-desktop line, allow
+  natural wrapping at `1200px` and below when the two-column card narrows, and delete the obsolete
+  capability and homepage header rules.
 - [ ] Run `npm run home:content:check` and `npm run typecheck`; verify both pass.
 
 ### Task C: Verify and preserve the acceptance service
@@ -56,10 +57,10 @@ retain their existing chrome and copy behavior.
 
 ## File map
 
-- Create `src/components/HomeHeroExecution.tsx`: owns the representative Python code, localized execution explanation, multimodal inputs, stage topology, actor visualization, and capability labels.
-- Modify `src/components/CodeWindow.tsx`: adds backward-compatible `headerMeta` and `afterCode` slots while keeping copy behavior scoped to code.
+- Create `src/components/HomeHeroExecution.tsx`: owns the representative Python code, localized execution explanation, multimodal inputs, stage topology, and actor visualization.
+- Modify `src/components/CodeWindow.tsx`: adds a backward-compatible header visibility switch plus `headerMeta` and `afterCode` slots while keeping existing consumers unchanged.
 - Modify `src/pages/Home.tsx`: removes the old Hero code and Local/Ray note, then composes `HomeHeroExecution`.
-- Modify `src/index.css`: styles the new terminal metadata, execution panel, animation, narrow layout, and static reduced-motion state.
+- Modify `src/index.css`: styles the compact execution panel, animation, narrow layout, and static reduced-motion state.
 - Modify `scripts/home-content-check.mjs`: locks the public API, truthfulness boundaries, integration, and required responsive selectors.
 
 ### Task 1: Add backward-compatible CodeWindow composition slots

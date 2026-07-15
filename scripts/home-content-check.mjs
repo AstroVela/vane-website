@@ -59,7 +59,11 @@ assert.match(styles, /@keyframes homeExecutionActor/)
 assert.match(styles, /\.home-execution-head p \{[^}]*font-size: 10px;/)
 assert.match(styles, /\.home-execution-head p \{[^}]*letter-spacing: -0\.03em;/)
 assert.match(styles, /\.home-execution-head p \{[^}]*white-space: nowrap;/)
-assert.match(styles, /@media \(max-width: 520px\)[\s\S]*?\.home-execution-head p \{ white-space: normal; \}/)
+assert.match(styles, /@media \(max-width: 1200px\)[\s\S]*?\.home-execution-head p \{ white-space: normal; \}/)
+assert.ok(
+  styles.indexOf('@media (max-width: 1200px)') > styles.indexOf('.home-execution-head p {'),
+  'Responsive execution copy rule should override the base nowrap rule',
+)
 assert.doesNotMatch(styles, /\.home-execution-capabilities/)
 assert.doesNotMatch(styles, /\.home-execution-head > span/)
 assert.doesNotMatch(styles, /\.home-hero-code \.term-bar/)

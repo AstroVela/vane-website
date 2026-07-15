@@ -3215,6 +3215,9 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
     padding-left: 25px;
   }
 }
+@media (max-width: 1200px) {
+  .home-execution-head p { white-space: normal; }
+}
 @media (max-width: 900px) {
   .hero-grid, .vs, .calc-grid { grid-template-columns: 1fr; }
   .home-hero-code { margin-top: 0; }
@@ -3294,7 +3297,6 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
     font-size: 10.75px;
     line-height: 1.48;
   }
-  .home-execution-head p { white-space: normal; }
   .home-execution-modalities b { display: none; }
   .home-execution-graph {
     grid-template-columns: 1fr;
