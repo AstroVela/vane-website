@@ -1098,50 +1098,56 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   color: var(--ink-2);
 }
 
-/* ---- stat / latency bars panel (Home benchmarks preview + Benchmarks page) ---- */
-.calc-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: stretch; }
-.lat { padding: 22px 24px; }
-.latrow { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center; padding: 9px 0; }
-.latrow .pl { font-size: 12px; color: var(--ink-3); }
-.bar { height: 16px; position: relative; background: var(--paper-3); border: 1px solid var(--line-2); border-radius: 2px; overflow: hidden; }
-.bar .fillb { position: absolute; left: 0; top: 0; bottom: 0; }
-.bar .vane { background: var(--ink); }
-.bar .base { background: repeating-linear-gradient(45deg, var(--ink-3), var(--ink-3) 2px, transparent 2px, transparent 5px); opacity: .55; }
-.latrow .val { font-size: 12px; text-align: right; white-space: nowrap; }
-.leg { display: flex; gap: 20px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-2); font-size: 12px; }
-.leg span { display: inline-flex; align-items: center; gap: 7px; }
-.leg .sw { width: 11px; height: 11px; border: 1px solid var(--line); }
-.bm-matrix {
-  margin: 20px 0 18px;
-  padding: 14px 0 0;
-  border-top: 1px solid var(--line-2);
-}
-.bm-matrix-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.bm-matrix-grid span {
-  border: 1.5px solid var(--line-2);
-  border-radius: var(--r);
-  background: var(--paper);
-  padding: 9px 10px;
-  font-size: 11.5px;
-  color: var(--ink-3);
-}
-.bm-matrix-grid b {
-  display: block;
-  color: var(--ink);
-  font-size: 16px;
-  line-height: 1.1;
-  margin-bottom: 3px;
-}
-.bm-matrix p {
-  margin: 10px 0 0;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
+/* ---- Home benchmark preview ---- */
+.calc-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.home-benchmark-summary { display: grid; grid-template-columns: minmax(210px,.8fr) minmax(0,2fr) auto; grid-template-areas: "label label label" "environment results action"; column-gap: 24px; row-gap: 18px; align-items: center; padding: 24px 30px; }
+.home-benchmark-summary .azt,
+.home-benchmark-chart .azt { text-align: left; }
+.home-benchmark-summary .azt { grid-area: label; margin: 0; }
+.home-benchmark-chart .azt { margin-bottom: 16px; }
+.home-benchmark-environment { grid-area: environment; min-width: 0; }
+.home-benchmark-environment > span,
+.home-benchmark-result dt { display: block; color: var(--ink-3); font-size: 10.5px; line-height: 1.3; text-transform: uppercase; }
+.home-benchmark-environment p { margin: 7px 0 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.55; }
+.home-benchmark-environment p span { display: block; }
+.home-benchmark-results { grid-area: results; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); min-width: 0; margin: 0; padding: 0 0 0 8px; border-left: 1px solid var(--line-2); }
+.home-benchmark-result { min-width: 0; padding: 0 10px; }
+.home-benchmark-result + .home-benchmark-result { border-left: 1px solid var(--line-2); }
+.home-benchmark-result dd { display: grid; gap: 7px; margin: 9px 0 0; }
+.home-benchmark-comparison { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 8px; min-width: 0; color: var(--ink-3); font-size: 9.5px; line-height: 1.2; }
+.home-benchmark-comparison > span { min-width: 0; white-space: nowrap; }
+.home-benchmark-comparison strong { display: inline-flex; align-items: baseline; gap: 4px; color: var(--ink); font-size: 15px; line-height: 1; white-space: nowrap; }
+.home-benchmark-comparison small { color: var(--ink-3); font-size: 8.5px; font-weight: 400; }
+.home-benchmark-summary .btn { grid-area: action; align-self: center; }
+.home-benchmark-chart { --home-chart-height: 280px; --home-chart-vane: #91A2D5; --home-chart-ray: #A7CBC7; --home-chart-daft: #DFC4B2; min-width: 0; padding: 28px 30px 24px; }
+.home-chart-meta { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--line-2); }
+.home-chart-meta > span { color: var(--ink-3); font-size: 11.5px; }
+.home-chart-legend { display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; }
+.home-chart-legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 11.5px; white-space: nowrap; }
+.home-chart-legend i { width: 12px; height: 12px; border: 1px solid var(--line); }
+.home-chart-plot { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 14px; margin-top: 24px; }
+.home-chart-axis { position: relative; height: var(--home-chart-height); margin-bottom: 36px; }
+.home-chart-axis span { position: absolute; right: 0; transform: translateY(50%); color: var(--ink-3); font-size: 10px; line-height: 1; }
+.home-chart-area { position: relative; min-width: 0; }
+.home-chart-grid { position: absolute; z-index: 0; inset: 0 0 auto; height: var(--home-chart-height); }
+.home-chart-grid i { position: absolute; left: 0; right: 0; height: 1px; background: var(--line-2); transform: translateY(50%); }
+.home-chart-groups { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 24px; }
+.home-chart-group { min-width: 0; }
+.home-chart-bars { display: flex; align-items: flex-end; justify-content: center; gap: 8px; height: var(--home-chart-height); padding: 0 10px; }
+.home-chart-slot { position: relative; display: flex; align-items: flex-end; justify-content: center; width: 38px; height: 100%; }
+.home-chart-bar { display: block; width: 26px; min-height: 3px; border: 1px solid var(--line); border-bottom: 0; }
+.home-chart-legend i.vane,
+.home-chart-bar.vane { background: var(--home-chart-vane); }
+.home-chart-legend i.ray,
+.home-chart-bar.ray { background: var(--home-chart-ray); }
+.home-chart-legend i.daft,
+.home-chart-bar.daft { background: var(--home-chart-daft); }
+.home-chart-value { position: absolute; left: 50%; z-index: 2; transform: translateX(-50%); padding: 1px 3px; color: var(--ink-2); background: var(--paper-2); font-size: 9.5px; line-height: 1; white-space: nowrap; }
+.home-chart-oom { display: flex; align-items: center; justify-content: center; width: 26px; height: 24px; border: 1px dashed var(--ink); color: var(--ink); background: var(--paper-2); font-size: 7.5px; font-weight: 700; }
+.home-chart-workload { display: block; min-height: 26px; margin-top: 12px; color: var(--ink-2); font-size: 12px; line-height: 1.25; text-align: center; overflow-wrap: anywhere; }
+.home-chart-footnote { margin: 14px 0 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
+@media (max-width: 1000px) { .home-benchmark-summary { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "label label" "environment action" "results results"; } .home-benchmark-results { padding: 18px 0 0; border-top: 1px solid var(--line-2); border-left: 0; } }
+@media (max-width: 560px) { .home-benchmark-summary { display: block; padding: 22px 20px; } .home-benchmark-summary .azt { margin-bottom: 18px; } .home-benchmark-results { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 20px; padding-top: 0; } .home-benchmark-result { padding: 16px 14px 0 0; } .home-benchmark-result + .home-benchmark-result { border-left: 0; } .home-benchmark-result:nth-child(even) { padding-right: 0; padding-left: 14px; border-left: 1px solid var(--line-2); } .home-benchmark-result:nth-child(n+3) { margin-top: 16px; border-top: 1px solid var(--line-2); } .home-benchmark-summary .btn { margin-top: 22px; } .home-benchmark-chart { --home-chart-height: 200px; padding: 20px 16px; } .home-chart-meta { align-items: flex-start; flex-direction: column; gap: 8px; } .home-chart-legend { justify-content: flex-start; gap: 10px; } .home-chart-plot { grid-template-columns: 26px minmax(0,1fr); gap: 7px; } .home-chart-groups { gap: 4px; } .home-chart-bars { gap: 3px; padding: 0 2px; } .home-chart-slot { width: 14px; } .home-chart-bar { width: 12px; } .home-chart-value { display: none; } .home-chart-oom { width: 12px; font-size: 6.5px; } .home-chart-workload { font-size: 9.5px; } }
 
 /* ---- CTA + footer ---- */
 .start-grid {
@@ -3094,7 +3100,6 @@ footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); mar
   }
   .scenario-soon-grid { grid-template-columns: 1fr; }
   .cap-grid { grid-template-columns: 1fr 1fr; }
-  .bm-matrix-grid { grid-template-columns: 1fr; }
   .training-hero-art {
     max-width: 520px;
     margin-inline: auto;
