@@ -1,4 +1,4 @@
-import type {CSSProperties} from 'react'
+import type {CSSProperties, ReactNode} from 'react'
 import { useRef, useState } from 'react'
 import { Highlight } from 'prism-react-renderer'
 import { vaneCodeTheme } from './codeTheme'
@@ -13,7 +13,8 @@ import { pickLocale, useSiteLocale } from '../siteI18n'
    - `language` unset -> `code` is pre-highlighted markup (hand-authored windows
      on the marketing pages), injected as innerHTML with the .k/.s/.c classes.
 
-   `copyable` (on by default) adds a top-right Copy button. */
+   `showHeader` keeps the complete terminal bar on by default; `copyable` adds
+   its top-right Copy button when that bar is visible. */
 type CodeWindowProps = {
   filename: string
   running?: boolean
@@ -21,6 +22,9 @@ type CodeWindowProps = {
   style?: CSSProperties
   copyable?: boolean
   language?: string
+  showHeader?: boolean
+  headerMeta?: ReactNode
+  afterCode?: ReactNode
 }
 
 export default function CodeWindow({
@@ -30,6 +34,9 @@ export default function CodeWindow({
   style,
   copyable = true,
   language,
+  showHeader = true,
+  headerMeta,
+  afterCode,
 }: CodeWindowProps) {
   const locale = useSiteLocale()
   const preRef = useRef<HTMLPreElement>(null)
@@ -64,23 +71,26 @@ export default function CodeWindow({
 
   return (
     <div className="term" style={style}>
-      <div className="term-bar">
-        <span className="sq sq1" />
-        <span className="sq sq2" />
-        <span className="sq sq3" />
-        <span className="fn">{filename}</span>
-        {running && (
-          <span className="run">
-            <span className="led" />
-            {copy.running}
-          </span>
-        )}
-        {copyable && (
-          <button type="button" className="term-copy" onClick={onCopy} aria-label={copy.aria}>
-            {copied ? copy.copied : copy.copy}
-          </button>
-        )}
-      </div>
+      {showHeader && (
+        <div className="term-bar">
+          <span className="sq sq1" />
+          <span className="sq sq2" />
+          <span className="sq sq3" />
+          <span className="fn">{filename}</span>
+          {running && (
+            <span className="run">
+              <span className="led" />
+              {copy.running}
+            </span>
+          )}
+          {headerMeta && <span className="term-meta">{headerMeta}</span>}
+          {copyable && (
+            <button type="button" className="term-copy" onClick={onCopy} aria-label={copy.aria}>
+              {copied ? copy.copied : copy.copy}
+            </button>
+          )}
+        </div>
+      )}
       {language ? (
         <Highlight theme={vaneCodeTheme} code={code} language={language}>
           {({ tokens, getLineProps, getTokenProps }) => (
@@ -99,6 +109,7 @@ export default function CodeWindow({
       ) : (
         <pre className="code" ref={preRef} dangerouslySetInnerHTML={{ __html: code }} />
       )}
+      {afterCode}
     </div>
   )
 }

@@ -4,31 +4,13 @@ import Footer from '../components/Footer'
 import Box from '../components/Box'
 import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
-import CodeWindow from '../components/CodeWindow'
+import HomeHeroExecution from '../components/HomeHeroExecution'
 import Cta from '../components/Cta'
 import PixelIcon, { type PixelIconName } from '../components/PixelIcon'
 import PlatformArchitecture from '../components/PlatformArchitecture'
 import { Link } from '../router'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 import { DESIGN_PARTNER_MAILTO } from '../siteLinks'
-
-const HERO_CODE = `<span class="k">import</span> vane
-
-con <span class="p">=</span> vane<span class="p">.</span><span class="f">connect</span><span class="p">()</span>
-
-embeddings <span class="p">=</span> con<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
-    SELECT id,
-           ai_embed(
-               text,
-               struct_pack(
-                   provider := 'openai',
-                   model := 'text-embedding-3-small'
-               )
-           ) AS embedding
-    FROM read_parquet('documents/*.parquet')
-"""</span><span class="p">)</span>
-
-embeddings<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"embeddings.parquet"</span><span class="p">)</span><span class="cur"></span>`
 
 const SCENARIOS: Array<{
   title: string
@@ -133,8 +115,6 @@ export default function Home() {
       getStarted: 'Get Started',
       chooseWorkload: 'Choose your workload',
       preRelease: 'pre-release',
-      heroCodeLocal: 'Runs locally by default. Add',
-      heroCodeRay: 'to run the same pipeline on Ray.',
       useCases: 'Use Cases',
       workloadsTitle: 'Four real-world AI workloads.',
       workloadsLead: 'From multimodal model training to enterprise data pipelines, real-world AI runs on diverse data. Pick the pipeline that matches your workload.',
@@ -164,8 +144,6 @@ export default function Home() {
       getStarted: '开始使用',
       chooseWorkload: '选择你的工作负载',
       preRelease: '预发布',
-      heroCodeLocal: '默认在本地运行。增加',
-      heroCodeRay: '即可让同一条流水线运行在 Ray 上。',
       useCases: '用例',
       workloadsTitle: '多模态 AI 场景',
       workloadsLead: '从多模态模型训练到企业数据流水线，真实 AI 工作负载运行在多样化数据之上。选择与你的工作负载匹配的流水线。',
@@ -222,10 +200,7 @@ export default function Home() {
             </div>
           </div>
           <div className="home-hero-code">
-            <CodeWindow filename="embed_documents.py" running code={HERO_CODE} />
-            <p className="home-hero-code-note">
-              {copy.heroCodeLocal} <code>vane.configure(runner="ray")</code> {copy.heroCodeRay}
-            </p>
+            <HomeHeroExecution />
           </div>
         </div>
       </section>
