@@ -31,30 +31,46 @@
 .psep { color: var(--ink-3); }
 
 /* ---- Benchmarks page ---- */
+.benchmark-intro .h1 { margin-top: 16px; font-size: clamp(34px,4.6vw,52px); }
+.benchmark-intro .lead { margin-top: 18px; max-width: 720px; }
 .bm-sec { padding: 40px 0 4px; }
 .bm-sec .shead { margin-bottom: 22px; }
-.specs { width: 100%; border-collapse: collapse; }
-.specs th, .specs td { text-align: left; padding: 12px 16px; font-size: 13.5px; vertical-align: top; }
-.specs tr { border-top: 1px solid var(--line-2); }
-.specs tr:first-child { border-top: none; }
-.specs th { width: 180px; color: var(--ink-3); font-weight: 500; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
-.specs td { color: var(--ink); }
-.specs td.note { color: var(--ink-3); }
-.statline { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
-.stat { border: 1.5px solid var(--line); border-radius: var(--r); padding: 18px 22px; background: var(--paper-2); flex: 1; min-width: 150px; }
-.stat .n { font-size: 38px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
-.stat .l { font-size: 12px; color: var(--ink-3); margin-top: 9px; line-height: 1.4; }
+.benchmark-tuned-summary { max-width: 920px; margin: 0 0 18px; padding: 12px 14px; border-left: 3px solid #91a2d5; background: rgba(145,162,213,0.1); color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.benchmark-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .summary th, .summary td { text-align: left; padding: 13px 16px; font-size: 13.5px; }
-.summary { width: 100%; border-collapse: collapse; }
+.summary { display: table; width: 100%; border-collapse: collapse; }
+.benchmark-summary { min-width: 1040px; table-layout: fixed; }
+.benchmark-summary th:nth-child(1) { width: 12%; }
+.benchmark-summary th:nth-child(2),
+.benchmark-summary th:nth-child(3),
+.benchmark-summary th:nth-child(4) { width: 18%; }
+.benchmark-summary th:nth-child(5),
+.benchmark-summary th:nth-child(6) { width: 17%; }
 .summary thead th { font-weight: 700; border-bottom: 1.5px solid var(--line); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
 .summary tbody tr { border-top: 1px solid var(--line-2); }
 .summary tbody tr:nth-child(even) { background: var(--paper-3); }
+.benchmark-runtime { display: grid; gap: 5px; }
+.benchmark-runtime strong { color: var(--ink); font-size: 13.5px; line-height: 1.2; }
+.benchmark-runtime small { color: var(--ink-3); font-size: 10px; line-height: 1.2; text-transform: none; }
 .summary td.v { font-weight: 700; }
 .summary td.b { color: var(--ink-3); }
 .tagx { font-size: 10.5px; border: 1.5px solid var(--line-2); border-radius: 999px; padding: 2px 9px; color: var(--ink-3); }
 .tagx.exp { color: var(--ink); border-color: var(--ink); }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
-@media (max-width: 900px){ .grid2 { grid-template-columns: 1fr; } }
+.tagx.oom { color: var(--accent-strong); border-color: var(--accent); background: rgba(154,86,56,0.06); }
+.benchmark-note { margin: 12px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+.runtime-change { font-size: 12px; font-weight: 700; line-height: 1.35; white-space: nowrap; }
+.runtime-change.better { color: var(--ink); }
+.runtime-change.regression { color: var(--accent-strong); }
+.benchmark-context { margin-bottom: 18px; overflow: hidden; }
+.benchmark-context-grid { display: grid; grid-template-columns: 1.25fr 1fr; margin: 0; }
+.benchmark-context-grid > div { min-width: 0; padding: 13px 16px; }
+.benchmark-context-grid > div + div { border-left: 1px solid var(--line-2); }
+.benchmark-context-grid dt { color: var(--ink-3); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.benchmark-context-grid dd { margin: 6px 0 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
+.benchmark-tuned-chart { margin-bottom: 18px; }
+.benchmark-default-chart { margin-top: 4px; }
+.benchmark-disclosure { max-width: 920px; margin: 14px 0 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.6; }
+@media (max-width: 800px){ .benchmark-context-grid { grid-template-columns: 1fr; } .benchmark-context-grid > div + div { border-top: 1px solid var(--line-2); border-left: 0; } }
 
 /* ---- Contact page ---- */
 .contact-hero { padding-bottom: 64px; }

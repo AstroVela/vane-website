@@ -1,25 +1,67 @@
+import Head from '@docusaurus/Head'
 import Nav from '../components/Nav'
-import type {ReactNode} from 'react'
 import Footer from '../components/Footer'
 import Box from '../components/Box'
 import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
-import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
+import {
+  BENCHMARK_ENGINE_NAMES,
+  BENCHMARK_ENVIRONMENT,
+  BENCHMARK_RESULTS,
+  DEFAULT_BATCH_BENCHMARK_RESULTS,
+  VANE_FASTER_THAN_RAY_COUNT,
+  type BenchmarkBatchSize,
+  formatBatchSize,
+  formatSeconds,
+  runtimeChangePercent,
+} from '../benchmarkData'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 
-const REPRODUCE_CODE = `<span class="c"># clone, pin the environment, run</span>
-git clone https://github.com/AstroVela/vane
-<span class="f">cd</span> vane/benchmarks
-pip install -r requirements.lock
-
-<span class="c"># vLLM batch inference benchmark</span>
-python bench_vllm.py <span class="p">\\</span>
-    --dataset s3://bench/prompts-66k.parquet <span class="p">\\</span>
-    --gpus <span class="n">2</span> --bucketing prefix --runs <span class="n">3</span>`
+const TUNED_CHART_MIN_SECONDS = 50
+const TUNED_CHART_TICKS = [50, 300, 1000, 3000, 10000] as const
+const DEFAULT_CHART_MIN_SECONDS = 100
+const DEFAULT_CHART_TICKS = [100, 300, 1000, 3000, 10000] as const
+const CHART_MAX_SECONDS = 10000
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
+}
+
+function chartBarHeight(seconds: number, minSeconds: number) {
+  const min = Math.log10(minSeconds)
+  const range = Math.log10(CHART_MAX_SECONDS) - min
+  return Math.max(0, Math.min(100, ((Math.log10(seconds) - min) / range) * 100))
+}
+
+function chartValueLabel(seconds: number) {
+  if (seconds >= 1000) return `${(seconds / 1000).toFixed(2)}k`
+  return Number.isInteger(seconds) ? `${seconds}` : seconds.toFixed(2)
+}
+
+function comparisonLabel(changePercent: number, lower: string, higher: string) {
+  return `${Math.abs(changePercent).toFixed(1)}% ${changePercent < 0 ? lower : higher}`
+}
+
+type TunedRuntimeProps = {
+  seconds: number | null
+  batchSize: BenchmarkBatchSize
+  batchSizeLabel: string
+  notSet: string
+  oom: string
+}
+
+function TunedRuntime({ seconds, batchSize, batchSizeLabel, notSet, oom }: TunedRuntimeProps) {
+  if (seconds === null) return <span className="tagx oom">{oom}</span>
+
+  return (
+    <span className="benchmark-runtime">
+      <strong>{formatSeconds(seconds)}</strong>
+      {batchSize !== null && (
+        <small>{batchSizeLabel}: {batchSize === 'not-set' ? notSet : batchSize}</small>
+      )}
+    </span>
+  )
 }
 
 export default function Benchmarks() {
@@ -27,284 +69,372 @@ export default function Benchmarks() {
   const copy = pickLocale(
     locale,
     {
+      title: 'Single-node multimodal pipeline benchmarks — Vane Data',
+      description: 'Observed end-to-end wall-clock results for document, image, audio, and video workloads on one 36-core single-node environment.',
       eyebrow: 'Benchmarks',
-      heading: 'Benchmarks, with receipts',
-      lead: 'Credible technical evidence, not marketing numbers. Throughput is relative to Ray Data on identical hardware. Every row lists its dataset, hardware, command and environment — and links to a reproducible script.',
-      summary: 'Summary',
-      summaryTitle: 'Benchmark summary',
-      table: ['Workload', 'Dataset', 'Hardware', 'Vane', 'Ray Data', 'Daft', 'Notes'],
-      stable: 'stable',
-      experimental: 'experimental',
-      higher: 'Higher is better. Vane / Ray Data / Daft columns are relative throughput; baseline = Ray Data 1.0×.',
-      detail: 'Detail',
-      vllmLead: 'Prefix bucketing groups similar-length prompts to cut padding waste, raising effective batch utilization on the same GPUs.',
-      throughputVs: 'throughput vs Ray Data',
-      wallClock: 'wall-clock (was 127 min)',
-      gpuUtil: 'mean GPU utilization',
-      throughputTitle: 'Throughput (higher is better)',
-      baselineEngines: 'baseline engines',
-      specs: {
-        dataset: 'Dataset',
-        hardware: 'Hardware',
-        command: 'Command',
-        env: 'Env',
-        runtime: 'Runtime',
-        throughput: 'Throughput',
-        notes: 'Notes',
-        runtimeValue: '41 min (median of 3, warm cache excluded)',
-        throughputValue: '3.1× vs Ray Data baseline',
-        notesValue: 'Gains shrink to ~2.4× without prefix bucketing.',
+      heading: 'Single-node multimodal pipeline benchmarks',
+      lead: 'Tuned and default batch-size results from the same recorded single-node environment.',
+      summary: 'Primary result',
+      summaryTitle: 'Tuned batch-size results',
+      table: {
+        workload: 'Workload',
+        versusRay: 'vs Ray Data',
+        versusDaft: 'vs Daft',
       },
-      multimodal: 'Multimodal',
-      multimodalTitle: 'Multimodal pipeline benchmarks',
-      multimodalLead: 'Image, audio, document and video workloads. Image-decode + CLIP and audio transcription are measured below; document and video are in progress.',
-      tags: ['Image · CLIP — stable', 'Audio · transcription — stable', 'Document · extraction — experimental', 'Video · frames — in progress'],
-      workload: 'Workload',
-      imageWorkload: 'Image decode + CLIP features',
-      audioWorkload: 'Audio transcription',
-      imageNotes: 'Experimental; decode path still CPU-bound.',
-      audioNotes: 'Whisper-large-v3; batch tuned to 8.',
-      methodology: 'Methodology',
-      methodologyLead: "A benchmark you can't reproduce is a marketing number. Everything here is pinned and scripted.",
-      methodRows: [
-        ['Datasets', 'Common Crawl segments, RedPajama, LAION subset, internal call set. Manifests pinned by SHA.'],
-        ['Hardware', 'AWS p4d / g5 instances. CUDA 12.4, driver 550, NVLink where noted.'],
-        ['Environment', <>ray==2.40, vllm==0.6.3, pyarrow==14 — pinned in <span className="link">benchmarks/requirements.lock</span>.</>],
-        ['Measurement', 'Median of 3 runs, warm cache excluded. Wall-clock from first read to last write.'],
-        ['Baselines', 'Ray Data and Daft on identical hardware, same dataset, same output target.'],
-      ] as Array<[string, ReactNode]>,
-      reproduce: 'Reproduce',
+      batchSize: 'Batch size',
+      notSet: 'Not set',
+      lowerChange: 'lower',
+      higherChange: 'higher',
+      lower: 'End-to-end wall-clock seconds; lower is better. Comparison columns show Vane Data relative to each baseline. OOM means the run exhausted memory under this configuration.',
+      oom: 'OOM',
+      workloads: {
+        document: 'Document',
+        image: 'Image',
+        audio: 'Audio',
+        video: 'Video',
+      },
+      labels: {
+        hardware: 'Hardware',
+        method: 'Method',
+      },
+      method: 'End-to-end wall-clock seconds; lower is better. Batch size tuned per engine and workload.',
+      tunedLogScale: 'Tuned batch sizes · log scale · lower is better',
+      tunedChartAria: 'Grouped tuned elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
+      tunedChartHint: 'Bar labels show compact seconds. Batch sizes are tuned per engine and workload. OOM is a status, not a duration.',
+      defaultEyebrow: 'Reference',
+      defaultTitle: 'Default batch-size results',
+      defaultLead: 'Results from the same recorded single-node environment before per-engine batch-size tuning.',
+      elapsedTime: 'Elapsed time (seconds)',
+      defaultLogScale: 'Default batch size · log scale · lower is better',
+      engineLegend: 'Engines',
+      chartAria: 'Grouped default batch-size elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
+      chartHint: 'Bar labels show compact seconds. OOM is a run status, not a duration.',
+      disclosure: 'Scope: the comparison assumes the same workload inputs and output contract. Dataset scale, engine versions, run count, cache state, concurrency, and output target were not recorded, so these are observed results rather than a fully reproducible benchmark.',
       readDocs: 'Read the Docs',
       explore: 'Explore use cases',
     },
     {
+      title: '单机多模态流水线基准测试 — Vane Data',
+      description: '在一台 36 核单机环境中，对文档、图像、音频和视频 workload 进行端到端 wall-clock 耗时对比。',
       eyebrow: '基准测试',
-      heading: '可复现的 Benchmarks',
-      lead: '这里展示可复现的技术证据，不是营销数字。throughput 均以同硬件上的 Ray Data 为基线；每条结果都给出数据集、硬件、命令、环境和脚本链接。',
-      summary: '摘要',
-      summaryTitle: 'Benchmark 概览',
-      table: ['工作负载', '数据集', '硬件', 'Vane', 'Ray Data', 'Daft', '备注'],
-      stable: '稳定',
-      experimental: '实验性',
-      higher: '数值越高越好。Vane / Ray Data / Daft 均为相对 throughput，Ray Data 作为 1.0× 基线。',
-      detail: '详情',
-      vllmLead: 'prefix bucketing 将长度相近的 prompt 放在同一批次，减少 padding 浪费，在不换 GPU 的情况下提升有效 batch 利用率。',
-      throughputVs: 'throughput vs Ray Data',
-      wallClock: '总耗时（Ray Data 为 127 分钟）',
-      gpuUtil: '平均 GPU utilization',
-      throughputTitle: 'throughput（越高越好）',
-      baselineEngines: '基线引擎',
-      specs: {
-        dataset: '数据集',
-        hardware: '硬件',
-        command: '命令',
-        env: '环境',
-        runtime: '运行时长',
-        throughput: 'throughput',
-        notes: '备注',
-        runtimeValue: '41 分钟（3 次中位数，不含热缓存）',
-        throughputValue: '相对 Ray Data 基线 3.1×',
-        notesValue: '不启用前缀分桶时，收益会缩小到约 2.4×。',
+      heading: '单机多模态流水线基准测试',
+      lead: '同一台已记录单机环境中的 batch size 调优结果与默认结果。',
+      summary: '主要结果',
+      summaryTitle: 'batch size 调优结果',
+      table: {
+        workload: '工作负载',
+        versusRay: '对比 Ray Data',
+        versusDaft: '对比 Daft',
       },
-      multimodal: '多模态',
-      multimodalTitle: '多模态流水线 Benchmarks',
-      multimodalLead: '覆盖图像、音频、文档和视频工作负载。当前已测图像解码 + CLIP 与音频转写，文档和视频仍在补充。',
-      tags: ['图像 · CLIP — 稳定', '音频 · 转写 — 稳定', '文档 · 抽取 — 实验性', '视频 · 帧 — 进行中'],
-      workload: '工作负载',
-      imageWorkload: '图像解码 + CLIP 特征',
-      audioWorkload: '音频转写',
-      imageNotes: '实验性；解码路径仍受 CPU 限制。',
-      audioNotes: 'Whisper-large-v3；批大小调到 8。',
-      methodology: '复现方法',
-      methodologyLead: '不能复现的 benchmark 就只是营销数字。这里的环境、依赖和命令都已锁定并脚本化。',
-      methodRows: [
-        ['数据集', 'Common Crawl 分段、RedPajama、LAION 子集、内部通话集。Manifest 按 SHA 锁定。'],
-        ['硬件', 'AWS p4d / g5 实例。CUDA 12.4、driver 550；标注处使用 NVLink。'],
-        ['环境', <>ray==2.40, vllm==0.6.3, pyarrow==14 — 锁定在 <span className="link">benchmarks/requirements.lock</span>。</>],
-        ['测量', '3 次运行中位数，不含热缓存。从首次读取到最后写入的总耗时。'],
-        ['基线', 'Ray Data 和 Daft 使用相同硬件、相同数据集和相同输出目标。'],
-      ] as Array<[string, ReactNode]>,
-      reproduce: '复现',
+      batchSize: 'Batch size',
+      notSet: '未设置',
+      lowerChange: '更低',
+      higherChange: '更高',
+      lower: '单位为端到端 wall-clock 秒，越低越好。对比列表示 Vane Data 相对基线的耗时变化。OOM 表示在本次配置下运行时内存耗尽。',
+      oom: 'OOM',
+      workloads: {
+        document: '文档',
+        image: '图像',
+        audio: '音频',
+        video: '视频',
+      },
+      labels: {
+        hardware: '硬件环境',
+        method: '测量方式',
+      },
+      method: '端到端 wall-clock 秒数，越低越好；batch size 按引擎和 workload 调整。',
+      tunedLogScale: 'batch size 调优后 · 对数尺度 · 越低越好',
+      tunedChartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中调优 batch size 后的分组耗时柱状图',
+      tunedChartHint: '柱顶显示简化秒数。batch size 按引擎和 workload 调整。OOM 仅表示运行状态，不表示耗时。',
+      defaultEyebrow: '参考结果',
+      defaultTitle: '默认 batch size 结果',
+      defaultLead: '同一台已记录单机环境中，未按引擎调整 batch size 时的结果。',
+      elapsedTime: '端到端耗时（秒）',
+      defaultLogScale: '默认 batch size · 对数尺度 · 越低越好',
+      engineLegend: '引擎',
+      chartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中使用默认 batch size 的分组耗时柱状图',
+      chartHint: '柱顶显示简化秒数。OOM 表示运行状态，不表示耗时。',
+      disclosure: '适用范围：对比假设各引擎使用相同 workload 输入和输出语义。现有记录未包含数据规模、引擎版本、运行次数、缓存状态、并发和输出目标，因此这些数据是实测结果，不是完全可复现的 benchmark。',
       readDocs: '阅读文档',
       explore: '浏览用例',
     },
   )
+  const videoRayChange = runtimeChangePercent(
+    BENCHMARK_RESULTS[3].vaneSeconds,
+    BENCHMARK_RESULTS[3].rayDataSeconds,
+  )
+  const completedDaftResults = BENCHMARK_RESULTS.filter(
+    (result) => result.daftSeconds !== null,
+  )
+  const fasterThanDaftCount = completedDaftResults.filter(
+    (result) => result.daftSeconds !== null && result.vaneSeconds < result.daftSeconds,
+  ).length
+  const tunedSummary = pickLocale(
+    locale,
+    `Vane Data was lower than Ray Data on ${VANE_FASTER_THAN_RAY_COUNT} / ${BENCHMARK_RESULTS.length} tuned workloads (Video: ${Math.abs(videoRayChange).toFixed(1)}% higher), and lower than Daft on ${fasterThanDaftCount} / ${completedDaftResults.length} completed comparisons. Daft OOM: Image, Audio.`,
+    `Vane Data 在 ${VANE_FASTER_THAN_RAY_COUNT} / ${BENCHMARK_RESULTS.length} 类调优 workload 中耗时低于 Ray Data（Video 高 ${Math.abs(videoRayChange).toFixed(1)}%），并在与 Daft 的 ${fasterThanDaftCount} / ${completedDaftResults.length} 项已完成对比中耗时更低。Daft OOM：Image、Audio。`,
+  )
 
   return (
     <>
+      <Head>
+        <title>{copy.title}</title>
+        <meta name="description" content={copy.description} />
+        <meta property="og:title" content={copy.title} />
+        <meta property="og:description" content={copy.description} />
+      </Head>
+
       <Nav />
 
-      {/* INTRO */}
-      <section className="intro">
+      <section className="intro benchmark-intro">
         <div className="wrap">
           <Eyebrow>{copy.eyebrow}</Eyebrow>
-          <h1 className="h1" style={{ marginTop: 16, fontSize: 'clamp(34px,4.6vw,52px)' }}>
-            {copy.heading}
-          </h1>
-          <p className="lead" style={{ marginTop: 18, maxWidth: 640 }}>
-            {copy.lead}
-          </p>
+          <h1 className="h1">{copy.heading}</h1>
+          <p className="lead">{copy.lead}</p>
         </div>
       </section>
 
       <Divider />
 
-      {/* SUMMARY */}
       <section className="bm-sec">
         <div className="wrap">
           <div className="shead">
             <Eyebrow>{copy.summary}</Eyebrow>
-            <h2 className="h2" style={{ marginTop: 12 }}>{copy.summaryTitle}</h2>
+            <h2 className="h2">{copy.summaryTitle}</h2>
           </div>
-          <Box flat style={{ overflow: 'hidden' }}>
-            <table className="summary">
+          <p className="benchmark-tuned-summary">{tunedSummary}</p>
+          <Box flat className="benchmark-context">
+            <dl className="benchmark-context-grid">
+              <div>
+                <dt>{copy.labels.hardware}</dt>
+                <dd>{BENCHMARK_ENVIRONMENT.cpuCores} CPU cores · {BENCHMARK_ENVIRONMENT.memoryGb} GB RAM · {BENCHMARK_ENVIRONMENT.gpu} · {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB GPU memory</dd>
+              </div>
+              <div><dt>{copy.labels.method}</dt><dd>{copy.method}</dd></div>
+            </dl>
+          </Box>
+          <Box flat className="home-benchmark-chart benchmark-tuned-chart">
+            <div className="azt">{copy.elapsedTime}</div>
+            <div className="home-chart-meta">
+              <span>{copy.tunedLogScale}</span>
+              <div className="home-chart-legend" aria-label={copy.engineLegend}>
+                <span><i className="vane" />{BENCHMARK_ENGINE_NAMES.vaneData}</span>
+                <span><i className="ray" />{BENCHMARK_ENGINE_NAMES.rayData}</span>
+                <span><i className="daft" />{BENCHMARK_ENGINE_NAMES.daft}</span>
+              </div>
+            </div>
+            <div className="home-chart-plot" aria-label={copy.tunedChartAria}>
+              <div className="home-chart-axis" aria-hidden="true">
+                {TUNED_CHART_TICKS.map((seconds) => (
+                  <span style={{ bottom: `${chartBarHeight(seconds, TUNED_CHART_MIN_SECONDS)}%` }} key={seconds}>
+                    {seconds >= 1000 ? `${seconds / 1000}k` : seconds}
+                  </span>
+                ))}
+              </div>
+              <div className="home-chart-area">
+                <div className="home-chart-grid" aria-hidden="true">
+                  {TUNED_CHART_TICKS.map((seconds) => (
+                    <i style={{ bottom: `${chartBarHeight(seconds, TUNED_CHART_MIN_SECONDS)}%` }} key={seconds} />
+                  ))}
+                </div>
+                <div className="home-chart-groups">
+                  {BENCHMARK_RESULTS.map((result) => {
+                    const engines = [
+                      { id: 'vane', label: BENCHMARK_ENGINE_NAMES.vaneData, seconds: result.vaneSeconds, batchSize: result.batchSizes.vaneData },
+                      { id: 'ray', label: BENCHMARK_ENGINE_NAMES.rayData, seconds: result.rayDataSeconds, batchSize: result.batchSizes.rayData },
+                      { id: 'daft', label: BENCHMARK_ENGINE_NAMES.daft, seconds: result.daftSeconds, batchSize: result.batchSizes.daft },
+                    ]
+                    return (
+                      <div className="home-chart-group" key={result.id}>
+                        <div className="home-chart-bars">
+                          {engines.map((engine) => {
+                            const description = [
+                              engine.label,
+                              copy.workloads[result.id],
+                              engine.seconds === null ? copy.oom : formatSeconds(engine.seconds),
+                              formatBatchSize(engine.batchSize),
+                            ].filter(Boolean).join(' · ')
+                            const height = engine.seconds === null ? 0 : chartBarHeight(engine.seconds, TUNED_CHART_MIN_SECONDS)
+                            return (
+                              <span className="home-chart-slot" key={engine.id}>
+                                {engine.seconds === null ? (
+                                  <span className="home-chart-oom" role="img" aria-label={description} title={description}>{copy.oom}</span>
+                                ) : (
+                                  <>
+                                    <span className="home-chart-value" style={{ bottom: `calc(${height}% + 5px)` }}>
+                                      {chartValueLabel(engine.seconds)}
+                                    </span>
+                                    <span
+                                      className={`home-chart-bar ${engine.id}`}
+                                      style={{ height: `${height}%` }}
+                                      role="img"
+                                      aria-label={description}
+                                      title={description}
+                                    />
+                                  </>
+                                )}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        <span className="home-chart-workload">{copy.workloads[result.id]}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <p className="home-chart-footnote">{copy.tunedChartHint}</p>
+          </Box>
+          <Box flat className="benchmark-table-wrap">
+            <table className="summary benchmark-summary">
               <thead>
-                <tr>{copy.table.map((heading) => <th key={heading}>{heading}</th>)}</tr>
+                <tr>
+                  <th>{copy.table.workload}</th>
+                  <th>{BENCHMARK_ENGINE_NAMES.vaneData}</th>
+                  <th>{BENCHMARK_ENGINE_NAMES.rayData}</th>
+                  <th>{BENCHMARK_ENGINE_NAMES.daft}</th>
+                  <th>{copy.table.versusRay}</th>
+                  <th>{copy.table.versusDaft}</th>
+                </tr>
               </thead>
               <tbody>
-                <tr><td>vLLM batch inference</td><td className="b">66K rows</td><td className="b">2× A100 80GB</td><td className="v">3.1×</td><td className="b">1.0×</td><td className="b">1.6×</td><td><span className="tagx">{copy.stable}</span></td></tr>
-                <tr><td>Text embedding</td><td className="b">480M chunks</td><td className="b">8× A10G</td><td className="v">2.4×</td><td className="b">1.0×</td><td className="b">1.3×</td><td><span className="tagx">{copy.stable}</span></td></tr>
-                <tr><td>Image decode + CLIP</td><td className="b">12M images</td><td className="b">4× A10G</td><td className="v">1.9×</td><td className="b">1.0×</td><td className="b">1.7×</td><td><span className="tagx exp">{copy.experimental}</span></td></tr>
-                <tr><td>Audio transcription</td><td className="b">120K clips</td><td className="b">4× A100</td><td className="v">2.2×</td><td className="b">1.0×</td><td className="b">—</td><td><span className="tagx exp">{copy.experimental}</span></td></tr>
+                {BENCHMARK_RESULTS.map((result) => {
+                  const rayChange = runtimeChangePercent(result.vaneSeconds, result.rayDataSeconds)
+                  const daftChange = result.daftSeconds === null
+                    ? null
+                    : runtimeChangePercent(result.vaneSeconds, result.daftSeconds)
+                  return (
+                    <tr key={result.id}>
+                      <td>{copy.workloads[result.id]}</td>
+                      <td>
+                        <TunedRuntime
+                          seconds={result.vaneSeconds}
+                          batchSize={result.batchSizes.vaneData}
+                          batchSizeLabel={copy.batchSize}
+                          notSet={copy.notSet}
+                          oom={copy.oom}
+                        />
+                      </td>
+                      <td>
+                        <TunedRuntime
+                          seconds={result.rayDataSeconds}
+                          batchSize={result.batchSizes.rayData}
+                          batchSizeLabel={copy.batchSize}
+                          notSet={copy.notSet}
+                          oom={copy.oom}
+                        />
+                      </td>
+                      <td>
+                        <TunedRuntime
+                          seconds={result.daftSeconds}
+                          batchSize={result.batchSizes.daft}
+                          batchSizeLabel={copy.batchSize}
+                          notSet={copy.notSet}
+                          oom={copy.oom}
+                        />
+                      </td>
+                      <td className={rayChange <= 0 ? 'runtime-change better' : 'runtime-change regression'}>
+                        {comparisonLabel(rayChange, copy.lowerChange, copy.higherChange)}
+                      </td>
+                      <td className={daftChange === null ? 'runtime-change' : daftChange <= 0 ? 'runtime-change better' : 'runtime-change regression'}>
+                        {daftChange === null
+                          ? <span className="tagx oom">{copy.oom}</span>
+                          : comparisonLabel(daftChange, copy.lowerChange, copy.higherChange)}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </Box>
-          <p className="mut" style={{ fontSize: 12, marginTop: 12 }}>
-            {copy.higher}
-          </p>
+          <p className="benchmark-note">{copy.lower}</p>
         </div>
       </section>
 
       <Divider />
-
-      {/* vLLM */}
-      <section className="bm-sec">
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>{copy.detail}</Eyebrow>
-            <h2 className="h2" style={{ marginTop: 12 }}>vLLM batch inference</h2>
-            <p className="lead" style={{ marginTop: 12, maxWidth: 640 }}>
-              {copy.vllmLead}
-            </p>
-          </div>
-          <div className="statline">
-            <div className="stat"><div className="n">3.1×</div><div className="l">{copy.throughputVs}</div></div>
-            <div className="stat"><div className="n">41<span style={{ fontSize: 18 }}> min</span></div><div className="l">{copy.wallClock}</div></div>
-            <div className="stat"><div className="n">92<span style={{ fontSize: 18 }}>%</span></div><div className="l">{copy.gpuUtil}</div></div>
-          </div>
-          <div className="grid2">
-            <Box className="lat">
-              <div className="azt" style={{ textAlign: 'left', marginBottom: 14 }}>{copy.throughputTitle}</div>
-              <div className="latrow"><span className="pl">Vane</span><div className="bar"><div className="fillb vane" style={{ width: '100%' }} /></div><span className="val">3.1×</span></div>
-              <div className="latrow"><span className="pl">Daft</span><div className="bar"><div className="fillb base" style={{ width: '52%' }} /></div><span className="val mut">1.6×</span></div>
-              <div className="latrow"><span className="pl">Ray Data</span><div className="bar"><div className="fillb base" style={{ width: '32%' }} /></div><span className="val mut">1.0×</span></div>
-              <div className="leg">
-                <span><span className="sw" style={{ background: 'var(--ink)' }} />Vane</span>
-                <span><span className="sw base" style={{ background: 'repeating-linear-gradient(45deg,var(--ink-3),var(--ink-3) 2px,transparent 2px,transparent 4px)' }} />{copy.baselineEngines}</span>
-              </div>
-            </Box>
-            <Box flat style={{ overflow: 'hidden' }}>
-              <table className="specs">
-                <tbody>
-                  <tr><th>{copy.specs.dataset}</th><td>66K prompt rows · <span className="mut">s3://bench/prompts-66k.parquet</span></td></tr>
-                  <tr><th>{copy.specs.hardware}</th><td>AWS p4d · 2× A100 80GB · NVLink</td></tr>
-                  <tr><th>{copy.specs.command}</th><td><span className="link">python bench_vllm.py --gpus 2 --bucketing prefix</span></td></tr>
-                  <tr><th>{copy.specs.env}</th><td>ray==2.40 · vllm==0.6.3 · CUDA 12.4</td></tr>
-                  <tr><th>{copy.specs.runtime}</th><td>{copy.specs.runtimeValue}</td></tr>
-                  <tr><th>{copy.specs.throughput}</th><td>{copy.specs.throughputValue}</td></tr>
-                  <tr><th>{copy.specs.notes}</th><td className="note">{copy.specs.notesValue}</td></tr>
-                </tbody>
-              </table>
-            </Box>
-          </div>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* MULTIMODAL */}
-      <section className="bm-sec">
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>{copy.multimodal}</Eyebrow>
-            <h2 className="h2" style={{ marginTop: 12 }}>{copy.multimodalTitle}</h2>
-            <p className="lead" style={{ marginTop: 12, maxWidth: 640 }}>
-              {copy.multimodalLead}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-            <span className="tagx">{copy.tags[0]}</span>
-            <span className="tagx">{copy.tags[1]}</span>
-            <span className="tagx exp">{copy.tags[2]}</span>
-            <span className="tagx exp">{copy.tags[3]}</span>
-          </div>
-          <div className="grid2">
-            <Box flat style={{ overflow: 'hidden' }}>
-              <table className="specs">
-                <tbody>
-                  <tr><th>{copy.workload}</th><td>{copy.imageWorkload}</td></tr>
-                  <tr><th>{copy.specs.dataset}</th><td>12M images · LAION subset</td></tr>
-                  <tr><th>{copy.specs.hardware}</th><td>4× A10G</td></tr>
-                  <tr><th>{copy.specs.command}</th><td><span className="link">python bench_image.py --gpus 4</span></td></tr>
-                  <tr><th>{copy.specs.throughput}</th><td>1.9× vs Ray Data</td></tr>
-                  <tr><th>{copy.specs.notes}</th><td className="note">{copy.imageNotes}</td></tr>
-                </tbody>
-              </table>
-            </Box>
-            <Box flat style={{ overflow: 'hidden' }}>
-              <table className="specs">
-                <tbody>
-                  <tr><th>{copy.workload}</th><td>{copy.audioWorkload}</td></tr>
-                  <tr><th>{copy.specs.dataset}</th><td>120K call recordings</td></tr>
-                  <tr><th>{copy.specs.hardware}</th><td>4× A100</td></tr>
-                  <tr><th>{copy.specs.command}</th><td><span className="link">python bench_audio.py --gpus 4</span></td></tr>
-                  <tr><th>{copy.specs.throughput}</th><td>2.2× vs Ray Data</td></tr>
-                  <tr><th>{copy.specs.notes}</th><td className="note">{copy.audioNotes}</td></tr>
-                </tbody>
-              </table>
-            </Box>
-          </div>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* METHODOLOGY */}
-      <section className="bm-sec">
-        <div className="wrap">
-          <div className="shead">
-            <Eyebrow>{copy.methodology}</Eyebrow>
-            <h2 className="h2" style={{ marginTop: 12 }}>{copy.methodology}</h2>
-            <p className="lead" style={{ marginTop: 12, maxWidth: 640 }}>
-              {copy.methodologyLead}
-            </p>
-          </div>
-          <Box flat style={{ overflow: 'hidden' }}>
-            <table className="specs">
-              <tbody>
-                {copy.methodRows.map(([label, value]) => (
-                  <tr key={label}><th>{label}</th><td>{value}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </Box>
-        </div>
-      </section>
-
-      <Divider />
-
-      {/* REPRODUCE */}
       <section className="bm-sec" style={{ paddingBottom: 40 }}>
         <div className="wrap">
           <div className="shead">
-            <Eyebrow>{copy.reproduce}</Eyebrow>
-            <h2 className="h2" style={{ marginTop: 12 }}>{copy.reproduce}</h2>
+            <Eyebrow>{copy.defaultEyebrow}</Eyebrow>
+            <h2 className="h2">{copy.defaultTitle}</h2>
+            <p className="lead">{copy.defaultLead}</p>
           </div>
-          <CodeWindow filename="reproduce.sh" code={REPRODUCE_CODE} />
+          <Box flat className="home-benchmark-chart benchmark-default-chart">
+            <div className="azt">{copy.elapsedTime}</div>
+            <div className="home-chart-meta">
+              <span>{copy.defaultLogScale}</span>
+              <div className="home-chart-legend" aria-label={copy.engineLegend}>
+                <span><i className="vane" />{BENCHMARK_ENGINE_NAMES.vaneData}</span>
+                <span><i className="ray" />{BENCHMARK_ENGINE_NAMES.rayData}</span>
+                <span><i className="daft" />{BENCHMARK_ENGINE_NAMES.daft}</span>
+              </div>
+            </div>
+            <div className="home-chart-plot" aria-label={copy.chartAria}>
+              <div className="home-chart-axis" aria-hidden="true">
+                {DEFAULT_CHART_TICKS.map((seconds) => (
+                  <span style={{ bottom: `${chartBarHeight(seconds, DEFAULT_CHART_MIN_SECONDS)}%` }} key={seconds}>
+                    {seconds >= 1000 ? `${seconds / 1000}k` : seconds}
+                  </span>
+                ))}
+              </div>
+              <div className="home-chart-area">
+                <div className="home-chart-grid" aria-hidden="true">
+                  {DEFAULT_CHART_TICKS.map((seconds) => (
+                    <i style={{ bottom: `${chartBarHeight(seconds, DEFAULT_CHART_MIN_SECONDS)}%` }} key={seconds} />
+                  ))}
+                </div>
+                <div className="home-chart-groups">
+                  {DEFAULT_BATCH_BENCHMARK_RESULTS.map((result) => {
+                    const engines = [
+                      { id: 'vane', label: BENCHMARK_ENGINE_NAMES.vaneData, seconds: result.vaneSeconds },
+                      { id: 'ray', label: BENCHMARK_ENGINE_NAMES.rayData, seconds: result.rayDataSeconds },
+                      { id: 'daft', label: BENCHMARK_ENGINE_NAMES.daft, seconds: result.daftSeconds },
+                    ]
+                    return (
+                      <div className="home-chart-group" key={result.id}>
+                        <div className="home-chart-bars">
+                          {engines.map((engine) => {
+                            const description = [
+                              engine.label,
+                              copy.workloads[result.id],
+                              engine.seconds === null ? copy.oom : formatSeconds(engine.seconds),
+                            ].join(' · ')
+                            const height = engine.seconds === null ? 0 : chartBarHeight(engine.seconds, DEFAULT_CHART_MIN_SECONDS)
+                            return (
+                              <span className="home-chart-slot" key={engine.id}>
+                                {engine.seconds === null ? (
+                                  <span className="home-chart-oom" role="img" aria-label={description} title={description}>{copy.oom}</span>
+                                ) : (
+                                  <>
+                                    <span className="home-chart-value" style={{ bottom: `calc(${height}% + 5px)` }}>
+                                      {chartValueLabel(engine.seconds)}
+                                    </span>
+                                    <span
+                                      className={`home-chart-bar ${engine.id}`}
+                                      style={{ height: `${height}%` }}
+                                      role="img"
+                                      aria-label={description}
+                                      title={description}
+                                    />
+                                  </>
+                                )}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        <span className="home-chart-workload">{copy.workloads[result.id]}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <p className="home-chart-footnote">{copy.chartHint}</p>
+          </Box>
+          <p className="benchmark-disclosure">{copy.disclosure}</p>
         </div>
       </section>
 
-      {/* CTA */}
       <Divider />
       <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">

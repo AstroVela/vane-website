@@ -166,7 +166,7 @@ export default function TrainingUseCase() {
     {
       title: 'Multimodal training data pipelines for AI models — Vane',
       description: 'Prepare images, video, audio, documents, tables, and sensor logs for multimodal model training. Run filtering, captioning, embedding, deduplication, auto-labeling, and dataset release packaging in one Ray-backed pipeline.',
-      ogDescription: '3.1x batch inference throughput vs Ray Data. Raw multimodal data to training-ready releases with one distributed pipeline.',
+      ogDescription: 'Raw multimodal data to training-ready releases with one Ray-backed distributed pipeline.',
       eyebrow: 'Use Case · Multimodal Model Training',
       heading: 'From raw multimodal data to training-ready dataset releases.',
       lead: 'A unified multimodal training data pipeline that transforms raw data into versioned, training-ready datasets with SQL processing, GPU-accelerated labeling, embedding, and scalable execution from local to Ray clusters.',
@@ -205,7 +205,7 @@ export default function TrainingUseCase() {
     {
       title: '多模态AI模型训练数据流水线 — Vane',
       description: '为多模态模型训练准备图像、视频、音频、文档、表格和传感器日志。用一条 Ray 支撑的流水线完成筛选、caption、embedding、去重、自动标注和数据集发布。',
-      ogDescription: '批量推理 throughput 达到 Ray Data 的 3.1 倍。用一条分布式流水线把原始多模态数据转换为可训练发布版本。',
+      ogDescription: '用一条 Ray 支撑的分布式流水线把原始多模态数据转换为可训练发布版本。',
       eyebrow: '用例 · 多模态模型训练',
       heading: '把原始多模态数据变成可发布的训练数据集',
       lead: '通过一条统一的多模态训练数据流水线，以 SQL 处理、GPU 加速标注和 embedding 将原始数据转换为带版本、可直接训练的数据集，并从本地环境扩展到 Ray 集群。',

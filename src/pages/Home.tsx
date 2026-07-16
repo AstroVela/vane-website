@@ -11,6 +11,29 @@ import PlatformArchitecture from '../components/PlatformArchitecture'
 import { Link } from '../router'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 import { DESIGN_PARTNER_MAILTO } from '../siteLinks'
+import {
+  BENCHMARK_ENGINE_NAMES,
+  BENCHMARK_ENVIRONMENT,
+  BENCHMARK_RESULTS,
+  formatBatchSize,
+  formatSeconds,
+  runtimeChangePercent,
+} from '../benchmarkData'
+
+const HOME_BENCHMARK_CHART_MIN_SECONDS = 50
+const HOME_BENCHMARK_CHART_MAX_SECONDS = 10000
+const HOME_BENCHMARK_CHART_TICKS = [50, 300, 1000, 3000, 10000] as const
+
+function homeBenchmarkBarHeight(seconds: number) {
+  const min = Math.log10(HOME_BENCHMARK_CHART_MIN_SECONDS)
+  const range = Math.log10(HOME_BENCHMARK_CHART_MAX_SECONDS) - min
+  return Math.max(0, Math.min(100, ((Math.log10(seconds) - min) / range) * 100))
+}
+
+function homeBenchmarkValueLabel(seconds: number) {
+  if (seconds >= 1000) return `${(seconds / 1000).toFixed(2)}k`
+  return Number.isInteger(seconds) ? `${seconds}` : seconds.toFixed(2)
+}
 
 const SCENARIOS: Array<{
   title: string
@@ -121,12 +144,21 @@ export default function Home() {
       benchmarks: 'Benchmarks',
       proofTitle: 'Multimodal inference benchmarks',
       proofLead: 'Benchmarking multimodal AI pipelines across audio, video, document, and image workloads.',
-      throughputVs: 'throughput vs Ray Data, with prefix bucketing on identical hardware.',
-      matrix: 'Reproducible matrix',
-      matrixCopy: 'Image classification · document embedding · audio transcription · video object detection. Workload-dependent, fully reproducible.',
+      comparisonLabel: 'Vane Data vs Ray Data vs Daft · tuned elapsed time',
+      environmentLabel: 'Test environment',
+      lowerElapsedTime: 'lower',
+      higherElapsedTime: 'higher',
+      elapsedTime: 'Elapsed time (seconds)',
+      logScale: 'Tuned batch sizes · log scale · lower is better',
+      chartAria: 'Grouped elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
+      chartHint: 'Bar labels show compact seconds. Batch sizes are tuned per engine and workload. OOM is a status, not a duration.',
+      workloads: {
+        document: 'Document',
+        image: 'Image',
+        audio: 'Audio',
+        video: 'Video',
+      },
       fullBenchmarks: 'Full benchmarks',
-      throughputTitle: 'Throughput — vLLM batch inference (higher is better)',
-      baselineEngines: 'baseline engines',
       platform: 'Platform',
       platformTitle: 'A multimodal-native AI engine connecting data, models, and agents.',
       platformLead: 'Unifies data, models, and agents — enabling continuous learning and scalable execution from local devices to Ray clusters.',
@@ -150,12 +182,21 @@ export default function Home() {
       benchmarks: '基准测试',
       proofTitle: '多模态推理基准测试',
       proofLead: '针对音频、视频、文档和图像工作负载，评测多模态 AI 流水线的推理性能。',
-      throughputVs: '在相同硬件上启用前缀分桶后的 throughput vs Ray Data。',
-      matrix: '可复现矩阵',
-      matrixCopy: '图像分类、文档 embedding、音频转写、视频目标检测。结果取决于工作负载，且完全可复现。',
+      comparisonLabel: 'Vane Data、Ray Data 与 Daft · batch_size 调优后耗时',
+      environmentLabel: '测试环境',
+      lowerElapsedTime: '更低',
+      higherElapsedTime: '更高',
+      elapsedTime: '端到端耗时（秒）',
+      logScale: 'batch_size 调优后 · 对数尺度 · 越低越好',
+      chartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中的分组耗时柱状图',
+      chartHint: '柱顶显示简化秒数。batch size 按引擎和 workload 调整。OOM 仅表示运行状态，不表示耗时。',
+      workloads: {
+        document: '文档',
+        image: '图像',
+        audio: '音频',
+        video: '视频',
+      },
       fullBenchmarks: '完整基准测试',
-      throughputTitle: 'Throughput — vLLM 批量推理（越高越好）',
-      baselineEngines: '基线引擎',
       platform: '平台',
       platformTitle: '连接数据、模型与 Agent 的多模态原生 AI 引擎',
       platformLead: '统一数据、模型与 Agent，支持持续学习，并将可扩展执行能力从本地设备延伸到 Ray 集群。',
@@ -242,33 +283,122 @@ export default function Home() {
             </p>
           </div>
           <div className="calc-grid">
-            <Box style={{ padding: '28px 30px', display: 'flex', flexDirection: 'column' }}>
-              <div className="azt" style={{ textAlign: 'left' }}>vLLM batch inference · 66K rows · 2× A100</div>
-              <div style={{ fontSize: 'clamp(56px,7vw,80px)', fontWeight: 700, letterSpacing: '-0.04em', lineHeight: 0.95, margin: '14px 0 8px' }}>3.1×</div>
-              <div className="mut" style={{ fontSize: 13.5, lineHeight: 1.5 }}>{copy.throughputVs}</div>
-              <div className="bm-matrix">
-                <div className="azt" style={{ textAlign: 'left', marginBottom: 10 }}>{copy.matrix}</div>
-                <div className="bm-matrix-grid">
-                  <span><b>~20× vs Spark</b></span>
-                  <span><b>~2× vs Daft</b></span>
-                  <span><b>~1.2× vs Ray Data</b></span>
-                </div>
-                <p>{copy.matrixCopy}</p>
+            <Box className="home-benchmark-summary">
+              <div className="azt">{copy.comparisonLabel}</div>
+              <div className="home-benchmark-environment">
+                <span>{copy.environmentLabel}</span>
+                <p>
+                  <span>{BENCHMARK_ENVIRONMENT.cpuCores} CPU cores · {BENCHMARK_ENVIRONMENT.memoryGb} GB RAM</span>
+                  <span>{BENCHMARK_ENVIRONMENT.gpu} · {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB GPU memory</span>
+                </p>
               </div>
-              <Button sm to="/benchmarks" arrow style={{ marginTop: 'auto', alignSelf: 'flex-start' }}>{copy.fullBenchmarks}</Button>
+              <dl className="home-benchmark-results">
+                {BENCHMARK_RESULTS.map((result) => {
+                  const rayChange = runtimeChangePercent(result.vaneSeconds, result.rayDataSeconds)
+                  const daftChange = result.daftSeconds === null
+                    ? null
+                    : runtimeChangePercent(result.vaneSeconds, result.daftSeconds)
+                  return (
+                    <div className="home-benchmark-result" key={result.id}>
+                      <dt>{copy.workloads[result.id]}</dt>
+                      <dd>
+                        <span className="home-benchmark-comparison">
+                          <span>{BENCHMARK_ENGINE_NAMES.rayData}</span>
+                          <strong>
+                            {Math.abs(rayChange).toFixed(1)}%
+                            <small>{rayChange < 0 ? copy.lowerElapsedTime : copy.higherElapsedTime}</small>
+                          </strong>
+                        </span>
+                        <span className="home-benchmark-comparison">
+                          <span>{BENCHMARK_ENGINE_NAMES.daft}</span>
+                          {daftChange === null ? (
+                            <strong>OOM</strong>
+                          ) : (
+                            <strong>
+                              {Math.abs(daftChange).toFixed(1)}%
+                              <small>{daftChange < 0 ? copy.lowerElapsedTime : copy.higherElapsedTime}</small>
+                            </strong>
+                          )}
+                        </span>
+                      </dd>
+                    </div>
+                  )
+                })}
+              </dl>
+              <Button sm to="/benchmarks" arrow>{copy.fullBenchmarks}</Button>
             </Box>
-            <Box className="lat">
-              <div className="azt" style={{ textAlign: 'left', marginBottom: 14 }}>{copy.throughputTitle}</div>
-              <div className="latrow"><span className="pl">Vane</span><div className="bar"><div className="fillb vane" style={{ width: '100%' }} /></div><span className="val">3.1×</span></div>
-              <div className="latrow"><span className="pl">Daft</span><div className="bar"><div className="fillb base" style={{ width: '52%' }} /></div><span className="val mut">1.6×</span></div>
-              <div className="latrow"><span className="pl">Ray Data</span><div className="bar"><div className="fillb base" style={{ width: '32%' }} /></div><span className="val mut">1.0×</span></div>
-              <div className="leg">
-                <span><span className="sw" style={{ background: 'var(--ink)' }} />Vane</span>
-                <span><span className="sw base" style={{ background: 'repeating-linear-gradient(45deg,var(--ink-3),var(--ink-3) 2px,transparent 2px,transparent 4px)' }} />{copy.baselineEngines}</span>
+            <Box flat className="home-benchmark-chart">
+              <div className="azt">{copy.elapsedTime}</div>
+              <div className="home-chart-meta">
+                <span>{copy.logScale}</span>
+                <div className="home-chart-legend" aria-label="Engines">
+                  <span><i className="vane" />{BENCHMARK_ENGINE_NAMES.vaneData}</span>
+                  <span><i className="ray" />{BENCHMARK_ENGINE_NAMES.rayData}</span>
+                  <span><i className="daft" />{BENCHMARK_ENGINE_NAMES.daft}</span>
+                </div>
               </div>
-              <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--ink-3)' }}>
-                66K rows · 2× A100 · prefix bucketing<br /><span className="link">⌥ AstroVela/vane</span>
+              <div className="home-chart-plot" aria-label={copy.chartAria}>
+                <div className="home-chart-axis" aria-hidden="true">
+                  {HOME_BENCHMARK_CHART_TICKS.map((seconds) => (
+                    <span style={{ bottom: `${homeBenchmarkBarHeight(seconds)}%` }} key={seconds}>
+                      {seconds >= 1000 ? `${seconds / 1000}k` : seconds}
+                    </span>
+                  ))}
+                </div>
+                <div className="home-chart-area">
+                  <div className="home-chart-grid" aria-hidden="true">
+                    {HOME_BENCHMARK_CHART_TICKS.map((seconds) => (
+                      <i style={{ bottom: `${homeBenchmarkBarHeight(seconds)}%` }} key={seconds} />
+                    ))}
+                  </div>
+                  <div className="home-chart-groups">
+                    {BENCHMARK_RESULTS.map((result) => {
+                      const engines = [
+                        { id: 'vane', label: BENCHMARK_ENGINE_NAMES.vaneData, seconds: result.vaneSeconds, batchSize: result.batchSizes.vaneData },
+                        { id: 'ray', label: BENCHMARK_ENGINE_NAMES.rayData, seconds: result.rayDataSeconds, batchSize: result.batchSizes.rayData },
+                        { id: 'daft', label: BENCHMARK_ENGINE_NAMES.daft, seconds: result.daftSeconds, batchSize: result.batchSizes.daft },
+                      ]
+                      return (
+                        <div className="home-chart-group" key={result.id}>
+                          <div className="home-chart-bars">
+                            {engines.map((engine) => {
+                              const description = [
+                                engine.label,
+                                copy.workloads[result.id],
+                                engine.seconds === null ? 'OOM' : formatSeconds(engine.seconds),
+                                formatBatchSize(engine.batchSize),
+                              ].filter(Boolean).join(' · ')
+                              const height = engine.seconds === null ? 0 : homeBenchmarkBarHeight(engine.seconds)
+                              return (
+                                <span className="home-chart-slot" key={engine.id}>
+                                  {engine.seconds === null ? (
+                                    <span className="home-chart-oom" role="img" aria-label={description} title={description}>OOM</span>
+                                  ) : (
+                                    <>
+                                      <span className="home-chart-value" style={{ bottom: `calc(${height}% + 5px)` }}>
+                                        {homeBenchmarkValueLabel(engine.seconds)}
+                                      </span>
+                                      <span
+                                        className={`home-chart-bar ${engine.id}`}
+                                        style={{ height: `${height}%` }}
+                                        role="img"
+                                        aria-label={description}
+                                        title={description}
+                                      />
+                                    </>
+                                  )}
+                                </span>
+                              )
+                            })}
+                          </div>
+                          <span className="home-chart-workload">{copy.workloads[result.id]}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
+              <p className="home-chart-footnote">{copy.chartHint}</p>
             </Box>
           </div>
         </div>
