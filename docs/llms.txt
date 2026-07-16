@@ -2,12 +2,9 @@
 
 Generated from docs/manifest.json. Routes are listed in sidebar order.
 
-- /docs/data: Vane Data Docs.
-- /docs/data/quickstart/what-is-vane-data: What Is Vane Data?
+- /docs/data: Overview.
 - /docs/data/quickstart/installation: Installation.
 - /docs/data/quickstart/quickstart: Quickstart.
-- /docs/data/concepts/architecture: Architecture.
-- /docs/data/concepts/execution-model: Execution Model.
 - /docs/data/concepts/sql-vs-python: SQL vs Python.
 - /docs/data/concepts/udfs: UDFs.
 - /docs/data/concepts/ai-functions: AI Functions.

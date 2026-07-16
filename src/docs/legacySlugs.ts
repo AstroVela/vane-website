@@ -1,7 +1,10 @@
 import type { DocSlug } from './registry'
 
 export const LEGACY_DOC_SLUGS = {
-  'quickstart/what-is-vane': 'quickstart/what-is-vane-data',
+  'quickstart/what-is-vane': 'index',
+  'quickstart/what-is-vane-data': 'index',
+  'concepts/architecture': 'index',
+  'concepts/execution-model': 'index',
 } as const satisfies Record<string, DocSlug>
 
 export const LEGACY_DOC_SLUG_LIST = Object.keys(LEGACY_DOC_SLUGS)

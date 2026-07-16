@@ -10,13 +10,8 @@ export type DocPage = {
 export const DOCS_PAGES = {
   index: {
     source: 'docs/data/index.mdx',
-    title: 'Vane Data Docs',
-    titleZh: 'Vane Data 文档',
-  },
-  'quickstart/what-is-vane-data': {
-    source: 'docs/data/quickstart/what-is-vane-data.mdx',
-    title: 'What Is Vane Data?',
-    titleZh: '什么是 Vane Data？',
+    title: 'Overview',
+    titleZh: '概览',
   },
   'quickstart/installation': {
     source: 'docs/data/quickstart/installation.mdx',
@@ -27,16 +22,6 @@ export const DOCS_PAGES = {
     source: 'docs/data/quickstart/quickstart.mdx',
     title: 'Quickstart',
     titleZh: '快速开始',
-  },
-  'concepts/architecture': {
-    source: 'docs/data/concepts/architecture.mdx',
-    title: 'Architecture',
-    titleZh: '架构',
-  },
-  'concepts/execution-model': {
-    source: 'docs/data/concepts/execution-model.mdx',
-    title: 'Execution Model',
-    titleZh: '执行模型',
   },
   'concepts/sql-vs-python': {
     source: 'docs/data/concepts/sql-vs-python.mdx',
@@ -208,7 +193,7 @@ export function isDocSlug(slug: string | undefined): slug is DocSlug {
 }
 
 const DOC_GROUP_LABELS_ZH: Record<string, string> = {
-  Quickstart: '快速开始',
+  'Getting Started': '快速开始',
   Concepts: '核心概念',
   Guides: '使用指南',
   'Data Ingestion': '数据加载',

@@ -893,4 +893,4 @@ result = mapped.project("id, value AS next_id")
 | GPU 资源 | 在 Ray 上，`gpus` 会成为 task 或 actor 资源请求。本地 subprocess 不会 reserve 或隔离 GPU，只继承进程可见设备，并在非零请求时发出 warning。 |
 | 并发参数名称 | Relation actor pool 使用 `actor_number`。AI provider 的 `concurrency` 是映射到 provider actor 的独立选项，不是 `rel.map_batches` 参数。 |
 
-完整 setup、校验和输出 workflow 请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)。位置、行数、状态和失败规则的设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)和[执行模型](/zh-CN/docs/data/concepts/execution-model)。
+完整 setup、校验和输出 workflow 请参阅[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)。位置、行数、状态和失败规则的设计原因请参阅 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。

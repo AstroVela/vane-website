@@ -198,8 +198,8 @@ export default function TrainingDataFactoryAnimation() {
     {
       aria: 'Execution timeline',
       eyebrow: 'Execution timeline',
-      title: 'Legacy queues. Vane keeps the graph occupied.',
-      lead: 'The same multimodal training-data pipeline runs on both sides. Legacy execution builds queues between stages; Vane streams media, batches dynamically, and keeps GPU work fed.',
+      title: 'Overlaps heterogeneous resources.',
+      lead: 'Traditional pipelines create stage barriers and pipeline bubbles. Vane overlaps CPU, GPU, and I/O workloads through streaming execution and dynamic batching.',
       samePipeline: 'Same pipeline',
       pipelineNote: 'Legacy and Vane run these same stages; the lanes below compare execution.',
       imageAlt: 'Camera frame at an urban intersection',
@@ -212,8 +212,8 @@ export default function TrainingDataFactoryAnimation() {
     {
       aria: '执行时间线',
       eyebrow: '执行时间线',
-      title: '传统流水线形成队列，Vane 让执行图保持忙碌。',
-      lead: '两边运行的是同一条多模态训练数据流水线。传统执行会在阶段之间堆积队列；Vane 让媒体保持 streaming，执行 dynamic batching，并持续喂饱 GPU 工作。',
+      title: '异构资源重叠执行。',
+      lead: '传统流水线会形成阶段屏障和流水线气泡。Vane 通过流式执行与动态批处理，将 CPU、GPU 和 I/O 工作负载重叠调度。',
       samePipeline: '同一条流水线',
       pipelineNote: 'Legacy 和 Vane 运行相同阶段；下面两条泳道对比执行方式。',
       imageAlt: '城市路口相机帧',

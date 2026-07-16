@@ -88,7 +88,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
 
           <div>
             <h4>{copy.docs}</h4>
-            <Link to="/docs/data/quickstart/what-is-vane-data">{copy.quickstart}</Link>
+            <Link to="/docs/data/quickstart/quickstart">{copy.quickstart}</Link>
             <Link to="/docs/data/guides/multimodal-ingest">{copy.guides}</Link>
             <Link to="/docs/data/examples">{copy.examples}</Link>
             <Link to="/docs/data/contributing/development">{copy.contributing}</Link>
