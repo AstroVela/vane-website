@@ -10,7 +10,7 @@ Vane Data uses `vane-ai` as the distribution package and `vane` as the Python im
 - A platform with a published Vane Data wheel, or a local C++ build environment for source builds.
 - Network and credentials for any remote storage, model provider, or Ray cluster used by your pipeline.
 
-The package metadata installs the required runtime dependencies, including `cloudpickle` and `ray`.
+The package metadata installs the required runtime dependencies, including `cloudpickle`, `numpy`, `pyarrow`, and `ray`.
 
 ## Install a released package
 
@@ -20,22 +20,16 @@ Use the released package when a wheel is available for your Python version and p
 python -m pip install vane-ai
 ```
 
-Install the general data-science extras when you need optional dataframe, Arrow, filesystem, or ADBC integration dependencies:
-
-```bash
-python -m pip install "vane-ai[all]"
-```
-
-The `all` extra is a convenience group. AI provider libraries are loaded lazily and should be installed for the providers you use:
+AI provider adapters are loaded lazily. After installing `vane-ai`, add only the libraries for the providers you use:
 
 ```bash
 # Local embedding and classification models
 python -m pip install sentence-transformers transformers torch
 
 # Hosted model providers
-python -m pip install openai numpy
+python -m pip install openai
 python -m pip install anthropic
-python -m pip install google-genai numpy
+python -m pip install google-genai
 
 # vLLM-backed prompting
 python -m pip install vllm
@@ -55,26 +49,28 @@ con.sql("select 42 as answer").show()
 PY
 ```
 
-## Enable Ray-backed execution
+## Default Ray execution
 
-Use Ray only when the workload needs distributed scans, distributed writes, distributed UDFs, or cluster resource placement. For predictable behavior, configure the intended runner before creating connections:
+Ray is Vane's default runner. The verification command above starts a local Ray runtime automatically when `RAY_ADDRESS` is unset, so no explicit runner configuration is required.
+
+Select `local` before creating the connection when the process should run without Ray:
 
 ```python
 import vane
 
-vane.configure(runner="ray")
+vane.configure(runner="local")
 
 con = vane.connect()
 con.sql("select 42 as answer").show()
 ```
 
-The same setting can be applied with an environment variable:
+The same selection can be made when launching the process:
 
 ```bash
-export VANE_RUNNER=ray
+VANE_RUNNER=local python job.py
 ```
 
-Every Ray worker must be able to import the same Python packages, access the same storage systems, and see any model files or provider credentials required by the pipeline.
+To use an existing Ray cluster, set `RAY_ADDRESS` before starting the job. Every Ray worker must be able to import the same Python packages, access the same storage systems, and see any model files or provider credentials required by the pipeline. See [Deployment](/docs/data/deploy/deployment) for local and cluster runner settings.
 
 ## Build from source
 
@@ -100,24 +96,30 @@ sudo apt-get update
 sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
 ```
 
-Prepare vcpkg for C++ dependencies:
+Build the C++ dependencies with the vcpkg revision pinned by the repository:
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git ../vcpkg
-../vcpkg/bootstrap-vcpkg.sh
+git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
+git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
+.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
 ```
 
-Install Python build tooling and build in editable mode:
+Install Python build tooling, then build and install a non-editable Release wheel:
 
 ```bash
 python -m pip install -U pip
 python -m pip install cmake ninja scikit-build-core "pybind11[global]"
 
-python -m pip install -e . --no-build-isolation -v \
-  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+export SKBUILD_BUILD_DIR="$PWD/build/release"
+export SKBUILD_CMAKE_BUILD_TYPE=Release
+
+python -m pip install . --no-build-isolation -v
 ```
 
-If an existing checkout was previously configured without the vcpkg toolchain, remove the old CMake build directory before rebuilding so CMake does not reuse an incompatible cache.
+`vcpkg install` reads the repository's `vcpkg.json` manifest and writes the built packages to `vcpkg_installed`. Vane's CMake configuration discovers that directory automatically, so do not set `CMAKE_TOOLCHAIN_FILE`. Both `.cache` and `vcpkg_installed` are ignored by the repository.
+
+The non-editable install is intentional: the default Ray runner imports Vane in worker processes, while scikit-build-core editable rebuild mode can invoke CMake again during each worker import. Rerun the install command after changing source code. If an existing checkout was previously configured with different CMake options, select a fresh `SKBUILD_BUILD_DIR` or remove that old build directory before rebuilding.
 
 ## Build configuration notes
 

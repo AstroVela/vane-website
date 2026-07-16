@@ -111,13 +111,9 @@ embedded.write_parquet("output/training_chunks/")
 
 ## 扩展
 
-在本地路径确认无误后，再切换 runner，并启用成本更高的 UDF 或 AI 辅助阶段：
+Ray 已经是默认 runner。在有界的本地路径确认无误后，再把成本更高的 UDF 或 AI 辅助阶段从显式 subprocess backend 改为 Ray 调度：
 
 ```python
-import vane
-
-vane.configure(runner="ray")
-
 embedding_only = chunks.embed_text(
     "chunk_text",
     provider="transformers",

@@ -3,14 +3,14 @@ title: Quickstart
 slug: /quickstart/quickstart
 ---
 
-This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs locally, and needs no Ray cluster, GPU, or model-provider credentials.
+This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs on your machine, and needs no external Ray cluster, GPU, or model-provider credentials.
 
 You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
 ## Install Vane Data
 
 ```bash
-python -m pip install 'vane-ai[all]'
+python -m pip install vane-ai
 ```
 
 ## Run Your First SQL Expression UDF
@@ -22,15 +22,14 @@ import vane
 
 con = vane.connect()
 
-con.execute("""
-    CREATE TABLE documents AS
-    SELECT *
-    FROM (VALUES
-        ('doc-001', 'Signed claim form received.'),
-        ('doc-002', 'Invoice is missing approval metadata.'),
-        ('doc-003', 'Policy reference has expired.')
-    ) AS rows(document_id, source_text)
-""")
+documents = con.values(
+    (
+        vane.lit("doc-001").alias("document_id"),
+        vane.lit("Signed claim form received.").alias("source_text"),
+    ),
+    (vane.lit("doc-002"), vane.lit("Invoice is missing approval metadata.")),
+    (vane.lit("doc-003"), vane.lit("Policy reference has expired.")),
+)
 
 
 def review_status(source_text):
@@ -76,7 +75,7 @@ The result contains the original columns plus one typed `review_status` column:
 - The Expression added one result beside each input row, so IDs and source text stayed in the same relation.
 - `vane.detach_function(...)` removed the alias after the lazy result had been materialized by `show()`.
 
-For exception-safe cleanup, batch functions, callable classes, and Relation transformations, continue with [Custom Python UDFs](/docs/data/guides/custom-python-udfs). For exact signatures and restrictions, use the [UDF API Reference](/docs/data/reference/udf-api).
+For callable lifecycle, batch and cardinality behavior, and Relation transformations, continue with [UDF Concepts](/docs/data/concepts/udfs).
 
 ## Optional: Add an AI Function
 
@@ -107,26 +106,25 @@ with_ai = con.sql("""
 with_ai.show()
 ```
 
-Provider calls can incur cost and send data outside your environment. Keep the first input small and read [AI Functions](/docs/data/guides/ai-functions) before building a larger workflow.
+Provider calls can incur cost and send data outside your environment. Keep the first input small and review [AI Function Concepts](/docs/data/concepts/ai-functions) before building a larger workflow.
 
-## Scale from Local to Ray
+## Scale from Local Ray to a Cluster
 
-The Quickstart uses the default local runner. To distribute the same UDF or AI Expression work, configure Ray **before** creating the connection:
+Ray is Vane's default runner. With `RAY_ADDRESS` unset, this quickstart starts a Ray runtime on the current machine; no external cluster or explicit runner configuration is required.
 
-```python
-import vane
+To run the same job on a cluster, launch it from the head node with cluster discovery enabled:
 
-vane.configure(runner="ray")
-con = vane.connect()
+```bash
+RAY_ADDRESS=auto python quickstart.py
 ```
 
-The SQL projection and registered callable can stay the same. For a larger job, replace the inline `VALUES` table with a shared source such as Parquet or object storage.
+The SQL projection and registered callable can stay the same. For a larger job, replace the inline relation with a shared source such as Parquet or object storage.
 
-Every Ray worker must be able to import the UDF and its dependencies and access the same data, model files, and credentials required by its work. See [Ray Cluster Deployment](/docs/data/deploy/ray-cluster) before running on a cluster.
+Every Ray worker must be able to import the UDF and its dependencies and access the same data, model files, and credentials required by its work. See [Deployment](/docs/data/deploy/deployment) before running on a cluster.
 
 ## Next Steps
 
-- [Custom Python UDFs](/docs/data/guides/custom-python-udfs)
-- [AI Functions](/docs/data/guides/ai-functions)
-- [Embeddings at Scale](/docs/data/guides/embeddings-at-scale)
-- [GPU Inference](/docs/data/guides/gpu-inference)
+- [UDF Concepts](/docs/data/concepts/udfs)
+- [AI Function Concepts](/docs/data/concepts/ai-functions)
+- [Examples](/docs/data/examples)
+- [Deployment](/docs/data/deploy/deployment)

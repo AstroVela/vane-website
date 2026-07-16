@@ -16,47 +16,6 @@
     ]
   },
   {
-    "group": "Guides",
-    "items": [
-      {
-        "group": "Data Ingestion",
-        "items": [
-          { "slug": "guides/multimodal-ingest" },
-          { "slug": "guides/structured-data-load" }
-        ]
-      },
-      {
-        "group": "Data Transformation",
-        "items": [
-          { "slug": "guides/custom-python-udfs" },
-          { "slug": "guides/multimodal-pipeline" },
-          { "slug": "guides/structured-transformation" }
-        ]
-      },
-      {
-        "group": "AI & Inference",
-        "items": [
-          { "slug": "guides/ai-functions" },
-          { "slug": "guides/gpu-inference" },
-          { "slug": "guides/embeddings-at-scale" }
-        ]
-      },
-      {
-        "group": "Optimization",
-        "items": [
-          { "slug": "guides/performance-tuning" }
-        ]
-      }
-    ]
-  },
-  {
-    "group": "Reference",
-    "items": [
-      { "slug": "reference/udf-api" },
-      { "slug": "reference/ai-api" }
-    ]
-  },
-  {
     "group": "Examples",
     "items": [
       { "slug": "examples" },
@@ -67,11 +26,9 @@
     ]
   },
   {
-    "group": "Deploy",
+    "group": "Operations",
     "items": [
-      { "slug": "deploy/single-node" },
-      { "slug": "deploy/ray-cluster" },
-      { "slug": "deploy/sizing" }
+      { "slug": "deploy/deployment" }
     ]
   },
   {

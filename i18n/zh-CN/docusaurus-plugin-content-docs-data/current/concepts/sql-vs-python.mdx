@@ -2,130 +2,120 @@
 title: SQL 与 Python
 ---
 
-Vane Data 不会把一条 pipeline 划分成相互竞争的“SQL 工作负载”和“Python 工作负载”。SQL 与 Python 是 **Expression API** 的两个入口；**Relation API** 则是处理表形工作的专用路径。一条 pipeline 可以同时使用它们。
+SQL 和 Python 是构建同一条惰性 Vane Data pipeline 的两种接口。你可以
+单独使用任一接口，也可以在一条 pipeline 中混合使用：两者都会生成
+Relation 对象，并且任一接口都可以继续消费这些对象。
 
-先选择语义输出模型，再选择最适合表达该阶段的语法。
+## SQL 接口
 
-## 先选择输出模型，再选择语法
-
-首先判断该阶段必须产生什么。如果是在每个输入行旁增加一个有类型的结果，就选择 Expression；如果要控制新的表形、多列输出或基数，就选择 Relation。确定模型之后，再判断 Expression 用 SQL 还是 Python 表达更清楚。
-
-| 输出契约 | 模型与入口 | 选择原因 |
-| --- | --- | --- |
-| 在每个输入行旁增加一个有类型的结果 | Expression API — SQL（推荐） | 直接组合进 `SELECT` projection，并保留可见的标识符与源列。 |
-| 保持相同的 projection 契约，但 callable 或配置更适合在 Python 中构造 | Expression API — Python | 使用 Python 对象构建同一个 lazy、通常保持行数的 projection。 |
-| 产生表形结果、多列输出、改变基数，或使用 Relation 专属 AI 能力 | Relation API — Python Relation 方法 | 让操作控制输出表，并使用专门的 Relation 控制项。 |
-
-经验法则：要增加有类型的增强列，先从 SQL Expression 开始；构造逻辑属于 Python 时使用 Python Expression；只有输出契约或能力确实要求时才切换到 Relation。
-
-## Expression API
-
-Expression 调用会向 projection 增加一个有类型的输出列，通常为每个输入行保留一个输出行。SQL 与 Python 共享这一语义模型；更换入口不会把工作变成另一类 pipeline。
-
-### SQL 入口（推荐）
-
-注册的 UDF alias、`ai_prompt` 和 `ai_embed` 都属于 SQL `SELECT` projection。推荐默认使用这个入口，因为普通 SQL 可以继续过滤和投影 relation，同时让自定义结果或 AI 结果与稳定 ID、源字段保持可组合关系。
+当转换逻辑最适合用 SQL 语句表达时，使用 `con.sql(...)`。`source` 等
+Python Relation 变量可以直接按名称引用：
 
 ```python
 import vane
 
 con = vane.connect()
-
-def normalize_text(value):
-    return str(value).strip().lower()
-
-vane.attach_function(
-    normalize_text,
-    alias="normalize_text_sql",
-    connection=con,
-    parameters=["VARCHAR"],
-    return_dtype="VARCHAR",
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
 
-try:
-    projected = con.sql("""
-        SELECT
-            document_id,
-            text,
-            normalize_text_sql(text) AS normalized_text
-        FROM (VALUES
-            (1, ' Refund requested ')
-        ) AS documents(document_id, text)
-    """)
-    rows = projected.fetchall()
-finally:
-    vane.detach_function("normalize_text_sql", connection=con)
+result = con.sql("""
+    SELECT
+        order_id,
+        category,
+        quantity * unit_price AS total
+    FROM source
+    WHERE quantity * unit_price >= 20
+    ORDER BY order_id
+""")
+result.show()
 ```
 
-`fetchall()` 会在 alias 仍然挂载时物化 projection。结果会把 `document_id` 和 `text` 保留在自定义 Expression 结果旁；配置好 provider 的 SQL AI 调用使用相同的 projection 模式。
+## Python 接口
 
-### Python 入口
-
-当相同的 projection 更适合用 Python callable 或有类型的配置对象来组装时，使用 Python Expression。`vane.func` 与 `vane.func.batch`、`vane.cls` 与 `vane.cls.batch`，以及 `vane.ai.prompt` 与 `vane.ai.embed`，都是同一个 Expression 模型的 Python builder。
+表操作使用 Relation 方法；列、字面量、算术运算和谓词使用 Expression
+对象：
 
 ```python
 import vane
 
 con = vane.connect()
-source = con.sql("""
-    SELECT 1 AS document_id, ' Refund requested '::VARCHAR AS text
-""")
-
-@vane.func(return_dtype="VARCHAR")
-def normalize_text(value):
-    return str(value).strip().lower()
-
-projected = source.select(
-    vane.col("document_id"),
-    vane.col("text"),
-    normalize_text(vane.col("text")).alias("normalized_text"),
-    vane.ai.prompt(vane.sql_expr("'Summarize: ' || text")).alias("summary"),
-    vane.ai.embed(vane.col("text")).alias("embedding"),
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
+
+result = source.filter(
+    vane.col("quantity") * vane.col("unit_price") >= vane.lit(20)
+).select(
+    vane.col("order_id"),
+    vane.col("category"),
+    (
+        vane.col("quantity") * vane.col("unit_price")
+    ).alias("total"),
+).order("order_id")
+result.show()
 ```
 
-这种替代语法仍然产生有类型、通常保持行数的 projection。Python batch Expression 的 `row_preserving=False` 是一个范围很窄的例外：它可以改变基数，但结果必须是唯一的顶层 projection。这个例外不适用于注册的 SQL alias；v1 中的 SQL alias 仍然保持行数。
+## 混合 Pipeline
 
-## Relation API
-
-当 callable 或 helper 需要控制表形时，选择 Relation：例如多列输出、完整的表阶段或基数变化。自定义方法包括 `rel.map_batches`、`rel.flat_map`，以及逐行 scalar 的 `rel.map`；`rel.map` 不是 pandas batch transform。Relation AI 则通过 `rel.embed_text` 提供内置分块，通过 `rel.classify_text` 提供内置分类，并通过 `rel.prompt` 提供结构化或多模态 prompting；必要时，这些方法还可以暴露显式 Relation execution backend。
-
-这些目前都是 Python Relation 方法。Vane 不提供直接的 SQL Relation API，也没有对应的 SQL table-function 入口。
-
-## 同一条 Pipeline，而非互斥的工作负载
-
-SQL 可以在 Python Relation 调用之前创建、连接并过滤输入 relation，也可以在调用之后检查、聚合或写出返回的 relation。以这种方式混合两种语言，并不会让中间的方法变成 SQL Relation API；每个阶段仍然使用与其输出匹配的模型。
-
-当前 API 中的内置分类是 Relation 专属能力，因此专用调用可以放在普通 SQL 阶段之间：
+Relation 可以双向跨越接口边界。下面的示例先用 SQL 计算总价，再用 Python
+筛选行，最后用 SQL 聚合结果：
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    SELECT text
-    FROM (VALUES
-        ('The invoice total is wrong'),
-        ('My parcel has not arrived'),
-        (NULL)
-    ) AS documents(text)
-    WHERE text IS NOT NULL
-""")
-
-classified = rel.classify_text(
-    "text",
-    labels=["billing", "delivery", "other"],
-    output_column="label",
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
 
-label_counts = con.sql("""
-    SELECT label, count(*) AS documents
-    FROM classified
-    GROUP BY label
-    ORDER BY documents DESC
+# SQL 阶段。
+priced = con.sql("""
+    SELECT
+        order_id,
+        category,
+        quantity * unit_price AS total
+    FROM source
 """)
+
+# Python 阶段。
+selected = priced.filter(
+    vane.col("total") >= vane.lit(20)
+).select(
+    vane.col("category"),
+    vane.col("total"),
+)
+
+# SQL 阶段。
+summary = con.sql("""
+    SELECT category, sum(total) AS revenue
+    FROM selected
+    GROUP BY category
+    ORDER BY category
+""")
+summary.show()
 ```
-
-## 后续阅读
-
-精确签名、参数、返回契约和位置限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api) 与 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。从设置到输出的完整任务请按照 [自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs) 与 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions) 操作。有关这些边界背后的执行原因，请阅读 [UDF 概念](/zh-CN/docs/data/concepts/udfs) 和 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。

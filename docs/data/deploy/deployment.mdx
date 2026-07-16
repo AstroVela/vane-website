@@ -1,0 +1,111 @@
+---
+title: Deployment
+---
+
+Vane executes lazy relational plans through a runner. Choose the runner before creating a connection or materializing the first relation.
+
+## 1. Runners
+
+Vane exposes two runners:
+
+| Runner | Execution model | UDF scheduling | Best fit |
+| --- | --- | --- | --- |
+| `ray` | Ray on the current machine or an attached Ray cluster | Ray tasks and actors | Default; distributed data, multiple machines, or GPU resources |
+| `local` | Vane's local FTE runner on one machine | Local subprocess tasks and actors | Single-machine jobs that should not start or connect to Ray |
+
+`ray` is the default. You normally do not need to write `vane.configure(runner="ray")`. With no cluster address configured, the runner starts a local Ray runtime automatically.
+
+Select `local` explicitly when the job should run without Ray:
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+```
+
+You can make the same selection before launching a process:
+
+```bash
+VANE_RUNNER=local python job.py
+```
+
+Use `ray` when a plan must span machines or when a UDF requests GPU resources. Use `local` for a single-host execution environment without Ray resource scheduling.
+
+## 2. Deploy on a Ray Cluster
+
+All nodes need compatible Vane, Ray, Python, and UDF dependencies. They must also be able to access the job's data, model files, output locations, and credentials.
+
+If a Ray cluster already exists, skip the startup commands and use its address when running the job.
+
+If no cluster exists, start the head node first:
+
+```bash
+ray start --head \
+  --node-ip-address=<HEAD_IP> \
+  --port=6379 \
+  --dashboard-host=0.0.0
+```
+
+Then join each worker node to it:
+
+```bash
+ray start \
+  --address=<HEAD_IP>:6379 \
+  --node-ip-address=<WORKER_IP>
+```
+
+Create the Vane job without an explicit runner setting because Ray is already the default:
+
+```python
+import vane
+
+con = vane.connect()
+result = con.sql("SELECT 'ray-connected' AS status")
+result.show()
+```
+
+Run it on the head node and let Ray discover the running cluster:
+
+```bash
+RAY_ADDRESS=auto python job.py
+```
+
+If the driver runs on another machine, set `RAY_ADDRESS` to an address supported by that Ray deployment before starting the process. Keep cluster ports on a trusted network and follow the deployment's authentication and network policy.
+
+The Python modules and native libraries used by a UDF must be available on every worker that may execute it. Shared or object storage is usually preferable to node-local paths for distributed input and output.
+
+## 3. Single-Machine Runner Settings
+
+The default `ray` runner also works on one machine. Leave `RAY_ADDRESS` unset and run the job normally; Vane starts a local Ray runtime when needed:
+
+```bash
+unset RAY_ADDRESS
+python job.py
+```
+
+This is the single-machine option to use when the plan needs Ray actors, GPU resource scheduling, or the same execution behavior that will later be used on a cluster.
+
+To run on one machine without Ray, select `local` before creating the connection:
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+```
+
+The local runner uses one worker by default. Configure its concurrency before creating the connection or executing any relation:
+
+```python
+import vane
+from duckdb import runners
+
+runners.set_runner_local(
+    num_workers=4,
+    max_running_tasks=4,
+)
+con = vane.connect()
+```
+
+Choose worker counts according to CPU, memory, and UDF behavior. The local runner does not reserve or isolate GPU resources; use the default Ray runner when a UDF requests GPUs.

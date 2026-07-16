@@ -93,11 +93,9 @@ Vane Data does not define a Vane-specific Iceberg catalog API. Use Vane Data for
 
 ## Scale-out
 
+Ray is already the default runner. After validating the bounded local path, move the UDF from its explicit subprocess backend to a Ray actor:
+
 ```python
-import vane
-
-vane.configure(runner="ray")
-
 features = raw.map_batches(
     enrich_batch,
     schema={

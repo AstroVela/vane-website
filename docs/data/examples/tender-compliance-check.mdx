@@ -109,13 +109,7 @@ summary.show()
 
 ## Scale-out
 
-Use Ray when SQL preparation, UDF stages, or model calls need distributed workers:
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
+Ray is already the default runner. When SQL preparation, UDF stages, or model calls need cluster workers, set `RAY_ADDRESS` before launching the process as described in [Deployment](/docs/data/deploy/deployment).
 
 Set provider concurrency based on API limits, rate limits, and model-serving capacity.
 

@@ -5,10 +5,49 @@ import assert from 'node:assert/strict'
 const configSource = readFileSync('docusaurus.config.ts', 'utf8')
 const routesSource = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
 const docsPageSource = readFileSync('src/pages/Docs.tsx', 'utf8')
+const legacySlugsSource = readFileSync('src/docs/legacySlugs.ts', 'utf8')
 const sidebarsSource = readFileSync('sidebars.data.ts', 'utf8')
 const navSource = readFileSync('src/components/Nav.tsx', 'utf8')
 const cssSource = readFileSync('src/index.css', 'utf8')
 const readmeSource = readFileSync('README.md', 'utf8')
+const dataDocsTranslations = JSON.parse(
+  readFileSync('i18n/zh-CN/docusaurus-plugin-content-docs-data/current.json', 'utf8'),
+)
+const quickstartSource = readFileSync('docs/data/quickstart/quickstart.mdx', 'utf8')
+const aiFunctionsSource = readFileSync('docs/data/concepts/ai-functions.mdx', 'utf8')
+const chineseQuickstartSource = readFileSync(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/quickstart.mdx',
+  'utf8',
+)
+const chineseAiFunctionsSource = readFileSync(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
+  'utf8',
+)
+const installationSources = [
+  readFileSync('docs/data/quickstart/installation.mdx', 'utf8'),
+  readFileSync(
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/quickstart/installation.mdx',
+    'utf8',
+  ),
+]
+const sourceBuildSources = [
+  ...installationSources,
+  readFileSync('docs/data/contributing/development.mdx', 'utf8'),
+  readFileSync(
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/contributing/development.mdx',
+    'utf8',
+  ),
+]
+const exampleRunnerSources = [
+  'docs/data/examples/index.mdx',
+  'docs/data/examples/training-data-pipeline.mdx',
+  'docs/data/examples/tender-compliance-check.mdx',
+  'docs/data/examples/multimodal-data-lake.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/index.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/training-data-pipeline.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/tender-compliance-check.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/multimodal-data-lake.mdx',
+].map((file) => readFileSync(file, 'utf8'))
 const packageSource = readFileSync('package.json', 'utf8')
 const devScriptSource = readFileSync('scripts/dev.mjs', 'utf8')
 const codeWindowSource = readFileSync('src/components/CodeWindow.tsx', 'utf8')
@@ -43,11 +82,93 @@ test('custom docs entry and legacy redirects preserve the current locale baseUrl
   assert.match(routesSource, /localizedPath\(context\.baseUrl, path\)/)
   assert.match(routesSource, /if \(path === '\/'\) return baseUrl/)
   assert.match(docsPageSource, /import useBaseUrl from '@docusaurus\/useBaseUrl'/)
+  assert.match(
+    docsPageSource,
+    /import useDocusaurusContext from '@docusaurus\/useDocusaurusContext'/,
+  )
   assert.match(docsPageSource, /const dataTo = useBaseUrl\(dataDocPath\(resolveLegacyDocSlug\(slug\) \?\? slug\)\)/)
   assert.match(docsPageSource, /function RedirectFallback\(\{to\}: \{to: string\}\)/)
   assert.match(docsPageSource, /<meta httpEquiv="refresh" content=\{`0;url=\$\{to\}`\} \/>/)
+  assert.match(docsPageSource, /const canonical = new URL\(to, siteConfig\.url\)\.toString\(\)/)
+  assert.match(docsPageSource, /<meta name="robots" content="noindex,follow" \/>/)
+  assert.match(docsPageSource, /<link rel="canonical" href=\{canonical\} \/>/)
   assert.match(docsPageSource, /<RedirectFallback to=\{dataTo\} \/>/)
   assert.match(docsPageSource, /<Redirect to=\{to\} \/>/)
+  assert.match(docsPageSource, /Open current page/)
+  assert.match(docsPageSource, /打开当前页面/)
+  assert.doesNotMatch(docsPageSource, /Open overview|打开概览/)
+})
+
+test('removed deployment pages redirect to the consolidated deployment guide', () => {
+  for (const legacySlug of ['single-node', 'ray-cluster', 'sizing']) {
+    assert.match(
+      legacySlugsSource,
+      new RegExp(`'deploy/${legacySlug}':\\s*'deploy/deployment'`),
+    )
+  }
+})
+
+test('Operations sidebar category is localized in Chinese Data docs', () => {
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Operations']?.message,
+    '运维',
+  )
+  assert.equal(dataDocsTranslations['sidebar.dataSidebar.category.Deploy'], undefined)
+})
+
+test('Quickstart input can cross the default Ray runner boundary', () => {
+  for (const source of [quickstartSource, chineseQuickstartSource]) {
+    assert.match(source, /documents\s*=\s*con\.values\(/)
+    assert.doesNotMatch(source, /CREATE TABLE documents/)
+  }
+})
+
+test('OpenAI examples use a valid API root', () => {
+  for (const source of [aiFunctionsSource, chineseAiFunctionsSource]) {
+    assert.equal(source.match(/https:\/\/api\.openai\.com\/v1/g)?.length, 4)
+    assert.doesNotMatch(source, /api\.example\.com/)
+    assert.match(source, /python -m pip install vane-ai openai/)
+    assert.match(source, /OPENAI_API_KEY="<your-token>"/)
+    assert.match(source, /OPENAI_BASE_URL="https:\/\/provider\.example\/v1"/)
+  }
+})
+
+test('public installation commands use the base vane-ai package', () => {
+  for (const source of [
+    quickstartSource,
+    chineseQuickstartSource,
+    aiFunctionsSource,
+    chineseAiFunctionsSource,
+    ...installationSources,
+  ]) {
+    assert.match(source, /python -m pip install vane-ai/)
+    assert.doesNotMatch(source, /vane-ai\[all\]/)
+  }
+})
+
+test('installation and examples describe Ray as the default runner', () => {
+  for (const source of installationSources) {
+    assert.match(source, /runner="local"/)
+    assert.doesNotMatch(source, /runner="ray"/)
+  }
+  for (const source of exampleRunnerSources) {
+    assert.doesNotMatch(source, /vane\.configure\(runner="ray"\)/)
+  }
+})
+
+test('source builds pin and preinstall native dependencies without editable or toolchain builds', () => {
+  for (const source of sourceBuildSources) {
+    assert.doesNotMatch(source, /pip install -e/)
+    assert.doesNotMatch(source, /(?:export\s+|cmake\.define\.)CMAKE_TOOLCHAIN_FILE/)
+    assert.doesNotMatch(source, /\.\.\/vcpkg/)
+    assert.match(source, /git clone https:\/\/github\.com\/microsoft\/vcpkg\.git \.cache\/vcpkg/)
+    assert.match(source, /git -C \.cache\/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574/)
+    assert.match(source, /\.cache\/vcpkg\/bootstrap-vcpkg\.sh -disableMetrics/)
+    assert.match(source, /\.cache\/vcpkg\/vcpkg install --x-install-root="\$PWD\/vcpkg_installed"/)
+    assert.match(source, /SKBUILD_BUILD_DIR=/)
+    assert.match(source, /SKBUILD_CMAKE_BUILD_TYPE=Release/)
+    assert.match(source, /python -m pip install \. --no-build-isolation -v/)
+  }
 })
 
 test('shared code windows localize copy controls for Chinese pages', () => {
@@ -82,10 +203,10 @@ test('training use-case internal links use locale-aware Link', () => {
 
 test('English and Chinese docs trees use matching English slugs', () => {
   assert.equal(existsSync('docs/data/index.mdx'), true)
-  assert.equal(existsSync('docs/data/guides/structured-transformation.mdx'), true)
+  assert.equal(existsSync('docs/data/concepts/ai-functions.mdx'), true)
   assert.equal(
     existsSync(
-      'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/guides/structured-transformation.mdx',
+      'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
     ),
     true,
   )
@@ -121,4 +242,9 @@ test('local dev command serves English and Chinese routes through isolated local
   assert.match(readmeSource, /npm run dev:zh-CN/)
   assert.match(readmeSource, /bilingual dev server/)
   assert.doesNotMatch(navSource, /Run `npm run dev:zh-CN` to preview Chinese routes locally\./)
+})
+
+test('README describes the current deployment documentation', () => {
+  assert.match(readmeSource, /deploy\/\s+runner configuration and Ray deployment material/)
+  assert.doesNotMatch(readmeSource, /single-node, Ray cluster, and sizing material/)
 })

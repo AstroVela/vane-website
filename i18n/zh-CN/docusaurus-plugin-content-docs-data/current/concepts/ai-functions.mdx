@@ -2,92 +2,224 @@
 title: AI 函数
 ---
 
-Vane Data AI Function 有两种语义输出模型：**Expression API** 和 **Relation API**。它们不是三种语法入口。需要在源列旁为每行增加一个保持行数的 AI 结果时，先从 Expression 内的 SQL 入口开始。
+Vane AI Function 是由 provider 驱动、以有状态 batch UDF 执行的
+Expression。它会在每个输入行旁生成一个模型结果，因此标识、源文本和其他
+审查字段可以保留在同一个 projection 中。
 
-两种模型使用同一个 provider 与 UDF 执行层。区别在于操作产出一个 projection 结果，还是一次专用表转换。
+本页只介绍 Expression UDF。SQL 和 Python 是构建同一个保持行数操作的两种
+写法；切换写法不会改变执行语义。
 
-## Expression API
+## 1. Expression 契约
 
-Expression API 在 `SELECT` projection 中生成一个保持行数的 AI 列。SQL 是推荐的默认入口：稳定标识和源字段可以明确地保留在模型结果旁边。
+Vane 目前提供两种 AI Expression 操作：
 
-### SQL 入口（推荐）
+| 操作 | SQL Expression | Python Expression | 结果 | 支持的 provider |
+| --- | --- | --- | --- | --- |
+| 生成文本 | `ai_prompt(messages [, options])` | `vane.ai.prompt(expression, ...)` | 每个输入行得到一个 `VARCHAR` | `openai`、`google`、`anthropic`、`vllm` |
+| 生成 embedding | `ai_embed(text [, options])` | `vane.ai.embed(expression, ...)` | 每个输入行得到一个 `FLOAT[]`；设置 `dimensions=n` 时为 `FLOAT[n]` | `openai`、`google`、`transformers` |
 
-当每一输入行旁只需要一个模型结果时，使用 SQL `ai_prompt` 或 `ai_embed`。下面的短 projection 会保留生成每个 response 的标识与 prompt：
+两个操作都会保持行数。请把后续需要的源列保留在 projection 中，使用 SQL
+`AS` 或 Python `.alias()` 命名生成列，并携带稳定 ID，让每个 provider 结果
+都能追溯到输入。
+
+SQL options 是规划配置，而不是逐行数据。因此，可选的 `struct_pack(...)`
+参数必须由常量组成；同一个 Expression 中的 provider、model 和执行设置不能
+随输入行变化。
+
+Expression 没有分类函数。上面的 provider 能力表有意只列出返回 Expression
+的操作。
+
+## 2. Provider
+
+Provider adapter 会把同一个 Expression 契约映射到不同的托管 API 或本地
+模型 runtime。先安装 Vane；Vane 随后会延迟加载 provider adapter，因此只需
+再添加实际使用的 provider 库。
+
+```bash
+python -m pip install vane-ai
+```
+
+| Provider | Prompt | Embed | Runtime 与配置 |
+| --- | :---: | :---: | --- |
+| `openai` | 支持 | 支持 | OpenAI API 或 OpenAI-compatible endpoint；安装 `openai`，并在 worker 环境设置 `OPENAI_API_KEY` |
+| `google` | 支持 | 支持 | Google Generative AI；安装 `google-genai`，并在 worker 环境设置 `GOOGLE_API_KEY` |
+| `anthropic` | 支持 | 不支持 | Anthropic Messages API；安装 `anthropic`，并在 worker 环境设置 `ANTHROPIC_API_KEY` |
+| `vllm` | 支持 | 不支持 | 本地或远程 vLLM engine；安装 `vllm`，提供模型访问能力；需要 GPU actor 时使用 Ray |
+| `transformers` | 不支持 | 支持 | 本地 SentenceTransformers 模型；安装 `sentence-transformers`、`transformers` 和 `torch` |
+
+需要可复现结果时，请显式设置 `provider` 和 `model`。模型 ID、限制和可用性
+由所配置的 endpoint 决定，因此应选择该 endpoint 支持的模型。
+
+## 3. 配置 OpenAI
+
+下面的示例使用 OpenAI provider。先安装客户端，并把凭据提供给实际执行查询
+的进程：
+
+```bash
+python -m pip install vane-ai openai
+export OPENAI_API_KEY="<your-token>"
+
+# 可选：仅在使用 OpenAI-compatible endpoint 时设置。
+export OPENAI_BASE_URL="https://provider.example/v1"
+```
+
+OpenAI client 会在 worker 上创建，并在创建时读取这两个环境变量。
+`OPENAI_API_KEY` 既可以保存 OpenAI API key，也可以保存 compatible service
+签发的 token。直接使用 OpenAI API 时可以不设置 `OPENAI_BASE_URL`，client 会
+使用官方 API 根地址。对于 Ray 作业，每个可能执行 Expression 的 worker 都
+必须安装 client 并配置这些环境变量。
+
+下面的示例同时展示另一种支持的方式：在 `struct_pack(...)` 或
+`OpenAIProviderOptions` 中显式传入非敏感的 `base_url`。使用 compatible
+service 时请替换该值。显式 option 的优先级高于 `OPENAI_BASE_URL`；如果依赖
+环境变量，请从 Expression 中省略这个 option。两种方式都应使用通常以 `/v1`
+结尾的 API 根地址，而不是 `/chat/completions` 这样的具体 operation path。
+
+Token 应始终保存在 `OPENAI_API_KEY` 中。不要把它放入 SQL、Python options、
+notebook 输出或已提交文件；SQL binding 会拒绝疑似凭据的 option 字段。
+
+## 4. SQL Expression
+
+当周围的转换本来就是 query 时，SQL 是简洁的默认选择。Vane connection 会
+注册 `ai_prompt` 和 `ai_embed`；第二个参数是常量 options struct。Ray 是
+Vane 的默认 runner，示例中的 `show()` 会通过 RayRunner 物化 relation。只有
+需要覆盖已有的 local runner 设置时，才在创建 connection 前调用
+`vane.configure(runner="ray")`。
+
+### 使用 `ai_prompt` 生成文本
 
 ```python
 import vane
 
 con = vane.connect()
-source = con.sql("""
+documents = con.sql("""
     SELECT *
     FROM (VALUES
-        (1, 'Summarize the refund request'),
-        (2, 'Summarize the shipping delay')
-    ) AS t(document_id, prompt)
+        (1, 'The customer asked for a refund after a duplicate charge.'),
+        (2, 'The shipment is delayed because the address is incomplete.')
+    ) AS t(document_id, text)
 """)
 
-reviewed = con.sql("""
+prompted = con.sql("""
     SELECT
         document_id,
-        prompt,
-        ai_prompt(prompt) AS response
-    FROM source
+        text,
+        ai_prompt(
+            text,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini',
+                base_url := 'https://api.openai.com/v1',
+                system_message := 'Write one short support summary. Return plain text only.',
+                timeout := 60.0,
+                concurrency := 1,
+                max_api_concurrency := 4,
+                max_output_tokens := 64,
+                temperature := 0.0
+            )
+        ) AS summary
+    FROM documents
+    ORDER BY document_id
 """)
+
+prompted.show()
 ```
 
-SQL 调用仍属于 Expression API。它的 provider options 是常量规划输入，`document_id` 和 `prompt` 则继续作为普通 relation 列流动。
+`concurrency` 选择 provider actor 数量。对于 prompt 调用，
+`max_api_concurrency` 限制每个 actor 内同时进行的 API request 数。请从保守
+值开始，只在 endpoint 的速率与容量限制内提高任一参数。
 
-### Python 入口
-
-Python Expression 是语义等价的语法，具有相同的保持行数 projection 语义。当周围的 projection 已经用 Python expression 组合时，它更方便：
+### 使用 `ai_embed` 生成向量
 
 ```python
-projected = source.select(
+embedded = con.sql("""
+    SELECT
+        document_id,
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                base_url := 'https://api.openai.com/v1',
+                encoding_format := 'float',
+                normalize := true,
+                concurrency := 1
+            )
+        ) AS embedding
+    FROM documents
+    ORDER BY document_id
+""")
+
+embedded.show()
+```
+
+不设置 `dimensions` 时，SQL 结果类型是 `FLOAT[]`。只有所选 embedding
+模型支持指定大小时，才设置一个正的 `dimensions`；结果类型随后会变成定长
+`FLOAT[n]`。`normalize := true` 会对每个非空向量执行 L2 normalization。
+
+## 5. Python Expression
+
+Python Expression 具有相同的输出和执行契约。它使用类型化对象，将 provider
+配置与操作专属的 request options 分开。
+
+```python
+import vane
+
+con = vane.connect()
+documents = con.sql("""
+    SELECT *
+    FROM (VALUES
+        (1, 'The customer asked for a refund after a duplicate charge.'),
+        (2, 'The shipment is delayed because the address is incomplete.')
+    ) AS t(document_id, text)
+""")
+
+prompted = documents.select(
     vane.col("document_id"),
-    vane.col("prompt"),
-    vane.ai.prompt(vane.col("prompt")).alias("response"),
-)
+    vane.col("text"),
+    vane.ai.prompt(
+        vane.col("text"),
+        provider="openai",
+        model="gpt-4o-mini",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            base_url="https://api.openai.com/v1",
+            timeout=60.0,
+            concurrency=1,
+            max_api_concurrency=4,
+        ),
+        prompt_options=vane.ai.OpenAIPromptOptions(
+            max_output_tokens=64,
+            temperature=0.0,
+        ),
+        system_message="Write one short support summary. Return plain text only.",
+    ).alias("summary"),
+).order("document_id")
+
+embedded = documents.select(
+    vane.col("document_id"),
+    vane.col("text"),
+    vane.ai.embed(
+        vane.col("text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            base_url="https://api.openai.com/v1",
+            timeout=60.0,
+            concurrency=1,
+        ),
+        embedding_options=vane.ai.OpenAIEmbeddingOptions(
+            encoding_format="float",
+        ),
+        normalize=True,
+    ).alias("embedding"),
+).order("document_id")
+
+prompted.show()
+embedded.show()
 ```
 
-从 SQL 改成 Python 不会改变输出模型。两种形式都会增加一个 AI 结果列，并通过显式 projection 保留源字段。
-
-## Relation API
-
-只有当某项能力需要表转换而不是普通的单个 projection 结果时，才转到 Relation AI：
-
-- `rel.embed_text` 通过 `max_chunk_chars` 提供内置分块。
-- `rel.classify_text` 提供内置分类。
-- `rel.prompt` 通过 `return_format` 提供结构化输出，通过 `image_columns` 提供多模态输入，并通过 `output_column` 命名 Relation 输出。
-- Relation 方法可以显式选择 `execution_backend`，以及 provider `concurrency` 或 `actor_number` 控制。
-
-内置分类需要 Relation API，因此最后这个示例使用 Relation 方法，而不会假装分类是 SQL table function：
-
-```python
-classified = source.classify_text(
-    "prompt",
-    labels=["refund", "shipping", "other"],
-    output_column="label",
-)
-```
-
-Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以在 Relation 调用之前过滤、projection 输入，也可以在调用之后消费结果，但专用 Relation 方法本身目前仍通过 Python 调用。
-
-## Provider 与 Runner 生命周期
-
-Provider descriptor 会跨越执行计划边界，而不会把客户端或模型放进执行计划。所选客户端或模型会延迟到 worker 才实例化并复用，复用范围是每个 actor；这样既不会为没有执行的行初始化资源，也能在多个 batch 之间摊薄 setup 成本。
-
-对于 SQL 和 Python Expression，active runner 会在查询规划阶段选择 actor backend：local 执行使用 subprocess actor，Ray run 使用 Ray actor。Relation 方法还可以显式选择 backend。Provider 默认值和精确参数应留在 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)，而不是放进这里的概念性生命周期说明。
-
-## 凭据与外部副作用
-
-凭据应放在 worker 环境中，因为 provider 客户端是在 worker 上创建的。SQL option binding 会拒绝类似凭据的字段，因此 API key、token 和 secret 不应嵌入 SQL 执行计划。
-
-Provider 调用是在 SQL 事务之外发生的外部副作用，不提供 exactly-once：失败或 retry 的 query 可能重复 request，transaction rollback 也无法撤销已经完成的 provider 调用。请让稳定 ID 随 projection 一起传递，保留可审查的输入与输出，并在重复调用会造成影响时使用幂等的下游写入。
-
-## 选择模型
-
-- 每一输入行只需要一个 prompt response 或 embedding 时，首先选择 SQL Expression。
-- 需要 Python 组合方式但仍是同一个保持行数结果时，选择 Python Expression。
-- 只有在需要内置分块或分类、结构化或多模态 prompt、命名 Relation 输出或显式 Relation 执行控制时，才选择 Relation。
-
-精确签名和 provider 参数规则请查阅 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。包含 setup、校验和输出处理的完整任务请使用 [AI Function 指南](/zh-CN/docs/data/guides/ai-functions)。
+使用 `OpenAIProviderOptions` 配置 client 与 actor，使用
+`OpenAIPromptOptions` 配置生成请求，使用 `OpenAIEmbeddingOptions` 配置
+embedding 请求。也可以传入普通 dictionary，但类型化对象能更清楚地表达
+provider-specific 配置，并更早发现拼错的字段。

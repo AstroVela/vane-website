@@ -43,12 +43,6 @@ When adapting an example:
 
 ## Scaling path
 
-Most examples should be developed locally first. Move selected stages to Ray only after the local data contract is correct:
+Ray is Vane's default runner and starts on the current machine when no cluster address is configured. Begin with bounded local data, then move stages that use an explicit `subprocess_task` or `subprocess_actor` backend to `ray_task` or `ray_actor` after their data contracts are correct.
 
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-Then use `ray_task` or `ray_actor` on the UDF or AI helper stage that needs distributed execution.
+Set `RAY_ADDRESS` before launching the process when the same pipeline should use an existing cluster. See [Deployment](/docs/data/deploy/deployment) for the cluster startup and connection flow.

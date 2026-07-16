@@ -1,6 +1,7 @@
 import {Redirect} from '@docusaurus/router'
 import Head from '@docusaurus/Head'
 import useBaseUrl from '@docusaurus/useBaseUrl'
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import Nav from '../components/Nav'
 import ComingSoon from './ComingSoon'
 import ProductGlyph from '../docs/ProductGlyph'
@@ -28,19 +29,21 @@ function parseDocsPath(path: string): {product: ProductId; slug?: string} {
 
 function RedirectFallback({to}: {to: string}) {
   const locale = useSiteLocale()
+  const {siteConfig} = useDocusaurusContext()
+  const canonical = new URL(to, siteConfig.url).toString()
   const copy = pickLocale(
     locale,
     {
       title: 'Vane Data Docs',
-      heading: 'Opening the Vane Data overview.',
-      body: 'You are being redirected to the current docs overview.',
-      action: 'Open overview',
+      heading: 'Opening the current Vane Data documentation.',
+      body: 'You are being redirected to the current documentation page.',
+      action: 'Open current page',
     },
     {
       title: 'Vane Data 文档',
-      heading: '正在打开 Vane Data 概览。',
-      body: '页面会跳转到当前文档概览。',
-      action: '打开概览',
+      heading: '正在打开当前 Vane Data 文档。',
+      body: '页面会跳转到当前文档页面。',
+      action: '打开当前页面',
     },
   )
 
@@ -49,6 +52,8 @@ function RedirectFallback({to}: {to: string}) {
       <Head>
         <title>{copy.title}</title>
         <meta httpEquiv="refresh" content={`0;url=${to}`} />
+        <meta name="robots" content="noindex,follow" />
+        <link rel="canonical" href={canonical} />
       </Head>
       <Nav withCta={false} />
       <main className="doc">
