@@ -9,6 +9,7 @@ import CodeWindow from '../components/CodeWindow'
 import Cta from '../components/Cta'
 import TrainingDataFactoryAnimation from '../components/TrainingDataFactoryAnimation'
 import PixelIcon, { type PixelIconName } from '../components/PixelIcon'
+import Mark from '../components/Mark'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 import { TRAINING_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 import { Link } from '../router'
@@ -23,6 +24,9 @@ raw = con.sql("""
     FROM read_parquet('s3://training-corpus/*.parquet')
     WHERE split = 'train'
 """)
+
+def CaptionAndScore(table):
+    ...
 
 labeled = raw.map_batches(
     CaptionAndScore,
@@ -111,7 +115,7 @@ function TrainingHeroShape({ locale }: { locale: ReturnType<typeof useSiteLocale
 
       <div className="thg-engine" aria-hidden="true">
         <span className="thg-engine-title">VANE</span>
-        <span className="thg-engine-core" />
+        <span className="thg-engine-mark"><Mark size={40} /></span>
         <span className="thg-engine-ops">{copy.ops}</span>
       </div>
 
@@ -197,7 +201,6 @@ export default function TrainingUseCase() {
       codeLead: 'File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline.',
       codeAria: 'Pipeline stages shown in the representative code',
       codeSteps: ['SQL selection', 'Ray GPU UDF', 'SQL quality gate', 'Embedding + release'],
-      note: 'CaptionAndScore is your GPU batch UDF. Vane reuses it across Ray actors; remove the runner configuration to execute the same pipeline locally.',
       ctaTitle: 'Build a reproducible multimodal training-data pipeline.',
       designPartner: 'Become a design partner',
       readDocs: 'Read the docs',
@@ -236,7 +239,6 @@ export default function TrainingUseCase() {
       codeLead: '文件选择、媒体解码、GPU caption/自动标注、质量过滤、去重、embedding 和发布打包都在同一条可读流水线里完成。',
       codeAria: '代表性代码中展示的流水线阶段',
       codeSteps: ['SQL 选择', 'Ray GPU UDF', 'SQL 质量门', 'Embedding + 发布'],
-      note: 'CaptionAndScore 是你的 GPU batch UDF。Vane 会在 Ray actors 中复用它；删除 runner 配置即可让同一条流水线在本地执行。',
       ctaTitle: '构建高效简单的多模态训练数据流水线',
       designPartner: '成为设计伙伴',
       readDocs: '阅读文档',
@@ -353,9 +355,6 @@ export default function TrainingUseCase() {
               <div className="training-code-steps" aria-label={copy.codeAria}>
                 {copy.codeSteps.map((step) => <span key={step}>{step}</span>)}
               </div>
-              <p className="training-code-note">
-                {copy.note}
-              </p>
             </div>
             <div className="training-code-showcase">
               <CodeWindow filename="training_data_release.py" code={PIPELINE_CODE} language="python" />

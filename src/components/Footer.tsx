@@ -13,7 +13,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
     locale,
     {
       homeBlurb: 'The multimodal engine for AI pipelines and agents. Run SQL, Python UDFs, embeddings, and model inference on Ray.',
-      blurb: 'The multimodal engine for AI pipelines and agents.',
+      blurb: 'Unifies multimodal data, intelligence, and continuous learning with Python and SQL interfaces, seamlessly scaling from local environments to Ray clusters.',
       product: 'Product',
       training: 'Multimodal Data Pipeline',
       enterprise: 'Enterprise Multimodal Data',

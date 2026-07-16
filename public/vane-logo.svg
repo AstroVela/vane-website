@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <title>Vane logo</title>
+  <path d="M16 16 L16 3 L25.83 9.12 Z" fill="#9BA0AB"/>
+  <path d="M16 16 L27.26 22.5 L17.05 27.95 Z" fill="#5B5F6B"/>
+  <path d="M16 16 L4.74 22.5 L5.13 10.93 Z" fill="#23262F"/>
+  <circle cx="16" cy="16" r="2.4" fill="#15171E"/>
+</svg>

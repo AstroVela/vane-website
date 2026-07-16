@@ -137,7 +137,6 @@ export default function Home() {
       heroLead: 'Unifies multimodal data, intelligence, and continuous learning with Python and SQL interfaces, seamlessly scaling from local environments to Ray clusters.',
       getStarted: 'Get Started',
       chooseWorkload: 'Choose your workload',
-      preRelease: 'pre-release',
       useCases: 'Use Cases',
       workloadsTitle: 'Four real-world AI workloads.',
       workloadsLead: 'From multimodal model training to enterprise data pipelines, real-world AI runs on diverse data. Pick the pipeline that matches your workload.',
@@ -175,7 +174,6 @@ export default function Home() {
       heroLead: '通过 Python 和 SQL 接口统一多模态数据处理、智能计算与持续学习，并从本地环境无缝扩展到 Ray 集群。',
       getStarted: '开始使用',
       chooseWorkload: '选择你的工作负载',
-      preRelease: '预发布',
       useCases: '用例',
       workloadsTitle: '多模态 AI 场景',
       workloadsLead: '从多模态模型训练到企业数据流水线，真实 AI 工作负载运行在多样化数据之上。选择与你的工作负载匹配的流水线。',
@@ -237,7 +235,7 @@ export default function Home() {
             </div>
             <div className="install" style={{ marginTop: 30 }}>
               <span className="c"><span className="p">$</span> pip install vane-ai</span>
-              <span>·</span><span>{copy.preRelease}</span><span>·</span><span>Apache-2.0</span>
+              <span>·</span><span>Apache-2.0</span>
             </div>
           </div>
           <div className="home-hero-code">
