@@ -63,105 +63,6 @@
       }
     },
     {
-      "slug": "guides/multimodal-ingest",
-      "title": "Multimodal Ingest",
-      "source": "docs/data/guides/multimodal-ingest.mdx",
-      "route": "/docs/data/guides/multimodal-ingest",
-      "frontmatter": {
-        "title": "Multimodal Ingest"
-      }
-    },
-    {
-      "slug": "guides/structured-data-load",
-      "title": "Structured Data Load",
-      "source": "docs/data/guides/structured-data-load.mdx",
-      "route": "/docs/data/guides/structured-data-load",
-      "frontmatter": {
-        "title": "Structured Data Load"
-      }
-    },
-    {
-      "slug": "guides/custom-python-udfs",
-      "title": "Custom Python UDFs",
-      "source": "docs/data/guides/custom-python-udfs.mdx",
-      "route": "/docs/data/guides/custom-python-udfs",
-      "frontmatter": {
-        "title": "Custom Python UDFs"
-      }
-    },
-    {
-      "slug": "guides/multimodal-pipeline",
-      "title": "Multimodal Pipeline",
-      "source": "docs/data/guides/multimodal-pipeline.mdx",
-      "route": "/docs/data/guides/multimodal-pipeline",
-      "frontmatter": {
-        "title": "Multimodal Pipeline"
-      }
-    },
-    {
-      "slug": "guides/structured-transformation",
-      "title": "Structured Transformation",
-      "source": "docs/data/guides/structured-transformation.mdx",
-      "route": "/docs/data/guides/structured-transformation",
-      "frontmatter": {
-        "title": "Structured Transformation"
-      }
-    },
-    {
-      "slug": "guides/ai-functions",
-      "title": "AI Functions",
-      "source": "docs/data/guides/ai-functions.mdx",
-      "route": "/docs/data/guides/ai-functions",
-      "frontmatter": {
-        "title": "AI Functions"
-      }
-    },
-    {
-      "slug": "guides/gpu-inference",
-      "title": "GPU Inference",
-      "source": "docs/data/guides/gpu-inference.mdx",
-      "route": "/docs/data/guides/gpu-inference",
-      "frontmatter": {
-        "title": "GPU Inference"
-      }
-    },
-    {
-      "slug": "guides/embeddings-at-scale",
-      "title": "Embeddings at Scale",
-      "source": "docs/data/guides/embeddings-at-scale.mdx",
-      "route": "/docs/data/guides/embeddings-at-scale",
-      "frontmatter": {
-        "title": "Embeddings at Scale"
-      }
-    },
-    {
-      "slug": "guides/performance-tuning",
-      "title": "Performance Tuning",
-      "source": "docs/data/guides/performance-tuning.mdx",
-      "route": "/docs/data/guides/performance-tuning",
-      "frontmatter": {
-        "title": "Performance Tuning"
-      }
-    },
-    {
-      "slug": "reference/udf-api",
-      "title": "UDF API Reference",
-      "source": "docs/data/reference/udf-api.mdx",
-      "route": "/docs/data/reference/udf-api",
-      "frontmatter": {
-        "title": "UDF API Reference"
-      }
-    },
-    {
-      "slug": "reference/ai-api",
-      "title": "AI Function API Reference",
-      "source": "docs/data/reference/ai-api.mdx",
-      "route": "/docs/data/reference/ai-api",
-      "frontmatter": {
-        "title": "AI Function API Reference"
-      }
-    },
-    {
       "slug": "examples",
       "title": "Examples",
       "source": "docs/data/examples/index.mdx",
@@ -207,30 +108,12 @@
       }
     },
     {
-      "slug": "deploy/single-node",
-      "title": "Single Node",
-      "source": "docs/data/deploy/single-node.mdx",
-      "route": "/docs/data/deploy/single-node",
+      "slug": "deploy/deployment",
+      "title": "Deployment",
+      "source": "docs/data/deploy/deployment.mdx",
+      "route": "/docs/data/deploy/deployment",
       "frontmatter": {
-        "title": "Single Node"
-      }
-    },
-    {
-      "slug": "deploy/ray-cluster",
-      "title": "Ray Cluster",
-      "source": "docs/data/deploy/ray-cluster.mdx",
-      "route": "/docs/data/deploy/ray-cluster",
-      "frontmatter": {
-        "title": "Ray Cluster"
-      }
-    },
-    {
-      "slug": "deploy/sizing",
-      "title": "Sizing",
-      "source": "docs/data/deploy/sizing.mdx",
-      "route": "/docs/data/deploy/sizing",
-      "frontmatter": {
-        "title": "Sizing"
+        "title": "Deployment"
       }
     },
     {
@@ -285,91 +168,6 @@
       ]
     },
     {
-      "group": "Guides",
-      "items": [
-        {
-          "group": "Data Ingestion",
-          "items": [
-            {
-              "slug": "guides/multimodal-ingest",
-              "label": "Multimodal Ingest",
-              "route": "/docs/data/guides/multimodal-ingest"
-            },
-            {
-              "slug": "guides/structured-data-load",
-              "label": "Structured Data Load",
-              "route": "/docs/data/guides/structured-data-load"
-            }
-          ]
-        },
-        {
-          "group": "Data Transformation",
-          "items": [
-            {
-              "slug": "guides/custom-python-udfs",
-              "label": "Custom Python UDFs",
-              "route": "/docs/data/guides/custom-python-udfs"
-            },
-            {
-              "slug": "guides/multimodal-pipeline",
-              "label": "Multimodal Pipeline",
-              "route": "/docs/data/guides/multimodal-pipeline"
-            },
-            {
-              "slug": "guides/structured-transformation",
-              "label": "Structured Transformation",
-              "route": "/docs/data/guides/structured-transformation"
-            }
-          ]
-        },
-        {
-          "group": "AI & Inference",
-          "items": [
-            {
-              "slug": "guides/ai-functions",
-              "label": "AI Functions",
-              "route": "/docs/data/guides/ai-functions"
-            },
-            {
-              "slug": "guides/gpu-inference",
-              "label": "GPU Inference",
-              "route": "/docs/data/guides/gpu-inference"
-            },
-            {
-              "slug": "guides/embeddings-at-scale",
-              "label": "Embeddings at Scale",
-              "route": "/docs/data/guides/embeddings-at-scale"
-            }
-          ]
-        },
-        {
-          "group": "Optimization",
-          "items": [
-            {
-              "slug": "guides/performance-tuning",
-              "label": "Performance Tuning",
-              "route": "/docs/data/guides/performance-tuning"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "group": "Reference",
-      "items": [
-        {
-          "slug": "reference/udf-api",
-          "label": "UDF API Reference",
-          "route": "/docs/data/reference/udf-api"
-        },
-        {
-          "slug": "reference/ai-api",
-          "label": "AI Function API Reference",
-          "route": "/docs/data/reference/ai-api"
-        }
-      ]
-    },
-    {
       "group": "Examples",
       "items": [
         {
@@ -400,22 +198,12 @@
       ]
     },
     {
-      "group": "Deploy",
+      "group": "Operations",
       "items": [
         {
-          "slug": "deploy/single-node",
-          "label": "Single Node",
-          "route": "/docs/data/deploy/single-node"
-        },
-        {
-          "slug": "deploy/ray-cluster",
-          "label": "Ray Cluster",
-          "route": "/docs/data/deploy/ray-cluster"
-        },
-        {
-          "slug": "deploy/sizing",
-          "label": "Sizing",
-          "route": "/docs/data/deploy/sizing"
+          "slug": "deploy/deployment",
+          "label": "Deployment",
+          "route": "/docs/data/deploy/deployment"
         }
       ]
     },

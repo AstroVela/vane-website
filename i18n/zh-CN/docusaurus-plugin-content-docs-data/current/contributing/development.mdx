@@ -35,21 +35,28 @@ sudo apt-get update
 sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
 ```
 
-## 可编辑构建
+首次构建时，准备代码库内使用的 native 依赖。下面锁定的版本与 `vcpkg.json` 中的 baseline 一致：
 
 ```bash
-python -m pip install -e . --no-build-isolation -v
+git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
+git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
+.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
 ```
 
-使用 vcpkg：
+Vane 的 CMake 配置会自动发现 `vcpkg_installed`，无需设置 `CMAKE_TOOLCHAIN_FILE`。`.cache` 和 `vcpkg_installed` 均已被 Git 忽略。
+
+## 增量开发构建
+
+使用持久化的 Release 构建目录，并安装普通 wheel。请避免 editable mode：Ray worker 会在独立进程中导入 Vane，而 scikit-build-core 的 editable rebuild mode 可能在 worker 启动期间再次调用 CMake。
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git ../vcpkg
-../vcpkg/bootstrap-vcpkg.sh
-
-python -m pip install -e . --no-build-isolation -v \
-  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$(pwd)/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+export SKBUILD_BUILD_DIR="$PWD/build/release"
+export SKBUILD_CMAKE_BUILD_TYPE=Release
+python -m pip install . --no-build-isolation -v
 ```
+
+修改 Python 或 native 源码后，请重新运行安装命令；修改 `vcpkg.json` 后，请重新运行 `vcpkg install`。CMake option 发生变化时，应使用新的构建目录。
 
 ## 格式化
 
@@ -91,4 +98,4 @@ python -m pytest tests/fast/test_udf_process.py
 
 ## 贡献经验法则
 
-保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.func`、`vane.cls`、`vane.attach_function`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。SQL 是推荐的 Expression 入口；公开 UDF 契约见 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)，AI 辅助函数契约见 [AI Function API 参考](/zh-CN/docs/data/reference/ai-api)。
+保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.func`、`vane.cls`、`vane.attach_function`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。SQL 是推荐的 Expression 入口；应确保 [UDF 概念](/zh-CN/docs/data/concepts/udfs)与 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)始终和公开行为一致。

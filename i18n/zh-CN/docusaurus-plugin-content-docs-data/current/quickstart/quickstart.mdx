@@ -3,14 +3,14 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据和本地执行，不需要 Ray 集群、GPU 或模型 provider 凭据。
+这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据并在本机运行，不需要外部 Ray 集群、GPU 或模型 provider 凭据。
 
 你将创建三行数据，把一个 Python 函数注册为 SQL alias，在 `SELECT` 中调用它，并看到结果。
 
 ## 安装 Vane Data
 
 ```bash
-python -m pip install 'vane-ai[all]'
+python -m pip install vane-ai
 ```
 
 ## 运行第一个 SQL Expression UDF
@@ -22,15 +22,14 @@ import vane
 
 con = vane.connect()
 
-con.execute("""
-    CREATE TABLE documents AS
-    SELECT *
-    FROM (VALUES
-        ('doc-001', 'Signed claim form received.'),
-        ('doc-002', 'Invoice is missing approval metadata.'),
-        ('doc-003', 'Policy reference has expired.')
-    ) AS rows(document_id, source_text)
-""")
+documents = con.values(
+    (
+        vane.lit("doc-001").alias("document_id"),
+        vane.lit("Signed claim form received.").alias("source_text"),
+    ),
+    (vane.lit("doc-002"), vane.lit("Invoice is missing approval metadata.")),
+    (vane.lit("doc-003"), vane.lit("Policy reference has expired.")),
+)
 
 
 def review_status(source_text):
@@ -76,7 +75,7 @@ vane.detach_function("review_status_sql", connection=con)
 - Expression 为每一输入行增加一个结果，因此 ID 和源文本仍在同一个 relation 中。
 - `show()` 物化惰性结果后，`vane.detach_function(...)` 移除了 alias。
 
-异常安全的清理、batch function、callable class 和 Relation 转换请继续阅读[自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)。精确签名和限制请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。
+Callable 生命周期、batch 与基数行为以及 Relation 转换请继续阅读 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。
 
 ## 可选：添加 AI Function
 
@@ -107,26 +106,25 @@ with_ai = con.sql("""
 with_ai.show()
 ```
 
-Provider 调用可能产生费用，并把数据发送到你的环境之外。第一次运行时请保持输入较小；构建更大的 workflow 前，请阅读 [AI Function](/zh-CN/docs/data/guides/ai-functions)。
+Provider 调用可能产生费用，并把数据发送到你的环境之外。第一次运行时请保持输入较小；构建更大的 workflow 前，请阅读 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。
 
-## 从 Local 扩展到 Ray
+## 从本机 Ray 扩展到集群
 
-Quickstart 默认使用 local runner。要分布式执行同样的 UDF 或 AI Expression，请在创建连接**之前**配置 Ray：
+Ray 是 Vane 的默认 runner。保持 `RAY_ADDRESS` 未设置时，这篇快速开始会在当前机器启动 Ray runtime，不需要外部集群，也不需要显式配置 runner。
 
-```python
-import vane
+要在集群上运行同一作业，请在 head 节点启用集群自动发现后启动它：
 
-vane.configure(runner="ray")
-con = vane.connect()
+```bash
+RAY_ADDRESS=auto python quickstart.py
 ```
 
-SQL projection 和注册的 callable 可以保持不变。处理更大任务时，把内联 `VALUES` 表替换为 Parquet 或对象存储等共享数据源。
+SQL projection 和注册的 callable 可以保持不变。处理更大任务时，把内联 relation 替换为 Parquet 或对象存储等共享数据源。
 
-每个 Ray worker 都必须能够导入 UDF 及其依赖，并访问相同的数据、模型文件和工作所需凭据。在集群上运行前，请阅读 [Ray 集群部署](/zh-CN/docs/data/deploy/ray-cluster)。
+每个 Ray worker 都必须能够导入 UDF 及其依赖，并访问相同的数据、模型文件和工作所需凭据。在集群上运行前，请阅读[部署](/zh-CN/docs/data/deploy/deployment)。
 
 ## 下一步
 
-- [自定义 Python UDF](/zh-CN/docs/data/guides/custom-python-udfs)
-- [AI Function](/zh-CN/docs/data/guides/ai-functions)
-- [大规模 Embedding](/zh-CN/docs/data/guides/embeddings-at-scale)
-- [GPU 推理](/zh-CN/docs/data/guides/gpu-inference)
+- [UDF 概念](/zh-CN/docs/data/concepts/udfs)
+- [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)
+- [示例](/zh-CN/docs/data/examples)
+- [部署](/zh-CN/docs/data/deploy/deployment)

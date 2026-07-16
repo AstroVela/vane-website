@@ -35,21 +35,28 @@ sudo apt-get update
 sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
 ```
 
-## Editable build
+Prepare the repository-local native dependencies once. The pinned revision matches the baseline in `vcpkg.json`:
 
 ```bash
-python -m pip install -e . --no-build-isolation -v
+git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
+git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
+.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
 ```
 
-With vcpkg:
+Vane's CMake configuration discovers `vcpkg_installed` automatically. Do not set `CMAKE_TOOLCHAIN_FILE`; `.cache` and `vcpkg_installed` are ignored by Git.
+
+## Incremental development build
+
+Use a persistent Release build directory and install a normal wheel. Avoid editable mode: Ray workers import Vane in separate processes, and scikit-build-core editable rebuild mode can invoke CMake again during worker startup.
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git ../vcpkg
-../vcpkg/bootstrap-vcpkg.sh
-
-python -m pip install -e . --no-build-isolation -v \
-  --config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE="$(pwd)/../vcpkg/scripts/buildsystems/vcpkg.cmake"
+export SKBUILD_BUILD_DIR="$PWD/build/release"
+export SKBUILD_CMAKE_BUILD_TYPE=Release
+python -m pip install . --no-build-isolation -v
 ```
+
+Rerun the install command after changing Python or native source. Rerun `vcpkg install` after changing `vcpkg.json`, and use a fresh build directory whenever CMake options change.
 
 ## Formatting
 
@@ -91,4 +98,4 @@ python -m pytest tests/fast/test_udf_process.py
 
 ## Contribution rule of thumb
 
-Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.func`, `vane.cls`, `vane.attach_function`, `vane.configure`, or AI helpers, update docs and tests in the same change. SQL is the recommended Expression entry point; public UDF contracts are in the [UDF API Reference](/docs/data/reference/udf-api), and AI helper contracts are in the [AI Function API Reference](/docs/data/reference/ai-api).
+Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.func`, `vane.cls`, `vane.attach_function`, `vane.configure`, or AI helpers, update docs and tests in the same change. SQL is the recommended Expression entry point; keep [UDF Concepts](/docs/data/concepts/udfs) and [AI Function Concepts](/docs/data/concepts/ai-functions) aligned with public behavior.

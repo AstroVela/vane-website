@@ -43,12 +43,6 @@ title: 示例
 
 ## 扩展路径
 
-大多数示例都应先在本地开发。只有在本地数据契约正确后，才将选定阶段迁移到 Ray：
+Ray 是 Vane 的默认 runner；未配置集群地址时，它会在当前机器启动。请先使用有界的本地数据；确认数据契约正确后，再把显式使用 `subprocess_task` 或 `subprocess_actor` backend 的阶段改为 `ray_task` 或 `ray_actor`。
 
-```python
-import vane
-
-vane.configure(runner="ray")
-```
-
-然后在需要分布式执行的 UDF 或 AI helper 阶段上使用 `ray_task` 或 `ray_actor`。
+同一 pipeline 需要使用已有集群时，请在启动进程前设置 `RAY_ADDRESS`。集群启动与连接流程请参阅[部署](/zh-CN/docs/data/deploy/deployment)。

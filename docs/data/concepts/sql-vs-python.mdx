@@ -2,130 +2,122 @@
 title: SQL vs Python
 ---
 
-Vane Data does not divide a pipeline into competing “SQL workloads” and “Python workloads.” SQL and Python are two entry points to the **Expression API**; the **Relation API** is the specialized escape hatch for table-shaped work. A single pipeline can use all of them.
+SQL and Python are two interfaces for building the same lazy Vane Data
+pipeline. You can use either interface independently or mix them in one
+pipeline: both produce Relation objects that either interface can consume.
 
-Choose the semantic output model first, then choose the syntax that makes that stage easiest to express.
+## SQL Interface
 
-## Choose the Output Model Before the Syntax
-
-Ask what the stage must produce. If it adds one typed result beside each input row, choose Expression. If it owns a new table shape, multiple output columns, or cardinality, choose Relation. Only then decide whether an Expression is clearer in SQL or Python.
-
-| Output contract | Model and entry point | Why choose it |
-| --- | --- | --- |
-| One typed result beside each input row | Expression API — SQL (recommended) | Composes in a `SELECT` projection and keeps identifiers and source columns visible. |
-| The same projection contract, with callable or configuration construction in Python | Expression API — Python | Builds the same lazy, normally row-preserving projection with Python objects. |
-| A table-shaped result, multiple output columns, changed cardinality, or a Relation-only AI capability | Relation API — Python Relation method | Lets the operation own its output table and expose specialized Relation controls. |
-
-Rule of thumb: start with SQL Expression for a typed enrichment column, use Python Expression when construction belongs in Python, and move to Relation only when the output contract or capability requires it.
-
-## Expression API
-
-Expression calls contribute one typed output column to a projection and normally preserve one output row per input row. SQL and Python share that semantic model; changing entry points does not turn the work into a different kind of pipeline.
-
-### SQL Entry Point (Recommended)
-
-Registered UDF aliases, `ai_prompt`, and `ai_embed` all belong in SQL `SELECT` projections. This is the recommended default because ordinary SQL can filter and project the relation while the custom or AI result remains composable beside stable IDs and source fields.
+Use `con.sql(...)` when the transformation is clearest as a SQL statement.
+Python Relation variables such as `source` can be referenced directly by
+name:
 
 ```python
 import vane
 
 con = vane.connect()
-
-def normalize_text(value):
-    return str(value).strip().lower()
-
-vane.attach_function(
-    normalize_text,
-    alias="normalize_text_sql",
-    connection=con,
-    parameters=["VARCHAR"],
-    return_dtype="VARCHAR",
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
 
-try:
-    projected = con.sql("""
-        SELECT
-            document_id,
-            text,
-            normalize_text_sql(text) AS normalized_text
-        FROM (VALUES
-            (1, ' Refund requested ')
-        ) AS documents(document_id, text)
-    """)
-    rows = projected.fetchall()
-finally:
-    vane.detach_function("normalize_text_sql", connection=con)
+result = con.sql("""
+    SELECT
+        order_id,
+        category,
+        quantity * unit_price AS total
+    FROM source
+    WHERE quantity * unit_price >= 20
+    ORDER BY order_id
+""")
+result.show()
 ```
 
-`fetchall()` materializes the projection while the alias is still attached. The result keeps `document_id` and `text` beside the custom Expression result; configured SQL AI calls use the same projection pattern.
+## Python Interface
 
-### Python Entry Point
-
-Use Python Expression when the same projection is easier to assemble with Python callables or typed configuration objects. `vane.func` and `vane.func.batch`, `vane.cls` and `vane.cls.batch`, plus `vane.ai.prompt` and `vane.ai.embed`, are Python builders for the same Expression model.
+Use Relation methods for table operations and Expression objects for columns,
+literals, arithmetic, and predicates:
 
 ```python
 import vane
 
 con = vane.connect()
-source = con.sql("""
-    SELECT 1 AS document_id, ' Refund requested '::VARCHAR AS text
-""")
-
-@vane.func(return_dtype="VARCHAR")
-def normalize_text(value):
-    return str(value).strip().lower()
-
-projected = source.select(
-    vane.col("document_id"),
-    vane.col("text"),
-    normalize_text(vane.col("text")).alias("normalized_text"),
-    vane.ai.prompt(vane.sql_expr("'Summarize: ' || text")).alias("summary"),
-    vane.ai.embed(vane.col("text")).alias("embedding"),
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
+
+result = source.filter(
+    vane.col("quantity") * vane.col("unit_price") >= vane.lit(20)
+).select(
+    vane.col("order_id"),
+    vane.col("category"),
+    (
+        vane.col("quantity") * vane.col("unit_price")
+    ).alias("total"),
+).order("order_id")
+result.show()
 ```
 
-This alternate syntax still produces a typed, normally row-preserving projection. Python batch Expression has one narrow exception: with `row_preserving=False`, it may change cardinality only when its result is the sole top-level projection. That exception does not apply to registered SQL aliases, which remain row-preserving in v1.
+## Mixed Pipeline
 
-## Relation API
-
-Choose Relation when the callable or helper owns table shape: multi-column output, a complete table stage, or a cardinality change. The custom methods are `rel.map_batches`, `rel.flat_map`, and the row-wise scalar `rel.map`—not a pandas batch transform. Relation AI adds built-in chunking with `rel.embed_text`, built-in classification with `rel.classify_text`, and structured or multimodal prompting with `rel.prompt`; these methods can also expose an explicit Relation execution backend where needed.
-
-These are currently Python Relation methods. Vane does not expose a direct SQL Relation API or SQL table-function entry point for them.
-
-## One Pipeline, Not Competing Workloads
-
-SQL can create, join, and filter the input relation before a Python Relation call. It can also inspect, aggregate, or write the returned relation afterward. Mixing the languages this way does not make the middle method a SQL Relation API; it keeps each stage in the model that matches its output.
-
-Built-in classification is Relation-only in the current API, so the specialized call sits between ordinary SQL stages:
+Relations can cross the interface boundary in either direction. This example
+uses SQL to compute totals, Python to select rows, and SQL to aggregate the
+result:
 
 ```python
 import vane
 
 con = vane.connect()
-rel = con.sql("""
-    SELECT text
-    FROM (VALUES
-        ('The invoice total is wrong'),
-        ('My parcel has not arrived'),
-        (NULL)
-    ) AS documents(text)
-    WHERE text IS NOT NULL
-""")
-
-classified = rel.classify_text(
-    "text",
-    labels=["billing", "delivery", "other"],
-    output_column="label",
+source = con.values(
+    (
+        vane.lit(1).alias("order_id"),
+        vane.lit("books").alias("category"),
+        vane.lit(2).alias("quantity"),
+        vane.lit(12).alias("unit_price"),
+    ),
+    (vane.lit(2), vane.lit("games"), vane.lit(1), vane.lit(60)),
+    (vane.lit(3), vane.lit("books"), vane.lit(3), vane.lit(8)),
+    (vane.lit(4), vane.lit("stationery"), vane.lit(1), vane.lit(5)),
 )
 
-label_counts = con.sql("""
-    SELECT label, count(*) AS documents
-    FROM classified
-    GROUP BY label
-    ORDER BY documents DESC
+# SQL stage.
+priced = con.sql("""
+    SELECT
+        order_id,
+        category,
+        quantity * unit_price AS total
+    FROM source
 """)
+
+# Python stage.
+selected = priced.filter(
+    vane.col("total") >= vane.lit(20)
+).select(
+    vane.col("category"),
+    vane.col("total"),
+)
+
+# SQL stage.
+summary = con.sql("""
+    SELECT category, sum(total) AS revenue
+    FROM selected
+    GROUP BY category
+    ORDER BY category
+""")
+summary.show()
 ```
-
-## Where to Go Next
-
-For exact signatures, parameters, return contracts, and placement restrictions, use the [UDF API Reference](/docs/data/reference/udf-api) and [AI Function API Reference](/docs/data/reference/ai-api). For complete setup-to-output tasks, follow the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs) and [AI Functions Guide](/docs/data/guides/ai-functions). For the execution reasons behind these boundaries, read [UDF Concepts](/docs/data/concepts/udfs) and [AI Function Concepts](/docs/data/concepts/ai-functions).

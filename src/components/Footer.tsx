@@ -20,7 +20,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
       benchmarks: 'Benchmarks',
       docs: 'Docs',
       quickstart: 'Quickstart',
-      guides: 'Guides',
+      concepts: 'Concepts',
       examples: 'Examples',
       contributing: 'Contributing',
       resources: 'Resources',
@@ -40,7 +40,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
       benchmarks: '基准测试',
       docs: '文档',
       quickstart: '快速开始',
-      guides: '指南',
+      concepts: '核心概念',
       examples: '示例',
       contributing: '贡献',
       resources: '资源',
@@ -89,7 +89,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
           <div>
             <h4>{copy.docs}</h4>
             <Link to="/docs/data/quickstart/quickstart">{copy.quickstart}</Link>
-            <Link to="/docs/data/guides/multimodal-ingest">{copy.guides}</Link>
+            <Link to="/docs/data/concepts/sql-vs-python">{copy.concepts}</Link>
             <Link to="/docs/data/examples">{copy.examples}</Link>
             <Link to="/docs/data/contributing/development">{copy.contributing}</Link>
           </div>

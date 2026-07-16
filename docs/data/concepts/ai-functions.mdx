@@ -2,92 +2,234 @@
 title: AI Functions
 ---
 
-Vane Data AI Functions have two semantic output models: the **Expression API** and the **Relation API**. They are not three syntax surfaces. For one row-preserving AI result beside source columns, begin with the SQL entry point inside Expression.
+Vane AI Functions are provider-backed, stateful batch UDFs that return an
+Expression. They place one model result beside each input row, so identifiers,
+source text, and other review fields can remain in the same projection.
 
-Both models use the same provider and UDF execution layer. The distinction is whether the operation is one projection result or a specialized table transformation.
+This page covers only the Expression UDF surface. SQL and Python are two ways
+to build the same row-preserving operation; choosing one does not change its
+execution semantics.
 
-## Expression API
+## 1. Expression Contract
 
-The Expression API produces one row-preserving AI column in a `SELECT` projection. SQL is the recommended default entry point: stable identifiers and source fields remain explicit next to the model result.
+Vane currently exposes two AI operations as Expressions:
 
-### SQL Entry Point (Recommended)
+| Operation | SQL Expression | Python Expression | Result | Supported providers |
+| --- | --- | --- | --- | --- |
+| Generate text | `ai_prompt(messages [, options])` | `vane.ai.prompt(expression, ...)` | One `VARCHAR` value per input row | `openai`, `google`, `anthropic`, `vllm` |
+| Create an embedding | `ai_embed(text [, options])` | `vane.ai.embed(expression, ...)` | One `FLOAT[]` value per input row, or `FLOAT[n]` when `dimensions=n` | `openai`, `google`, `transformers` |
 
-Use SQL `ai_prompt` or `ai_embed` when one model result belongs beside each input row. This short projection keeps the identity and prompt that produced each response:
+Both operations preserve row count. Keep any source columns needed later in
+the projection, name the generated column with SQL `AS` or Python `.alias()`,
+and carry a stable ID so every provider result can be traced to its input.
+
+SQL options are planning configuration, not row data. The optional
+`struct_pack(...)` argument must therefore contain constants; provider names,
+models, and execution settings cannot vary by input row in one Expression.
+
+There is no Expression classification function. The provider capability table
+above is intentionally limited to operations that return an Expression.
+
+## 2. Providers
+
+Provider adapters map the same Expression contract to different hosted APIs or
+local model runtimes. Install Vane once; Vane then loads provider adapters
+lazily, so only the library for the selected provider needs to be added.
+
+```bash
+python -m pip install vane-ai
+```
+
+| Provider | Prompt | Embed | Runtime and setup |
+| --- | :---: | :---: | --- |
+| `openai` | Yes | Yes | OpenAI API or an OpenAI-compatible endpoint; install `openai` and set `OPENAI_API_KEY` in the worker environment |
+| `google` | Yes | Yes | Google Generative AI; install `google-genai` and set `GOOGLE_API_KEY` in the worker environment |
+| `anthropic` | Yes | No | Anthropic Messages API; install `anthropic` and set `ANTHROPIC_API_KEY` in the worker environment |
+| `vllm` | Yes | No | Local or remote vLLM engine; install `vllm`, provide model access, and use Ray when GPU actors are required |
+| `transformers` | No | Yes | Local SentenceTransformers model; install `sentence-transformers`, `transformers`, and `torch` |
+
+Set `provider` and `model` explicitly when reproducibility matters. Model IDs,
+limits, and availability belong to the configured endpoint, so choose a model
+that endpoint supports.
+
+## 3. Configure OpenAI
+
+The examples below use the OpenAI provider. Install its client and expose the
+credential to the process that executes the query:
+
+```bash
+python -m pip install vane-ai openai
+export OPENAI_API_KEY="<your-token>"
+
+# Optional: set this only for an OpenAI-compatible endpoint.
+export OPENAI_BASE_URL="https://provider.example/v1"
+```
+
+The OpenAI client reads both variables when it is created on a worker.
+`OPENAI_API_KEY` accepts either an OpenAI API key or the token issued by a
+compatible service. OpenAI API users can omit `OPENAI_BASE_URL`; the client then
+uses the official API root. For Ray jobs, set the variables and install the
+client on every worker that can execute the Expression.
+
+The examples below demonstrate the other supported form: passing the
+non-secret `base_url` explicitly in `struct_pack(...)` or
+`OpenAIProviderOptions`. Replace that value for a compatible service. An
+explicit option takes precedence over `OPENAI_BASE_URL`; when relying on the
+environment variable, omit the option from the Expression. In both forms, use
+the API root, typically ending in `/v1`, rather than an operation path such as
+`/chat/completions`.
+
+Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options
+object, notebook output, or a committed file. SQL binding rejects
+credential-like option fields.
+
+## 4. SQL Expression
+
+SQL is a compact default when the surrounding transformation is already a
+query. A Vane connection registers `ai_prompt` and `ai_embed`; the second
+argument is a constant options struct. Ray is Vane's default runner, and the
+examples' `show()` calls materialize the relation through RayRunner. Call
+`vane.configure(runner="ray")` before creating the connection only when you
+need to override an existing local runner setting.
+
+### Generate Text with `ai_prompt`
 
 ```python
 import vane
 
 con = vane.connect()
-source = con.sql("""
+documents = con.sql("""
     SELECT *
     FROM (VALUES
-        (1, 'Summarize the refund request'),
-        (2, 'Summarize the shipping delay')
-    ) AS t(document_id, prompt)
+        (1, 'The customer asked for a refund after a duplicate charge.'),
+        (2, 'The shipment is delayed because the address is incomplete.')
+    ) AS t(document_id, text)
 """)
 
-reviewed = con.sql("""
+prompted = con.sql("""
     SELECT
         document_id,
-        prompt,
-        ai_prompt(prompt) AS response
-    FROM source
+        text,
+        ai_prompt(
+            text,
+            struct_pack(
+                provider := 'openai',
+                model := 'gpt-4o-mini',
+                base_url := 'https://api.openai.com/v1',
+                system_message := 'Write one short support summary. Return plain text only.',
+                timeout := 60.0,
+                concurrency := 1,
+                max_api_concurrency := 4,
+                max_output_tokens := 64,
+                temperature := 0.0
+            )
+        ) AS summary
+    FROM documents
+    ORDER BY document_id
 """)
+
+prompted.show()
 ```
 
-The SQL call is still Expression API. Its provider options are constant planning inputs, while `document_id` and `prompt` continue to flow as ordinary relation columns.
+`concurrency` selects the number of provider actors. For prompt calls,
+`max_api_concurrency` bounds simultaneous API requests inside each actor.
+Start conservatively and raise either value only within the endpoint's rate
+and capacity limits.
 
-### Python Entry Point
-
-Python Expression is equivalent syntax with the same row-preserving projection semantics. It is useful when the surrounding projection is already being assembled with Python expressions:
+### Create Vectors with `ai_embed`
 
 ```python
-projected = source.select(
+embedded = con.sql("""
+    SELECT
+        document_id,
+        text,
+        ai_embed(
+            text,
+            struct_pack(
+                provider := 'openai',
+                model := 'text-embedding-3-small',
+                base_url := 'https://api.openai.com/v1',
+                encoding_format := 'float',
+                normalize := true,
+                concurrency := 1
+            )
+        ) AS embedding
+    FROM documents
+    ORDER BY document_id
+""")
+
+embedded.show()
+```
+
+Without `dimensions`, the SQL result type is `FLOAT[]`. Set a positive
+`dimensions` value only when the selected embedding model supports that size;
+the result type then becomes fixed-size `FLOAT[n]`. `normalize := true`
+L2-normalizes each non-null vector.
+
+## 5. Python Expression
+
+Python Expression has the same output and execution contract. It separates
+provider configuration from operation-specific request options with typed
+objects.
+
+```python
+import vane
+
+con = vane.connect()
+documents = con.sql("""
+    SELECT *
+    FROM (VALUES
+        (1, 'The customer asked for a refund after a duplicate charge.'),
+        (2, 'The shipment is delayed because the address is incomplete.')
+    ) AS t(document_id, text)
+""")
+
+prompted = documents.select(
     vane.col("document_id"),
-    vane.col("prompt"),
-    vane.ai.prompt(vane.col("prompt")).alias("response"),
-)
+    vane.col("text"),
+    vane.ai.prompt(
+        vane.col("text"),
+        provider="openai",
+        model="gpt-4o-mini",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            base_url="https://api.openai.com/v1",
+            timeout=60.0,
+            concurrency=1,
+            max_api_concurrency=4,
+        ),
+        prompt_options=vane.ai.OpenAIPromptOptions(
+            max_output_tokens=64,
+            temperature=0.0,
+        ),
+        system_message="Write one short support summary. Return plain text only.",
+    ).alias("summary"),
+).order("document_id")
+
+embedded = documents.select(
+    vane.col("document_id"),
+    vane.col("text"),
+    vane.ai.embed(
+        vane.col("text"),
+        provider="openai",
+        model="text-embedding-3-small",
+        provider_options=vane.ai.OpenAIProviderOptions(
+            base_url="https://api.openai.com/v1",
+            timeout=60.0,
+            concurrency=1,
+        ),
+        embedding_options=vane.ai.OpenAIEmbeddingOptions(
+            encoding_format="float",
+        ),
+        normalize=True,
+    ).alias("embedding"),
+).order("document_id")
+
+prompted.show()
+embedded.show()
 ```
 
-Changing from SQL to Python does not change the output model. Both forms add one AI result column and keep source fields by projecting them explicitly.
-
-## Relation API
-
-Move to Relation AI only when a capability needs a table transformation rather than one ordinary projection result:
-
-- `rel.embed_text` provides built-in chunking through `max_chunk_chars`.
-- `rel.classify_text` provides built-in classification.
-- `rel.prompt` provides structured `return_format`, multimodal `image_columns`, and a named Relation output through `output_column`.
-- Relation methods can select an explicit `execution_backend` and provider `concurrency` or `actor_number` controls.
-
-Built-in classification requires Relation API, so this final illustration uses the Relation method rather than pretending classification is a SQL table function:
-
-```python
-classified = source.classify_text(
-    "prompt",
-    labels=["refund", "shipping", "other"],
-    output_column="label",
-)
-```
-
-Vane exposes no direct SQL Relation or table-function API. SQL can filter and project the input before a Relation call and can consume its result afterward, but the specialized Relation method itself is currently Python.
-
-## Provider and Runner Lifecycle
-
-Provider descriptors cross the plan boundary instead of carrying live clients or models with the plan. The selected client or model is instantiated lazily on workers and reused within each actor, avoiding setup for rows that never execute and amortizing setup across batches.
-
-For SQL and Python Expression, the active runner chooses the actor backend when the query is planned: local execution uses a subprocess actor, while a Ray run uses a Ray actor. Relation methods can additionally choose their backend explicitly. Provider defaults and exact parameters belong in the [AI Function API Reference](/docs/data/reference/ai-api), not in this conceptual lifecycle description.
-
-## Credentials and External Effects
-
-Credentials belong in the worker environment because provider clients are created on workers. SQL option binding rejects credential-like fields, so API keys, tokens, and secrets should not be embedded in SQL plans.
-
-Provider calls are external effects outside SQL transactions. They are not exactly-once: a failed or retried query can repeat a request, and transaction rollback cannot undo a completed provider call. Carry stable IDs through the projection, retain reviewable inputs and outputs, and make downstream writes idempotent where repetition matters.
-
-## Choosing a Model
-
-- Choose SQL Expression first for one prompt response or embedding per input row.
-- Choose Python Expression for the same row-preserving result when Python composition is clearer.
-- Choose Relation only for built-in chunking or classification, structured or multimodal prompts, named Relation output, or explicit Relation execution controls.
-
-For exact signatures and provider parameter rules, use the [AI Function API Reference](/docs/data/reference/ai-api). For a complete task with setup, validation, and output handling, use the [AI Functions Guide](/docs/data/guides/ai-functions).
+Use `OpenAIProviderOptions` for client and actor settings,
+`OpenAIPromptOptions` for generation settings, and
+`OpenAIEmbeddingOptions` for embedding request settings. Plain dictionaries
+are accepted too, but typed objects make provider-specific configuration
+clearer and catch misspelled fields earlier.

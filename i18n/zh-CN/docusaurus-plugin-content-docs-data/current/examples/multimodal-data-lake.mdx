@@ -93,11 +93,9 @@ Vane Data 不定义 Vane 专用 Iceberg catalog API。使用 Vane Data 完成准
 
 ## 扩展
 
+Ray 已经是默认 runner。验证有界的本地路径后，把 UDF 从显式 subprocess backend 改为 Ray actor：
+
 ```python
-import vane
-
-vane.configure(runner="ray")
-
 features = raw.map_batches(
     enrich_batch,
     schema={

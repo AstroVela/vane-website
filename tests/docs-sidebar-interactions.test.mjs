@@ -46,7 +46,7 @@ after(async () => {
 
 maybeTest('docs sidebar keeps sibling categories open when another one expands', async () => {
   await request(`/session/${sessionId}/url`, {
-    url: `${docsUrl}/docs/data/guides/structured-transformation`,
+    url: `${docsUrl}/docs/data/concepts/ai-functions`,
   })
   await new Promise((resolve) => setTimeout(resolve, 1500))
 
@@ -56,39 +56,36 @@ maybeTest('docs sidebar keeps sibling categories open when another one expands',
       expanded: button.getAttribute('aria-expanded'),
     }))
   `)
-  assert.deepEqual(
-    initial.filter((item) => item.text === 'Guides' || item.text === 'Data Transformation'),
-    [
-      { text: 'Guides', expanded: 'true' },
-      { text: 'Data Transformation', expanded: 'true' },
-    ],
-  )
+  assert.deepEqual(initial.find((item) => item.text === 'Concepts'), {
+    text: 'Concepts',
+    expanded: 'true',
+  })
 
   await execute(`
     const button = Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .find((el) => el.textContent.trim() === 'Data Ingestion')
+      .find((el) => el.textContent.trim() === 'Getting Started')
     button.click()
     return button.getAttribute('aria-expanded')
   `)
   await new Promise((resolve) => setTimeout(resolve, 50))
-  const dataIngestionExpanded = await execute(`
+  const gettingStartedExpanded = await execute(`
     return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .find((el) => el.textContent.trim() === 'Data Ingestion')
+      .find((el) => el.textContent.trim() === 'Getting Started')
       .getAttribute('aria-expanded')
   `)
 
-  assert.equal(dataIngestionExpanded, 'true')
+  assert.equal(gettingStartedExpanded, 'true')
 
   await execute(`
     const button = Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .find((el) => el.textContent.trim() === 'AI & Inference')
+      .find((el) => el.textContent.trim() === 'Examples')
     button.click()
     return button.getAttribute('aria-expanded')
   `)
   await new Promise((resolve) => setTimeout(resolve, 50))
   const siblingStates = await execute(`
     return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .filter((el) => ['Data Ingestion', 'AI & Inference'].includes(el.textContent.trim()))
+      .filter((el) => ['Getting Started', 'Concepts', 'Examples'].includes(el.textContent.trim()))
       .map((el) => ({
         text: el.textContent.trim(),
         expanded: el.getAttribute('aria-expanded'),
@@ -96,7 +93,8 @@ maybeTest('docs sidebar keeps sibling categories open when another one expands',
   `)
 
   assert.deepEqual(siblingStates, [
-    { text: 'Data Ingestion', expanded: 'true' },
-    { text: 'AI & Inference', expanded: 'true' },
+    { text: 'Getting Started', expanded: 'true' },
+    { text: 'Concepts', expanded: 'true' },
+    { text: 'Examples', expanded: 'true' },
   ])
 })

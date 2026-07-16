@@ -38,61 +38,6 @@ export const DOCS_PAGES = {
     title: 'AI Functions',
     titleZh: 'AI 函数',
   },
-  'guides/multimodal-ingest': {
-    source: 'docs/data/guides/multimodal-ingest.mdx',
-    title: 'Multimodal Ingest',
-    titleZh: '多模态数据加载',
-  },
-  'guides/structured-data-load': {
-    source: 'docs/data/guides/structured-data-load.mdx',
-    title: 'Structured Data Load',
-    titleZh: '结构化数据加载',
-  },
-  'guides/custom-python-udfs': {
-    source: 'docs/data/guides/custom-python-udfs.mdx',
-    title: 'Custom Python UDFs',
-    titleZh: '自定义 Python UDF',
-  },
-  'guides/multimodal-pipeline': {
-    source: 'docs/data/guides/multimodal-pipeline.mdx',
-    title: 'Multimodal Pipeline',
-    titleZh: '多模态 Pipeline',
-  },
-  'guides/structured-transformation': {
-    source: 'docs/data/guides/structured-transformation.mdx',
-    title: 'Structured Transformation',
-    titleZh: '结构化转换',
-  },
-  'guides/ai-functions': {
-    source: 'docs/data/guides/ai-functions.mdx',
-    title: 'AI Functions',
-    titleZh: 'AI 函数',
-  },
-  'guides/gpu-inference': {
-    source: 'docs/data/guides/gpu-inference.mdx',
-    title: 'GPU Inference',
-    titleZh: 'GPU 推理',
-  },
-  'guides/embeddings-at-scale': {
-    source: 'docs/data/guides/embeddings-at-scale.mdx',
-    title: 'Embeddings at Scale',
-    titleZh: '大规模 Embedding',
-  },
-  'guides/performance-tuning': {
-    source: 'docs/data/guides/performance-tuning.mdx',
-    title: 'Performance Tuning',
-    titleZh: '性能调优',
-  },
-  'reference/udf-api': {
-    source: 'docs/data/reference/udf-api.mdx',
-    title: 'UDF API Reference',
-    titleZh: 'UDF API 参考',
-  },
-  'reference/ai-api': {
-    source: 'docs/data/reference/ai-api.mdx',
-    title: 'AI Function API Reference',
-    titleZh: 'AI Function API 参考',
-  },
   examples: {
     source: 'docs/data/examples/index.mdx',
     title: 'Examples',
@@ -118,20 +63,10 @@ export const DOCS_PAGES = {
     title: 'Multimodal Data Lake',
     titleZh: '多模态数据湖',
   },
-  'deploy/single-node': {
-    source: 'docs/data/deploy/single-node.mdx',
-    title: 'Single Node',
-    titleZh: '单节点',
-  },
-  'deploy/ray-cluster': {
-    source: 'docs/data/deploy/ray-cluster.mdx',
-    title: 'Ray Cluster',
-    titleZh: 'Ray 集群',
-  },
-  'deploy/sizing': {
-    source: 'docs/data/deploy/sizing.mdx',
-    title: 'Sizing',
-    titleZh: '容量规划',
+  'deploy/deployment': {
+    source: 'docs/data/deploy/deployment.mdx',
+    title: 'Deployment',
+    titleZh: '部署',
   },
   'contributing/development': {
     source: 'docs/data/contributing/development.mdx',
@@ -195,14 +130,8 @@ export function isDocSlug(slug: string | undefined): slug is DocSlug {
 const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   'Getting Started': '快速开始',
   Concepts: '核心概念',
-  Guides: '使用指南',
-  'Data Ingestion': '数据加载',
-  'Data Transformation': '数据转换',
-  'AI & Inference': 'AI 与推理',
-  Optimization: '优化',
-  Reference: 'API 参考',
   Examples: '示例',
-  Deploy: '部署',
+  Operations: '运维',
   Contributing: '贡献',
 }
 

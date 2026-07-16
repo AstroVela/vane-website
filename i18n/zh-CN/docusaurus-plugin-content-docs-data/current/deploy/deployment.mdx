@@ -1,0 +1,111 @@
+---
+title: 部署
+---
+
+Vane 通过 runner 执行惰性的 relation plan。请在创建连接或第一次物化 relation 之前选择 runner。
+
+## 1. Runner
+
+Vane 对外提供两种 runner：
+
+| Runner | 执行模型 | UDF 调度 | 适用场景 |
+| --- | --- | --- | --- |
+| `ray` | 当前机器上的 Ray，或已连接的 Ray 集群 | Ray task 和 actor | 默认选项；分布式数据、多机执行或 GPU 资源 |
+| `local` | 单机上的 Vane local FTE runner | 本地 subprocess task 和 actor | 不应启动或连接 Ray 的单机作业 |
+
+`ray` 是默认 runner，通常不需要写 `vane.configure(runner="ray")`。没有配置集群地址时，runner 会自动启动本机 Ray runtime。
+
+作业需要脱离 Ray 运行时，请显式选择 `local`：
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+```
+
+也可以在启动进程前做相同设置：
+
+```bash
+VANE_RUNNER=local python job.py
+```
+
+当 plan 需要跨机器执行，或 UDF 申请 GPU 资源时使用 `ray`。需要不依赖 Ray 资源调度的单机执行环境时使用 `local`。
+
+## 2. 部署到 Ray 集群
+
+所有节点都需要兼容的 Vane、Ray、Python 和 UDF 依赖，并且必须能访问作业所需的数据、模型文件、输出位置和凭据。
+
+如果已经有 Ray 集群，请跳过启动命令，并在运行作业时使用该集群的地址。
+
+如果还没有集群，先启动 head 节点：
+
+```bash
+ray start --head \
+  --node-ip-address=<HEAD_IP> \
+  --port=6379 \
+  --dashboard-host=0.0.0
+```
+
+然后让每个 worker 节点加入集群：
+
+```bash
+ray start \
+  --address=<HEAD_IP>:6379 \
+  --node-ip-address=<WORKER_IP>
+```
+
+Ray 已经是默认 runner，因此 Vane 作业不需要显式设置 runner：
+
+```python
+import vane
+
+con = vane.connect()
+result = con.sql("SELECT 'ray-connected' AS status")
+result.show()
+```
+
+在 head 节点运行作业，并让 Ray 自动发现正在运行的集群：
+
+```bash
+RAY_ADDRESS=auto python job.py
+```
+
+如果 driver 在其他机器上运行，请在启动进程前把 `RAY_ADDRESS` 设置为该 Ray 部署支持的地址。集群端口应只开放在可信网络中，并遵守部署环境的认证和网络策略。
+
+UDF 使用的 Python module 和 native library 必须安装在所有可能执行它的 worker 上。对于分布式输入和输出，通常应优先使用共享存储或对象存储，而不是节点本地路径。
+
+## 3. 单机 Runner 设置
+
+默认的 `ray` runner 也可以在单机上使用。保持 `RAY_ADDRESS` 未设置并正常运行作业；Vane 会在需要时启动本机 Ray runtime：
+
+```bash
+unset RAY_ADDRESS
+python job.py
+```
+
+当 plan 需要 Ray actor、GPU 资源调度，或者需要与后续集群部署保持相同执行行为时，请使用这种单机模式。
+
+如果希望在单机上脱离 Ray 运行，请在创建连接前选择 `local`：
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+```
+
+Local runner 默认使用一个 worker。请在创建连接或执行任何 relation 前配置并发：
+
+```python
+import vane
+from duckdb import runners
+
+runners.set_runner_local(
+    num_workers=4,
+    max_running_tasks=4,
+)
+con = vane.connect()
+```
+
+请根据 CPU、内存和 UDF 行为选择 worker 数量。Local runner 不会预留或隔离 GPU 资源；UDF 申请 GPU 时，请使用默认的 Ray runner。

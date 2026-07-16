@@ -109,13 +109,7 @@ summary.show()
 
 ## 扩展
 
-当 SQL 准备、UDF 阶段或模型调用需要分布式 worker 时，使用 Ray：
-
-```python
-import vane
-
-vane.configure(runner="ray")
-```
+Ray 已经是默认 runner。当 SQL 准备、UDF 阶段或模型调用需要集群 worker 时，请按照[部署](/zh-CN/docs/data/deploy/deployment)中的说明，在启动进程前设置 `RAY_ADDRESS`。
 
 根据 API 限制、速率限制和模型服务容量设置 provider 并发度。
 

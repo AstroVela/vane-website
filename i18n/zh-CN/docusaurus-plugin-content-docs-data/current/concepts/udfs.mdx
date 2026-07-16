@@ -2,108 +2,349 @@
 title: UDF
 ---
 
-Vane Data UDF 有两种语义输出模型：**Expression API** 和 **Relation API**。它们不是三种语法入口。SQL 与 Python 是同一个 Expression 模型的两种入口；Relation 则是用于表形转换的独立模型。
+一个 Vane Data UDF 可以从四个相关维度来描述。这些维度回答不同的问题，
+但 API 会约束哪些组合有效：
 
-这一区分关注查询阶段会产出什么。先根据输出契约选择模型，再选择语法与执行控制。
+1. **API 入口：** SQL Expression、Python Expression 或 Relation。
+2. **调用形态：** scalar value、单行或 Arrow batch；Relation 中分别对应
+   `map`、`flat_map` 和 `map_batches`。
+3. **基数：** 该阶段保持还是改变行数。
+4. **生命周期：** 无状态函数或有状态 callable class。
 
-## Expression API
+## 1. API 入口
 
-Expression API 在 `SELECT` projection 中增加一个有类型的输出列，并且通常保持行数。SQL 是推荐的默认入口，因为它能在一条关系语句中同时清楚呈现过滤、projection、源列和 UDF 结果。
+根据输出契约以及该阶段所需的执行控制来选择 API 入口。
 
-### SQL 入口（推荐）
+| API 入口 | 调用方式 | 输出契约 | 适用场景 |
+| --- | --- | --- | --- |
+| SQL Expression UDF | 使用 `vane.attach_function` 挂载 callable，再在 `SELECT` 中调用其 alias | 一个有类型的 projection 列；v1 中保持行数 | 每个输入行旁需要一个结果，并且周围的 pipeline 使用 SQL |
+| Python Expression UDF | 使用 `vane.func`、`vane.func.batch`、`vane.cls` 或 `vane.cls.batch` 构建 Expression | 一个有类型的 projection 列；通常保持行数 | 相同的 projection 更适合用 Python 对象构建 |
+| Relation UDF | 调用 `rel.map`、`rel.flat_map` 或 `rel.map_batches` | 返回 Relation；`map` 追加 `value`，`flat_map` 和 `map_batches` 定义完整输出 schema | callable 需要控制表形或行数，或者该阶段需要显式 backend、actor pool、`side_effects` 等 Relation 专属控制项 |
 
-用 `vane.attach_function` 注册 Python callable，会为 Expression API 提供一个 SQL 名称；注册仍属于该模型。注册后的 alias 是一个 projection expression。SQL alias 在 v1 中始终保持行数。
+Python batch Expression 有一个范围很窄的例外：设置
+`row_preserving=False` 时可以改变行数，但它必须是唯一的顶层 projection。
+Relation UDF 目前是 Python 方法；Vane 不会把它们暴露成 SQL table function。
+
+### 案例：SQL Expression、Python Expression 与 Relation
+
+下面的程序分别通过 SQL 和 Python Expression API 执行相同的规范化逻辑，
+再用 Relation UDF 生成多列结果：
 
 ```python
+import pyarrow as pa
 import vane
 
 con = vane.connect()
-source = con.sql("""
-    SELECT *
-    FROM (VALUES
-        (1, '  Hello  '),
-        (2, ' Vane Data ')
-    ) AS t(id, text)
-""")
+source = con.values(
+    (
+        vane.lit(1).alias("document_id"),
+        vane.lit(" Refund requested ").alias("text"),
+    ),
+    (vane.lit(2), vane.lit(" Shipment delayed ")),
+)
+
+
+def normalize_value(value):
+    return str(value).strip().lower()
+
 
 @vane.func(return_dtype="VARCHAR")
 def normalize_text(value):
-    return str(value).strip().lower()
+    return normalize_value(value)
 
+
+# SQL Expression UDF。
 vane.attach_function(
     normalize_text,
     alias="normalize_text_sql",
     connection=con,
     parameters=["VARCHAR"],
 )
-normalized = con.sql("""
-    SELECT id, text, normalize_text_sql(text) AS normalized_text
-    FROM source
-""")
-normalized.show()
-vane.detach_function("normalize_text_sql", connection=con)
-```
+try:
+    sql_result = con.sql("""
+        SELECT
+            document_id,
+            text,
+            normalize_text_sql(text) AS normalized_text
+        FROM source
+        ORDER BY document_id
+    """)
+    sql_result.show()
+finally:
+    vane.detach_function("normalize_text_sql", connection=con)
 
-在 projection 中保留 `id` 和 `text`，可以直接看出保持行数的契约，并让普通 SQL 继续负责周围的表逻辑。
 
-### Python 入口
-
-Python Expression 是同一个 projection 模型的另一种语法。调用收到 `vane.col(...)` 时会构建 lazy expression，而不是立即执行 Python 函数：
-
-```python
-projected = source.select(
-    vane.col("id"),
+# Python Expression UDF。
+python_result = source.select(
+    vane.col("document_id"),
     vane.col("text"),
     normalize_text(vane.col("text")).alias("normalized_text"),
-)
+).order("document_id")
+python_result.show()
+
+
+# Relation UDF：返回的 Arrow 表控制完整输出形态。
+def enrich_batch(table):
+    document_ids = table.column("document_id").to_pylist()
+    values = table.column("text").to_pylist()
+    normalized = [normalize_value(value) for value in values]
+    return pa.table({
+        "document_id": document_ids,
+        "normalized_text": normalized,
+        "text_length": [len(value) for value in normalized],
+    })
+
+
+relation_result = source.map_batches(
+    enrich_batch,
+    schema={
+        "document_id": "INTEGER",
+        "normalized_text": "VARCHAR",
+        "text_length": "INTEGER",
+    },
+).order("document_id")
+relation_result.show()
 ```
 
-通常的契约是生成一个有类型、保持行数的输出列。Python batch Expression 有一个显式例外：`row_preserving=False` 可以改变基数，但它必须是唯一的顶层 projection，不能与 passthrough 列并列组合。这个例外不适用于注册的 SQL alias；SQL alias 在 v1 中仍然保持行数。
+在 `show()` 或其他终端操作物化 Relation 之前，应保持 SQL alias 处于挂载状态。
+Python Expression 调用会构建惰性的 projection 对象，不需要 alias。Relation
+callable 必须返回该阶段之后仍需保留的每一列。
 
-## Relation API
+## 2. 调用形态：`map`、`flat_map` 与 `map_batches`
 
-结果为表形输出时使用 Relation API，例如多列输出、完整表阶段或显式改变基数。当前方法包括 `rel.map_batches`、`rel.flat_map` 和 `rel.map`；`rel.map` 是逐行 scalar Relation API，不是 pandas batch 转换。
+这些是 Relation 方法的实际名称。最接近的 Expression 形式具有相似的 callable
+形态，但仍遵守单列 Expression 契约。
 
-例如，term 展开属于 Relation，因为一行输入可能生成多行输出：
+| 操作 | 调用形态 | 基数 | Relation 输出 | Expression 对应形式 |
+| --- | --- | --- | --- | --- |
+| `map` | 输入 scalar 列值，输出一个有类型的值 | 保持行数 | 保留输入列并追加 `value` | Python 中使用 `vane.func`，SQL 中使用挂载的 scalar alias |
+| `flat_map` | 输入一个 row dict，输出零个或多个 row dict | 可以改变行数 | 仅返回声明的 `schema` | Python `vane.func.batch(..., row_preserving=False)` 是受限的单列替代形式；v1 中 SQL 没有对应形式 |
+| `map_batches` | 输入 `pyarrow.Table`，输出 `pyarrow.Table` | 可以保持或改变行数 | 仅返回声明的 `schema` | Python 中使用 `vane.func.batch`，SQL 中使用挂载的 batch alias；Expression schema 必须恰好包含一列 |
+
+### 案例：组合三种 Relation 操作
+
+下面的 pipeline 依次使用 `map`、`flat_map` 和 `map_batches`：
 
 ```python
-def split_terms(row):
-    return [
-        {"id": row["id"], "term": term}
-        for term in str(row["text"]).split()
-    ]
+import pyarrow as pa
+import vane
 
-terms = source.flat_map(
-    split_terms,
-    schema={"id": "BIGINT", "term": "VARCHAR"},
-    execution_backend="subprocess_task",
+con = vane.connect()
+source = con.values(
+    vane.lit(1).alias("document_id"),
+    vane.lit("Refund requested").alias("text"),
 )
+
+
+# map：为每个输入行追加一个 scalar value。
+def text_length(document_id, text):
+    return len(text)
+
+
+mapped = source.map(
+    text_length,
+    return_type=vane.sqltypes.INTEGER,
+).project("document_id, text, value AS text_length")
+
+
+# flat_map：把一篇文档转换成零个或多个单词行。
+def split_words(row):
+    for word in row["text"].split():
+        yield {
+            "document_id": row["document_id"],
+            "text_length": row["text_length"],
+            "word": word.lower(),
+        }
+
+
+words = mapped.flat_map(
+    split_words,
+    schema={
+        "document_id": "INTEGER",
+        "text_length": "INTEGER",
+        "word": "VARCHAR",
+    },
+)
+
+
+# map_batches：控制每个 Arrow batch 的完整输出表。
+def add_word_length(table):
+    document_ids = table.column("document_id").to_pylist()
+    text_lengths = table.column("text_length").to_pylist()
+    word_values = table.column("word").to_pylist()
+    return pa.table({
+        "document_id": document_ids,
+        "text_length": text_lengths,
+        "word": word_values,
+        "word_length": [len(word) for word in word_values],
+    })
+
+
+result = words.map_batches(
+    add_word_length,
+    schema={
+        "document_id": "INTEGER",
+        "text_length": "INTEGER",
+        "word": "VARCHAR",
+        "word_length": "INTEGER",
+    },
+)
+result.show()
 ```
 
-Vane 不提供直接的 SQL Relation 或 table-function API。SQL 可以准备输入 relation，也可以消费 Relation 结果，但改变基数或生成表形结果的方法调用目前仍是 Python Relation API。
+`map` 会自动保留上游列。`flat_map` 和 `map_batches` 只返回 `schema` 中声明的
+列，因此应把后续仍需使用的上游列包含在 schema 中。
 
-## 共享规划与执行
+## 3. 基数
 
-两种模型使用同一个惰性规划与执行层。SQL alias 和 Python expression 会成为规划后的 projection 工作，Relation 方法会成为规划后的表阶段。执行以 Arrow batch 传递有类型的数据，因此 batching、worker placement 和资源选择不会改变语义输出模型。
+基数与调用形态是两个不同的问题。Scalar Expression UDF、注册的 SQL alias
+和 Relation `map` 都会为每个输入行保留一个输出行。Relation `flat_map`
+明确为每个输入行生成零个或多个输出行。Relation `map_batches` 可以返回相同
+或不同数量的行。
 
-正因为共享这一层，SQL 与 Python Expression 入口遵守相同的 projection 和行数保持规则。选择 Relation 的原因是它的表契约，而不仅仅是 callable 使用了 Python。
+Python batch Expression 通过 `row_preserving` 声明这个契约。设置
+`row_preserving=True` 后，结果可以和普通列并列 projection。设置
+`row_preserving=False` 后，它可以改变行数，但必须是唯一的顶层 projection。
+v1 中的 SQL 注册只接受保持行数的 batch wrapper。
 
-## Actor 复用与可变状态
+## 4. 无状态与有状态
 
-Actor-backed 执行会在每个 actor 内复用 callable instance，从而复用已经加载的模型、客户端或缓存。这是生命周期和吞吐量工具；多个 actor 不会自动形成共享状态语义。
+状态描述 callable 的生命周期，而不是输出形态。Expression 和 Relation UDF
+都可以是无状态或有状态的。
 
-`vane.cls` 和 `vane.cls.batch` 是范围更窄的 Expression UDF 可变状态契约。在 v1 中，它们使用 `actor_number=1`，让一个 actor instance 在单次 query 的多个 batch 之间携带状态。一般的 actor-backed callable 复用不应被描述成持久应用状态。
+| 生命周期 | Expression 形式 | Relation 形式 | 运行时行为 |
+| --- | --- | --- | --- |
+| 无状态 | `vane.func` 或 `vane.func.batch`；wrapper 也可以挂载为 SQL alias | 将函数传给 task backend | 不保证在多次调用之间保留 callable instance；不同 batch 可以独立处理 |
+| 有状态 | 实例化 `vane.cls` 或 `vane.cls.batch`；在 Python 中调用，或把实例挂载为 SQL alias | 将 callable class 传给 `subprocess_actor` 或 `ray_actor` | 每个 actor 有一个 instance；各 actor 拥有独立、仅在本次执行中有效的状态 |
 
-## 状态、失败与副作用
+对于不需要复用初始化结果的确定性工作，使用无状态函数。需要复用模型、
+tokenizer、client、lookup table 或 cache 时，使用有状态 class。v1 中一个
+有状态 Expression 在每次 query 中使用一个 actor；Relation actor pool 可以
+包含多个相互独立的 instance。
 
-可变的 `vane.cls` 状态是 query-scoped、actor-local 且 ephemeral 的。它不会 checkpoint，既不是 global state，也不是 keyed state，并且不提供 exactly-once 保证。对于有状态 Expression UDF，actor 丢失会让 query 失败，而不是用空状态重建 actor。
+### 案例：无状态函数与有状态 Actor
 
-任何 UDF 产生的外部副作用都不会在 SQL transaction 或 query 失败时回滚，retry 还可能重复这些副作用。分布式 relation 执行也没有稳定的全局行顺序。因此，依赖状态的逻辑不应依赖输入顺序，外部写入应使用稳定标识和幂等处理。
+下面的示例通过 Python 和 SQL 对比无状态与有状态的 Expression UDF，
+然后展示有状态 Relation UDF 的 actor 复用：
 
-## 选择模型
+```python
+import pyarrow as pa
+import vane
 
-- 当一个有类型的结果需要保留在现有行旁边时，首先选择 SQL Expression。
-- 当 Python 组合方式更清楚且仍符合相同 projection 契约时，选择 Python Expression。
-- 当 callable 负责表形、多列或基数时，选择 Relation。
+con = vane.connect()
+source = con.values(
+    (
+        vane.lit(1).alias("document_id"),
+        vane.lit(" Refund requested ").alias("text"),
+    ),
+    (vane.lit(2), vane.lit(" Shipment delayed ")),
+    (vane.lit(3), vane.lit(" Refund requested ")),
+)
 
-精确签名和参数规则请查阅 [UDF API 参考](/zh-CN/docs/data/reference/udf-api)。包含 setup、校验和输出的完整任务请使用[自定义 Python UDF 指南](/zh-CN/docs/data/guides/custom-python-udfs)。
+
+def normalize_value(value):
+    return str(value).strip().lower()
+
+
+@vane.func(return_dtype="VARCHAR")
+def stateless_normalize(value):
+    return normalize_value(value)
+
+
+@vane.cls(actor_number=1, return_dtype="VARCHAR")
+class CachedNormalizer:
+    def __init__(self):
+        self.cache = {}
+
+    def __call__(self, value):
+        if value not in self.cache:
+            self.cache[value] = normalize_value(value)
+        return self.cache[value]
+
+
+cached_normalize = CachedNormalizer()
+
+# Python Expression：一个 task-backed 函数与一个有状态 actor 并列使用。
+python_result = source.select(
+    vane.col("document_id"),
+    stateless_normalize(vane.col("text")).alias("stateless_result"),
+    cached_normalize(vane.col("text")).alias("stateful_result"),
+).order("document_id")
+python_result.show()
+
+# SQL Expression：挂载无状态 wrapper 和已经实例化的有状态 wrapper，
+# 而不是被装饰的 class 本身。
+vane.attach_function(
+    stateless_normalize,
+    alias="stateless_normalize_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+vane.attach_function(
+    cached_normalize,
+    alias="cached_normalize_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+try:
+    sql_result = con.sql("""
+        SELECT
+            document_id,
+            stateless_normalize_sql(text) AS stateless_result,
+            cached_normalize_sql(text) AS stateful_result
+        FROM source
+        ORDER BY document_id
+    """)
+    sql_result.show()
+finally:
+    vane.detach_function("cached_normalize_sql", connection=con)
+    vane.detach_function("stateless_normalize_sql", connection=con)
+
+
+# Relation actor 复用：每个 actor 构造并持有一个 class instance。
+class CachedNormalizerBatch:
+    def __init__(self):
+        self.cache = {}
+
+    def __call__(self, table):
+        document_ids = table.column("document_id").to_pylist()
+        values = table.column("text").to_pylist()
+        normalized = []
+        for value in values:
+            if value not in self.cache:
+                self.cache[value] = normalize_value(value)
+            normalized.append(self.cache[value])
+        return pa.table({
+            "document_id": document_ids,
+            "normalized_text": normalized,
+        })
+
+
+actor_result = source.map_batches(
+    CachedNormalizerBatch,
+    schema={"document_id": "INTEGER", "normalized_text": "VARCHAR"},
+    execution_backend="ray_actor",
+    actor_number=1,
+    batch_size=1,
+    gpus=0.0,
+).order("document_id")
+actor_result.show()
+```
+
+`batch_size=1` 会让这个小型 source 经历多次 actor 调用，从而展示 cache 复用；
+这不是吞吐量调优建议。注册有状态 SQL alias 不会让其状态延续到多个 query。
+
+状态不是 durable、checkpointed、global、keyed、transactional 或 exactly-once。
+多个 actor 不共享内存，分布式输入没有稳定的全局行顺序，retry 还可能重复外部
+副作用。应尽量避免让状态影响结果语义。
+
+## 组合这些维度
+
+在遵守上述有效组合的前提下，可以通过回答每个问题来概括一个 UDF：
+
+| 示例 | API 入口 | 调用形态 | 基数 | 生命周期 |
+| --- | --- | --- | --- | --- |
+| SQL 文本规范化 alias | SQL Expression | Scalar value | 保持行数 | 无状态 |
+| Python 缓存规范化 | Python Expression | Scalar value | 保持行数 | 有状态 |
+| Token 展开 | Relation | 单行（`flat_map`） | 改变行数 | 无状态 |
+| Actor-backed 模型推理 | Relation | Arrow batch（`map_batches`） | 由返回的表声明 | 有状态 |

@@ -2,108 +2,358 @@
 title: UDFs
 ---
 
-Vane Data UDFs have two semantic output models: the **Expression API** and the **Relation API**. They are not three syntax surfaces. SQL and Python are entry points into the same Expression model; Relation is the separate model for table-shaped work.
+A Vane Data UDF can be described along four related dimensions. The
+dimensions answer different questions, but the API constrains which
+combinations are valid:
 
-This distinction is about what a query stage produces. Choose the model from the output contract, then choose syntax and execution controls.
+1. **API surface:** SQL Expression, Python Expression, or Relation.
+2. **Invocation shape:** scalar values, one row, or an Arrow batch; represented
+   by Relation methods `map`, `flat_map`, and `map_batches`.
+3. **Cardinality:** whether the stage preserves or changes row count.
+4. **Lifecycle:** stateless function or stateful callable class.
 
-## Expression API
+## 1. API Surface
 
-The Expression API adds one typed output column to a `SELECT` projection and is normally row-preserving. SQL is the recommended default entry point because it keeps filtering, projection, source columns, and the UDF result visible in one relational statement.
+Choose the API surface from the output contract and any execution controls the
+stage requires.
 
-### SQL Entry Point (Recommended)
+| API surface | How it is called | Output contract | Use when |
+| --- | --- | --- | --- |
+| SQL Expression UDF | Attach a callable with `vane.attach_function`, then call its alias in `SELECT` | One typed projection column; row-preserving in v1 | One result belongs beside each input row and the surrounding pipeline is SQL |
+| Python Expression UDF | Build an Expression with `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` | One typed projection column; normally row-preserving | The same projection is easier to construct with Python objects |
+| Relation UDF | Call `rel.map`, `rel.flat_map`, or `rel.map_batches` | A Relation; `map` appends `value`, while `flat_map` and `map_batches` define the complete output schema | The callable owns table shape or row count, or the stage needs Relation-only controls such as an explicit backend, actor pool, or `side_effects` |
 
-Registering a Python callable with `vane.attach_function` gives the Expression API a SQL name; registration is a control for that model, not a third model. The registered alias then behaves as one projection expression. SQL aliases remain row-preserving in v1.
+Python batch Expression has one narrow exception: with
+`row_preserving=False`, it may change row count only when it is the sole
+top-level projection. Relation UDFs are currently Python methods; Vane does
+not expose them as SQL table functions.
+
+### Case: SQL Expression, Python Expression, and Relation
+
+This program runs the same normalization through SQL and Python Expression
+APIs, then uses a Relation UDF for a multi-column result:
 
 ```python
+import pyarrow as pa
 import vane
 
 con = vane.connect()
-source = con.sql("""
-    SELECT *
-    FROM (VALUES
-        (1, '  Hello  '),
-        (2, ' Vane Data ')
-    ) AS t(id, text)
-""")
+source = con.values(
+    (
+        vane.lit(1).alias("document_id"),
+        vane.lit(" Refund requested ").alias("text"),
+    ),
+    (vane.lit(2), vane.lit(" Shipment delayed ")),
+)
+
+
+def normalize_value(value):
+    return str(value).strip().lower()
+
 
 @vane.func(return_dtype="VARCHAR")
 def normalize_text(value):
-    return str(value).strip().lower()
+    return normalize_value(value)
 
+
+# SQL Expression UDF.
 vane.attach_function(
     normalize_text,
     alias="normalize_text_sql",
     connection=con,
     parameters=["VARCHAR"],
 )
-normalized = con.sql("""
-    SELECT id, text, normalize_text_sql(text) AS normalized_text
-    FROM source
-""")
-normalized.show()
-vane.detach_function("normalize_text_sql", connection=con)
-```
+try:
+    sql_result = con.sql("""
+        SELECT
+            document_id,
+            text,
+            normalize_text_sql(text) AS normalized_text
+        FROM source
+        ORDER BY document_id
+    """)
+    sql_result.show()
+finally:
+    vane.detach_function("normalize_text_sql", connection=con)
 
-Keeping `id` and `text` in the projection makes the row-preserving contract visible and leaves ordinary SQL in charge of the surrounding table logic.
 
-### Python Entry Point
-
-Python Expression is alternate syntax for the same projection model. A call that receives `vane.col(...)` builds a lazy expression instead of eagerly invoking the Python function:
-
-```python
-projected = source.select(
-    vane.col("id"),
+# Python Expression UDF.
+python_result = source.select(
+    vane.col("document_id"),
     vane.col("text"),
     normalize_text(vane.col("text")).alias("normalized_text"),
-)
+).order("document_id")
+python_result.show()
+
+
+# Relation UDF: the returned Arrow table owns the complete output shape.
+def enrich_batch(table):
+    document_ids = table.column("document_id").to_pylist()
+    values = table.column("text").to_pylist()
+    normalized = [normalize_value(value) for value in values]
+    return pa.table({
+        "document_id": document_ids,
+        "normalized_text": normalized,
+        "text_length": [len(value) for value in normalized],
+    })
+
+
+relation_result = source.map_batches(
+    enrich_batch,
+    schema={
+        "document_id": "INTEGER",
+        "normalized_text": "VARCHAR",
+        "text_length": "INTEGER",
+    },
+).order("document_id")
+relation_result.show()
 ```
 
-The normal contract is one typed, row-preserving output column. Python batch Expression has one explicit exception: `row_preserving=False` may change cardinality, but that expression must be the sole top-level projection. It cannot be composed beside passthrough columns. This exception does not extend to registered SQL aliases, which remain row-preserving in v1.
+Keep a SQL alias attached until `show()` or another terminal operation
+materializes the relation. Python Expression calls build lazy projection
+objects and need no alias. The Relation callable must return every column that
+should survive its stage.
 
-## Relation API
+## 2. Invocation Shape: `map`, `flat_map`, and `map_batches`
 
-Use the Relation API when the result is table-shaped: multi-column output, a complete table stage, or an explicit cardinality change. Current methods include `rel.map_batches`, `rel.flat_map`, and `rel.map`; `rel.map` is the row-wise scalar Relation API, not a pandas batch transform.
+These are literal Relation method names. Their closest Expression forms have
+similar callable shapes but retain the one-column Expression contract.
 
-For example, token expansion belongs to Relation because one input row may produce several output rows:
+| Operation | Invocation shape | Cardinality | Relation output | Expression counterpart |
+| --- | --- | --- | --- | --- |
+| `map` | Scalar column values in, one typed value out | Preserves row count | Preserves input columns and appends `value` | `vane.func` in Python or an attached scalar alias in SQL |
+| `flat_map` | One row dict in, zero or more row dicts out | May change row count | Returns exactly the declared `schema` | Python `vane.func.batch(..., row_preserving=False)` is a restricted one-column alternative; SQL has no counterpart in v1 |
+| `map_batches` | `pyarrow.Table` in, `pyarrow.Table` out | May preserve or change row count | Returns exactly the declared `schema` | `vane.func.batch` in Python or an attached batch alias in SQL; the Expression schema has exactly one column |
+
+### Case: Compose All Three Relation Operations
+
+This pipeline uses `map`, `flat_map`, and `map_batches` in sequence:
 
 ```python
-def split_terms(row):
-    return [
-        {"id": row["id"], "term": term}
-        for term in str(row["text"]).split()
-    ]
+import pyarrow as pa
+import vane
 
-terms = source.flat_map(
-    split_terms,
-    schema={"id": "BIGINT", "term": "VARCHAR"},
-    execution_backend="subprocess_task",
+con = vane.connect()
+source = con.values(
+    vane.lit(1).alias("document_id"),
+    vane.lit("Refund requested").alias("text"),
 )
+
+
+# map: append one scalar value to every input row.
+def text_length(document_id, text):
+    return len(text)
+
+
+mapped = source.map(
+    text_length,
+    return_type=vane.sqltypes.INTEGER,
+).project("document_id, text, value AS text_length")
+
+
+# flat_map: turn one document into zero or more word rows.
+def split_words(row):
+    for word in row["text"].split():
+        yield {
+            "document_id": row["document_id"],
+            "text_length": row["text_length"],
+            "word": word.lower(),
+        }
+
+
+words = mapped.flat_map(
+    split_words,
+    schema={
+        "document_id": "INTEGER",
+        "text_length": "INTEGER",
+        "word": "VARCHAR",
+    },
+)
+
+
+# map_batches: own the complete output table for each Arrow batch.
+def add_word_length(table):
+    document_ids = table.column("document_id").to_pylist()
+    text_lengths = table.column("text_length").to_pylist()
+    word_values = table.column("word").to_pylist()
+    return pa.table({
+        "document_id": document_ids,
+        "text_length": text_lengths,
+        "word": word_values,
+        "word_length": [len(word) for word in word_values],
+    })
+
+
+result = words.map_batches(
+    add_word_length,
+    schema={
+        "document_id": "INTEGER",
+        "text_length": "INTEGER",
+        "word": "VARCHAR",
+        "word_length": "INTEGER",
+    },
+)
+result.show()
 ```
 
-Vane exposes no direct SQL Relation or table-function API. SQL can prepare the input relation and consume a Relation result, but the cardinality-changing or table-shaped method call itself is currently Python Relation API.
+`map` automatically keeps upstream columns. `flat_map` and `map_batches`
+return exactly the columns declared by `schema`, so include any upstream
+columns needed later.
 
-## Shared Planning and Execution
+## 3. Cardinality
 
-Both models participate in the same lazy planning and execution layer. SQL aliases and Python expressions become planned projection work; Relation methods become planned table stages. Execution moves typed data through Arrow batches, so batching, worker placement, and resource choices do not change the semantic output model.
+Cardinality is separate from invocation shape. Scalar Expression UDFs,
+registered SQL aliases, and Relation `map` preserve one output row per input
+row. Relation `flat_map` explicitly emits zero or more rows for each input row.
+Relation `map_batches` may return the same or a different number of rows.
 
-That shared layer is why the SQL and Python Expression entry points have the same projection and row-preservation rules. It is also why Relation is selected for its table contract, not simply because the callable happens to use Python.
+Python batch Expressions declare this contract with `row_preserving`. With
+`row_preserving=True`, the result can be projected beside ordinary columns.
+With `row_preserving=False`, it may change row count but must be the sole
+top-level projection. SQL registration accepts only row-preserving batch
+wrappers in v1.
 
-## Actor Reuse and Mutable State
+## 4. Stateless and Stateful
 
-Actor-backed execution reuses a callable instance—and therefore a loaded model, client, or cache—within each actor. This is a lifecycle and throughput tool; multiple actors do not create shared state semantics.
+State describes callable lifetime, not output shape. Both Expression and
+Relation UDFs can be stateless or stateful.
 
-`vane.cls` and `vane.cls.batch` provide the narrower mutable-state contract for Expression UDFs. In v1 they use `actor_number=1` so one actor instance can carry state across the batches of one query. General actor-backed callable reuse should not be described as durable application state.
+| Lifecycle | Expression form | Relation form | Runtime behavior |
+| --- | --- | --- | --- |
+| Stateless | `vane.func` or `vane.func.batch`; the wrapper may also be attached as a SQL alias | Pass a function to a task backend | No callable instance is promised across calls; batches can be processed independently |
+| Stateful | Instantiate `vane.cls` or `vane.cls.batch`; call it in Python or attach the instance as a SQL alias | Pass a callable class to `subprocess_actor` or `ray_actor` | One instance per actor; each actor owns independent, execution-scoped state |
 
-## State, Failure, and Side Effects
+Use stateless functions for deterministic work that needs no reusable setup.
+Use stateful classes to reuse a model, tokenizer, client, lookup table, or
+cache. In v1 a stateful Expression uses one actor per query. A Relation actor
+pool may contain several independent instances.
 
-Mutable `vane.cls` state is query-scoped, actor-local, and ephemeral. It is not checkpointed, is neither global state nor keyed state, and provides no exactly-once guarantee. For a stateful Expression UDF, actor loss makes the query fail rather than rebuilding an actor with empty state.
+### Case: Stateless Function and Stateful Actors
 
-External effects performed by any UDF are not rolled back when the SQL transaction or query fails, and retries can repeat them. There is also no stable global row order across distributed relation execution. State-dependent logic should therefore avoid relying on input order, and external writes should use stable identifiers and idempotent handling.
+This example compares stateless and stateful Expression UDFs through Python
+and SQL, then shows actor reuse for a stateful Relation UDF:
 
-## Choosing a Model
+```python
+import pyarrow as pa
+import vane
 
-- Choose SQL Expression first when one typed result belongs beside existing rows.
-- Choose Python Expression when Python composition is clearer but the same projection contract still fits.
-- Choose Relation when the callable owns table shape, multiple columns, or cardinality.
+con = vane.connect()
+source = con.values(
+    (
+        vane.lit(1).alias("document_id"),
+        vane.lit(" Refund requested ").alias("text"),
+    ),
+    (vane.lit(2), vane.lit(" Shipment delayed ")),
+    (vane.lit(3), vane.lit(" Refund requested ")),
+)
 
-For exact signatures and parameter rules, use the [UDF API Reference](/docs/data/reference/udf-api). For a complete task with setup, validation, and output, use the [Custom Python UDFs Guide](/docs/data/guides/custom-python-udfs).
+
+def normalize_value(value):
+    return str(value).strip().lower()
+
+
+@vane.func(return_dtype="VARCHAR")
+def stateless_normalize(value):
+    return normalize_value(value)
+
+
+@vane.cls(actor_number=1, return_dtype="VARCHAR")
+class CachedNormalizer:
+    def __init__(self):
+        self.cache = {}
+
+    def __call__(self, value):
+        if value not in self.cache:
+            self.cache[value] = normalize_value(value)
+        return self.cache[value]
+
+
+cached_normalize = CachedNormalizer()
+
+# Python Expression: a task-backed function beside one stateful actor.
+python_result = source.select(
+    vane.col("document_id"),
+    stateless_normalize(vane.col("text")).alias("stateless_result"),
+    cached_normalize(vane.col("text")).alias("stateful_result"),
+).order("document_id")
+python_result.show()
+
+# SQL Expression: attach the stateless wrapper and the instantiated stateful
+# wrapper, not the decorated class itself.
+vane.attach_function(
+    stateless_normalize,
+    alias="stateless_normalize_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+vane.attach_function(
+    cached_normalize,
+    alias="cached_normalize_sql",
+    connection=con,
+    parameters=["VARCHAR"],
+)
+try:
+    sql_result = con.sql("""
+        SELECT
+            document_id,
+            stateless_normalize_sql(text) AS stateless_result,
+            cached_normalize_sql(text) AS stateful_result
+        FROM source
+        ORDER BY document_id
+    """)
+    sql_result.show()
+finally:
+    vane.detach_function("cached_normalize_sql", connection=con)
+    vane.detach_function("stateless_normalize_sql", connection=con)
+
+
+# Relation actor reuse: each actor constructs and owns one class instance.
+class CachedNormalizerBatch:
+    def __init__(self):
+        self.cache = {}
+
+    def __call__(self, table):
+        document_ids = table.column("document_id").to_pylist()
+        values = table.column("text").to_pylist()
+        normalized = []
+        for value in values:
+            if value not in self.cache:
+                self.cache[value] = normalize_value(value)
+            normalized.append(self.cache[value])
+        return pa.table({
+            "document_id": document_ids,
+            "normalized_text": normalized,
+        })
+
+
+actor_result = source.map_batches(
+    CachedNormalizerBatch,
+    schema={"document_id": "INTEGER", "normalized_text": "VARCHAR"},
+    execution_backend="ray_actor",
+    actor_number=1,
+    batch_size=1,
+    gpus=0.0,
+).order("document_id")
+actor_result.show()
+```
+
+`batch_size=1` forces this small source through several actor calls so the
+actor can reuse its cache; it is not a throughput recommendation. Registering
+a stateful SQL alias does not extend its state across queries.
+
+State is not durable, checkpointed, global, keyed, transactional, or
+exactly-once. Multiple actors do not share memory, distributed input has no
+stable global row order, and retries may repeat external side effects. Keep
+state out of result semantics when possible.
+
+## Combine the Dimensions
+
+Every UDF can be summarized by answering each question while respecting the
+valid combinations above:
+
+| Example | API surface | Invocation shape | Cardinality | Lifecycle |
+| --- | --- | --- | --- | --- |
+| SQL text normalization alias | SQL Expression | Scalar values | Row-preserving | Stateless |
+| Python cached normalization | Python Expression | Scalar values | Row-preserving | Stateful |
+| Token expansion | Relation | One row (`flat_map`) | Row-changing | Stateless |
+| Actor-backed model inference | Relation | Arrow batch (`map_batches`) | Declared by the returned table | Stateful |

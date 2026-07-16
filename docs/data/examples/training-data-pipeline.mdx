@@ -24,7 +24,6 @@ The website shows the shortened pipeline shape. The full example below expands t
 
 ```python
 import vane
-vane.configure(runner="ray")
 con = vane.connect()
 raw = con.sql("""
 select id, uri, media_type, text, metadata, content_hash
@@ -167,13 +166,9 @@ For large datasets, prefer an implementation pattern where joins or combine step
 
 ## Scale-out
 
-Switch the runner and the expensive UDF or AI helper stage after the local path is correct:
+Ray is already the default runner. After the bounded local path is correct, move the expensive UDF or AI helper stage from an explicit subprocess backend to Ray scheduling:
 
 ```python
-import vane
-
-vane.configure(runner="ray")
-
 embedding_only = chunks.embed_text(
     "chunk_text",
     provider="transformers",
