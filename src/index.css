@@ -1370,26 +1370,12 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   letter-spacing: 0.1em;
   color: var(--ink);
 }
-.thg-engine-core {
-  position: relative;
+.thg-engine-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(47,109,69,0.55);
-}
-.thg-engine-core::before {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(47,109,69,0.4);
-}
-.thg-engine-core::after {
-  content: '';
-  position: absolute;
-  inset: 16px;
-  border-radius: 50%;
-  background: rgba(47,109,69,0.55);
 }
 .thg-engine-ops {
   font-family: var(--font-pixel);
@@ -1512,13 +1498,6 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   font-size: 12px;
   line-height: 1.62;
 }
-.training-code-note {
-  max-width: 500px;
-  margin: 18px 0 0;
-  color: var(--ink-3);
-  font-size: 13.5px;
-  line-height: 1.55;
-}
 .enterprise-hero-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 520px;
@@ -1572,8 +1551,8 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   flex-wrap: wrap;
 }
 /* ---- Execution timeline diagram (site-native, ink-on-paper, boxy) ----
-   Shared pipeline shown once, then legacy vs Vane execution compared in two
-   aligned CPU/GPU occupancy lanes. Motion is subtle and layout-safe. */
+   Shared pipeline shown once, then Traditional vs Vane execution compared on
+   aligned CPU/GPU/I/O timelines. Motion is subtle and layout-safe. */
 .training-data-factory {
   padding: 52px 0 56px;
 }
@@ -1736,29 +1715,23 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
 /* execution comparison lanes */
 .tl-lanes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 0;
   min-width: 0;
 }
 .tl-lane {
   min-width: 0;
-  border: 1.5px solid var(--line-2);
-  border-radius: var(--r);
-  background: rgba(251,250,246,0.92);
-  padding: 20px;
+  padding: 0 0 20px;
 }
-.tl-lane.legacy {
-  box-shadow: inset 0 3px 0 rgba(181,97,47,0.24);
-}
-.tl-lane.vane {
-  box-shadow: inset 0 3px 0 rgba(63,122,79,0.24);
+.tl-lane + .tl-lane {
+  padding: 20px 0 0;
+  border-top: 1px solid var(--line-2);
 }
 .tl-lane-head {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 11px;
 }
 .tl-lane-copy {
   display: grid;
@@ -1777,287 +1750,148 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   border-radius: 50%;
   flex: none;
 }
-.tl-dot.legacy { background: #B5612F; }
+.tl-dot.traditional { background: #B5612F; }
 .tl-dot.vane { background: #3F7A4F; }
 
 .tl-execution {
-  --tl-execution-row-height: 132px;
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 138px;
-  align-items: stretch;
-  gap: 14px;
-}
-.tl-exec-main {
-  --tl-breath-shadow: rgba(21,23,30,0.08);
-  position: relative;
-  z-index: 1;
-  grid-column: 1 / 2;
-  min-width: 0;
-  height: var(--tl-execution-row-height);
-  display: grid;
-  gap: 12px;
-  align-content: center;
-  padding: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(21,23,30,0.12);
-  border-radius: var(--r);
-  background: rgba(251,250,246,0.8);
-  animation: tlStageBreath 7.2s ease-in-out infinite;
-}
-.tl-exec-main.legacy {
-  --tl-breath-shadow: rgba(184,111,95,0.11);
-  align-content: start;
-  border-color: rgba(184,111,95,0.2);
-  background: rgba(245,234,225,0.34);
-}
-.tl-exec-main.vane {
-  --tl-breath-shadow: rgba(79,138,96,0.12);
-  border-color: rgba(79,138,96,0.22);
-  background: rgba(239,247,239,0.34);
-  animation: none;
-}
-.tl-hold-status {
   display: grid;
   gap: 8px;
-  color: #8B6A34;
-  font-size: 10.5px;
-  font-weight: 900;
-  line-height: 1.15;
-}
-.tl-hold-status i {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(189,139,61,0.24);
-}
-.tl-hold-status i span {
-  position: absolute;
-  inset: 0;
-  display: block;
-  border-radius: inherit;
-  background: #BD8B3D;
-  transform: scaleX(0);
-  transform-origin: left center;
-  animation: tlWaitBar 9s ease-in-out infinite;
-}
-.tl-work-row {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  align-items: center;
-  gap: 10px;
-  height: var(--tl-execution-row-height);
   min-width: 0;
-}
-.tl-work-row.legacy {
-  grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
-  height: auto;
-  margin-top: auto;
-}
-.tl-work-row.overlap {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.tl-schedule-flow {
-  position: absolute;
-  z-index: 1;
-  left: 18px;
-  right: 18px;
-  top: 50%;
-  height: 66px;
-  pointer-events: none;
-  transform: translateY(-50%);
-  /* the conveyor rail the packets ride, visible through the card bus-channels
-     and the gaps so the stream reads as one continuous track */
-  background: linear-gradient(90deg, transparent, rgba(63,122,79,0.3) 10%, rgba(63,122,79,0.3) 90%, transparent) no-repeat;
-  background-size: 100% 1.5px;
-  background-position: 0 72%;
-}
-.tl-schedule-flow i {
-  --tl-stream-delay: 0s;
-  position: absolute;
-  top: 72%;
-  left: -4%;
-  width: 50px;
-  height: 7px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(63,122,79,0), rgba(63,122,79,0.4) 42%, #3F7A4F 100%);
-  box-shadow: 0 0 13px rgba(63,122,79,0.32);
-  opacity: 0;
-  transform: translate(-50%, -50%) translateX(-10px) scaleX(0.7);
-  transform-origin: center;
-  animation: tlStreamPacket 1.16s linear infinite;
-  animation-delay: var(--tl-stream-delay);
-  will-change: left, transform, opacity;
-}
-.tl-schedule-flow i::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: -1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3F7A4F;
-  box-shadow: 0 0 0 2px rgba(63,122,79,0.1), 0 0 15px rgba(63,122,79,0.34);
-  transform: translateY(-50%);
-}
-.tl-schedule-flow i.stream-b { --tl-stream-delay: -0.29s; }
-.tl-schedule-flow i.stream-c { --tl-stream-delay: -0.58s; }
-.tl-schedule-flow i.stream-d { --tl-stream-delay: -0.87s; }
-.tl-work-card {
-  --tl-breath-shadow: rgba(21,23,30,0.08);
-  position: relative;
-  z-index: 2;
-  min-width: 0;
-  height: 66px;
-  min-height: 66px;
-  display: grid;
-  place-items: center;
-  gap: 7px;
-  padding: 12px 10px;
+  padding: 13px 15px;
   overflow: hidden;
   border: 1px solid var(--line-2);
-  border-top: 2px solid rgba(21,23,30,0.18);
   border-radius: var(--r);
-  background: rgba(251,250,246,0.94);
-  color: var(--ink);
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.2;
-  text-align: center;
-  animation: tlStageBreath 7.2s ease-in-out infinite;
+  background: rgba(251,250,246,0.7);
 }
-.tl-work-card.cpu { --tl-breath-shadow: rgba(55,107,135,0.12); border-color: rgba(55,107,135,0.24); border-top-color: rgba(55,107,135,0.44); }
-.tl-work-card.gpu { --tl-breath-shadow: rgba(79,138,96,0.14); border-color: rgba(79,138,96,0.28); border-top-color: rgba(79,138,96,0.52); color: #2F6D45; }
-.tl-work-card.batch {
-  --tl-breath-shadow: rgba(55,107,135,0.13);
-  border-color: rgba(55,107,135,0.28);
-  border-top-color: rgba(55,107,135,0.52);
-  color: #376B87;
+.tl-execution.traditional {
+  border-color: rgba(181,97,47,0.22);
+  background: rgba(245,234,225,0.3);
 }
-.tl-work-card.batch i {
-  position: absolute;
-  left: 22%;
-  right: 22%;
-  top: 66%;
-  height: 8px;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 10px rgba(55,107,135,0.32);
-  transform-origin: center;
-  animation: tlBatchPulse 2.25s ease-in-out infinite;
+.tl-execution.vane {
+  border-color: rgba(63,122,79,0.24);
+  background: rgba(239,247,239,0.3);
 }
-/* Vane cards are translucent "stations": label on top, a clear bus-channel in
-   the lower third the packet stream flows through, so CPU decode, dynamic
-   batching, and GPU inference all read as continuously fed at once. */
-.tl-work-row.overlap .tl-work-card {
-  align-content: start;
-  align-items: start;
-  justify-items: center;
-  gap: 5px;
-  padding: 11px 8px 0;
-  background: linear-gradient(to bottom,
-    rgba(251,250,246,0.97) 0 58%,
-    rgba(251,250,246,0.22) 66%,
-    rgba(251,250,246,0.06) 72%,
-    rgba(251,250,246,0.22) 78%,
-    rgba(251,250,246,0.97) 86% 100%);
-}
-.tl-work-row.overlap .tl-work-card:nth-child(2) { animation-delay: 0.42s; }
-.tl-work-row.overlap .tl-work-card:nth-child(3) { animation-delay: 0.84s; }
-.tl-gap-dots {
+.tl-resource-row {
+  --tl-resource: #5B5F6B;
+  --tl-resource-soft: rgba(91,95,107,0.15);
   display: grid;
-  grid-template-columns: repeat(3, 6px);
-  justify-content: center;
-  gap: 5px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
 }
-.tl-gap-dots i {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #BD8B3D;
-  opacity: 0.58;
-  animation: tlWaitDots 3.4s ease-in-out infinite;
+.tl-resource-row.tl-resource-cpu {
+  --tl-resource: #376B87;
+  --tl-resource-soft: rgba(55,107,135,0.14);
 }
-.tl-gap-dots i:nth-child(2) { animation-delay: 0.16s; }
-.tl-gap-dots i:nth-child(3) { animation-delay: 0.32s; }
-.tl-gpu-card {
-  --tl-gpu-breath: rgba(21,23,30,0.08);
-  grid-column: 2 / 3;
-  align-self: stretch;
-  display: grid;
-  align-content: center;
-  gap: 7px;
-  height: var(--tl-execution-row-height);
-  padding: 12px;
-  border: 1.5px solid;
-  border-radius: var(--r);
-  background: rgba(251,250,246,0.92);
-  text-transform: uppercase;
-  animation: tlGpuCardBreath 7.2s ease-in-out infinite;
+.tl-resource-row.tl-resource-gpu {
+  --tl-resource: #3F7A4F;
+  --tl-resource-soft: rgba(63,122,79,0.14);
 }
-.tl-gpu-card span {
-  color: var(--ink-3);
-  font-size: 10px;
+.tl-resource-label {
+  color: var(--ink-2);
+  font-size: 10.5px;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  line-height: 1;
 }
-.tl-gpu-card b {
-  font-size: 25px;
-  letter-spacing: -0.02em;
-  line-height: 0.98;
+.tl-time-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: 26px;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 calc(8.333% - 1px),
+      rgba(21,23,30,0.055) calc(8.333% - 1px) 8.333%
+    ),
+    rgba(251,250,246,0.82);
 }
-.tl-gpu-card small {
-  color: var(--ink-3);
+.tl-time-track::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  opacity: 0;
+  animation-duration: 8s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: left, opacity;
+}
+.tl-execution.traditional .tl-time-track::after {
+  background: #B5612F;
+  box-shadow: 0 0 0 2px rgba(181,97,47,0.09), 0 0 8px rgba(181,97,47,0.22);
+  animation-name: tlTraditionalProgress;
+}
+.tl-execution.vane .tl-time-track::after {
+  background: #2F6D45;
+  box-shadow: 0 0 0 2px rgba(47,109,69,0.09), 0 0 8px rgba(47,109,69,0.24);
+  animation-name: tlVaneProgress;
+}
+.tl-time-segment {
+  position: relative;
+  z-index: 2;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  padding: 0 5px;
+  overflow: hidden;
+  color: var(--paper);
+  background: var(--tl-resource);
   font-size: 9.5px;
   font-weight: 800;
-  line-height: 1.2;
-  text-transform: none;
+  line-height: 1;
+  white-space: nowrap;
 }
-.tl-gpu-card.legacy {
-  --tl-gpu-breath: rgba(184,111,95,0.13);
-  color: #8B5945;
-  border-color: rgba(184,111,95,0.42);
+.tl-time-segment.wait {
+  border: 1px dashed rgba(139,106,52,0.42);
+  color: #8B6A34;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(189,139,61,0.18) 0 4px,
+      rgba(251,250,246,0.72) 4px 8px
+    );
 }
-.tl-gpu-card.vane {
-  --tl-gpu-breath: rgba(79,138,96,0.28);
+.tl-execution.vane .tl-time-segment.work {
+  box-shadow: inset 0 0 0 1px var(--tl-resource-soft);
+}
+.tl-time-saved {
+  position: relative;
+  z-index: 1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-left: 1px dashed rgba(47,109,69,0.34);
+  border-radius: 1px;
   color: #2F6D45;
-  border-color: rgba(79,138,96,0.5);
-  animation-delay: 0.9s;
-  animation-duration: 4.8s;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(63,122,79,0.1) 0 4px,
+      rgba(251,250,246,0.58) 4px 8px
+    );
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
-.tl-gpu-bars {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  align-items: end;
-  height: 16px;
-}
-.tl-gpu-bars i {
-  display: block;
-  border-radius: 2px 2px 1px 1px;
-  background: currentColor;
-  transform-origin: bottom;
-}
-.tl-gpu-card.legacy .tl-gpu-bars i {
-  height: 18%;
-  opacity: 0.36;
-  animation: tlLegacyGpuBars 4.8s ease-in-out infinite;
-}
-.tl-gpu-card.vane .tl-gpu-bars i {
-  height: 88%;
-  opacity: 0.9;
-  animation: tlVaneGpuBars 1.8s ease-in-out infinite;
-}
-.tl-gpu-bars i:nth-child(2) { animation-delay: 0.12s; }
-.tl-gpu-bars i:nth-child(3) { animation-delay: 0.24s; }
-.tl-gpu-bars i:nth-child(4) { animation-delay: 0.36s; }
-.tl-gpu-bars i:nth-child(5) { animation-delay: 0.48s; }
 .tl-note {
   margin: 11px 0 0;
   font-size: 12px;
@@ -2074,92 +1908,52 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
     filter: saturate(0.9);
   }
 }
-@keyframes tlStageBreath {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(21,23,30,0);
-  }
-  50% {
-    box-shadow: 0 0 0 3px var(--tl-breath-shadow);
-  }
-}
-@keyframes tlGpuCardBreath {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(21,23,30,0);
-  }
-  50% {
-    box-shadow: 0 0 0 3px var(--tl-gpu-breath);
-  }
-}
-@keyframes tlLegacyGpuBars {
-  0%, 100% {
-    transform: scaleY(0.72);
-    opacity: 0.3;
-  }
-  50% {
-    transform: scaleY(1.05);
-    opacity: 0.46;
-  }
-}
-@keyframes tlVaneGpuBars {
-  0%, 100% {
-    transform: scaleY(0.84);
-    opacity: 0.76;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 0.96;
-  }
-}
-@keyframes tlWaitBar {
+@keyframes tlTraditionalProgress {
   0% {
-    transform: scaleX(0);
-    opacity: 0.7;
-  }
-  72%, 100% {
-    transform: scaleX(1);
-    opacity: 0.95;
-  }
-}
-@keyframes tlWaitDots {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.44;
-  }
-  50% {
-    transform: translateY(-2px);
-    opacity: 0.78;
-  }
-}
-@keyframes tlBatchPulse {
-  0%, 100% {
-    transform: scaleX(0.56);
-    opacity: 0.72;
-  }
-  50% {
-    transform: scaleX(1);
-    opacity: 0.96;
-  }
-}
-@keyframes tlStreamPacket {
-  0% {
-    left: -4%;
+    left: 0;
     opacity: 0;
-    transform: translate(-50%, -50%) translateX(-10px) scaleX(0.7);
   }
-  8% {
-    opacity: 0.72;
+  4% {
+    left: 0;
+    opacity: 0.82;
   }
-  46% {
-    opacity: 0.96;
-    transform: translate(-50%, -50%) translateX(0) scaleX(1.08);
+  28%, 50% {
+    left: 41.667%;
+    opacity: 0.82;
   }
-  86% {
-    opacity: 0.8;
+  78% {
+    left: 83.333%;
+    opacity: 0.82;
+  }
+  90%, 96% {
+    left: calc(100% - 2px);
+    opacity: 0.9;
   }
   100% {
-    left: 104%;
+    left: calc(100% - 2px);
     opacity: 0;
-    transform: translate(-50%, -50%) translateX(10px) scaleX(0.7);
+  }
+}
+@keyframes tlVaneProgress {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  4% {
+    left: 0;
+    opacity: 0.86;
+  }
+  28% {
+    left: 41.667%;
+    opacity: 0.88;
+  }
+  58%, 96% {
+    left: 66.667%;
+    opacity: 0.92;
+  }
+  100% {
+    left: 66.667%;
+    opacity: 0;
   }
 }
 
@@ -2206,14 +2000,6 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
     bottom: -13px;
     transform: rotate(90deg);
   }
-  .tl-lanes { grid-template-columns: 1fr; }
-  .tl-execution { grid-template-columns: minmax(0, 1fr) 138px; }
-  .tl-gpu-card,
-  .tl-gpu-card.legacy,
-  .tl-gpu-card.vane {
-    grid-column: 2;
-    grid-row: 1;
-  }
 }
 @media (max-width: 520px) {
   .tl-board { padding: 22px 18px 24px; }
@@ -2226,32 +2012,9 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   .tl-flow-step:first-child { padding-left: 34px; }
   .tl-step-items { grid-template-columns: 1fr; }
   .tl-flow-arrow { left: 10px; }
-  .tl-lane { padding: 16px 14px 18px; }
-  .tl-execution {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-  .tl-exec-main {
-    height: auto;
-    min-height: 132px;
-  }
-  .tl-work-row {
-    height: auto;
-  }
-  .tl-work-row.legacy {
-    grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr);
-  }
-  .tl-work-card {
-    height: 58px;
-    min-height: 58px;
-    padding: 10px 8px;
-  }
-  .tl-gpu-card,
-  .tl-gpu-card.legacy,
-  .tl-gpu-card.vane {
-    grid-column: 1;
-    grid-row: auto;
-  }
+  .tl-execution { padding: 11px 10px; }
+  .tl-resource-row { grid-template-columns: 34px minmax(0, 1fr); gap: 7px; }
+  .tl-time-segment { padding: 0 3px; font-size: 8.5px; }
 }
 .training-advantages {
   display: grid;

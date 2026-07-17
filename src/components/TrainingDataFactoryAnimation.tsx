@@ -3,8 +3,8 @@ import Eyebrow from './Eyebrow'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 
 /* Site-native execution-timeline diagram: the shared multimodal pipeline is
-   drawn once as a columnar flow, then Legacy and Vane execution are compared
-   as wait/idle vs overlapped/full-GPU lanes. */
+   drawn once as a columnar flow, then Traditional and Vane execution are
+   compared on aligned CPU, GPU, and I/O timelines. */
 
 /* The pipeline as a convergent left-to-right flow; each inner array is one
    column, arrows are drawn between columns. */
@@ -28,152 +28,130 @@ const PIPELINE_LABELS_EN = ['inputs', 'decode', 'align', 'fuse', 'package']
 const PIPELINE_LABELS_ZH = ['输入', '解码', '对齐', '融合', '打包']
 
 type Lane = {
-  key: 'legacy' | 'vane'
+  key: 'traditional' | 'vane'
   name: string
   mode: string
   note: string
-  gpuState: 'IDLE' | 'FULL'
-  gpuNote: string
+  aria: string
+  saved?: {
+    label: string
+    start: number
+  }
+  rows: Array<{
+    key: 'cpu' | 'gpu' | 'io'
+    label: string
+    segments: Array<{
+      label: string
+      start: number
+      span: number
+      state?: 'work' | 'wait'
+    }>
+  }>
 }
 
 const LANES_EN: Lane[] = [
   {
-    key: 'legacy',
-    name: 'Legacy Pipeline',
-    mode: 'serialized waits',
-    note: 'GPU work starts only after CPU decode and full-clip assembly finish.',
-    gpuState: 'IDLE',
-    gpuNote: 'waiting on CPU stages',
+    key: 'traditional',
+    name: 'Traditional Pipeline',
+    mode: 'stage barriers · longer critical path',
+    note: 'Stage barriers serialize CPU decoding, GPU inference, and I/O, leaving the GPU waiting for decoded batches.',
+    aria: 'Traditional pipeline timeline: CPU decoding runs first, GPU inference waits, and I/O writes finish the longer end-to-end critical path',
+    rows: [
+      { key: 'cpu', label: 'CPU', segments: [{ label: 'decoding', start: 1, span: 5 }] },
+      {
+        key: 'gpu',
+        label: 'GPU',
+        segments: [
+          { label: 'waiting', start: 1, span: 5, state: 'wait' },
+          { label: 'inference', start: 6, span: 5 },
+        ],
+      },
+      { key: 'io', label: 'I/O', segments: [{ label: 'write', start: 11, span: 2 }] },
+    ],
   },
   {
     key: 'vane',
     name: 'Vane Pipeline',
-    mode: 'overlapped streaming',
-    note: 'CPU decode, dynamic batching, and GPU inference stay overlapped.',
-    gpuState: 'FULL',
-    gpuNote: 'CPU and GPU overlap',
+    mode: 'overlapped streaming · shorter critical path',
+    note: 'Dynamic batching overlaps CPU decoding, GPU inference, and I/O streaming, completing the same pipeline earlier.',
+    aria: 'Vane pipeline timeline: CPU decoding, GPU inference, and I/O streaming overlap to complete the same work earlier on the shared time scale',
+    saved: { label: 'time saved', start: 9 },
+    rows: [
+      { key: 'cpu', label: 'CPU', segments: [{ label: 'decoding', start: 1, span: 5 }] },
+      { key: 'gpu', label: 'GPU', segments: [{ label: 'inference', start: 3, span: 5 }] },
+      { key: 'io', label: 'I/O', segments: [{ label: 'streaming', start: 1, span: 8 }] },
+    ],
   },
 ]
 
 const LANES_ZH: Lane[] = [
   {
-    key: 'legacy',
-    name: 'Legacy Pipeline',
-    mode: '串行等待',
-    note: 'GPU 工作要等 CPU 解码和完整片段组装完成后才开始。',
-    gpuState: 'IDLE',
-    gpuNote: '等待 CPU 阶段',
+    key: 'traditional',
+    name: 'Traditional Pipeline',
+    mode: '阶段屏障 · 更长关键路径',
+    note: '阶段屏障使 CPU 解码、GPU 推理和 I/O 串行执行，GPU 需要等待解码批次。',
+    aria: 'Traditional Pipeline 时间线：CPU 解码先执行，GPU 推理需要等待，最后由 I/O 写入完成更长的端到端关键路径',
+    rows: [
+      { key: 'cpu', label: 'CPU', segments: [{ label: '解码', start: 1, span: 5 }] },
+      {
+        key: 'gpu',
+        label: 'GPU',
+        segments: [
+          { label: '等待', start: 1, span: 5, state: 'wait' },
+          { label: '推理', start: 6, span: 5 },
+        ],
+      },
+      { key: 'io', label: 'I/O', segments: [{ label: '写入', start: 11, span: 2 }] },
+    ],
   },
   {
     key: 'vane',
     name: 'Vane Pipeline',
-    mode: 'overlapped streaming',
-    note: 'CPU 解码、dynamic batching 和 GPU 推理保持重叠。',
-    gpuState: 'FULL',
-    gpuNote: 'CPU 与 GPU 重叠',
+    mode: '重叠流式执行 · 更短关键路径',
+    note: 'Dynamic batching 让 CPU 解码、GPU 推理和 I/O 流式传输重叠，更早完成同一条流水线。',
+    aria: 'Vane Pipeline 时间线：CPU 解码、GPU 推理和 I/O 流式传输重叠执行，在相同时间尺度上更早完成相同工作',
+    saved: { label: '节省时间', start: 9 },
+    rows: [
+      { key: 'cpu', label: 'CPU', segments: [{ label: '解码', start: 1, span: 5 }] },
+      { key: 'gpu', label: 'GPU', segments: [{ label: '推理', start: 3, span: 5 }] },
+      { key: 'io', label: 'I/O', segments: [{ label: '流式传输', start: 1, span: 8 }] },
+    ],
   },
 ]
 
-function GpuBars() {
+function ResourceTimeline({ lane }: { lane: Lane }) {
   return (
-    <span className="tl-gpu-bars" aria-hidden="true">
-      <i /><i /><i /><i /><i />
-    </span>
-  )
-}
-
-function GpuCard({ lane }: { lane: Lane }) {
-  return (
-    <div className={`tl-gpu-card ${lane.key}`}>
-      <span>GPU</span>
-      <b>{lane.gpuState}</b>
-      <GpuBars />
-      <small>{lane.gpuNote}</small>
+    <div className={`tl-execution ${lane.key}`} role="img" aria-label={lane.aria}>
+      {lane.rows.map((row) => (
+        <div className={`tl-resource-row tl-resource-${row.key}`} key={row.key}>
+          <span className="tl-resource-label">{row.label}</span>
+          <span className="tl-time-track">
+            {lane.saved && (
+              <span
+                className="tl-time-saved"
+                aria-hidden="true"
+                style={{ gridColumn: `${lane.saved.start} / -1` }}
+              >
+                {row.key === 'gpu' ? lane.saved.label : null}
+              </span>
+            )}
+            {row.segments.map((segment) => (
+              <span
+                className={`tl-time-segment ${segment.state ?? 'work'}`}
+                key={`${segment.label}-${segment.start}`}
+                style={{ gridColumn: `${segment.start} / span ${segment.span}` }}
+              >
+                {segment.label}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
 
-function LegacyExecution({ locale }: { locale: ReturnType<typeof useSiteLocale> }) {
-  const copy = pickLocale(
-    locale,
-    {
-      aria: 'Legacy waits for the full clip before GPU inference',
-      waiting: 'waiting for full clip',
-      cpu: 'CPU decode',
-      gpu: 'GPU infer',
-    },
-    {
-      aria: 'Legacy 在 GPU 推理前等待完整片段',
-      waiting: '等待完整片段',
-      cpu: 'CPU 解码',
-      gpu: 'GPU 推理',
-    },
-  )
-
-  return (
-    <div className="tl-exec-main legacy">
-      <div className="tl-hold-status" aria-label={copy.aria}>
-        <span>{copy.waiting}</span>
-        <i aria-hidden="true"><span /></i>
-      </div>
-      <div className="tl-work-row legacy">
-        <span className="tl-work-card cpu">{copy.cpu}</span>
-        <span className="tl-gap-dots" aria-hidden="true">
-          <i /><i /><i />
-        </span>
-        <span className="tl-work-card gpu">{copy.gpu}</span>
-      </div>
-    </div>
-  )
-}
-
-function VaneExecution({ locale }: { locale: ReturnType<typeof useSiteLocale> }) {
-  const copy = pickLocale(
-    locale,
-    {
-      aria: 'Vane overlaps CPU decode, dynamic batching, and GPU inference',
-      cpu: 'CPU decode',
-      batch: 'dynamic batch',
-      gpu: 'GPU infer',
-    },
-    {
-      aria: 'Vane 重叠执行 CPU 解码、dynamic batching 和 GPU 推理',
-      cpu: 'CPU 解码',
-      batch: 'dynamic batching',
-      gpu: 'GPU 推理',
-    },
-  )
-
-  return (
-    <div className="tl-exec-main vane" aria-label={copy.aria}>
-      <span className="tl-schedule-flow" aria-hidden="true">
-        <i className="stream-a" />
-        <i className="stream-b" />
-        <i className="stream-c" />
-        <i className="stream-d" />
-      </span>
-      <div className="tl-work-row overlap">
-        <span className="tl-work-card cpu">{copy.cpu}</span>
-        <span className="tl-work-card batch">
-          <span>{copy.batch}</span>
-          <i aria-hidden="true" />
-        </span>
-        <span className="tl-work-card gpu">{copy.gpu}</span>
-      </div>
-    </div>
-  )
-}
-
-function ExecutionTimeline({ lane, locale }: { lane: Lane; locale: ReturnType<typeof useSiteLocale> }) {
-  return (
-    <div className={`tl-execution ${lane.key}`} aria-label={`${lane.name} execution timeline`}>
-      {lane.key === 'legacy' ? <LegacyExecution locale={locale} /> : <VaneExecution locale={locale} />}
-      <GpuCard lane={lane} />
-    </div>
-  )
-}
-
-function ExecutionPanel({ lane, locale }: { lane: Lane; locale: ReturnType<typeof useSiteLocale> }) {
+function ExecutionPanel({ lane }: { lane: Lane }) {
   return (
     <article className={`tl-lane ${lane.key}`}>
       <div className="tl-lane-head">
@@ -184,7 +162,7 @@ function ExecutionPanel({ lane, locale }: { lane: Lane; locale: ReturnType<typeo
         </span>
       </div>
 
-      <ExecutionTimeline lane={lane} locale={locale} />
+      <ResourceTimeline lane={lane} />
 
       <p className="tl-note">{lane.note}</p>
     </article>
@@ -201,7 +179,7 @@ export default function TrainingDataFactoryAnimation() {
       title: 'Overlaps heterogeneous resources.',
       lead: 'Traditional pipelines create stage barriers and pipeline bubbles. Vane overlaps CPU, GPU, and I/O workloads through streaming execution and dynamic batching.',
       samePipeline: 'Same pipeline',
-      pipelineNote: 'Legacy and Vane run these same stages; the lanes below compare execution.',
+      pipelineNote: 'Traditional and Vane run the same stages on one time scale; earlier completion means a shorter critical path.',
       imageAlt: 'Camera frame at an urban intersection',
       caption: 'camera frame · ts 00:14.280',
       stagesAria: 'Multimodal training-data pipeline stages',
@@ -215,7 +193,7 @@ export default function TrainingDataFactoryAnimation() {
       title: '异构资源重叠执行。',
       lead: '传统流水线会形成阶段屏障和流水线气泡。Vane 通过流式执行与动态批处理，将 CPU、GPU 和 I/O 工作负载重叠调度。',
       samePipeline: '同一条流水线',
-      pipelineNote: 'Legacy 和 Vane 运行相同阶段；下面两条泳道对比执行方式。',
+      pipelineNote: 'Traditional 和 Vane 在同一时间尺度上运行相同阶段；越早完成表示关键路径越短。',
       imageAlt: '城市路口相机帧',
       caption: 'camera frame · ts 00:14.280',
       stagesAria: '多模态训练数据流水线阶段',
@@ -269,7 +247,7 @@ export default function TrainingDataFactoryAnimation() {
 
           <div className="tl-lanes">
             {copy.lanes.map((lane) => (
-              <ExecutionPanel lane={lane} locale={locale} key={lane.key} />
+              <ExecutionPanel lane={lane} key={lane.key} />
             ))}
           </div>
         </Box>
