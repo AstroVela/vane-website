@@ -39,7 +39,7 @@ The package metadata installs the required runtime dependencies, including `clou
 Use the released package when a wheel is available for your Python version and platform:
 
 ```bash
-python -m pip install vane-ai
+pip install vane-ai
 ```
 
 AI provider adapters are loaded lazily. After installing `vane-ai`, add only the libraries for the providers you use:
@@ -176,7 +176,7 @@ You will create three rows, register a Python function as a SQL alias, call it f
 ## Install Vane Data
 
 ```bash
-python -m pip install vane-ai
+pip install vane-ai
 ```
 
 ## Run Your First SQL Expression UDF
@@ -821,7 +821,7 @@ local model runtimes. Install Vane once; Vane then loads provider adapters
 lazily, so only the library for the selected provider needs to be added.
 
 ```bash
-python -m pip install vane-ai
+pip install vane-ai
 ```
 
 | Provider | Prompt | Embed | Runtime and setup |
@@ -842,7 +842,7 @@ The examples below use the OpenAI provider. Install its client and expose the
 credential to the process that executes the query:
 
 ```bash
-python -m pip install vane-ai openai
+pip install vane-ai openai
 export OPENAI_API_KEY="<your-token>"
 
 # Optional: set this only for an OpenAI-compatible endpoint.

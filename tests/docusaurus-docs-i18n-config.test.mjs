@@ -127,7 +127,7 @@ test('OpenAI examples use a valid API root', () => {
   for (const source of [aiFunctionsSource, chineseAiFunctionsSource]) {
     assert.equal(source.match(/https:\/\/api\.openai\.com\/v1/g)?.length, 4)
     assert.doesNotMatch(source, /api\.example\.com/)
-    assert.match(source, /python -m pip install vane-ai openai/)
+    assert.match(source, /^pip install vane-ai openai$/m)
     assert.match(source, /OPENAI_API_KEY="<your-token>"/)
     assert.match(source, /OPENAI_BASE_URL="https:\/\/provider\.example\/v1"/)
   }
@@ -141,7 +141,7 @@ test('public installation commands use the base vane-ai package', () => {
     chineseAiFunctionsSource,
     ...installationSources,
   ]) {
-    assert.match(source, /python -m pip install vane-ai/)
+    assert.match(source, /^pip install vane-ai$/m)
     assert.doesNotMatch(source, /vane-ai\[all\]/)
   }
 })

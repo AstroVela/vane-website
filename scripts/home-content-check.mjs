@@ -83,5 +83,7 @@ assert.match(nav, /\/solutions/)
 assert.match(footer, /\/solutions\/training/)
 assert.match(footer, /\/solutions\/enterprise-agent/)
 assert.doesNotMatch(`${home}\n${nav}\n${footer}`, /\/use-cases(?:\/|\b)/)
+assert.match(home, /pip install vane-ai/)
+assert.match(footer, /pip install vane-ai/)
 
 console.log('Home content check passed.')
