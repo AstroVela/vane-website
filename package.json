@@ -21,7 +21,8 @@
     "write-translations": "docusaurus write-translations --locale zh-CN",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "preview": "docusaurus serve"
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",
@@ -44,6 +45,7 @@
     "globals": "^17.6.0",
     "jiti": "^2.7.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.61.1",
+    "wrangler": "^4.112.0"
   }
 }

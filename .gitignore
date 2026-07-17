@@ -33,3 +33,10 @@ dist-ssr
 # Design handoff bundles & build archives (not part of the site source)
 *.zip
 *.tar.gz
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
