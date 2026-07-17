@@ -2,47 +2,129 @@
 title: Examples
 ---
 
-The examples show how to compose Vane Data SQL, Python UDFs, AI helpers, and Ray-backed execution into practical data preparation workflows.
+The scripts in the Vane repository are the canonical implementations for this section. The documentation explains how to install their dependencies and run them; when a detail differs, follow the script under `examples/`.
 
-Start with the documentation pages below when you want the workflow shape. Read the source scripts when you need runnable arguments, sample data behavior, or implementation details.
+## Start from a clean environment
 
-## Example pages
+Install `uv` as described in [Installation](/docs/data/quickstart/installation), then sparsely clone the repository so that only the example scripts are checked out:
 
-| Example | Use it for | Typical resources |
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
+
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow
+```
+
+The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so both the Python process and local Ray workers import the installed wheel. The install command adds Vane plus the NumPy and PyArrow packages imported directly by the examples; Vane installs Ray as a runtime dependency. Ray is the default runner: with `RAY_ADDRESS` unset, each command below starts or reuses Ray on the current machine. The scripts do not set a runner or an execution backend.
+
+See [Installation](/docs/data/quickstart/installation) if `vane-ai` does not yet provide a wheel for your Python version or Linux platform.
+
+## Install only the dependencies you need
+
+Run these commands in the same activated environment:
+
+```bash
+# querying_images.py
+uv pip install Pillow
+
+# PyTorch for the embedding workflows
+uv pip install torch
+
+# common_crawl.py, llms_red_pajamas.py, and voice_ai_analytics.py
+uv pip install sentence-transformers transformers
+
+# multimodal_structured_outputs.py
+uv pip install openai pydantic
+```
+
+`minhash_dedupe.py` and the default placeholder mode of `image_generation.py` need only the base package. The first Transformers run downloads `sentence-transformers/all-MiniLM-L6-v2` unless it is already cached.
+
+For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that the environment can see the GPU before running an embedding example:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+When `torch.cuda.is_available()` is true, Vane's Transformers provider requests one Ray GPU automatically. If PyPI downloads are slow, append the Tsinghua mirror to an install command, for example:
+
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
+
+Real model and remote-dataset modes have additional opt-in dependencies:
+
+```bash
+# image_generation.py --backend diffusers
+uv pip install diffusers transformers accelerate torch Pillow
+
+# voice_ai_analytics.py --transcription-backend faster-whisper
+uv pip install faster-whisper av
+
+# multimodal_structured_outputs.py --source hf-ai2d
+uv pip install datasets Pillow
+```
+
+## Run the bounded samples
+
+These commands use built-in sample or synthetic input. The first six do not need storage credentials or an external dataset:
+
+```bash
+python examples/minhash_dedupe.py --source sample --limit 10
+python examples/querying_images.py --source sample --limit 5
+python examples/image_generation.py --source sample --limit 4
+python examples/common_crawl.py --source sample --limit 5
+python examples/llms_red_pajamas.py --source sample --limit 6
+python examples/voice_ai_analytics.py --source sample --limit 3
+```
+
+The multimodal structured-output example uses synthetic image data but still calls a vision-language model. Its default endpoint is the Hugging Face OpenAI-compatible router:
+
+```bash
+export HF_TOKEN=your_hugging_face_token
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --skip-judge
+```
+
+For another OpenAI-compatible service, put the key in an environment variable and pass the service configuration explicitly. Use prompt mode when the endpoint does not implement the OpenAI SDK's structured-output parsing API:
+
+```bash
+export MODEL_API_KEY=your_api_key
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --api-key-env MODEL_API_KEY \
+  --base-url https://provider.example/v1 \
+  --model provider/model-name \
+  --structured-output-mode prompt \
+  --skip-judge
+```
+
+Do not put provider keys in source files or commit them to the repository.
+
+## Canonical scripts
+
+| Script | Default workflow | Default output |
 | --- | --- | --- |
-| [Training data pipeline](/docs/data/examples/training-data-pipeline) | Filtering text, chunking, embeddings, and duplicate-removal patterns | CPU by default; optional embedding model dependencies |
-| [Insurance document audit](/docs/data/examples/insurance-document-audit) | SQL-first document checks with optional structured LLM review | CPU; optional AI provider |
-| [Tender compliance check](/docs/data/examples/tender-compliance-check) | Rule-table joins and structured compliance prompts | CPU; optional AI provider |
-| [Multimodal data lake](/docs/data/examples/multimodal-data-lake) | Media enrichment before lakehouse or warehouse handoff | CPU or GPU depending on UDFs |
+| `examples/common_crawl.py` | Decode sample WARC rows, keep English pages, chunk text, and embed chunks | `examples/output/common_crawl/` |
+| `examples/minhash_dedupe.py` | Normalize text, compute MinHash signatures, build LSH candidates, and keep one row per component | `examples/output/minhash_dedupe/` |
+| `examples/llms_red_pajamas.py` | Embed sample StackExchange questions and print semantic matches | Terminal; add `--output-csv PATH` to write CSV |
+| `examples/querying_images.py` | Generate sample images, detect red regions, and save image and mask previews | `examples/output/querying_images/` |
+| `examples/image_generation.py` | Generate deterministic placeholder PNGs from prompts | `examples/output/image_generation/` |
+| `examples/voice_ai_analytics.py` | Generate sample audio, use placeholder transcription and local summaries, then embed subtitle segments | `examples/output/voice_ai_analytics/` |
+| `examples/multimodal_structured_outputs.py` | Compare VLM answers with and without an image and optionally judge failures | Terminal |
 
-## Source scripts
+The [training data pipeline](/docs/data/examples/training-data-pipeline) page covers the three text workflows. The [multimodal data lake](/docs/data/examples/multimodal-data-lake) page covers the four image, audio, and VLM workflows.
 
-The repository includes script-first examples that can be adapted into your own projects:
+The [insurance document audit](/docs/data/examples/insurance-document-audit) and [tender compliance check](/docs/data/examples/tender-compliance-check) pages are adaptation patterns that require your own input data and provider configuration; they do not claim a corresponding repository script.
 
-- `examples/common_crawl.py`
-- `examples/minhash_dedupe.py`
-- `examples/llms_red_pajamas.py`
-- `examples/querying_images.py`
-- `examples/image_generation.py`
-- `examples/voice_ai_analytics.py`
-- `examples/multimodal_structured_outputs.py`
+## Use an existing Ray cluster
 
-Several scripts provide built-in sample data modes so you can test the pipeline shape before connecting external data.
-
-## How to adapt an example
-
-When adapting an example:
-
-1. Start with the sample or synthetic source mode when the script provides one.
-2. Keep source loading separate from transformation.
-3. Keep every UDF output schema explicit.
-4. Preserve stable identifiers so model outputs can be joined back to source rows.
-5. Move to real data only after the local sample works.
-6. Treat benchmark scripts as performance references, not as product APIs.
-7. Do not infer unsupported connectors from example names.
-
-## Scaling path
-
-Ray is Vane's default runner and starts on the current machine when no cluster address is configured. Begin with bounded local data, then move stages that use an explicit `subprocess_task` or `subprocess_actor` backend to `ray_task` or `ray_actor` after their data contracts are correct.
-
-Set `RAY_ADDRESS` before launching the process when the same pipeline should use an existing cluster. See [Deployment](/docs/data/deploy/deployment) for the cluster startup and connection flow.
+Set `RAY_ADDRESS` before starting a script. Install the same Vane and example-specific dependencies on every worker, and make the required data, model files, and credentials available to those workers. No script change or runner flag is required. See [Deployment](/docs/data/deploy/deployment) for cluster setup.

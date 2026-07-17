@@ -69,6 +69,12 @@ checks = con.sql("""
 
 `prompt(...)` returns the configured output column. Explicitly combine that result with the check rows before summarizing, and validate row counts before writing the result.
 
+Install the provider and schema dependencies in the active environment before running this optional stage:
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -82,7 +88,6 @@ result_only = checks.prompt(
     provider="openai",
     return_format=ComplianceResult,
     output_column="result_json",
-    execution_backend="subprocess_actor",
 )
 
 checks_table = checks.to_arrow_table()

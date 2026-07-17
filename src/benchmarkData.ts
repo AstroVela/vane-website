@@ -21,6 +21,7 @@ export const BENCHMARK_ENVIRONMENT = {
   memoryGb: 64,
   gpu: '2080 Ti',
   gpuMemoryGb: 22,
+  gpuMemoryModified: true,
 } as const
 
 export const BENCHMARK_ENGINE_NAMES = {

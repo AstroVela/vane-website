@@ -57,6 +57,12 @@ rule_hits = con.sql("""
 
 `prompt(...)` 返回已配置的输出列。当最终输出需要标识符和文档属性时，请显式地将该输出列与源元数据组合，并在写出结果前校验行数。
 
+运行这个可选阶段前，请在当前环境中安装 provider 和 schema 依赖：
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -70,7 +76,6 @@ audit_only = docs.prompt(
     system_message="Audit the insurance document for missing evidence. Return JSON.",
     return_format=AuditResult,
     output_column="audit_json",
-    execution_backend="subprocess_actor",
 )
 
 docs_table = docs.to_arrow_table()

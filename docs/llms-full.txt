@@ -18,6 +18,7 @@ Vane Data is a high-performance, multimodal-native data engine for AI workloads.
 - **Built-in AI operations** — Invoke LLMs, generate embeddings, and run batch inference through OpenAI and Anthropic APIs or native vLLM integration. Prefix-aware bucketing improves vLLM prefix-cache hit rates and inference throughput.
 - **Heterogeneous execution** — Overlap CPU, GPU, I/O, and model inference workloads through asynchronous scheduling.
 - **Local-to-cloud execution** — Run the same pipeline locally or across distributed Ray clusters, with a foundation for future edge-cloud coordination.
+- **Designed for production AI workloads** — Build multimodal training-data preprocessing pipelines and enterprise-scale batch inference workflows.
 
 ## Installation
 
@@ -28,33 +29,34 @@ Vane Data uses `vane-ai` as the distribution package and `vane` as the Python im
 
 ## Requirements
 
-- Python 3.10 or later.
-- A platform with a published Vane Data wheel, or a local C++ build environment for source builds.
-- Network and credentials for any remote storage, model provider, or Ray cluster used by your pipeline.
-
-The package metadata installs the required runtime dependencies, including `cloudpickle`, `numpy`, `pyarrow`, and `ray`.
+- Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended and is the primary development version.
+- Published wheels currently target Linux x86_64 systems compatible with manylinux 2.28. Other platforms require a local C++ build environment.
 
 ## Install a released package
 
-Use the released package when a wheel is available for your Python version and platform:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then use the released package when a wheel is available for your Python version and platform:
 
 ```bash
-pip install vane-ai
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai
 ```
 
-AI provider adapters are loaded lazily. After installing `vane-ai`, add only the libraries for the providers you use:
+## Optional dependencies
+
+Install only the providers you use:
 
 ```bash
 # Local embedding and classification models
-python -m pip install sentence-transformers transformers torch
+uv pip install sentence-transformers transformers torch
 
 # Hosted model providers
-python -m pip install openai
-python -m pip install anthropic
-python -m pip install google-genai
+uv pip install openai
+uv pip install anthropic
+uv pip install google-genai
 
 # vLLM-backed prompting
-python -m pip install vllm
+uv pip install vllm
 ```
 
 ## Verify the install
@@ -71,96 +73,7 @@ con.sql("select 42 as answer").show()
 PY
 ```
 
-## Default Ray execution
-
-Ray is Vane's default runner. The verification command above starts a local Ray runtime automatically when `RAY_ADDRESS` is unset, so no explicit runner configuration is required.
-
-Select `local` before creating the connection when the process should run without Ray:
-
-```python
-import vane
-
-vane.configure(runner="local")
-
-con = vane.connect()
-con.sql("select 42 as answer").show()
-```
-
-The same selection can be made when launching the process:
-
-```bash
-VANE_RUNNER=local python job.py
-```
-
-To use an existing Ray cluster, set `RAY_ADDRESS` before starting the job. Every Ray worker must be able to import the same Python packages, access the same storage systems, and see any model files or provider credentials required by the pipeline. See [Deployment](/docs/data/deploy/deployment) for local and cluster runner settings.
-
-## Build from source
-
-Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel.
-
-Clone the repository with submodules:
-
-```bash
-git clone --recursive https://github.com/AstroVela/vane.git
-cd vane
-```
-
-If the checkout already exists and submodules are missing:
-
-```bash
-git submodule update --init --recursive
-```
-
-Install common Debian or Ubuntu build tools:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
-```
-
-Build the C++ dependencies with the vcpkg revision pinned by the repository:
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
-git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
-.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
-```
-
-Install Python build tooling, then build and install a non-editable Release wheel:
-
-```bash
-python -m pip install -U pip
-python -m pip install cmake ninja scikit-build-core "pybind11[global]"
-
-export SKBUILD_BUILD_DIR="$PWD/build/release"
-export SKBUILD_CMAKE_BUILD_TYPE=Release
-
-python -m pip install . --no-build-isolation -v
-```
-
-`vcpkg install` reads the repository's `vcpkg.json` manifest and writes the built packages to `vcpkg_installed`. Vane's CMake configuration discovers that directory automatically, so do not set `CMAKE_TOOLCHAIN_FILE`. Both `.cache` and `vcpkg_installed` are ignored by the repository.
-
-The non-editable install is intentional: the default Ray runner imports Vane in worker processes, while scikit-build-core editable rebuild mode can invoke CMake again during each worker import. Rerun the install command after changing source code. If an existing checkout was previously configured with different CMake options, select a fresh `SKBUILD_BUILD_DIR` or remove that old build directory before rebuilding.
-
-## Build configuration notes
-
-The source build configuration currently includes these DuckDB extensions:
-
-```text
-core_functions;json;parquet;icu;jemalloc;httpfs
-```
-
-This means JSON, Parquet, ICU, jemalloc, and HTTP/S3 filesystem support are part of the configured build. Other DuckDB extensions depend on the build and runtime environment. Verify extension availability in the environment where the job runs.
-
-The project includes wheel-build configuration for Linux manylinux 2.28 on x86_64 and aarch64, macOS, and Windows. Actual package availability depends on the release artifacts published for a given version.
-
-## Troubleshooting
-
-- `ModuleNotFoundError: No module named 'vane'`: confirm that `vane-ai` was installed into the Python environment running your script.
-- Missing provider libraries: install the provider package directly, such as `openai`, `anthropic`, `google-genai`, `vllm`, or `sentence-transformers`.
-- Ray workers cannot import a module: install the same dependencies on every worker or provide a Ray runtime environment that includes them.
-- Remote file reads fail: verify the DuckDB extension, storage credentials, endpoint settings, and worker-side environment variables.
+Building from source? See [Development](/docs/data/contributing/development).
 
 Next: [Quickstart](/docs/data/quickstart/quickstart).
 
@@ -173,11 +86,7 @@ This quickstart gets one Python function running inside a Vane SQL projection. T
 
 You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
-## Install Vane Data
-
-```bash
-pip install vane-ai
-```
+Before continuing, complete the [Installation guide](/docs/data/quickstart/installation).
 
 ## Run Your First SQL Expression UDF
 
@@ -245,10 +154,10 @@ For callable lifecycle, batch and cardinality behavior, and Relation transformat
 
 ## Optional: Add an AI Function
 
-This is not required for the Quickstart. To try a hosted provider, install its package and set credentials in the worker environment:
+This is not required for the Quickstart. To try OpenAI, install its optional dependency in the same environment, then set credentials in the worker environment:
 
 ```bash
-python -m pip install openai
+uv pip install openai
 export OPENAI_API_KEY="<your-key>"
 ```
 
@@ -262,6 +171,8 @@ with_ai = con.sql("""
             source_text,
             struct_pack(
                 provider := 'openai',
+                -- Optional for OpenAI-compatible providers:
+                -- base_url := 'https://api.example.com/v1',
                 model := 'gpt-4o-mini'
             )
         ) AS review_note
@@ -821,7 +732,7 @@ local model runtimes. Install Vane once; Vane then loads provider adapters
 lazily, so only the library for the selected provider needs to be added.
 
 ```bash
-pip install vane-ai
+uv pip install vane-ai
 ```
 
 | Provider | Prompt | Embed | Runtime and setup |
@@ -842,7 +753,7 @@ The examples below use the OpenAI provider. Install its client and expose the
 credential to the process that executes the query:
 
 ```bash
-pip install vane-ai openai
+uv pip install vane-ai openai
 export OPENAI_API_KEY="<your-token>"
 
 # Optional: set this only for an OpenAI-compatible endpoint.
@@ -1023,65 +934,176 @@ clearer and catch misspelled fields earlier.
 Route: /docs/data/examples
 Source: docs/data/examples/index.mdx
 
-The examples show how to compose Vane Data SQL, Python UDFs, AI helpers, and Ray-backed execution into practical data preparation workflows.
+The scripts in the Vane repository are the canonical implementations for this section. The documentation explains how to install their dependencies and run them; when a detail differs, follow the script under `examples/`.
 
-Start with the documentation pages below when you want the workflow shape. Read the source scripts when you need runnable arguments, sample data behavior, or implementation details.
+## Start from a clean environment
 
-## Example pages
+Install `uv` as described in [Installation](/docs/data/quickstart/installation), then sparsely clone the repository so that only the example scripts are checked out:
 
-| Example | Use it for | Typical resources |
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
+
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow
+```
+
+The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so both the Python process and local Ray workers import the installed wheel. The install command adds Vane plus the NumPy and PyArrow packages imported directly by the examples; Vane installs Ray as a runtime dependency. Ray is the default runner: with `RAY_ADDRESS` unset, each command below starts or reuses Ray on the current machine. The scripts do not set a runner or an execution backend.
+
+See [Installation](/docs/data/quickstart/installation) if `vane-ai` does not yet provide a wheel for your Python version or Linux platform.
+
+## Install only the dependencies you need
+
+Run these commands in the same activated environment:
+
+```bash
+# querying_images.py
+uv pip install Pillow
+
+# PyTorch for the embedding workflows
+uv pip install torch
+
+# common_crawl.py, llms_red_pajamas.py, and voice_ai_analytics.py
+uv pip install sentence-transformers transformers
+
+# multimodal_structured_outputs.py
+uv pip install openai pydantic
+```
+
+`minhash_dedupe.py` and the default placeholder mode of `image_generation.py` need only the base package. The first Transformers run downloads `sentence-transformers/all-MiniLM-L6-v2` unless it is already cached.
+
+For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that the environment can see the GPU before running an embedding example:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+When `torch.cuda.is_available()` is true, Vane's Transformers provider requests one Ray GPU automatically. If PyPI downloads are slow, append the Tsinghua mirror to an install command, for example:
+
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
+
+Real model and remote-dataset modes have additional opt-in dependencies:
+
+```bash
+# image_generation.py --backend diffusers
+uv pip install diffusers transformers accelerate torch Pillow
+
+# voice_ai_analytics.py --transcription-backend faster-whisper
+uv pip install faster-whisper av
+
+# multimodal_structured_outputs.py --source hf-ai2d
+uv pip install datasets Pillow
+```
+
+## Run the bounded samples
+
+These commands use built-in sample or synthetic input. The first six do not need storage credentials or an external dataset:
+
+```bash
+python examples/minhash_dedupe.py --source sample --limit 10
+python examples/querying_images.py --source sample --limit 5
+python examples/image_generation.py --source sample --limit 4
+python examples/common_crawl.py --source sample --limit 5
+python examples/llms_red_pajamas.py --source sample --limit 6
+python examples/voice_ai_analytics.py --source sample --limit 3
+```
+
+The multimodal structured-output example uses synthetic image data but still calls a vision-language model. Its default endpoint is the Hugging Face OpenAI-compatible router:
+
+```bash
+export HF_TOKEN=your_hugging_face_token
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --skip-judge
+```
+
+For another OpenAI-compatible service, put the key in an environment variable and pass the service configuration explicitly. Use prompt mode when the endpoint does not implement the OpenAI SDK's structured-output parsing API:
+
+```bash
+export MODEL_API_KEY=your_api_key
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --api-key-env MODEL_API_KEY \
+  --base-url https://provider.example/v1 \
+  --model provider/model-name \
+  --structured-output-mode prompt \
+  --skip-judge
+```
+
+Do not put provider keys in source files or commit them to the repository.
+
+## Canonical scripts
+
+| Script | Default workflow | Default output |
 | --- | --- | --- |
-| [Training data pipeline](/docs/data/examples/training-data-pipeline) | Filtering text, chunking, embeddings, and duplicate-removal patterns | CPU by default; optional embedding model dependencies |
-| [Insurance document audit](/docs/data/examples/insurance-document-audit) | SQL-first document checks with optional structured LLM review | CPU; optional AI provider |
-| [Tender compliance check](/docs/data/examples/tender-compliance-check) | Rule-table joins and structured compliance prompts | CPU; optional AI provider |
-| [Multimodal data lake](/docs/data/examples/multimodal-data-lake) | Media enrichment before lakehouse or warehouse handoff | CPU or GPU depending on UDFs |
+| `examples/common_crawl.py` | Decode sample WARC rows, keep English pages, chunk text, and embed chunks | `examples/output/common_crawl/` |
+| `examples/minhash_dedupe.py` | Normalize text, compute MinHash signatures, build LSH candidates, and keep one row per component | `examples/output/minhash_dedupe/` |
+| `examples/llms_red_pajamas.py` | Embed sample StackExchange questions and print semantic matches | Terminal; add `--output-csv PATH` to write CSV |
+| `examples/querying_images.py` | Generate sample images, detect red regions, and save image and mask previews | `examples/output/querying_images/` |
+| `examples/image_generation.py` | Generate deterministic placeholder PNGs from prompts | `examples/output/image_generation/` |
+| `examples/voice_ai_analytics.py` | Generate sample audio, use placeholder transcription and local summaries, then embed subtitle segments | `examples/output/voice_ai_analytics/` |
+| `examples/multimodal_structured_outputs.py` | Compare VLM answers with and without an image and optionally judge failures | Terminal |
 
-## Source scripts
+The [training data pipeline](/docs/data/examples/training-data-pipeline) page covers the three text workflows. The [multimodal data lake](/docs/data/examples/multimodal-data-lake) page covers the four image, audio, and VLM workflows.
 
-The repository includes script-first examples that can be adapted into your own projects:
+The [insurance document audit](/docs/data/examples/insurance-document-audit) and [tender compliance check](/docs/data/examples/tender-compliance-check) pages are adaptation patterns that require your own input data and provider configuration; they do not claim a corresponding repository script.
 
-- `examples/common_crawl.py`
-- `examples/minhash_dedupe.py`
-- `examples/llms_red_pajamas.py`
-- `examples/querying_images.py`
-- `examples/image_generation.py`
-- `examples/voice_ai_analytics.py`
-- `examples/multimodal_structured_outputs.py`
+## Use an existing Ray cluster
 
-Several scripts provide built-in sample data modes so you can test the pipeline shape before connecting external data.
-
-## How to adapt an example
-
-When adapting an example:
-
-1. Start with the sample or synthetic source mode when the script provides one.
-2. Keep source loading separate from transformation.
-3. Keep every UDF output schema explicit.
-4. Preserve stable identifiers so model outputs can be joined back to source rows.
-5. Move to real data only after the local sample works.
-6. Treat benchmark scripts as performance references, not as product APIs.
-7. Do not infer unsupported connectors from example names.
-
-## Scaling path
-
-Ray is Vane's default runner and starts on the current machine when no cluster address is configured. Begin with bounded local data, then move stages that use an explicit `subprocess_task` or `subprocess_actor` backend to `ray_task` or `ray_actor` after their data contracts are correct.
-
-Set `RAY_ADDRESS` before launching the process when the same pipeline should use an existing cluster. See [Deployment](/docs/data/deploy/deployment) for the cluster startup and connection flow.
+Set `RAY_ADDRESS` before starting a script. Install the same Vane and example-specific dependencies on every worker, and make the required data, model files, and credentials available to those workers. No script change or runner flag is required. See [Deployment](/docs/data/deploy/deployment) for cluster setup.
 
 ## Training Data Pipeline
 
 Route: /docs/data/examples/training-data-pipeline
 Source: docs/data/examples/training-data-pipeline.mdx
 
-This example page shows a common pattern for preparing multimodal training-data releases with Vane Data.
+This page follows the three canonical text-processing scripts in the Vane repository:
 
-## Goal
+- `examples/common_crawl.py`
+- `examples/minhash_dedupe.py`
+- `examples/llms_red_pajamas.py`
 
-Prepare multimodal data by selecting raw records, running a batch captioning or labeling UDF, filtering by quality, deduplicating by content hash, generating embeddings, and writing a versioned Parquet release.
+Together they cover web-text extraction and chunking, near-duplicate removal, embeddings, and semantic matching.
 
-## Run local samples
+## Create a clean environment
 
-The repository also includes text-focused sample scripts you can run locally to inspect the same relation patterns without external storage or models:
+After installing `uv` as described in [Installation](/docs/data/quickstart/installation), sparsely clone only the example scripts into a new directory:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
+
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow
+uv pip install torch
+uv pip install sentence-transformers transformers
+```
+
+The sparse checkout excludes the `vane/` and `duckdb/` source directories, so the Python process and local Ray workers use the installed wheel. The model packages are needed by the Common Crawl and Red Pajamas embedding stages. `minhash_dedupe.py` does not need them. For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that `python -c "import torch; print(torch.cuda.is_available())"` prints `True`; Vane's Transformers provider then requests one Ray GPU automatically. The first embedding run downloads `sentence-transformers/all-MiniLM-L6-v2`; use `--local-files-only` only after that model is available in the local cache or at the model path you pass.
+
+If PyPI downloads are slow, append the Tsinghua mirror to an install command:
+
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
+
+## Run all three samples
+
+Run the scripts from the repository root:
 
 ```bash
 python examples/common_crawl.py --source sample --limit 5
@@ -1089,181 +1111,117 @@ python examples/minhash_dedupe.py --source sample --limit 10
 python examples/llms_red_pajamas.py --source sample --limit 6
 ```
 
-## Website code shape
+With the current built-in samples, the scripts report:
 
-The website shows the shortened pipeline shape. The full example below expands the `CaptionAndScore` UDF and schema.
+| Script | Verification result |
+| --- | --- |
+| `common_crawl.py` | 5 source records, 3 decoded English pages, 7 text chunks, 384-dimensional embeddings |
+| `minhash_dedupe.py` | 10 input rows and 5 retained representatives |
+| `llms_red_pajamas.py` | 6 embedded questions and 3 semantic matches |
 
-```python
-import vane
-con = vane.connect()
-raw = con.sql("""
-select id, uri, media_type, text, metadata, content_hash
-from read_parquet('s3://training-corpus/manifest/*.parquet')
-where split = 'train'
-""")
-labeled = raw.map_batches(
-    CaptionAndScore, schema=release_schema,
-    execution_backend="ray_actor", gpus=1, batch_size=64,
-)
-labeled.to_table("labeled")
-release = con.sql("""
-select * exclude rn
-from (
-  select *, row_number() over (
-    partition by content_hash order by quality_score desc
-  ) as rn
-  from labeled
-  where quality_score >= 0.8
-)
-where rn = 1
-""").embed_text(
-    "caption",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
-release.write_parquet("s3://dataset-releases/mm-v42/")
+The exact terminal table formatting can change, but the scripts validate row counts before combining source rows with model output.
+
+## Common Crawl workflow
+
+`common_crawl.py` performs these stages:
+
+1. Load built-in WARC-shaped rows, a local WET/WARC file, or a WET URL.
+2. Keep `WARC-Type = conversion` records.
+3. Decode content and parse language metadata with `DecodeWarcBatch`.
+4. Keep the requested language and split text with `ChunkTextBatch`.
+5. Call `vane.ai.embed_text` with the Transformers provider.
+6. Write filtered pages, chunks, and embeddings.
+
+Default output files are written under `examples/output/common_crawl/`:
+
+- `filtered_pages.csv`
+- `chunks.csv`
+- `chunk_embeddings.csv`
+- `chunk_embeddings.parquet`
+
+You can validate extraction and chunking without installing a model runtime:
+
+```bash
+uv pip install vane-ai numpy pyarrow
+python examples/common_crawl.py \
+  --source sample \
+  --limit 5 \
+  --skip-embeddings
 ```
 
-## Full UDF contract
+Use a real local or remote WET source with one of these commands:
 
-`CaptionAndScore` is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns. Keep the schema narrow and explicit so SQL can own the release filtering and deduplication steps.
+```bash
+python examples/common_crawl.py \
+  --source wet-file \
+  --wet-path /path/to/sample.warc.wet.gz \
+  --limit 100
 
-```python
-import pyarrow as pa
-
-release_schema = {
-    "id": "VARCHAR",
-    "uri": "VARCHAR",
-    "media_type": "VARCHAR",
-    "content_hash": "VARCHAR",
-    "caption": "VARCHAR",
-    "quality_score": "DOUBLE",
-    "label": "VARCHAR",
-    "metadata": "VARCHAR",
-}
-
-
-class CaptionAndScore:
-    def __init__(self) -> None:
-        self.model = load_caption_or_label_model()
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        media = decode_media(batch.column("uri"), batch.column("media_type"))
-        predictions = self.model.predict(media)
-
-        return pa.table({
-            "id": batch.column("id"),
-            "uri": batch.column("uri"),
-            "media_type": batch.column("media_type"),
-            "content_hash": batch.column("content_hash"),
-            "caption": [item.caption for item in predictions],
-            "quality_score": [item.quality_score for item in predictions],
-            "label": [item.label for item in predictions],
-            "metadata": batch.column("metadata"),
-        })
+python examples/common_crawl.py \
+  --source wet-url \
+  --wet-url https://example.org/sample.warc.wet.gz \
+  --limit 100
 ```
 
-The helper functions above are deliberately placeholders. In a production pipeline, define them in an importable module available to every Ray worker, load model state in `__init__`, and return Arrow-compatible values from `__call__`.
+## MinHash deduplication workflow
 
-## Text-only variant
+`minhash_dedupe.py` normalizes each text block, computes deterministic MinHash signatures, creates LSH candidate pairs, verifies candidates with exact Jaccard similarity by default, builds connected components, and keeps one representative per component.
 
-For text training or retrieval data, the same relation shape applies: select raw records, run a batch UDF, embed the output column, and write the release. The chunking UDF below returns all columns needed by later stages.
+Its default output directory, `examples/output/minhash_dedupe/`, contains annotated rows, retained rows, duplicates, clusters, candidate pairs, and colliding LSH buckets.
 
-```python
-def chunk_rows(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
+For a CSV input:
 
-    out_id = []
-    out_chunk_id = []
-    out_text = []
-    out_source_uri = []
-    for row_id, text, source_uri in zip(ids, texts, source_uris, strict=False):
-        chunks = [text[i : i + 512] for i in range(0, len(text), 512)]
-        for chunk_id, chunk in enumerate(chunks):
-            out_id.append(row_id)
-            out_chunk_id.append(chunk_id)
-            out_text.append(chunk)
-            out_source_uri.append(source_uri)
-
-    return pa.table({
-        "id": out_id,
-        "chunk_id": out_chunk_id,
-        "chunk_text": out_text,
-        "source_uri": out_source_uri,
-    })
-
-docs = con.sql("""
-    select id, text, source_uri
-    from read_parquet('data/raw_text/*.parquet')
-    where text is not null and length(text) > 80
-""")
-
-chunks = docs.map_batches(
-    chunk_rows,
-    schema={
-        "id": "BIGINT",
-        "chunk_id": "BIGINT",
-        "chunk_text": "VARCHAR",
-        "source_uri": "VARCHAR",
-    },
-    batch_size=512,
-    execution_backend="subprocess_task",
-)
+```bash
+python examples/minhash_dedupe.py \
+  --source csv \
+  --csv-path /path/to/documents.csv \
+  --text-column text \
+  --id-column document_id \
+  --limit 1000
 ```
 
-## Embeddings
+For local HTML files:
 
-`rel.embed_text(...)` returns a relation containing the embedding output column. If the final dataset needs the original chunk columns as well, explicitly combine the embedding column with the chunk relation after validating row counts, or use a custom UDF that returns the complete output schema.
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
-
-chunk_table = chunks.to_arrow_table()
-embedding_table = embedding_only.to_arrow_table()
-embedded = con.from_arrow(chunk_table.append_column("embedding", embedding_table["embedding"]))
-
-embedded.write_parquet("output/training_chunks/")
+```bash
+python examples/minhash_dedupe.py \
+  --source html-glob \
+  --html-glob '/path/to/pages/*.html' \
+  --limit 1000
 ```
 
-For large datasets, prefer an implementation pattern where joins or combine steps are explicit and validated, or implement embedding as a custom batch UDF that returns all required columns.
+## Red Pajamas semantic matching workflow
 
-## Scale-out
+`llms_red_pajamas.py` embeds StackExchange-style question text, separates low-score queries from higher-score candidates, computes cosine similarity, and prints the top matches. To persist the result:
 
-Ray is already the default runner. After the bounded local path is correct, move the expensive UDF or AI helper stage from an explicit subprocess backend to Ray scheduling:
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
+```bash
+python examples/llms_red_pajamas.py \
+  --source sample \
+  --limit 6 \
+  --output-csv examples/output/red_pajamas_matches.csv
 ```
 
-Every Ray worker must be able to import the UDF code and access the same storage, model files, and Python dependencies.
+The real source mode reads the Red Pajamas StackExchange JSONL path configured by the script:
 
-## Recommended output columns
+```bash
+python examples/llms_red_pajamas.py \
+  --source redpajama \
+  --limit 1000
+```
 
-- `id`
-- `uri`
-- `media_type`
-- `caption`
-- `quality_score`
-- `label`
-- `content_hash`
-- `embedding`
-- `metadata`
+## Default Ray execution
 
-## Scope notes
+The scripts create Vane relations without calling `vane.configure(...)` and without passing `execution_backend`. Ray is already the default runner. Built-in sample rows are represented as DuckDB `VALUES` relations so the plan can travel to Ray workers; they are not captured as process-local Arrow scans.
 
-Vane Data does not provide a complete training-data quality framework. It provides the SQL, UDF, AI helper, and execution tools used to build that framework in your own pipeline.
+Set `RAY_ADDRESS` before launching a script to use an existing cluster. Every worker must have the same Vane and Transformers packages and access to the same model cache or model path. No code change is needed.
+
+## Production adaptation
+
+- Keep source loading separate from transformation stages.
+- Keep every batch UDF schema explicit.
+- Preserve stable source IDs through chunking and deduplication.
+- Validate row counts before appending embedding or prompt output.
+- Use bounded inputs first, then increase `--limit` and tune the existing `--batch-size` options.
+- Treat the files under `examples/` as the implementation contract; do not copy older backend or runner flags from external snippets.
 
 ## Insurance Document Audit
 
@@ -1325,6 +1283,12 @@ rule_hits = con.sql("""
 
 `prompt(...)` returns the configured output column. Explicitly combine that column with source metadata when the final output needs identifiers and document attributes, and validate row counts before writing the result.
 
+Install the provider and schema dependencies in the active environment before running this optional stage:
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -1338,7 +1302,6 @@ audit_only = docs.prompt(
     system_message="Audit the insurance document for missing evidence. Return JSON.",
     return_format=AuditResult,
     output_column="audit_json",
-    execution_backend="subprocess_actor",
 )
 
 docs_table = docs.to_arrow_table()
@@ -1443,6 +1406,12 @@ checks = con.sql("""
 
 `prompt(...)` returns the configured output column. Explicitly combine that result with the check rows before summarizing, and validate row counts before writing the result.
 
+Install the provider and schema dependencies in the active environment before running this optional stage:
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -1456,7 +1425,6 @@ result_only = checks.prompt(
     provider="openai",
     return_format=ComplianceResult,
     output_column="result_json",
-    execution_backend="subprocess_actor",
 )
 
 checks_table = checks.to_arrow_table()
@@ -1506,127 +1474,167 @@ This page does not define legal advice, procurement policy, document parsing, or
 Route: /docs/data/examples/multimodal-data-lake
 Source: docs/data/examples/multimodal-data-lake.mdx
 
-This example shows how Vane Data can prepare multimodal records before lakehouse or warehouse handoff.
-
-Use this pattern when source rows contain media paths, media bytes, or extracted text, and the pipeline needs Python UDFs or AI helpers to add labels, text, embeddings, scores, or structured model output.
-
-Relevant source scripts:
+This page follows the four canonical media and model scripts in the Vane repository:
 
 - `examples/querying_images.py`
+- `examples/image_generation.py`
 - `examples/voice_ai_analytics.py`
 - `examples/multimodal_structured_outputs.py`
 
-## Goal
+They demonstrate image decoding and analysis, image generation, audio transcription and embedding, and vision-language evaluation with structured output.
 
-Read multimodal records, enrich them with explicit Python or AI stages, and write curated table outputs for downstream systems.
+## Create a clean environment
 
-## Data zones
+After installing `uv` as described in [Installation](/docs/data/quickstart/installation), sparsely clone only the example scripts into a new directory:
 
-Raw zone:
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
 
-- Original bytes or paths.
-- Source metadata.
-- Ingestion timestamp.
-
-Processed zone:
-
-- Decoded text or extracted features.
-- Labels.
-- Embeddings.
-- Model outputs.
-
-Curated zone:
-
-- Stable IDs.
-- Normalized metadata.
-- Quality flags.
-- Downstream-ready columns.
-
-## Vane Data pipeline
-
-The UDF returns source identifiers and derived columns. Keep media bytes out of the final output unless a downstream system explicitly needs them.
-
-```python
-import pyarrow as pa
-import vane
-
-con = vane.connect()
-
-raw = con.sql("""
-    select id, media_type, uri, payload
-    from read_parquet('s3://bucket/raw_media/*.parquet')
-    where uri is not null
-""")
-
-def enrich_batch(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-    uris = batch.column("uri").to_pylist()
-
-    return pa.table({
-        "id": ids,
-        "media_type": media_types,
-        "uri": uris,
-        "label": ["unclassified"] * batch.num_rows,
-        "text": [""] * batch.num_rows,
-    })
-
-features = raw.map_batches(
-    enrich_batch,
-    schema={
-        "id": "BIGINT",
-        "media_type": "VARCHAR",
-        "uri": "VARCHAR",
-        "label": "VARCHAR",
-        "text": "VARCHAR",
-    },
-    batch_size=32,
-    execution_backend="subprocess_actor",
-)
-
-features.write_parquet("s3://bucket/processed/media_features/")
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow Pillow openai pydantic
+uv pip install torch
+uv pip install sentence-transformers transformers
 ```
 
-In a production pipeline, put decoder, model, OCR, transcription, or provider logic inside the UDF while keeping the returned schema explicit.
+The sparse checkout excludes the `vane/` and `duckdb/` source directories, so the Python process and local Ray workers use the installed wheel. This environment runs every default sample on the page. For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that `python -c "import torch; print(torch.cuda.is_available())"` prints `True`; Vane's Transformers provider then requests one Ray GPU automatically. The first voice example downloads `sentence-transformers/all-MiniLM-L6-v2` unless it is already cached. The structured-output example also needs provider credentials because synthetic input removes the dataset dependency, not the model call.
 
-## Doris and Iceberg handoff
+If PyPI downloads are slow, append the Tsinghua mirror to an install command:
 
-Vane Data does not include a native Doris connector. Use Vane Data to write clean Parquet, then load it into Doris with Doris tooling.
-
-Vane Data does not define a Vane-specific Iceberg catalog API. Use Vane Data for preparation and Parquet output, then let the lakehouse catalog or table-management tool own Iceberg commits and snapshot semantics.
-
-## Scale-out
-
-Ray is already the default runner. After validating the bounded local path, move the UDF from its explicit subprocess backend to a Ray actor:
-
-```python
-features = raw.map_batches(
-    enrich_batch,
-    schema={
-        "id": "BIGINT",
-        "media_type": "VARCHAR",
-        "uri": "VARCHAR",
-        "label": "VARCHAR",
-        "text": "VARCHAR",
-    },
-    batch_size=32,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-Every Ray worker must be able to access the same storage, credentials, model files, and Python dependencies as the driver.
+The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
 
-## Validation
+## Run the local media samples
 
-Before promoting a multimodal dataset:
+These three commands use generated input and do not need storage credentials, an external dataset, or a hosted model provider:
 
-- Check row counts between raw, processed, and curated zones.
-- Validate that every output row has a stable ID.
-- Keep media bytes only when they are required downstream.
-- Confirm schema compatibility with the warehouse, lakehouse, or catalog that will consume the output.
-- Test model and provider failure handling before scaling.
+```bash
+python examples/querying_images.py --source sample --limit 5
+python examples/image_generation.py --source sample --limit 4
+python examples/voice_ai_analytics.py --source sample --limit 3
+```
+
+With the current built-in samples, the scripts report 5 analyzed images, 4 generated placeholder images, 3 transcripts, and 6 embedded subtitle rows.
+
+## Image querying
+
+`querying_images.py` generates or loads image bytes, decodes them in `AnalyzeRedRegionsBatch`, counts red pixels, and writes ranked previews. Its default output directory contains:
+
+- `images/` with decoded PNG previews
+- `masks/` with red-region masks
+- `top_red_images.csv` with ranked metadata
+
+To analyze local files:
+
+```bash
+python examples/querying_images.py \
+  --source glob \
+  --image-glob '/path/to/images/*' \
+  --limit 100 \
+  --top-k 20
+```
+
+The `--source open-images` mode reads a bounded list of public OpenImages objects and therefore needs network access.
+
+## Image generation
+
+The default `placeholder` backend creates deterministic PNGs using only the base package. It is intended to validate relation, UDF, batching, and output behavior before downloading a diffusion model. Outputs are written to `examples/output/image_generation/` with a `metadata.csv` manifest.
+
+For real Stable Diffusion generation, install the model runtime and request a Ray GPU resource explicitly:
+
+```bash
+uv pip install diffusers transformers accelerate torch Pillow
+
+python examples/image_generation.py \
+  --source sample \
+  --backend diffusers \
+  --device cuda \
+  --dtype float16 \
+  --gpus 1 \
+  --limit 4
+```
+
+The model is downloaded on first use unless `--local-files-only` is set or `--model-id` points to a local model directory.
+
+## Voice AI analytics
+
+The default voice workflow generates short WAV samples, uses deterministic placeholder transcripts, creates local summaries and subtitle rows, and embeds every subtitle segment. It writes `summaries.csv`, `subtitles.csv`, and `segment_embeddings.csv` under `examples/output/voice_ai_analytics/`.
+
+For real transcription:
+
+```bash
+uv pip install faster-whisper av
+
+python examples/voice_ai_analytics.py \
+  --source glob \
+  --audio-glob '/path/to/audio/*.wav' \
+  --transcription-backend faster-whisper \
+  --device cuda \
+  --compute-type float16 \
+  --gpus 1 \
+  --limit 10
+```
+
+This mode still needs the Transformers extra for subtitle embeddings. Add `--summary-backend openai` only when the `openai` package, provider credentials, and the desired model configuration are available.
+
+## Multimodal structured output
+
+The structured-output script asks the same multiple-choice question with and without an image, compares accuracy, classifies each row into an evaluation quadrant, and optionally sends failure cases through a judge pass.
+
+Using the default Hugging Face router:
+
+```bash
+export HF_TOKEN=your_hugging_face_token
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --skip-judge
+```
+
+Using another OpenAI-compatible endpoint:
+
+```bash
+export MODEL_API_KEY=your_api_key
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --api-key-env MODEL_API_KEY \
+  --base-url https://provider.example/v1 \
+  --model provider/model-name \
+  --structured-output-mode prompt \
+  --skip-judge
+```
+
+Remove `--skip-judge` to enable the failure-analysis call. Use real AI2D samples only after installing the dataset dependencies:
+
+```bash
+uv pip install datasets Pillow
+python examples/multimodal_structured_outputs.py \
+  --source hf-ai2d \
+  --limit 4
+```
+
+Keep API keys in environment variables, not in command history, source files, or committed configuration.
+
+## Default Ray execution
+
+All four scripts rely on Vane's default Ray runner. They do not set `VANE_RUNNER`, call `vane.configure(...)`, or choose a task or actor backend. `--gpus 1` only adds a Ray GPU resource request to the model UDF; it does not select the runner.
+
+Set `RAY_ADDRESS` before starting a script to use an existing cluster. Every worker must have the matching dependencies and access to the same files, model cache, and credentials.
+
+## Promote outputs safely
+
+- Validate row counts and stable IDs before joining model output to source metadata.
+- Keep raw bytes only when downstream consumers require them.
+- Record model IDs, prompts, and generation parameters with produced data.
+- Test provider and model failures on bounded inputs.
+- Let the destination system own catalog commits and snapshot semantics after Vane writes the curated files.
 
 ## Deployment
 
@@ -1746,65 +1754,68 @@ Choose worker counts according to CPU, memory, and UDF behavior. The local runne
 Route: /docs/data/contributing/development
 Source: docs/data/contributing/development.mdx
 
-This page summarizes the project development flow.
+This page covers the tested local development flow. The commands below create a local development installation; they do not produce a wheel suitable for upload to a package index.
 
-## Repository setup
+## Build from source
+
+Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended, is the primary development version, and is used by the Ubuntu 24.04 x86-64 CI development path. Other native toolchains and distributions may require additional setup.
+
+Clone the repository with submodules:
 
 ```bash
 git clone --recursive https://github.com/AstroVela/vane.git
 cd vane
 ```
 
-If needed:
+If the checkout already exists and submodules are missing:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-## Build dependencies
-
-The project uses scikit-build-core and CMake.
-
-Python build dependencies include:
-
-- `scikit-build-core>=0.11.4`
-- `pybind11[global]>=2.6.0`
-- `cmake>=3.29.0`
-- `ninja>=1.10`
-
-On Debian/Ubuntu:
+On Ubuntu 24.04, install the native build tools used by CI:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+sudo apt-get install -y \
+  autoconf automake bison build-essential ccache curl flex git libtool \
+  ninja-build pkg-config tar unzip zip
 ```
 
-Prepare the repository-local native dependencies once. The pinned revision matches the baseline in `vcpkg.json`:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create and activate a Python 3.12 virtual environment and install the build dependency group declared by the repository:
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
-git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
-.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install --group build
 ```
 
-Vane's CMake configuration discovers `vcpkg_installed` automatically. Do not set `CMAKE_TOOLCHAIN_FILE`; `.cache` and `vcpkg_installed` are ignored by Git.
-
-## Incremental development build
-
-Use a persistent Release build directory and install a normal wheel. Avoid editable mode: Ray workers import Vane in separate processes, and scikit-build-core editable rebuild mode can invoke CMake again during worker startup.
+Bootstrap the pinned C++ dependencies from the repository root:
 
 ```bash
-export SKBUILD_BUILD_DIR="$PWD/build/release"
+bash scripts/bootstrap_vcpkg.sh
+```
+
+The helper reads the exact baseline from `vcpkg.json`, installs packages into `vcpkg_installed`, reuses the repository's vcpkg binary cache, and verifies the committed native-dependency license bundle. Vane's CMake configuration discovers `vcpkg_installed` automatically, so do not set `CMAKE_TOOLCHAIN_FILE`.
+
+Build and install a local, non-editable Release-mode package:
+
+```bash
+export SKBUILD_BUILD_DIR="$PWD/build/python-release"
 export SKBUILD_CMAKE_BUILD_TYPE=Release
-python -m pip install . --no-build-isolation -v
+
+uv pip install . --no-build-isolation
 ```
 
-Rerun the install command after changing Python or native source. Rerun `vcpkg install` after changing `vcpkg.json`, and use a fresh build directory whenever CMake options change.
+Using `uv pip install` instead of `uv sync` is intentional: the default Ray runner imports Vane in worker processes, while an editable installation can invoke CMake again during each worker import. Rerun the install command after changing source code; Python-only changes do not require a native recompile, while native changes reuse the incremental build directory. Rerun `scripts/bootstrap_vcpkg.sh` after changing `vcpkg.json`. If CMake options change, select a fresh `SKBUILD_BUILD_DIR` or remove the old build directory before rebuilding.
 
 ## Formatting
 
-The source `CONTRIBUTING.md` describes formatting through `scripts/format`.
+The source `CONTRIBUTING.md` describes formatting through `scripts/format`. Install the root formatting hooks first:
+
+```bash
+uv pip install pre-commit
+```
 
 Examples:
 
@@ -1818,28 +1829,18 @@ The root formatter avoids scanning `external/duckdb` by default. Use the submodu
 
 ## Tests
 
-CI builds and installs Vane Data on Ubuntu 24.04 with Python 3.12, then runs:
+Install the test dependency group, then run the same base-installation gate as CI:
+
+```bash
+uv pip install --group test
+scripts/run_release_tests.sh
+```
+
+The broader compatibility suite and a focused local test can be run separately:
 
 ```bash
 python -m pytest tests/fast
-```
-
-For a focused local test:
-
-```bash
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-## Source areas
-
-- `vane/`: Vane Data public Python API and AI helpers.
-- `duckdb/execution/`: Python UDF executor routing and runtimes.
-- `duckdb/runners/`: native and Ray runner code.
-- `src/duckdb_py/`: C++ Python bindings.
-- `external/duckdb/`: DuckDB submodule.
-- `examples/`: runnable script examples.
-- Benchmark workloads: performance and fault-tolerance experiments.
-
-## Contribution rule of thumb
-
-Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.func`, `vane.cls`, `vane.attach_function`, `vane.configure`, or AI helpers, update docs and tests in the same change. SQL is the recommended Expression entry point; keep [UDF Concepts](/docs/data/concepts/udfs) and [AI Function Concepts](/docs/data/concepts/ai-functions) aligned with public behavior.
+Some compatibility tests require optional services, credentials, model weights, or GPUs and should skip with a clear reason when that environment is absent.

@@ -9,6 +9,7 @@
     "dev:en": "docusaurus start",
     "dev:zh-CN": "docusaurus start --locale zh-CN",
     "build": "docusaurus build",
+    "test": "node --test tests/*.test.mjs",
     "docs:lint": "node scripts/docs-lint.mjs",
     "docs:llms": "node scripts/docs-llms.mjs",
     "docs:llms:check": "node scripts/docs-llms.mjs --check",

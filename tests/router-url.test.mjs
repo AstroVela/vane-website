@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveLinkClickUrl } from '../src/routerUrl.ts'
+import { createJiti } from 'jiti'
+
+const jiti = createJiti(import.meta.url)
+const { resolveLinkClickUrl } = await jiti.import('../src/routerUrl.ts')
 
 test('hash-only Link targets resolve against the current page', () => {
   const url = resolveLinkClickUrl({

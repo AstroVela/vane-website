@@ -6,33 +6,34 @@ Vane Data uses `vane-ai` as the distribution package and `vane` as the Python im
 
 ## Requirements
 
-- Python 3.10 or later.
-- A platform with a published Vane Data wheel, or a local C++ build environment for source builds.
-- Network and credentials for any remote storage, model provider, or Ray cluster used by your pipeline.
-
-The package metadata installs the required runtime dependencies, including `cloudpickle`, `numpy`, `pyarrow`, and `ray`.
+- Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended and is the primary development version.
+- Published wheels currently target Linux x86_64 systems compatible with manylinux 2.28. Other platforms require a local C++ build environment.
 
 ## Install a released package
 
-Use the released package when a wheel is available for your Python version and platform:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then use the released package when a wheel is available for your Python version and platform:
 
 ```bash
-pip install vane-ai
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai
 ```
 
-AI provider adapters are loaded lazily. After installing `vane-ai`, add only the libraries for the providers you use:
+## Optional dependencies
+
+Install only the providers you use:
 
 ```bash
 # Local embedding and classification models
-python -m pip install sentence-transformers transformers torch
+uv pip install sentence-transformers transformers torch
 
 # Hosted model providers
-python -m pip install openai
-python -m pip install anthropic
-python -m pip install google-genai
+uv pip install openai
+uv pip install anthropic
+uv pip install google-genai
 
 # vLLM-backed prompting
-python -m pip install vllm
+uv pip install vllm
 ```
 
 ## Verify the install
@@ -49,95 +50,6 @@ con.sql("select 42 as answer").show()
 PY
 ```
 
-## Default Ray execution
-
-Ray is Vane's default runner. The verification command above starts a local Ray runtime automatically when `RAY_ADDRESS` is unset, so no explicit runner configuration is required.
-
-Select `local` before creating the connection when the process should run without Ray:
-
-```python
-import vane
-
-vane.configure(runner="local")
-
-con = vane.connect()
-con.sql("select 42 as answer").show()
-```
-
-The same selection can be made when launching the process:
-
-```bash
-VANE_RUNNER=local python job.py
-```
-
-To use an existing Ray cluster, set `RAY_ADDRESS` before starting the job. Every Ray worker must be able to import the same Python packages, access the same storage systems, and see any model files or provider credentials required by the pipeline. See [Deployment](/docs/data/deploy/deployment) for local and cluster runner settings.
-
-## Build from source
-
-Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel.
-
-Clone the repository with submodules:
-
-```bash
-git clone --recursive https://github.com/AstroVela/vane.git
-cd vane
-```
-
-If the checkout already exists and submodules are missing:
-
-```bash
-git submodule update --init --recursive
-```
-
-Install common Debian or Ubuntu build tools:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
-```
-
-Build the C++ dependencies with the vcpkg revision pinned by the repository:
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
-git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
-.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
-```
-
-Install Python build tooling, then build and install a non-editable Release wheel:
-
-```bash
-python -m pip install -U pip
-python -m pip install cmake ninja scikit-build-core "pybind11[global]"
-
-export SKBUILD_BUILD_DIR="$PWD/build/release"
-export SKBUILD_CMAKE_BUILD_TYPE=Release
-
-python -m pip install . --no-build-isolation -v
-```
-
-`vcpkg install` reads the repository's `vcpkg.json` manifest and writes the built packages to `vcpkg_installed`. Vane's CMake configuration discovers that directory automatically, so do not set `CMAKE_TOOLCHAIN_FILE`. Both `.cache` and `vcpkg_installed` are ignored by the repository.
-
-The non-editable install is intentional: the default Ray runner imports Vane in worker processes, while scikit-build-core editable rebuild mode can invoke CMake again during each worker import. Rerun the install command after changing source code. If an existing checkout was previously configured with different CMake options, select a fresh `SKBUILD_BUILD_DIR` or remove that old build directory before rebuilding.
-
-## Build configuration notes
-
-The source build configuration currently includes these DuckDB extensions:
-
-```text
-core_functions;json;parquet;icu;jemalloc;httpfs
-```
-
-This means JSON, Parquet, ICU, jemalloc, and HTTP/S3 filesystem support are part of the configured build. Other DuckDB extensions depend on the build and runtime environment. Verify extension availability in the environment where the job runs.
-
-The project includes wheel-build configuration for Linux manylinux 2.28 on x86_64 and aarch64, macOS, and Windows. Actual package availability depends on the release artifacts published for a given version.
-
-## Troubleshooting
-
-- `ModuleNotFoundError: No module named 'vane'`: confirm that `vane-ai` was installed into the Python environment running your script.
-- Missing provider libraries: install the provider package directly, such as `openai`, `anthropic`, `google-genai`, `vllm`, or `sentence-transformers`.
-- Ray workers cannot import a module: install the same dependencies on every worker or provide a Ray runtime environment that includes them.
-- Remote file reads fail: verify the DuckDB extension, storage credentials, endpoint settings, and worker-side environment variables.
+Building from source? See [Development](/docs/data/contributing/development).
 
 Next: [Quickstart](/docs/data/quickstart/quickstart).

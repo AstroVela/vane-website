@@ -2,65 +2,68 @@
 title: Development
 ---
 
-This page summarizes the project development flow.
+This page covers the tested local development flow. The commands below create a local development installation; they do not produce a wheel suitable for upload to a package index.
 
-## Repository setup
+## Build from source
+
+Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended, is the primary development version, and is used by the Ubuntu 24.04 x86-64 CI development path. Other native toolchains and distributions may require additional setup.
+
+Clone the repository with submodules:
 
 ```bash
 git clone --recursive https://github.com/AstroVela/vane.git
 cd vane
 ```
 
-If needed:
+If the checkout already exists and submodules are missing:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-## Build dependencies
-
-The project uses scikit-build-core and CMake.
-
-Python build dependencies include:
-
-- `scikit-build-core>=0.11.4`
-- `pybind11[global]>=2.6.0`
-- `cmake>=3.29.0`
-- `ninja>=1.10`
-
-On Debian/Ubuntu:
+On Ubuntu 24.04, install the native build tools used by CI:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+sudo apt-get install -y \
+  autoconf automake bison build-essential ccache curl flex git libtool \
+  ninja-build pkg-config tar unzip zip
 ```
 
-Prepare the repository-local native dependencies once. The pinned revision matches the baseline in `vcpkg.json`:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create and activate a Python 3.12 virtual environment and install the build dependency group declared by the repository:
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
-git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
-.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install --group build
 ```
 
-Vane's CMake configuration discovers `vcpkg_installed` automatically. Do not set `CMAKE_TOOLCHAIN_FILE`; `.cache` and `vcpkg_installed` are ignored by Git.
-
-## Incremental development build
-
-Use a persistent Release build directory and install a normal wheel. Avoid editable mode: Ray workers import Vane in separate processes, and scikit-build-core editable rebuild mode can invoke CMake again during worker startup.
+Bootstrap the pinned C++ dependencies from the repository root:
 
 ```bash
-export SKBUILD_BUILD_DIR="$PWD/build/release"
+bash scripts/bootstrap_vcpkg.sh
+```
+
+The helper reads the exact baseline from `vcpkg.json`, installs packages into `vcpkg_installed`, reuses the repository's vcpkg binary cache, and verifies the committed native-dependency license bundle. Vane's CMake configuration discovers `vcpkg_installed` automatically, so do not set `CMAKE_TOOLCHAIN_FILE`.
+
+Build and install a local, non-editable Release-mode package:
+
+```bash
+export SKBUILD_BUILD_DIR="$PWD/build/python-release"
 export SKBUILD_CMAKE_BUILD_TYPE=Release
-python -m pip install . --no-build-isolation -v
+
+uv pip install . --no-build-isolation
 ```
 
-Rerun the install command after changing Python or native source. Rerun `vcpkg install` after changing `vcpkg.json`, and use a fresh build directory whenever CMake options change.
+Using `uv pip install` instead of `uv sync` is intentional: the default Ray runner imports Vane in worker processes, while an editable installation can invoke CMake again during each worker import. Rerun the install command after changing source code; Python-only changes do not require a native recompile, while native changes reuse the incremental build directory. Rerun `scripts/bootstrap_vcpkg.sh` after changing `vcpkg.json`. If CMake options change, select a fresh `SKBUILD_BUILD_DIR` or remove the old build directory before rebuilding.
 
 ## Formatting
 
-The source `CONTRIBUTING.md` describes formatting through `scripts/format`.
+The source `CONTRIBUTING.md` describes formatting through `scripts/format`. Install the root formatting hooks first:
+
+```bash
+uv pip install pre-commit
+```
 
 Examples:
 
@@ -74,28 +77,18 @@ The root formatter avoids scanning `external/duckdb` by default. Use the submodu
 
 ## Tests
 
-CI builds and installs Vane Data on Ubuntu 24.04 with Python 3.12, then runs:
+Install the test dependency group, then run the same base-installation gate as CI:
+
+```bash
+uv pip install --group test
+scripts/run_release_tests.sh
+```
+
+The broader compatibility suite and a focused local test can be run separately:
 
 ```bash
 python -m pytest tests/fast
-```
-
-For a focused local test:
-
-```bash
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-## Source areas
-
-- `vane/`: Vane Data public Python API and AI helpers.
-- `duckdb/execution/`: Python UDF executor routing and runtimes.
-- `duckdb/runners/`: native and Ray runner code.
-- `src/duckdb_py/`: C++ Python bindings.
-- `external/duckdb/`: DuckDB submodule.
-- `examples/`: runnable script examples.
-- Benchmark workloads: performance and fault-tolerance experiments.
-
-## Contribution rule of thumb
-
-Keep changes scoped. If a change affects public APIs such as `map_batches`, `vane.func`, `vane.cls`, `vane.attach_function`, `vane.configure`, or AI helpers, update docs and tests in the same change. SQL is the recommended Expression entry point; keep [UDF Concepts](/docs/data/concepts/udfs) and [AI Function Concepts](/docs/data/concepts/ai-functions) aligned with public behavior.
+Some compatibility tests require optional services, credentials, model weights, or GPUs and should skip with a clear reason when that environment is absent.

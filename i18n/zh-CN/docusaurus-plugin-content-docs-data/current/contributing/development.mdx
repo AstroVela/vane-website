@@ -2,65 +2,68 @@
 title: 开发
 ---
 
-本页概述项目开发流程。
+本页介绍经过测试的本地开发流程。下面的命令会创建本地开发安装，不会生成适合上传到软件包索引的 wheel。
 
-## 仓库设置
+## 从源码构建
+
+当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。Vane 支持 Python 3.10、3.11 和 3.12。推荐使用 Python 3.12，它是主要开发版本，也是 Ubuntu 24.04 x86-64 CI 开发流程使用的版本。其他 native toolchain 和 Linux 发行版可能需要额外配置。
+
+克隆代码库，并拉取子模块：
 
 ```bash
 git clone --recursive https://github.com/AstroVela/vane.git
 cd vane
 ```
 
-如有需要：
+如果检出目录已存在但子模块缺失：
 
 ```bash
 git submodule update --init --recursive
 ```
 
-## 构建依赖
-
-项目使用 scikit-build-core 和 CMake。
-
-Python 构建依赖包括：
-
-- `scikit-build-core>=0.11.4`
-- `pybind11[global]>=2.6.0`
-- `cmake>=3.29.0`
-- `ninja>=1.10`
-
-在 Debian/Ubuntu 上：
+在 Ubuntu 24.04 上，安装 CI 使用的 native 构建工具：
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar flex bison
+sudo apt-get install -y \
+  autoconf automake bison build-essential ccache curl flex git libtool \
+  ninja-build pkg-config tar unzip zip
 ```
 
-首次构建时，准备代码库内使用的 native 依赖。下面锁定的版本与 `vcpkg.json` 中的 baseline 一致：
+安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，然后创建并激活 Python 3.12 虚拟环境，再安装代码库声明的构建 dependency group：
 
 ```bash
-git clone https://github.com/microsoft/vcpkg.git .cache/vcpkg
-git -C .cache/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574
-.cache/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-.cache/vcpkg/vcpkg install --x-install-root="$PWD/vcpkg_installed"
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install --group build
 ```
 
-Vane 的 CMake 配置会自动发现 `vcpkg_installed`，无需设置 `CMAKE_TOOLCHAIN_FILE`。`.cache` 和 `vcpkg_installed` 均已被 Git 忽略。
-
-## 增量开发构建
-
-使用持久化的 Release 构建目录，并安装普通 wheel。请避免 editable mode：Ray worker 会在独立进程中导入 Vane，而 scikit-build-core 的 editable rebuild mode 可能在 worker 启动期间再次调用 CMake。
+在代码库根目录引导安装锁定的 C++ 依赖：
 
 ```bash
-export SKBUILD_BUILD_DIR="$PWD/build/release"
+bash scripts/bootstrap_vcpkg.sh
+```
+
+该脚本会从 `vcpkg.json` 读取精确 baseline，把软件包安装到 `vcpkg_installed`，复用代码库的 vcpkg binary cache，并校验已经提交的 native 依赖许可证清单。Vane 的 CMake 配置会自动发现 `vcpkg_installed`，因此不要设置 `CMAKE_TOOLCHAIN_FILE`。
+
+构建并安装本地、非 editable 的 Release-mode 软件包：
+
+```bash
+export SKBUILD_BUILD_DIR="$PWD/build/python-release"
 export SKBUILD_CMAKE_BUILD_TYPE=Release
-python -m pip install . --no-build-isolation -v
+
+uv pip install . --no-build-isolation
 ```
 
-修改 Python 或 native 源码后，请重新运行安装命令；修改 `vcpkg.json` 后，请重新运行 `vcpkg install`。CMake option 发生变化时，应使用新的构建目录。
+这里有意使用 `uv pip install` 而不是 `uv sync`：默认 Ray runner 会在 worker 进程中导入 Vane，而 editable 安装可能在每个 worker 导入时再次调用 CMake。修改源码后，请重新运行安装命令；仅修改 Python 不需要重新编译 native 代码，native 改动则会复用增量构建目录。修改 `vcpkg.json` 后，请重新运行 `scripts/bootstrap_vcpkg.sh`。如果 CMake option 发生变化，请选择新的 `SKBUILD_BUILD_DIR`，或在重新构建前删除旧构建目录。
 
 ## 格式化
 
-源码仓库的 `CONTRIBUTING.md` 描述了如何通过 `scripts/format` 格式化代码。
+源码仓库的 `CONTRIBUTING.md` 描述了如何通过 `scripts/format` 格式化代码。请先安装根目录格式化 hooks：
+
+```bash
+uv pip install pre-commit
+```
 
 示例：
 
@@ -74,28 +77,18 @@ scripts/format workspace --changed
 
 ## 测试
 
-CI 会在 Ubuntu 24.04 和 Python 3.12 上构建并安装 Vane Data，然后运行：
+安装测试 dependency group，然后运行与 CI 相同的 base-installation gate：
+
+```bash
+uv pip install --group test
+scripts/run_release_tests.sh
+```
+
+更广泛的兼容性测试和本地聚焦测试可以分别运行：
 
 ```bash
 python -m pytest tests/fast
-```
-
-本地聚焦测试：
-
-```bash
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-## 源码区域
-
-- `vane/`：Vane Data 公开 Python API 和 AI 辅助函数。
-- `duckdb/execution/`：Python UDF 执行器路由和运行时。
-- `duckdb/runners/`：原生与 Ray runner 代码。
-- `src/duckdb_py/`：C++ Python 绑定。
-- `external/duckdb/`：DuckDB 子模块。
-- `examples/`：可运行脚本示例。
-- benchmark 工作负载：性能和容错实验。
-
-## 贡献经验法则
-
-保持变更范围聚焦。如果某个变更影响 `map_batches`、`vane.func`、`vane.cls`、`vane.attach_function`、`vane.configure` 或 AI 辅助函数等公开 API，请在同一变更中更新文档和测试。SQL 是推荐的 Expression 入口；应确保 [UDF 概念](/zh-CN/docs/data/concepts/udfs)与 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)始终和公开行为一致。
+部分兼容性测试需要可选服务、凭据、模型权重或 GPU；缺少相应环境时，这些测试应给出明确原因并跳过。

@@ -16,7 +16,6 @@ import { Link } from '../router'
 
 const PIPELINE_CODE = `import vane
 
-vane.configure(runner="ray")
 con = vane.connect()
 
 raw = con.sql("""
@@ -32,7 +31,6 @@ labeled = raw.map_batches(
     CaptionAndScore,
     schema=release_schema,
     gpus=1,
-    actor_number=4,
 )
 labeled.to_table("labeled")
 

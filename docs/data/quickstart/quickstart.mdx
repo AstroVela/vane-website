@@ -7,11 +7,7 @@ This quickstart gets one Python function running inside a Vane SQL projection. T
 
 You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
 
-## Install Vane Data
-
-```bash
-pip install vane-ai
-```
+Before continuing, complete the [Installation guide](/docs/data/quickstart/installation).
 
 ## Run Your First SQL Expression UDF
 
@@ -79,10 +75,10 @@ For callable lifecycle, batch and cardinality behavior, and Relation transformat
 
 ## Optional: Add an AI Function
 
-This is not required for the Quickstart. To try a hosted provider, install its package and set credentials in the worker environment:
+This is not required for the Quickstart. To try OpenAI, install its optional dependency in the same environment, then set credentials in the worker environment:
 
 ```bash
-python -m pip install openai
+uv pip install openai
 export OPENAI_API_KEY="<your-key>"
 ```
 
@@ -96,6 +92,8 @@ with_ai = con.sql("""
             source_text,
             struct_pack(
                 provider := 'openai',
+                -- Optional for OpenAI-compatible providers:
+                -- base_url := 'https://api.example.com/v1',
                 model := 'gpt-4o-mini'
             )
         ) AS review_note

@@ -31,10 +31,16 @@ const installationSources = [
   ),
 ]
 const sourceBuildSources = [
-  ...installationSources,
   readFileSync('docs/data/contributing/development.mdx', 'utf8'),
   readFileSync(
     'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/contributing/development.mdx',
+    'utf8',
+  ),
+]
+const deploymentSources = [
+  readFileSync('docs/data/deploy/deployment.mdx', 'utf8'),
+  readFileSync(
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/deploy/deployment.mdx',
     'utf8',
   ),
 ]
@@ -48,9 +54,20 @@ const exampleRunnerSources = [
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/tender-compliance-check.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/multimodal-data-lake.mdx',
 ].map((file) => readFileSync(file, 'utf8'))
+const wheelExampleSources = [
+  'docs/data/examples/index.mdx',
+  'docs/data/examples/training-data-pipeline.mdx',
+  'docs/data/examples/multimodal-data-lake.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/index.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/training-data-pipeline.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/multimodal-data-lake.mdx',
+].map((file) => readFileSync(file, 'utf8'))
 const packageSource = readFileSync('package.json', 'utf8')
+const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
 const devScriptSource = readFileSync('scripts/dev.mjs', 'utf8')
 const codeWindowSource = readFileSync('src/components/CodeWindow.tsx', 'utf8')
+const homeSource = readFileSync('src/pages/Home.tsx', 'utf8')
+const footerSource = readFileSync('src/components/Footer.tsx', 'utf8')
 const trainingUseCaseSource = readFileSync('src/pages/TrainingUseCase.tsx', 'utf8')
 const docPaginatorSource = readFileSync('src/theme/DocPaginator/index.tsx', 'utf8')
 
@@ -127,48 +144,104 @@ test('OpenAI examples use a valid API root', () => {
   for (const source of [aiFunctionsSource, chineseAiFunctionsSource]) {
     assert.equal(source.match(/https:\/\/api\.openai\.com\/v1/g)?.length, 4)
     assert.doesNotMatch(source, /api\.example\.com/)
-    assert.match(source, /^pip install vane-ai openai$/m)
+    assert.match(source, /uv pip install vane-ai openai/)
     assert.match(source, /OPENAI_API_KEY="<your-token>"/)
     assert.match(source, /OPENAI_BASE_URL="https:\/\/provider\.example\/v1"/)
   }
 })
 
-test('public installation commands use the base vane-ai package', () => {
+test('documentation installation commands use uv and the base vane-ai package', () => {
   for (const source of [
-    quickstartSource,
-    chineseQuickstartSource,
     aiFunctionsSource,
     chineseAiFunctionsSource,
     ...installationSources,
   ]) {
-    assert.match(source, /^pip install vane-ai$/m)
+    assert.match(source, /uv pip install vane-ai/)
+    assert.doesNotMatch(source, /python -m pip install/)
+    assert.doesNotMatch(source, /vane-ai\[all\]/)
+  }
+
+  assert.equal(homeSource.match(/pip install vane-ai/g)?.length, 2)
+  assert.match(footerSource, /pip install vane-ai/)
+  for (const source of [homeSource, footerSource]) {
+    assert.doesNotMatch(source, /uv pip install vane-ai/)
+  }
+})
+
+test('quickstart delegates package installation to the installation guide', () => {
+  assert.match(quickstartSource, /\[Installation guide\]\(\/docs\/data\/quickstart\/installation\)/)
+  assert.match(chineseQuickstartSource, /\[安装指南\]\(\/zh-CN\/docs\/data\/quickstart\/installation\)/)
+  for (const source of [quickstartSource, chineseQuickstartSource]) {
+    assert.doesNotMatch(source, /(?:pip|uv pip) install vane-ai/)
+    assert.doesNotMatch(source, /uv venv/)
+  }
+})
+
+test('installation uses uv for the base package and optional providers', () => {
+  for (const source of installationSources) {
+    assert.match(source, /\[uv\]\(https:\/\/docs\.astral\.sh\/uv\/getting-started\/installation\/\)/)
+    assert.match(source, /uv venv/)
+    assert.match(source, /source \.venv\/bin\/activate/)
+    assert.match(source, /uv pip install vane-ai/)
+    assert.doesNotMatch(source, /python -m pip install/)
     assert.doesNotMatch(source, /vane-ai\[all\]/)
   }
 })
 
-test('installation and examples describe Ray as the default runner', () => {
-  for (const source of installationSources) {
+test('quickstart describes Ray as the default runner and deployment documents the local override', () => {
+  assert.match(quickstartSource, /Ray is Vane's default runner/)
+  assert.match(chineseQuickstartSource, /Ray 是 Vane 的默认 runner/)
+  assert.match(deploymentSources[0], /`ray` is the default/)
+  assert.match(deploymentSources[1], /`ray` 是默认 runner/)
+  for (const source of deploymentSources) {
     assert.match(source, /runner="local"/)
-    assert.doesNotMatch(source, /runner="ray"/)
   }
   for (const source of exampleRunnerSources) {
     assert.doesNotMatch(source, /vane\.configure\(runner="ray"\)/)
   }
 })
 
-test('source builds pin and preinstall native dependencies without editable or toolchain builds', () => {
+test('wheel-backed examples sparsely check out scripts without package sources', () => {
+  for (const source of wheelExampleSources) {
+    assert.match(source, /git clone --depth 1 --filter=blob:none --sparse/)
+    assert.match(source, /https:\/\/github\.com\/AstroVela\/vane\.git vane-examples/)
+    assert.match(source, /cd vane-examples/)
+    assert.match(source, /git sparse-checkout set examples/)
+    assert.doesNotMatch(source, /^git clone https:\/\/github\.com\/AstroVela\/vane\.git$/m)
+    assert.match(source, /`vane\/` and `duckdb\/`|`vane\/` 和 `duckdb\/`/)
+  }
+})
+
+test('installation links to the relocated source-build guide', () => {
+  assert.match(installationSources[0], /\[Development\]\(\/docs\/data\/contributing\/development\)/)
+  assert.match(installationSources[1], /\[开发\]\(\/zh-CN\/docs\/data\/contributing\/development\)/)
+})
+
+test('source builds use the pinned dependency bootstrap without editable or toolchain builds', () => {
   for (const source of sourceBuildSources) {
     assert.doesNotMatch(source, /pip install -e/)
+    assert.doesNotMatch(source, /^uv sync\b/m)
+    assert.doesNotMatch(source, /^uv pip install --editable\b/m)
     assert.doesNotMatch(source, /(?:export\s+|cmake\.define\.)CMAKE_TOOLCHAIN_FILE/)
     assert.doesNotMatch(source, /\.\.\/vcpkg/)
-    assert.match(source, /git clone https:\/\/github\.com\/microsoft\/vcpkg\.git \.cache\/vcpkg/)
-    assert.match(source, /git -C \.cache\/vcpkg checkout 44819aa2a6c10e56065e2b0330e7d6c89d1d2574/)
-    assert.match(source, /\.cache\/vcpkg\/bootstrap-vcpkg\.sh -disableMetrics/)
-    assert.match(source, /\.cache\/vcpkg\/vcpkg install --x-install-root="\$PWD\/vcpkg_installed"/)
+    assert.match(source, /uv venv --python 3\.12/)
+    assert.match(source, /uv pip install --group build/)
+    assert.match(source, /bash scripts\/bootstrap_vcpkg\.sh/)
+    assert.match(source, /exact baseline from `vcpkg\.json`|从 `vcpkg\.json` 读取精确 baseline/)
+    assert.match(source, /vcpkg_installed/)
     assert.match(source, /SKBUILD_BUILD_DIR=/)
     assert.match(source, /SKBUILD_CMAKE_BUILD_TYPE=Release/)
-    assert.match(source, /python -m pip install \. --no-build-isolation -v/)
+    assert.match(source, /uv pip install \. --no-build-isolation/)
+    assert.match(source, /uv pip install --group test/)
   }
+})
+
+test('CI runs the complete Node and documentation check suites', () => {
+  assert.match(packageSource, /"test":\s*"node --test tests\/\*\.test\.mjs"/)
+  assert.match(ciSource, /- run: npm test/)
+  assert.match(ciSource, /npm run docs:lint/)
+  assert.match(ciSource, /npm run docs:manifest:check/)
+  assert.match(ciSource, /npm run docs:llms:check/)
 })
 
 test('shared code windows localize copy controls for Chinese pages', () => {

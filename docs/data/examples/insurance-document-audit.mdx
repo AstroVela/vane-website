@@ -57,6 +57,12 @@ rule_hits = con.sql("""
 
 `prompt(...)` returns the configured output column. Explicitly combine that column with source metadata when the final output needs identifiers and document attributes, and validate row counts before writing the result.
 
+Install the provider and schema dependencies in the active environment before running this optional stage:
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -70,7 +76,6 @@ audit_only = docs.prompt(
     system_message="Audit the insurance document for missing evidence. Return JSON.",
     return_format=AuditResult,
     output_column="audit_json",
-    execution_backend="subprocess_actor",
 )
 
 docs_table = docs.to_arrow_table()

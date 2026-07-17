@@ -2,15 +2,44 @@
 title: Training Data Pipeline
 ---
 
-This example page shows a common pattern for preparing multimodal training-data releases with Vane Data.
+This page follows the three canonical text-processing scripts in the Vane repository:
 
-## Goal
+- `examples/common_crawl.py`
+- `examples/minhash_dedupe.py`
+- `examples/llms_red_pajamas.py`
 
-Prepare multimodal data by selecting raw records, running a batch captioning or labeling UDF, filtering by quality, deduplicating by content hash, generating embeddings, and writing a versioned Parquet release.
+Together they cover web-text extraction and chunking, near-duplicate removal, embeddings, and semantic matching.
 
-## Run local samples
+## Create a clean environment
 
-The repository also includes text-focused sample scripts you can run locally to inspect the same relation patterns without external storage or models:
+After installing `uv` as described in [Installation](/docs/data/quickstart/installation), sparsely clone only the example scripts into a new directory:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
+
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow
+uv pip install torch
+uv pip install sentence-transformers transformers
+```
+
+The sparse checkout excludes the `vane/` and `duckdb/` source directories, so the Python process and local Ray workers use the installed wheel. The model packages are needed by the Common Crawl and Red Pajamas embedding stages. `minhash_dedupe.py` does not need them. For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that `python -c "import torch; print(torch.cuda.is_available())"` prints `True`; Vane's Transformers provider then requests one Ray GPU automatically. The first embedding run downloads `sentence-transformers/all-MiniLM-L6-v2`; use `--local-files-only` only after that model is available in the local cache or at the model path you pass.
+
+If PyPI downloads are slow, append the Tsinghua mirror to an install command:
+
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
+
+## Run all three samples
+
+Run the scripts from the repository root:
 
 ```bash
 python examples/common_crawl.py --source sample --limit 5
@@ -18,178 +47,114 @@ python examples/minhash_dedupe.py --source sample --limit 10
 python examples/llms_red_pajamas.py --source sample --limit 6
 ```
 
-## Website code shape
+With the current built-in samples, the scripts report:
 
-The website shows the shortened pipeline shape. The full example below expands the `CaptionAndScore` UDF and schema.
+| Script | Verification result |
+| --- | --- |
+| `common_crawl.py` | 5 source records, 3 decoded English pages, 7 text chunks, 384-dimensional embeddings |
+| `minhash_dedupe.py` | 10 input rows and 5 retained representatives |
+| `llms_red_pajamas.py` | 6 embedded questions and 3 semantic matches |
 
-```python
-import vane
-con = vane.connect()
-raw = con.sql("""
-select id, uri, media_type, text, metadata, content_hash
-from read_parquet('s3://training-corpus/manifest/*.parquet')
-where split = 'train'
-""")
-labeled = raw.map_batches(
-    CaptionAndScore, schema=release_schema,
-    execution_backend="ray_actor", gpus=1, batch_size=64,
-)
-labeled.to_table("labeled")
-release = con.sql("""
-select * exclude rn
-from (
-  select *, row_number() over (
-    partition by content_hash order by quality_score desc
-  ) as rn
-  from labeled
-  where quality_score >= 0.8
-)
-where rn = 1
-""").embed_text(
-    "caption",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
-release.write_parquet("s3://dataset-releases/mm-v42/")
+The exact terminal table formatting can change, but the scripts validate row counts before combining source rows with model output.
+
+## Common Crawl workflow
+
+`common_crawl.py` performs these stages:
+
+1. Load built-in WARC-shaped rows, a local WET/WARC file, or a WET URL.
+2. Keep `WARC-Type = conversion` records.
+3. Decode content and parse language metadata with `DecodeWarcBatch`.
+4. Keep the requested language and split text with `ChunkTextBatch`.
+5. Call `vane.ai.embed_text` with the Transformers provider.
+6. Write filtered pages, chunks, and embeddings.
+
+Default output files are written under `examples/output/common_crawl/`:
+
+- `filtered_pages.csv`
+- `chunks.csv`
+- `chunk_embeddings.csv`
+- `chunk_embeddings.parquet`
+
+You can validate extraction and chunking without installing a model runtime:
+
+```bash
+uv pip install vane-ai numpy pyarrow
+python examples/common_crawl.py \
+  --source sample \
+  --limit 5 \
+  --skip-embeddings
 ```
 
-## Full UDF contract
+Use a real local or remote WET source with one of these commands:
 
-`CaptionAndScore` is your batch UDF for decoding media, running GPU captioning or labeling, and returning stable release columns. Keep the schema narrow and explicit so SQL can own the release filtering and deduplication steps.
+```bash
+python examples/common_crawl.py \
+  --source wet-file \
+  --wet-path /path/to/sample.warc.wet.gz \
+  --limit 100
 
-```python
-import pyarrow as pa
-
-release_schema = {
-    "id": "VARCHAR",
-    "uri": "VARCHAR",
-    "media_type": "VARCHAR",
-    "content_hash": "VARCHAR",
-    "caption": "VARCHAR",
-    "quality_score": "DOUBLE",
-    "label": "VARCHAR",
-    "metadata": "VARCHAR",
-}
-
-
-class CaptionAndScore:
-    def __init__(self) -> None:
-        self.model = load_caption_or_label_model()
-
-    def __call__(self, batch: pa.Table) -> pa.Table:
-        media = decode_media(batch.column("uri"), batch.column("media_type"))
-        predictions = self.model.predict(media)
-
-        return pa.table({
-            "id": batch.column("id"),
-            "uri": batch.column("uri"),
-            "media_type": batch.column("media_type"),
-            "content_hash": batch.column("content_hash"),
-            "caption": [item.caption for item in predictions],
-            "quality_score": [item.quality_score for item in predictions],
-            "label": [item.label for item in predictions],
-            "metadata": batch.column("metadata"),
-        })
+python examples/common_crawl.py \
+  --source wet-url \
+  --wet-url https://example.org/sample.warc.wet.gz \
+  --limit 100
 ```
 
-The helper functions above are deliberately placeholders. In a production pipeline, define them in an importable module available to every Ray worker, load model state in `__init__`, and return Arrow-compatible values from `__call__`.
+## MinHash deduplication workflow
 
-## Text-only variant
+`minhash_dedupe.py` normalizes each text block, computes deterministic MinHash signatures, creates LSH candidate pairs, verifies candidates with exact Jaccard similarity by default, builds connected components, and keeps one representative per component.
 
-For text training or retrieval data, the same relation shape applies: select raw records, run a batch UDF, embed the output column, and write the release. The chunking UDF below returns all columns needed by later stages.
+Its default output directory, `examples/output/minhash_dedupe/`, contains annotated rows, retained rows, duplicates, clusters, candidate pairs, and colliding LSH buckets.
 
-```python
-def chunk_rows(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    texts = batch.column("text").to_pylist()
-    source_uris = batch.column("source_uri").to_pylist()
+For a CSV input:
 
-    out_id = []
-    out_chunk_id = []
-    out_text = []
-    out_source_uri = []
-    for row_id, text, source_uri in zip(ids, texts, source_uris, strict=False):
-        chunks = [text[i : i + 512] for i in range(0, len(text), 512)]
-        for chunk_id, chunk in enumerate(chunks):
-            out_id.append(row_id)
-            out_chunk_id.append(chunk_id)
-            out_text.append(chunk)
-            out_source_uri.append(source_uri)
-
-    return pa.table({
-        "id": out_id,
-        "chunk_id": out_chunk_id,
-        "chunk_text": out_text,
-        "source_uri": out_source_uri,
-    })
-
-docs = con.sql("""
-    select id, text, source_uri
-    from read_parquet('data/raw_text/*.parquet')
-    where text is not null and length(text) > 80
-""")
-
-chunks = docs.map_batches(
-    chunk_rows,
-    schema={
-        "id": "BIGINT",
-        "chunk_id": "BIGINT",
-        "chunk_text": "VARCHAR",
-        "source_uri": "VARCHAR",
-    },
-    batch_size=512,
-    execution_backend="subprocess_task",
-)
+```bash
+python examples/minhash_dedupe.py \
+  --source csv \
+  --csv-path /path/to/documents.csv \
+  --text-column text \
+  --id-column document_id \
+  --limit 1000
 ```
 
-## Embeddings
+For local HTML files:
 
-`rel.embed_text(...)` returns a relation containing the embedding output column. If the final dataset needs the original chunk columns as well, explicitly combine the embedding column with the chunk relation after validating row counts, or use a custom UDF that returns the complete output schema.
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    output_column="embedding",
-    execution_backend="subprocess_actor",
-)
-
-chunk_table = chunks.to_arrow_table()
-embedding_table = embedding_only.to_arrow_table()
-embedded = con.from_arrow(chunk_table.append_column("embedding", embedding_table["embedding"]))
-
-embedded.write_parquet("output/training_chunks/")
+```bash
+python examples/minhash_dedupe.py \
+  --source html-glob \
+  --html-glob '/path/to/pages/*.html' \
+  --limit 1000
 ```
 
-For large datasets, prefer an implementation pattern where joins or combine steps are explicit and validated, or implement embedding as a custom batch UDF that returns all required columns.
+## Red Pajamas semantic matching workflow
 
-## Scale-out
+`llms_red_pajamas.py` embeds StackExchange-style question text, separates low-score queries from higher-score candidates, computes cosine similarity, and prints the top matches. To persist the result:
 
-Ray is already the default runner. After the bounded local path is correct, move the expensive UDF or AI helper stage from an explicit subprocess backend to Ray scheduling:
-
-```python
-embedding_only = chunks.embed_text(
-    "chunk_text",
-    provider="transformers",
-    execution_backend="ray_actor",
-)
+```bash
+python examples/llms_red_pajamas.py \
+  --source sample \
+  --limit 6 \
+  --output-csv examples/output/red_pajamas_matches.csv
 ```
 
-Every Ray worker must be able to import the UDF code and access the same storage, model files, and Python dependencies.
+The real source mode reads the Red Pajamas StackExchange JSONL path configured by the script:
 
-## Recommended output columns
+```bash
+python examples/llms_red_pajamas.py \
+  --source redpajama \
+  --limit 1000
+```
 
-- `id`
-- `uri`
-- `media_type`
-- `caption`
-- `quality_score`
-- `label`
-- `content_hash`
-- `embedding`
-- `metadata`
+## Default Ray execution
 
-## Scope notes
+The scripts create Vane relations without calling `vane.configure(...)` and without passing `execution_backend`. Ray is already the default runner. Built-in sample rows are represented as DuckDB `VALUES` relations so the plan can travel to Ray workers; they are not captured as process-local Arrow scans.
 
-Vane Data does not provide a complete training-data quality framework. It provides the SQL, UDF, AI helper, and execution tools used to build that framework in your own pipeline.
+Set `RAY_ADDRESS` before launching a script to use an existing cluster. Every worker must have the same Vane and Transformers packages and access to the same model cache or model path. No code change is needed.
+
+## Production adaptation
+
+- Keep source loading separate from transformation stages.
+- Keep every batch UDF schema explicit.
+- Preserve stable source IDs through chunking and deduplication.
+- Validate row counts before appending embedding or prompt output.
+- Use bounded inputs first, then increase `--limit` and tune the existing `--batch-size` options.
+- Treat the files under `examples/` as the implementation contract; do not copy older backend or runner flags from external snippets.
