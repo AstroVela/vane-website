@@ -203,7 +203,7 @@ Every Ray worker must be able to import the UDF and its dependencies and access 
 
 - [UDF Concepts](/docs/data/concepts/udfs)
 - [AI Function Concepts](/docs/data/concepts/ai-functions)
-- [Examples](/docs/data/examples)
+- [Tutorials](/docs/data/tutorials)
 - [Deployment](/docs/data/deploy/deployment)
 
 ## SQL vs Python
@@ -929,712 +929,2795 @@ Use `OpenAIProviderOptions` for client and actor settings,
 are accepted too, but typed objects make provider-specific configuration
 clearer and catch misspelled fields earlier.
 
+## Overview
+
+Route: /docs/data/tutorials
+Source: docs/data/tutorials/index.mdx
+
+These examples show how Vane combines Relations, SQL, batch UDFs, AI functions, and configurable local or Ray-backed execution in practical data workflows. Each page follows runnable source in the Vane ecosystem: it introduces the problem, walks through the pipeline in stages, explains the important implementation choices, and closes with the outputs to inspect.
+
+Most scripts default to small, self-contained sample data. You can understand the workflow locally before switching to a real dataset, model, or service.
+
+## Run the example scripts
+
+Follow [Installation](/docs/data/quickstart/installation) to create an environment and install the published Vane wheel. To download only the runnable scripts, use `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`, then run `cd vane-examples` and `git sparse-checkout set examples`. Install the common runtime packages with `uv pip install vane-ai numpy pyarrow`, and add the example-specific dependencies described on each page.
+
+The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so the scripts and local Ray workers import the installed wheel rather than a neighboring source checkout.
+
 ## Examples
 
-Route: /docs/data/examples
-Source: docs/data/examples/index.mdx
-
-The scripts in the Vane repository are the canonical implementations for this section. The documentation explains how to install their dependencies and run them; when a detail differs, follow the script under `examples/`.
-
-## Start from a clean environment
-
-Install `uv` as described in [Installation](/docs/data/quickstart/installation), then sparsely clone the repository so that only the example scripts are checked out:
-
-```bash
-git clone --depth 1 --filter=blob:none --sparse \
-  https://github.com/AstroVela/vane.git vane-examples
-cd vane-examples
-git sparse-checkout set examples
-
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install vane-ai numpy pyarrow
-```
-
-The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so both the Python process and local Ray workers import the installed wheel. The install command adds Vane plus the NumPy and PyArrow packages imported directly by the examples; Vane installs Ray as a runtime dependency. Ray is the default runner: with `RAY_ADDRESS` unset, each command below starts or reuses Ray on the current machine. The scripts do not set a runner or an execution backend.
-
-See [Installation](/docs/data/quickstart/installation) if `vane-ai` does not yet provide a wheel for your Python version or Linux platform.
-
-## Install only the dependencies you need
-
-Run these commands in the same activated environment:
-
-```bash
-# querying_images.py
-uv pip install Pillow
-
-# PyTorch for the embedding workflows
-uv pip install torch
-
-# common_crawl.py, llms_red_pajamas.py, and voice_ai_analytics.py
-uv pip install sentence-transformers transformers
-
-# multimodal_structured_outputs.py
-uv pip install openai pydantic
-```
-
-`minhash_dedupe.py` and the default placeholder mode of `image_generation.py` need only the base package. The first Transformers run downloads `sentence-transformers/all-MiniLM-L6-v2` unless it is already cached.
-
-For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that the environment can see the GPU before running an embedding example:
-
-```bash
-python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
-```
-
-When `torch.cuda.is_available()` is true, Vane's Transformers provider requests one Ray GPU automatically. If PyPI downloads are slow, append the Tsinghua mirror to an install command, for example:
-
-```bash
-uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
-
-Real model and remote-dataset modes have additional opt-in dependencies:
-
-```bash
-# image_generation.py --backend diffusers
-uv pip install diffusers transformers accelerate torch Pillow
-
-# voice_ai_analytics.py --transcription-backend faster-whisper
-uv pip install faster-whisper av
-
-# multimodal_structured_outputs.py --source hf-ai2d
-uv pip install datasets Pillow
-```
-
-## Run the bounded samples
-
-These commands use built-in sample or synthetic input. The first six do not need storage credentials or an external dataset:
-
-```bash
-python examples/minhash_dedupe.py --source sample --limit 10
-python examples/querying_images.py --source sample --limit 5
-python examples/image_generation.py --source sample --limit 4
-python examples/common_crawl.py --source sample --limit 5
-python examples/llms_red_pajamas.py --source sample --limit 6
-python examples/voice_ai_analytics.py --source sample --limit 3
-```
-
-The multimodal structured-output example uses synthetic image data but still calls a vision-language model. Its default endpoint is the Hugging Face OpenAI-compatible router:
-
-```bash
-export HF_TOKEN=your_hugging_face_token
-python examples/multimodal_structured_outputs.py \
-  --source synthetic \
-  --limit 1 \
-  --skip-judge
-```
-
-For another OpenAI-compatible service, put the key in an environment variable and pass the service configuration explicitly. Use prompt mode when the endpoint does not implement the OpenAI SDK's structured-output parsing API:
-
-```bash
-export MODEL_API_KEY=your_api_key
-python examples/multimodal_structured_outputs.py \
-  --source synthetic \
-  --limit 1 \
-  --api-key-env MODEL_API_KEY \
-  --base-url https://provider.example/v1 \
-  --model provider/model-name \
-  --structured-output-mode prompt \
-  --skip-judge
-```
-
-Do not put provider keys in source files or commit them to the repository.
-
-## Canonical scripts
-
-| Script | Default workflow | Default output |
+| Example | What you will build | Default input |
 | --- | --- | --- |
-| `examples/common_crawl.py` | Decode sample WARC rows, keep English pages, chunk text, and embed chunks | `examples/output/common_crawl/` |
-| `examples/minhash_dedupe.py` | Normalize text, compute MinHash signatures, build LSH candidates, and keep one row per component | `examples/output/minhash_dedupe/` |
-| `examples/llms_red_pajamas.py` | Embed sample StackExchange questions and print semantic matches | Terminal; add `--output-csv PATH` to write CSV |
-| `examples/querying_images.py` | Generate sample images, detect red regions, and save image and mask previews | `examples/output/querying_images/` |
-| `examples/image_generation.py` | Generate deterministic placeholder PNGs from prompts | `examples/output/image_generation/` |
-| `examples/voice_ai_analytics.py` | Generate sample audio, use placeholder transcription and local summaries, then embed subtitle segments | `examples/output/voice_ai_analytics/` |
-| `examples/multimodal_structured_outputs.py` | Compare VLM answers with and without an image and optionally judge failures | Terminal |
+| [Working with Common Crawl](/docs/data/tutorials/examples/common-crawl) | Decode WET records, filter by language, split web text, and create embeddings | Built-in WARC-shaped records |
+| [MinHash text deduplication](/docs/data/tutorials/examples/minhash-dedupe) | Normalize text, generate MinHash signatures, find LSH candidates, and keep one row per component | Built-in duplicate text blocks |
+| [Semantic search on Red Pajamas](/docs/data/tutorials/examples/llms-red-pajamas) | Embed StackExchange-style questions and match low-score questions to related high-score ones | Built-in question pairs |
+| [Querying image data](/docs/data/tutorials/examples/querying-images) | Load image bytes, detect red regions in a batch UDF, and rank image-mask pairs | Generated sample images |
+| [Generating images from text](/docs/data/tutorials/examples/image-generation) | Turn prompt rows into PNG bytes with a placeholder or Stable Diffusion backend | Deterministic placeholder images |
+| [Voice AI analytics](/docs/data/tutorials/examples/voice-ai-analytics) | Transcribe audio, summarize transcripts, create subtitle rows, and embed segments | Generated audio with placeholder transcripts |
+| [Multimodal structured outputs](/docs/data/tutorials/examples/multimodal-structured-outputs) | Compare vision and text-only answers, classify evaluation quadrants, and diagnose failures | Synthetic visual questions plus a hosted VLM |
 
-The [training data pipeline](/docs/data/examples/training-data-pipeline) page covers the three text workflows. The [multimodal data lake](/docs/data/examples/multimodal-data-lake) page covers the four image, audio, and VLM workflows.
+## Use cases
 
-The [insurance document audit](/docs/data/examples/insurance-document-audit) and [tender compliance check](/docs/data/examples/tender-compliance-check) pages are adaptation patterns that require your own input data and provider configuration; they do not claim a corresponding repository script.
+These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding.
 
-## Use an existing Ray cluster
+| Use case | What you will build | Default scenario |
+| --- | --- | --- |
+| [Claims disposition from multimodal evidence](/docs/data/tutorials/use-cases/claims-disposition) | Combine claim records, photos, OCR, multimodal facts, and ordered SQL rules into one recommendation per claim | Four synthetic claims covering every disposition |
+| [Enterprise Agent evidence governance](/docs/data/tutorials/use-cases/enterprise-agent-evidence) | Parse reusable multimodal assets, detect evidence gaps and conflicts, and build governed Agent context plus a review queue | Five publicly sourced assets linked to four synthetic cases |
+| [Multimodal training data release](/docs/data/tutorials/use-cases/multimodal-training-data) | Process document, image, audio, and text branches into one typed release table and a reviewable rejection set | Five version-pinned, publicly sourced assets |
+| [Procurement compliance audit](/docs/data/tutorials/use-cases/procurement-compliance-audit) | Extract facts from evidence images, compare expert scores, recalculate the winner, and emit deterministic audit findings | One synthetic tender with two evidence images |
+| [Web text deduplication with global LSH](/docs/data/tutorials/use-cases/web-text-deduplication) | Generate global LSH candidates, verify them with exact Jaccard, form graph clusters, and retain representatives | 24 documents with duplicate groups and singletons |
 
-Set `RAY_ADDRESS` before starting a script. Install the same Vane and example-specific dependencies on every worker, and make the required data, model files, and credentials available to those workers. No script change or runner flag is required. See [Deployment](/docs/data/deploy/deployment) for cluster setup.
+## Choosing an example
 
-## Training Data Pipeline
+Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and structured outputs show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
 
-Route: /docs/data/examples/training-data-pipeline
-Source: docs/data/examples/training-data-pipeline.mdx
+## Code provenance
 
-This page follows the three canonical text-processing scripts in the Vane repository:
+Every fenced code block on these pages is copied from its corresponding source project. The examples use files under `examples/` in the Vane repository; the use cases use their named directories in the `demo-scene` repository. The prose explains and connects those excerpts, while the runnable project remains the source of truth.
 
-- `examples/common_crawl.py`
-- `examples/minhash_dedupe.py`
-- `examples/llms_red_pajamas.py`
+## Working with Common Crawl
 
-Together they cover web-text extraction and chunking, near-duplicate removal, embeddings, and semantic matching.
+Route: /docs/data/tutorials/examples/common-crawl
+Source: docs/data/tutorials/examples/common-crawl.mdx
 
-## Create a clean environment
+Common Crawl is useful for search, retrieval, and model-training pipelines, but its WET files still need to be decoded, filtered, and divided into model-sized units. This tutorial follows [`examples/common_crawl.py`](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) from raw WARC-shaped records to page, chunk, and embedding outputs.
 
-After installing `uv` as described in [Installation](/docs/data/quickstart/installation), sparsely clone only the example scripts into a new directory:
+The default path is deliberately small and offline-friendly. It uses built-in records with the same columns as the real WET path, so the transformation stages stay identical when you later point the script at a local file or URL.
 
-```bash
-git clone --depth 1 --filter=blob:none --sparse \
-  https://github.com/AstroVela/vane.git vane-examples
-cd vane-examples
-git sparse-checkout set examples
+The pipeline has five stages:
 
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install vane-ai numpy pyarrow
-uv pip install torch
-uv pip install sentence-transformers transformers
-```
+1. Load sample records, a local WET/WARC file, or a WET URL.
+2. Keep conversion records and decode their content.
+3. Read the detected language from the WARC headers and keep the requested language.
+4. Split each page into bounded sentence chunks.
+5. Generate embeddings and write inspectable outputs.
 
-The sparse checkout excludes the `vane/` and `duckdb/` source directories, so the Python process and local Ray workers use the installed wheel. The model packages are needed by the Common Crawl and Red Pajamas embedding stages. `minhash_dedupe.py` does not need them. For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that `python -c "import torch; print(torch.cuda.is_available())"` prints `True`; Vane's Transformers provider then requests one Ray GPU automatically. The first embedding run downloads `sentence-transformers/all-MiniLM-L6-v2`; use `--local-files-only` only after that model is available in the local cache or at the model path you pass.
+## 1. Choose a source
 
-If PyPI downloads are slow, append the Tsinghua mirror to an install command:
-
-```bash
-uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
-
-## Run all three samples
-
-Run the scripts from the repository root:
-
-```bash
-python examples/common_crawl.py --source sample --limit 5
-python examples/minhash_dedupe.py --source sample --limit 10
-python examples/llms_red_pajamas.py --source sample --limit 6
-```
-
-With the current built-in samples, the scripts report:
-
-| Script | Verification result |
-| --- | --- |
-| `common_crawl.py` | 5 source records, 3 decoded English pages, 7 text chunks, 384-dimensional embeddings |
-| `minhash_dedupe.py` | 10 input rows and 5 retained representatives |
-| `llms_red_pajamas.py` | 6 embedded questions and 3 semantic matches |
-
-The exact terminal table formatting can change, but the scripts validate row counts before combining source rows with model output.
-
-## Common Crawl workflow
-
-`common_crawl.py` performs these stages:
-
-1. Load built-in WARC-shaped rows, a local WET/WARC file, or a WET URL.
-2. Keep `WARC-Type = conversion` records.
-3. Decode content and parse language metadata with `DecodeWarcBatch`.
-4. Keep the requested language and split text with `ChunkTextBatch`.
-5. Call `vane.ai.embed_text` with the Transformers provider.
-6. Write filtered pages, chunks, and embeddings.
-
-Default output files are written under `examples/output/common_crawl/`:
-
-- `filtered_pages.csv`
-- `chunks.csv`
-- `chunk_embeddings.csv`
-- `chunk_embeddings.parquet`
-
-You can validate extraction and chunking without installing a model runtime:
-
-```bash
-uv pip install vane-ai numpy pyarrow
-python examples/common_crawl.py \
-  --source sample \
-  --limit 5 \
-  --skip-embeddings
-```
-
-Use a real local or remote WET source with one of these commands:
-
-```bash
-python examples/common_crawl.py \
-  --source wet-file \
-  --wet-path /path/to/sample.warc.wet.gz \
-  --limit 100
-
-python examples/common_crawl.py \
-  --source wet-url \
-  --wet-url https://example.org/sample.warc.wet.gz \
-  --limit 100
-```
-
-## MinHash deduplication workflow
-
-`minhash_dedupe.py` normalizes each text block, computes deterministic MinHash signatures, creates LSH candidate pairs, verifies candidates with exact Jaccard similarity by default, builds connected components, and keeps one representative per component.
-
-Its default output directory, `examples/output/minhash_dedupe/`, contains annotated rows, retained rows, duplicates, clusters, candidate pairs, and colliding LSH buckets.
-
-For a CSV input:
-
-```bash
-python examples/minhash_dedupe.py \
-  --source csv \
-  --csv-path /path/to/documents.csv \
-  --text-column text \
-  --id-column document_id \
-  --limit 1000
-```
-
-For local HTML files:
-
-```bash
-python examples/minhash_dedupe.py \
-  --source html-glob \
-  --html-glob '/path/to/pages/*.html' \
-  --limit 1000
-```
-
-## Red Pajamas semantic matching workflow
-
-`llms_red_pajamas.py` embeds StackExchange-style question text, separates low-score queries from higher-score candidates, computes cosine similarity, and prints the top matches. To persist the result:
-
-```bash
-python examples/llms_red_pajamas.py \
-  --source sample \
-  --limit 6 \
-  --output-csv examples/output/red_pajamas_matches.csv
-```
-
-The real source mode reads the Red Pajamas StackExchange JSONL path configured by the script:
-
-```bash
-python examples/llms_red_pajamas.py \
-  --source redpajama \
-  --limit 1000
-```
-
-## Default Ray execution
-
-The scripts create Vane relations without calling `vane.configure(...)` and without passing `execution_backend`. Ray is already the default runner. Built-in sample rows are represented as DuckDB `VALUES` relations so the plan can travel to Ray workers; they are not captured as process-local Arrow scans.
-
-Set `RAY_ADDRESS` before launching a script to use an existing cluster. Every worker must have the same Vane and Transformers packages and access to the same model cache or model path. No code change is needed.
-
-## Production adaptation
-
-- Keep source loading separate from transformation stages.
-- Keep every batch UDF schema explicit.
-- Preserve stable source IDs through chunking and deduplication.
-- Validate row counts before appending embedding or prompt output.
-- Use bounded inputs first, then increase `--limit` and tune the existing `--batch-size` options.
-- Treat the files under `examples/` as the implementation contract; do not copy older backend or runner flags from external snippets.
-
-## Insurance Document Audit
-
-Route: /docs/data/examples/insurance-document-audit
-Source: docs/data/examples/insurance-document-audit.mdx
-
-This example shows a SQL-first pattern for insurance document review.
-
-Vane Data does not ship a dedicated insurance workflow. Use SQL for deterministic checks, `map_batches(...)` for extraction or normalization, and `prompt(...)` when a document needs model-assisted structured review.
-
-## Goal
-
-Audit insurance documents by extracting relevant text, applying deterministic SQL rules, and optionally using an LLM for structured review.
-
-## Input shape
-
-Recommended input columns:
-
-- `document_id`
-- `policy_id`
-- `claim_id`
-- `document_type`
-- `text`
-- `source_uri`
-
-OCR, document parsing, and policy-system extraction should happen upstream or in explicit UDF stages.
-
-## SQL rule pass
+Source selection is isolated in one function. The real-data branches validate their required argument, parse the WET bytes, and then construct the same Relation schema used by the sample branch.
 
 ```python
-import vane
+def load_source_relation(conn: Any, args: argparse.Namespace) -> Any:
+    if args.source == "sample":
+        return sample_relation(conn, args.limit)
+    if args.source == "wet-file":
+        if not args.wet_path:
+            raise SystemExit("--wet-path is required when --source wet-file.")
+        return wet_relation(conn, read_wet_file(args.wet_path, args.limit))
+    if args.source == "wet-url":
+        if not args.wet_url:
+            raise SystemExit("--wet-url is required when --source wet-url.")
+        return wet_relation(conn, read_wet_url(args.wet_url, args.limit))
+    raise ValueError(f"Unsupported source: {args.source}")
+```
 
-con = vane.connect()
+Both compressed and uncompressed WET inputs are supported. The parser separates the WARC header block from the content, captures the standard record metadata, and stops at the requested limit.
 
-docs = con.sql("""
-    select *
-    from read_parquet('data/insurance_documents/*.parquet')
-    where text is not null
-""")
+## 2. Decode and filter pages
 
-docs.to_table("docs")
+`DecodeWarcBatch` is the boundary between binary WARC data and typed page rows. It decodes content as UTF-8, parses the JSON header representation, and returns an Arrow table with a narrow, explicit schema.
 
-rule_hits = con.sql("""
-    select
-        document_id,
-        claim_id,
+```python
+class DecodeWarcBatch:
+    """Decode WARC content bytes and parse WARC headers."""
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        record_ids = batch["WARC-Record-ID"].to_pylist()
+        target_uris = batch["WARC-Target-URI"].to_pylist()
+        dates = batch["WARC-Date"].to_pylist()
+        lengths = batch["Content-Length"].to_pylist()
+        content_values = batch["warc_content"].to_pylist()
+        header_values = batch["warc_headers"].to_pylist()
+
+        texts = []
+        languages = []
+        for content, raw_headers in zip(content_values, header_values, strict=True):
+            try:
+                text = bytes(content or b"").decode("utf-8")
+            except UnicodeDecodeError:
+                text = None
+            try:
+                headers = json.loads(raw_headers or "{}")
+            except json.JSONDecodeError:
+                headers = {}
+            languages.append(str(headers.get("WARC-Identified-Content-Language") or ""))
+            texts.append(text)
+
+        return pa.table(
+            {
+                "record_id": pa.array(record_ids, type=pa.string()),
+                "target_uri": pa.array(target_uris, type=pa.string()),
+                "warc_date": pa.array(dates, type=pa.string()),
+                "content_length": pa.array(lengths, type=pa.int64()),
+                "language": pa.array(languages, type=pa.string()),
+                "text": pa.array(texts, type=pa.string()),
+            }
+        )
+```
+
+The orchestration first removes non-conversion records with SQL, then applies the UDF and performs the language filter. Keeping those filters outside the Python loop makes the data contract of each stage easy to inspect.
+
+```python
+    conn = vane.connect()
+    rel = load_source_relation(conn, args)
+    filtered = rel.query(
+        "cc",
+        """
+        select *
+        from cc
+        where "WARC-Type" = 'conversion'
+        """,
+    )
+
+    pages = filtered.map_batches(
+        DecodeWarcBatch(),
+        schema={
+            "record_id": duckdb.sqltypes.VARCHAR,
+            "target_uri": duckdb.sqltypes.VARCHAR,
+            "warc_date": duckdb.sqltypes.VARCHAR,
+            "content_length": duckdb.sqltypes.BIGINT,
+            "language": duckdb.sqltypes.VARCHAR,
+            "text": duckdb.sqltypes.VARCHAR,
+        },
+        batch_size=args.batch_size,
+        execution_backend=args.execution_backend,
+    ).query(
+        "pages",
+        f"""
+        select *
+        from pages
+        where text is not null
+          and language = {sql_literal(args.language)}
+        """,
+    )
+```
+
+## 3. Create embedding-sized chunks
+
+Sentence splitting normalizes whitespace and prefers punctuation boundaries. A second helper divides any overlong sentence at a nearby space. The batch UDF preserves the source identity and assigns a monotonically increasing chunk ID within each page.
+
+```python
+def regex_sentences(text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return []
+    pieces = re.split(r"(?<=[.!?])\s+", normalized)
+    return [piece.strip() for piece in pieces if piece.strip()]
+
+
+def split_long_text(text: str, max_chars: int) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + max_chars)
+        if end < len(text):
+            split_at = text.rfind(" ", start, end)
+            if split_at > start + max_chars // 2:
+                end = split_at
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+    return chunks
+
+
+class ChunkTextBatch:
+    """Split decoded web page text into embedding-sized chunks."""
+
+    def __init__(self, *, max_doc_chars: int, max_chunk_chars: int):
+        self.max_doc_chars = max_doc_chars
+        self.max_chunk_chars = max_chunk_chars
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        output = {
+            "record_id": [],
+            "target_uri": [],
+            "warc_date": [],
+            "language": [],
+            "chunk_id": [],
+            "text": [],
+        }
+
+        rows = batch.to_pylist()
+        for row in rows:
+            text = str(row["text"] or "")
+            if self.max_doc_chars and len(text) > self.max_doc_chars:
+                text = text[: self.max_doc_chars]
+
+            sentence_id = 0
+            for sentence in regex_sentences(text):
+                for chunk in split_long_text(sentence, self.max_chunk_chars):
+                    output["record_id"].append(row["record_id"])
+                    output["target_uri"].append(row["target_uri"])
+                    output["warc_date"].append(row["warc_date"])
+                    output["language"].append(row["language"])
+                    output["chunk_id"].append(sentence_id)
+                    output["text"].append(chunk)
+                    sentence_id += 1
+
+        return pa.table(
+            {
+                "record_id": pa.array(output["record_id"], type=pa.string()),
+                "target_uri": pa.array(output["target_uri"], type=pa.string()),
+                "warc_date": pa.array(output["warc_date"], type=pa.string()),
+                "language": pa.array(output["language"], type=pa.string()),
+                "chunk_id": pa.array(output["chunk_id"], type=pa.int64()),
+                "text": pa.array(output["text"], type=pa.string()),
+            }
+        )
+```
+
+The default document cap is 1,000 characters and the default chunk cap is 1,024 characters. These are tutorial-sized values, not universal production settings; tune them for your source quality and embedding model.
+
+## 4. Generate embeddings
+
+The example uses Vane's Transformers provider. Because the AI function returns its output Relation separately, `append_embedding` validates row counts and the expected column before attaching embeddings to the original chunk rows.
+
+```python
+    embedded_table = None
+    if not args.skip_embeddings:
+        embedded_only = embed_text(
+            chunks,
+            "text",
+            provider="transformers",
+            model=args.embedding_model_id,
+            output_column="embedding",
+            execution_backend=args.embedding_execution_backend,
+            max_chunk_chars=args.max_chunk_chars,
+            batch_size=args.embedding_batch_size,
+        )
+        embedded = append_embedding(conn, chunks, embedded_only)
+        embedded_table = embedded.to_arrow_table()
+```
+
+The model defaults to Sentence Transformers' `all-MiniLM-L6-v2`. Use the local-files-only option when the model is already cached and the worker must not contact Hugging Face. You can also skip this stage to inspect WARC decoding and chunking without model dependencies.
+
+## 5. Inspect the outputs
+
+The default output directory contains:
+
+- `filtered_pages.csv`, with page metadata and a text preview;
+- `chunks.csv`, with one row per text chunk;
+- `chunk_embeddings.parquet`, with the full embedding values when embedding is enabled;
+- `chunk_embeddings.csv`, with embedding dimensions instead of the full vectors for quick inspection.
+
+The script prints the number of source records, decoded pages, chunks, and embedding dimensions, then shows a bounded Relation preview. If no page matches the requested language or no chunk is produced, it raises an error before writing an empty result.
+
+## Scaling the same pipeline
+
+The decoding, chunking, and embedding stages each expose an execution-backend option. Keep the sample path local while validating schemas, then select `ray_task` or `ray_actor` for expensive stages and configure the Ray runner. The source-loading and output contracts do not change.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) for every argument and the WET parser implementation.
+
+## MinHash Text Deduplication
+
+Route: /docs/data/tutorials/examples/minhash-dedupe
+Source: docs/data/tutorials/examples/minhash-dedupe.mdx
+
+Duplicate and near-duplicate text can distort training corpora, retrieval indexes, and analytics. This tutorial follows [`examples/minhash_dedupe.py`](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py) through a complete, dependency-light deduplication pipeline: normalize text, compute MinHash signatures, use locality-sensitive hashing to generate candidate pairs, verify those pairs, and keep one representative per connected component.
+
+The script accepts built-in text blocks, a CSV file, or text extracted from local HTML files. Its default sample includes exact duplicates, punctuation and case variants, unrelated text, and short boilerplate, so you can inspect the behavior without downloading a web corpus.
+
+## How the pipeline fits together
+
+The algorithm deliberately separates two different jobs:
+
+- MinHash and LSH cheaply reduce the number of pairs that need comparison.
+- By default, exact shingle Jaccard similarity verifies candidates before they become graph edges.
+
+Connected components then make the decision transitive: if one row matches a second and the second matches a third, all three belong to the same duplicate cluster even when the first and third were never emitted as a direct pair.
+
+## 1. Normalize, shingle, and hash text
+
+Normalization decomposes Unicode characters, removes combining marks, lowercases text, replaces punctuation and underscores with spaces, and collapses whitespace. The normalized tokens become word n-grams, or shingles.
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def word_shingles(normalized: str, ngram_size: int) -> list[str]:
+    tokens = normalized.split()
+    if not tokens:
+        return []
+    if len(tokens) <= ngram_size:
+        return [" ".join(tokens)]
+    return [" ".join(tokens[i : i + ngram_size]) for i in range(len(tokens) - ngram_size + 1)]
+
+
+def stable_hash_u64(value: str) -> int:
+    digest = hashlib.blake2b(value.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="little") % HASH_PRIME
+
+
+def permutation_coefficients(num_hashes: int, seed: int) -> list[tuple[int, int]]:
+    rng = random.Random(seed)
+    return [
+        (
+            rng.randrange(1, HASH_PRIME - 1),
+            rng.randrange(0, HASH_PRIME - 1),
+        )
+        for _ in range(num_hashes)
+    ]
+
+
+def minhash_signature(
+    shingles: list[str],
+    coefficients: list[tuple[int, int]],
+) -> list[int]:
+    if not shingles:
+        return [0] * len(coefficients)
+
+    values = [stable_hash_u64(shingle) for shingle in set(shingles)]
+    signature = [HASH_PRIME] * len(coefficients)
+    for hashed in values:
+        for i, (a, b) in enumerate(coefficients):
+            candidate = (a * hashed + b) % HASH_PRIME
+            if candidate < signature[i]:
+                signature[i] = candidate
+    return signature
+```
+
+The random coefficients are seeded, and each shingle uses a stable BLAKE2b hash. Repeated runs with the same inputs and settings therefore produce the same signatures.
+
+## 2. Apply MinHash in a batch UDF
+
+`NormalizeMinHashBatch` computes all preprocessing fields in one pass over each Arrow batch. Signatures and shingles are JSON-encoded so the UDF can return a simple, explicit relational schema that later Python stages can consume.
+
+```python
+class NormalizeMinHashBatch:
+    """Batch UDF that normalizes text and computes MinHash signatures."""
+
+    def __init__(self, *, num_hashes: int, ngram_size: int, seed: int):
+        self.num_hashes = num_hashes
+        self.ngram_size = ngram_size
+        self.coefficients = permutation_coefficients(num_hashes, seed)
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        node_ids = batch["node_id"].to_pylist()
+        block_ids = batch["block_id"].to_pylist()
+        blocks = [str(value or "") for value in batch["block"].to_pylist()]
+
+        normalized_values = []
+        minhash_values = []
+        shingle_values = []
+        for block in blocks:
+            normalized = normalize_text(block)
+            shingles = word_shingles(normalized, self.ngram_size)
+            normalized_values.append(normalized)
+            shingle_values.append(json.dumps(shingles, ensure_ascii=False))
+            minhash_values.append(
+                json.dumps(
+                    minhash_signature(shingles, self.coefficients),
+                    separators=(",", ":"),
+                )
+            )
+
+        return pa.table(
+            {
+                "node_id": pa.array(node_ids, type=pa.int64()),
+                "block_id": pa.array(block_ids, type=pa.string()),
+                "block": pa.array(blocks, type=pa.string()),
+                "content_normalized": pa.array(
+                    normalized_values,
+                    type=pa.string(),
+                ),
+                "minhashes_json": pa.array(minhash_values, type=pa.string()),
+                "shingles_json": pa.array(shingle_values, type=pa.string()),
+            }
+        )
+```
+
+The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF runs locally by default, but the same schema can be scheduled with a Ray task or actor backend.
+
+## 3. Choose an LSH shape
+
+An LSH configuration divides each signature into bands. More bands make it easier for a pair to collide; more rows per band require a stronger match inside each band. If the caller does not provide both values, the script searches factor pairs of the signature length and minimizes the integrated false-positive and false-negative error around the requested threshold.
+
+```python
+def optimal_lsh_params(
+    threshold: float,
+    num_hashes: int,
+    *,
+    false_positive_weight: float = 0.5,
+    false_negative_weight: float = 0.5,
+) -> tuple[int, int]:
+    best_error = float("inf")
+    best = (1, num_hashes)
+    for bands in range(1, num_hashes + 1):
+        if num_hashes % bands != 0:
+            continue
+        rows_per_band = num_hashes // bands
+        fp = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=True,
+        )
+        fn = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=False,
+        )
+        error = fp * false_positive_weight + fn * false_negative_weight
+        if error < best_error:
+            best_error = error
+            best = (bands, rows_per_band)
+    return best
+```
+
+When supplying the shape manually, the product of bands and rows per band must equal the number of hashes.
+
+## 4. Generate and verify candidate pairs
+
+Each band slice is hashed into a bucket key. Rows that share a bucket become candidate pairs. When a bucket exceeds `max_bucket_size`, candidate expansion switches from all possible pairs to a star centered on the first node. The threshold therefore keeps pair growth linear for large boilerplate buckets instead of capping the bucket itself.
+
+```python
+def lsh_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    bands: int,
+    rows_per_band: int,
+    threshold: float,
+    exact_jaccard: bool,
+    max_bucket_size: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    buckets: dict[tuple[int, str], set[int]] = defaultdict(set)
+    minhash_by_node: dict[int, list[int]] = {}
+    shingles_by_node: dict[int, set[str]] = {}
+    block_by_node: dict[int, str] = {}
+
+    for row in rows:
+        node_id = int(row["node_id"])
+        signature = [int(value) for value in json.loads(row["minhashes_json"])]
+        minhash_by_node[node_id] = signature
+        shingles_by_node[node_id] = set(json.loads(row["shingles_json"]))
+        block_by_node[node_id] = str(row["block_id"])
+
+        for band in range(bands):
+            start = band * rows_per_band
+            end = start + rows_per_band
+            buckets[(band, band_key(signature[start:end]))].add(node_id)
+
+    raw_pairs: set[tuple[int, int]] = set()
+    bucket_rows = []
+    for (band, digest), members in buckets.items():
+        if len(members) < 2:
+            continue
+        nodes = sorted(members)
+        bucket_rows.append(
+            {
+                "band": band,
+                "bucket_hash": digest,
+                "member_count": len(nodes),
+                "members": "|".join(str(node) for node in nodes),
+            }
+        )
+        if len(nodes) > max_bucket_size:
+            rep = nodes[0]
+            raw_pairs.update((rep, node) for node in nodes[1:])
+        else:
+            raw_pairs.update(combinations(nodes, 2))
+
+    candidate_rows = []
+    for u, v in sorted(raw_pairs):
+        score = jaccard(shingles_by_node[u], shingles_by_node[v])
+        if exact_jaccard and score < threshold:
+            continue
+        candidate_rows.append(
+            {
+                "u": u,
+                "v": v,
+                "u_block_id": block_by_node[u],
+                "v_block_id": block_by_node[v],
+                "jaccard": score,
+            }
+        )
+    return candidate_rows, bucket_rows
+```
+
+Exact Jaccard verification is enabled by default. Skipping it makes bucket collisions become edges directly, which is faster but less selective.
+
+## 5. Turn matches into duplicate clusters
+
+The accepted candidate pairs form an undirected graph. A small union-find implementation assigns each connected component its lowest node ID as the stable representative.
+
+```python
+class UnionFind:
+    def __init__(self, nodes: list[int]):
+        self.parent = {node: node for node in nodes}
+
+    def find(self, node: int) -> int:
+        parent = self.parent[node]
+        if parent != node:
+            self.parent[node] = self.find(parent)
+        return self.parent[node]
+
+    def union(self, left: int, right: int) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
+        if left_root == right_root:
+            return
+        if left_root < right_root:
+            self.parent[right_root] = left_root
+        else:
+            self.parent[left_root] = right_root
+```
+
+Rows are then annotated with the component identity and split into kept and duplicate collections. Cluster rows are emitted only for components with at least two members.
+
+## 6. Inspect the outputs
+
+The output directory contains six complementary views:
+
+- `annotated.csv` contains every input row and its component assignment;
+- `deduped.csv` contains one representative per component;
+- `duplicates.csv` contains the removed rows;
+- `clusters.csv` summarizes duplicate groups and their representatives;
+- `candidate_pairs.csv` records accepted candidate edges and Jaccard scores; when exact verification is skipped, every LSH candidate is accepted;
+- `lsh_buckets.csv` records the band buckets that produced collisions.
+
+The terminal summary reports input rows, the chosen LSH shape, collision buckets, candidate pairs, removed duplicates, and the percentage kept. Use the candidate and cluster files together when tuning the threshold: one explains why an edge exists, while the other shows the transitive effect of those edges.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py) for CSV and HTML loading, probability integration, and output serialization.
+
+## Semantic Search on Red Pajamas
+
+Route: /docs/data/tutorials/examples/llms-red-pajamas
+Source: docs/data/tutorials/examples/llms-red-pajamas.mdx
+
+StackExchange contains many lower-scoring questions even when a closely related, higher-scoring question already exists. This tutorial follows [`examples/llms_red_pajamas.py`](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) to build a compact semantic-matching pipeline with Vane.
+
+You will:
+
+1. Load StackExchange-style rows from a built-in sample or the Red Pajamas JSONL sample on S3.
+2. Generate an embedding for each question.
+3. Divide rows into low-score queries and high-score candidates.
+4. Rank candidates by cosine similarity and optionally write the matches to CSV.
+
+The built-in data contains three obvious query-candidate pairs, which makes it useful for verifying the pipeline before reading the remote dataset or scheduling model work on Ray.
+
+## 1. Load typed question rows
+
+The remote path uses DuckDB's HTTP/S3 support to read JSONL. It preserves the question text, extracts the URL and score from the nested metadata, removes rows without a usable score, and applies the row limit in SQL.
+
+```python
+def load_redpajama_relation(conn: Any, path: str, limit: int) -> Any:
+    try:
+        conn.execute("INSTALL httpfs")
+        conn.execute("LOAD httpfs")
+    except Exception:
+        pass
+    try:
+        conn.execute("SET s3_region='us-west-2'")
+        conn.execute("SET s3_url_style='path'")
+    except Exception:
+        pass
+
+    path_sql = sql_literal(path)
+    return conn.sql(
+        f"""
+        with raw as (
+            select
+                text,
+                to_json(meta) as meta_json
+            from read_json_auto({path_sql}, maximum_object_size=16777216)
+            where text is not null
+        ),
+        parsed as (
+            select
+                row_number() over () - 1 as id,
+                text,
+                coalesce(json_extract_string(meta_json, '$.url'), '') as url,
+                try_cast(
+                    json_extract_string(meta_json, '$.question_score') as bigint
+                ) as question_score
+            from raw
+        )
+        select id, text, url, question_score
+        from parsed
+        where question_score is not null
+        limit {int(limit)}
+        """
+    )
+```
+
+Both source branches produce the same four columns: a generated row ID, question text, URL, and integer score. By default the script loads six built-in rows; selecting the Red Pajamas source switches to the public sample path.
+
+## 2. Generate embeddings
+
+Before embedding, the script can truncate long question text with SQL. The Vane AI function then embeds the `text` column with a Transformers model and returns an `embedding` column.
+
+```python
+    embedded_only = embed_text(
+        rel,
+        "text",
+        provider="transformers",
+        model=args.model_id,
+        output_column="embedding",
+        execution_backend=args.execution_backend,
+        max_chunk_chars=args.max_chunk_chars,
+        batch_size=args.batch_size,
+    )
+    embedded = append_embedding(conn, rel, embedded_only)
+    embedded_table = embedded.to_arrow_table()
+```
+
+The example validates that the embedding Relation has exactly as many rows as the input and contains the requested output column before attaching it. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
+
+## 3. Match low-score and high-score questions
+
+Cosine similarity is computed by normalizing each vector and taking a dot product. Rows at or below the query threshold become queries, while rows at or above the candidate threshold become the search pool.
+
+```python
+def normalize_embedding(value: Any) -> np.ndarray:
+    array = np.asarray(value, dtype=np.float32)
+    norm = np.linalg.norm(array)
+    if norm == 0:
+        return array
+    return array / norm
+
+
+def semantic_matches(
+    table: pa.Table,
+    *,
+    query_score_max: int,
+    candidate_score_min: int,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    queries = [row for row in rows if row["question_score"] <= query_score_max]
+    candidates = [row for row in rows if row["question_score"] >= candidate_score_min]
+
+    if not queries:
+        raise RuntimeError("No low-score query rows matched --query-score-max.")
+    if not candidates:
+        raise RuntimeError("No high-score candidate rows matched --candidate-score-min.")
+
+    candidate_vectors = [normalize_embedding(candidate["embedding"]) for candidate in candidates]
+    results: list[dict[str, Any]] = []
+
+    for query in queries:
+        query_vector = normalize_embedding(query["embedding"])
+        scored = [
+            (float(np.dot(query_vector, candidate_vector)), candidate)
+            for candidate, candidate_vector in zip(
+                candidates,
+                candidate_vectors,
+                strict=True,
+            )
+            if candidate["id"] != query["id"]
+        ]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        for rank, (similarity, candidate) in enumerate(scored[:top_k], start=1):
+            results.append(
+                {
+                    "query_id": query["id"],
+                    "query_score": query["question_score"],
+                    "query_text": query["text"],
+                    "match_rank": rank,
+                    "match_id": candidate["id"],
+                    "match_score": candidate["question_score"],
+                    "similarity": similarity,
+                    "match_text": candidate["text"],
+                    "match_url": candidate["url"],
+                }
+            )
+    if not results:
+        raise RuntimeError("No semantic matches were produced; check score thresholds.")
+    return results
+```
+
+The default thresholds treat scores up to 2 as queries and scores of at least 10 as candidates. `top_k` defaults to one, but increasing it emits several ranked alternatives for each query. The function raises an error when either side of the search is empty, which makes threshold mistakes visible.
+
+## 4. Inspect or persist matches
+
+Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to an Arrow Relation and uses SQL to order and shorten the terminal preview.
+
+When an output path is supplied, the same full match rows are written to CSV. The terminal summary reports how many input rows were embedded and how many matches were produced.
+
+## Scaling notes
+
+The dataset load and similarity loop are intentionally straightforward for a tutorial. The embedding stage exposes local, Ray task, and Ray actor execution backends, so it is the first stage to move when model inference dominates runtime. For a much larger candidate set, replace the in-process all-pairs ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) for sample rows, output serialization, and every argument.
+
+## Querying Image Data
+
+Route: /docs/data/tutorials/examples/querying-images
+Source: docs/data/tutorials/examples/querying-images.mdx
+
+Image workflows often begin with tabular metadata but need to decode binary objects before they can answer visual questions. This tutorial follows [`examples/querying_images.py`](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py) to find the images with the largest red regions, while keeping paths, file sizes, dimensions, preview bytes, and masks in one Vane Relation.
+
+The script can read three sources:
+
+- generated sample images, which are the offline default;
+- local files matched by a glob;
+- a public OpenImages validation prefix listed and downloaded over HTTPS.
+
+All three paths produce the same columns—`id`, `path`, `size`, and `image_bytes`—so the analysis stage is independent of storage.
+
+## 1. Bound the input
+
+For local and OpenImages inputs, optional minimum and maximum file sizes are applied before analysis. The remote path also limits how many object-list entries it scans before downloading the requested number of images. These controls matter because decoding every image is much more expensive than inspecting metadata.
+
+The built-in sample generates five simple scenes: a large red wall, a red sign, a small traffic light, a blue image, and a red border. That mix makes the ranking and saved masks easy to verify visually.
+
+## 2. Detect red regions
+
+The detector converts an RGB image to HSV. Red wraps around the hue axis, so the hue condition accepts values at both the high and low ends of the range. Saturation and value thresholds remove gray or dark pixels, and a mode filter cleans isolated mask noise.
+
+```python
+def magic_red_detector(image: Image.Image) -> Image.Image:
+    """Return a mask covering red regions in an RGB image."""
+    hsv = np.asarray(image.convert("HSV"))
+    lower = np.array([245, 100, 100], dtype=np.uint8)
+    upper = np.array([10, 255, 255], dtype=np.uint8)
+
+    hue = hsv[:, :, 0]
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    hue_mask = (hue >= lower[0]) | (hue <= upper[0])
+    saturation_mask = (saturation >= lower[1]) & (saturation <= upper[1])
+    value_mask = (value >= lower[2]) & (value <= upper[2])
+    mask = hue_mask & saturation_mask & value_mask
+
+    mask_image = Image.fromarray(mask.astype(np.uint8) * 255)
+    return mask_image.filter(ImageFilter.ModeFilter(size=5))
+```
+
+This is intentionally a transparent heuristic rather than a learned model. It makes the tutorial's focus—how complex data is processed in a batch UDF—easy to inspect.
+
+## 3. Analyze Arrow batches
+
+`AnalyzeRedRegionsBatch` decodes each binary value with Pillow, converts it to RGB, creates the mask, counts nonzero mask pixels, and returns both RGB preview PNG bytes and mask PNG bytes. It also records the red fraction so images of different dimensions remain comparable.
+
+```python
+class AnalyzeRedRegionsBatch:
+    """Batch UDF that decodes images and computes red-region masks."""
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch["id"].to_pylist()
+        paths = batch["path"].to_pylist()
+        sizes = batch["size"].to_pylist()
+        image_values = batch["image_bytes"].to_pylist()
+
+        widths = []
+        heights = []
+        red_pixels = []
+        red_fractions = []
+        preview_values = []
+        mask_values = []
+
+        for image_bytes in image_values:
+            image = Image.open(io.BytesIO(bytes(image_bytes or b""))).convert("RGB")
+            mask = magic_red_detector(image)
+            mask_array = np.asarray(mask)
+            red_count = int(np.count_nonzero(mask_array))
+            total_pixels = image.width * image.height
+
+            widths.append(int(image.width))
+            heights.append(int(image.height))
+            red_pixels.append(red_count)
+            red_fractions.append(red_count / max(1, total_pixels))
+            preview_values.append(pil_to_png_bytes(image))
+            mask_values.append(pil_to_png_bytes(mask.convert("RGB")))
+
+        return pa.table(
+            {
+                "id": pa.array(ids, type=pa.int64()),
+                "path": pa.array(paths, type=pa.string()),
+                "size": pa.array(sizes, type=pa.int64()),
+                "width": pa.array(widths, type=pa.int64()),
+                "height": pa.array(heights, type=pa.int64()),
+                "red_pixels": pa.array(red_pixels, type=pa.int64()),
+                "red_fraction": pa.array(red_fractions, type=pa.float64()),
+                "preview_png": pa.array(preview_values, type=pa.binary()),
+                "red_mask_png": pa.array(mask_values, type=pa.binary()),
+            }
+        )
+```
+
+The UDF returns a new table rather than mutating input rows. That makes every output type explicit at the `map_batches` call site.
+
+```python
+    analyzed = rel.map_batches(
+        AnalyzeRedRegionsBatch(),
+        schema={
+            "id": duckdb.sqltypes.BIGINT,
+            "path": duckdb.sqltypes.VARCHAR,
+            "size": duckdb.sqltypes.BIGINT,
+            "width": duckdb.sqltypes.BIGINT,
+            "height": duckdb.sqltypes.BIGINT,
+            "red_pixels": duckdb.sqltypes.BIGINT,
+            "red_fraction": duckdb.sqltypes.DOUBLE,
+            "preview_png": duckdb.sqltypes.BLOB,
+            "red_mask_png": duckdb.sqltypes.BLOB,
+        },
+        batch_size=args.batch_size,
+        execution_backend=args.execution_backend,
+    )
+```
+
+The default backend is local. The same UDF can run as a Ray task or actor after every worker has NumPy and Pillow available.
+
+## 4. Rank and save visual results
+
+After materialization, the script sorts first by red pixel count and then by red fraction, keeps the requested top rows, and writes paired image and mask files. The metadata CSV connects each saved file back to its source row.
+
+```python
+def save_outputs(table: pa.Table, output_dir: Path, top_k: int) -> pa.Table:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image_dir = output_dir / "images"
+    mask_dir = output_dir / "masks"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = sorted(
+        table.to_pylist(),
+        key=lambda row: (int(row["red_pixels"]), float(row["red_fraction"])),
+        reverse=True,
+    )[:top_k]
+    output_rows = []
+    for rank, row in enumerate(rows, start=1):
+        stem = f"{rank:03d}-{sanitize_file_stem(row['id'])}"
+        image_path = image_dir / f"{stem}.png"
+        mask_path = mask_dir / f"{stem}-red-mask.png"
+        image_path.write_bytes(row["preview_png"])
+        mask_path.write_bytes(row["red_mask_png"])
+        output_rows.append(
+            {
+                "rank": rank,
+                "id": row["id"],
+                "path": row["path"],
+                "size": row["size"],
+                "width": row["width"],
+                "height": row["height"],
+                "red_pixels": row["red_pixels"],
+                "red_fraction": row["red_fraction"],
+                "image_path": str(image_path),
+                "red_mask_path": str(mask_path),
+            }
+        )
+
+    metadata_path = output_dir / "top_red_images.csv"
+    with metadata_path.open("w", newline="", encoding="utf-8") as metadata_file:
+        writer = csv.DictWriter(metadata_file, fieldnames=list(output_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(output_rows)
+
+    return pa.table({key: pa.array([row[key] for row in output_rows]) for key in output_rows[0]})
+```
+
+The default output directory contains an `images` directory, a `masks` directory, and `top_red_images.csv`. The terminal preview shows rank, source path, dimensions, red pixel count, red fraction, and both saved paths.
+
+## What to change for another visual query
+
+Keep the source Relation and output contract, then replace `magic_red_detector` with the visual rule or model needed by your task. Returning derived bytes alongside scalar metrics is useful when reviewers need both a sortable score and a visual explanation of that score.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py) for sample-image generation, local glob loading, and the public OpenImages listing path.
+
+## Generating Images from Text
+
+Route: /docs/data/tutorials/examples/image-generation
+Source: docs/data/tutorials/examples/image-generation.mdx
+
+Text-to-image generation becomes a data pipeline problem when prompts, model settings, binary outputs, and metadata must stay aligned across many rows. This tutorial follows [`examples/image_generation.py`](https://github.com/AstroVela/vane/blob/main/examples/image_generation.py) to build that pipeline with a Vane batch UDF.
+
+The script offers two independent choices:
+
+- Prompt source: built-in sample prompts or text and metadata from a LAION Parquet file.
+- Generation backend: a deterministic placeholder that requires no model download, or Stable Diffusion through Diffusers.
+
+The default path combines built-in prompts with the placeholder backend. It lets you validate Relation construction, batch execution, PNG serialization, and output writing before using GPU resources.
+
+## 1. Build a prompt Relation
+
+The sample source produces `id`, `prompt`, `source_url`, and `aesthetic_score` columns directly. The LAION path loads DuckDB's HTTP/S3 extension, selects the same schema from Parquet, removes short or null prompts, and applies a limit.
+
+```python
+def load_laion_relation(conn: Any, parquet_path: str, limit: int) -> Any:
+    try:
+        conn.execute("INSTALL httpfs")
+        conn.execute("LOAD httpfs")
+    except Exception:
+        # httpfs may already be installed/loaded, or the path may be local.
+        pass
+    try:
+        conn.execute("SET s3_region='us-west-2'")
+        conn.execute("SET s3_url_style='path'")
+    except Exception:
+        pass
+
+    return conn.sql(
+        f"""
+        select
+            row_number() over () - 1 as id,
+            TEXT as prompt,
+            URL as source_url,
+            cast(AESTHETIC_SCORE as double) as aesthetic_score
+        from read_parquet({sql_literal(parquet_path)})
+        where TEXT is not null
+          and length(TEXT) > 50
+        limit {int(limit)}
+        """
+    )
+```
+
+Keeping both sources schema-compatible means the generation UDF never needs to know whether a row came from local sample data or a remote corpus.
+
+## 2. Verify the pipeline with deterministic PNGs
+
+The placeholder hashes each prompt and derives a color palette from the digest. It writes a valid RGB PNG using only the Python standard library, so identical prompt text, width, and height produce identical bytes.
+
+```python
+def placeholder_png(width: int, height: int, prompt: str) -> bytes:
+    """Create a deterministic PNG thumbnail from prompt text."""
+    digest = hashlib.sha256(prompt.encode("utf-8")).digest()
+    top = digest[0], digest[1], digest[2]
+    bottom = digest[3], digest[4], digest[5]
+    accent = digest[6], digest[7], digest[8]
+    stripe_width = max(8, width // 12)
+
+    rows: list[bytes] = []
+    for y in range(height):
+        t = y / max(1, height - 1)
+        base = tuple(int(top[i] * (1 - t) + bottom[i] * t) for i in range(3))
+        row = bytearray(b"\x00")
+        for x in range(width):
+            wave = 0.5 + 0.5 * math.sin((x + digest[9]) / max(1, width) * math.tau * 3)
+            stripe = 1 if (x // stripe_width + y // stripe_width) % 2 == 0 else 0
+            rgb = []
+            for i in range(3):
+                value = base[i] * 0.78 + accent[i] * 0.22 * wave
+                if stripe:
+                    value += 22
+                rgb.append(max(0, min(255, int(value))))
+            row.extend(rgb)
+        rows.append(bytes(row))
+
+    raw = b"".join(rows)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + png_chunk(b"IDAT", zlib.compress(raw, level=9))
+        + png_chunk(b"IEND", b"")
+    )
+```
+
+This backend is not a text-to-image model. It is a deterministic contract-test backend for every pipeline stage around the model.
+
+## 3. Load Stable Diffusion once per UDF instance
+
+For real generation, the stateful UDF delays model loading until its first use and caches the pipeline on the instance. That is particularly important for an actor backend, where subsequent batches can reuse model state.
+
+```python
+    def _load_pipe(self) -> Any:
+        if self._pipe is not None:
+            return self._pipe
+
+        try:
+            import torch
+            from diffusers import StableDiffusionPipeline
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install image generation dependencies first: "
+                "pip install diffusers transformers accelerate torch Pillow"
+            ) from exc
+
+        torch_dtype = getattr(torch, self.dtype)
+        try:
+            pipe = StableDiffusionPipeline.from_pretrained(
+                self.model_id,
+                torch_dtype=torch_dtype,
+                revision=self.revision,
+                local_files_only=self.local_files_only,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not load the diffusion model. Download it first, then pass "
+                "the local directory with --model-id. For example:\n\n"
+                "  hf download "
+                f"{DEFAULT_MODEL_ID} --local-dir ~/.cache/vane/models/stable-diffusion-v1-5\n"
+                "  python "
+                "examples/image_generation.py --backend diffusers "
+                "--model-id ~/.cache/vane/models/stable-diffusion-v1-5 "
+                "--source sample --limit 2 --device cuda --dtype float16\n\n"
+                f"Original error: {type(exc).__name__}: {exc}"
+            ) from exc
+        pipe.enable_attention_slicing(1)
+        if self.device:
+            pipe = pipe.to(self.device)
+        self._pipe = pipe
+        return pipe
+```
+
+The model ID, revision, device, data type, and local-files-only behavior are all arguments. If model loading fails, the error includes concrete model-download and script-invocation commands.
+
+The generation method forwards image dimensions, inference steps, guidance scale, and a random generator seeded for each row to Diffusers, then encodes the first returned image as PNG bytes.
+
+```python
+    def _generate_with_diffusers(self, prompt: str, index: int) -> bytes:
+        import torch
+
+        pipe = self._load_pipe()
+        generator = None
+        if self.seed is not None:
+            generator = torch.Generator(device=self.device or "cpu").manual_seed(self.seed + index)
+        image = pipe(
+            prompt,
+            num_inference_steps=self.num_inference_steps,
+            height=self.height,
+            width=self.width,
+            guidance_scale=self.guidance_scale,
+            generator=generator,
+        ).images[0]
+        return pil_to_png_bytes(image)
+
+    def _generate_one(self, prompt: str, index: int) -> bytes:
+        if self.backend == "placeholder":
+            return placeholder_png(self.width, self.height, prompt)
+        if self.backend == "diffusers":
+            return self._generate_with_diffusers(prompt, index)
+        raise ValueError(f"Unsupported backend: {self.backend}")
+```
+
+Adding the row ID to the base seed keeps outputs reproducible while avoiding the same random stream for every prompt.
+
+## 4. Declare the batch output contract
+
+The UDF returns all input metadata plus `generated_image` bytes. The call site declares every DuckDB type and adds a GPU resource request only when one was supplied.
+
+```python
+    map_kwargs: dict[str, Any] = {
+        "schema": {
+            "id": duckdb.sqltypes.BIGINT,
+            "prompt": duckdb.sqltypes.VARCHAR,
+            "source_url": duckdb.sqltypes.VARCHAR,
+            "aesthetic_score": duckdb.sqltypes.DOUBLE,
+            "generated_image": duckdb.sqltypes.BLOB,
+        },
+        "batch_size": args.batch_size,
+        "execution_backend": args.execution_backend,
+    }
+    if args.gpus is not None:
+        map_kwargs["gpus"] = args.gpus
+
+    generated = rel.map_batches(generator, **map_kwargs)
+    generated_table = generated.to_arrow_table()
+    written_table = save_generated_images(generated_table, Path(args.output_dir))
+    written = conn.from_arrow(written_table)
+```
+
+The default batch size is one, which is a safe starting point for GPU memory. Increase it only after checking the chosen model, resolution, precision, and worker resources together.
+
+## 5. Inspect generated files and metadata
+
+Each output row becomes a numbered PNG file. `metadata.csv` records the row ID, original prompt, and generated path, while the terminal Relation preview also shows the source aesthetic score when one exists.
+
+The CLI defaults to 512×512 output, 20 diffusion inference steps, and local execution. The placeholder backend ignores the diffusion-only settings. For real inference, select the Diffusers backend, make the model available on every worker, choose an appropriate precision, and request GPU resources explicitly.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/image_generation.py) for the full UDF constructor, sample prompt generation, file naming, and all runtime arguments.
+
+## Voice AI Analytics
+
+Route: /docs/data/tutorials/examples/voice-ai-analytics
+Source: docs/data/tutorials/examples/voice-ai-analytics.mdx
+
+Audio becomes much easier to search and analyze after it has been converted into timestamped, typed rows. After loading the audio, this tutorial follows [`examples/voice_ai_analytics.py`](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) through four processing stages: transcribe audio, summarize each transcript, expand segments into subtitle rows, and embed the segment text for retrieval.
+
+Two execution paths share the same data contract:
+
+- The default sample path generates short WAV tones and pairs them with deterministic placeholder transcripts.
+- The real path reads local audio files and transcribes them with Faster-Whisper.
+
+Summaries can also stay local or use OpenAI. The local option truncates the transcript and marks translation as not generated; the OpenAI option requests both a summary and a translated summary.
+
+## 1. Load audio bytes
+
+The sample Relation contains row IDs, logical paths, WAV bytes, and preset transcripts. For real input, the glob Relation reads matching files as binary values and derives the audio format from each suffix. Both paths therefore feed the same columns into the transcription UDF.
+
+```python
+def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
+    paths = sorted(glob.glob(audio_glob))[:limit]
+    if not paths:
+        raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
+
+    table = pa.table(
+        {
+            "id": pa.array(list(range(len(paths))), type=pa.int64()),
+            "path": pa.array(paths, type=pa.string()),
+            "audio_format": pa.array(
+                [Path(path).suffix.lstrip(".").lower() or "audio" for path in paths],
+                type=pa.string(),
+            ),
+            "audio_bytes": pa.array(
+                [Path(path).read_bytes() for path in paths],
+                type=pa.binary(),
+            ),
+            "fallback_transcript": pa.array(
+                [f"Audio file {Path(path).name} is ready for transcription." for path in paths],
+                type=pa.string(),
+            ),
+        }
+    )
+    return conn.from_arrow(table)
+```
+
+The file limit is applied before bytes are read, which keeps local exploration bounded.
+
+## 2. Transcribe each batch
+
+The placeholder path divides its supplied transcript into sentence-like segments with evenly spaced timestamps. It provides a stable way to verify downstream schemas without loading a speech model.
+
+```python
+def split_segments(text: str, *, duration_seconds: float = 12.0) -> list[dict[str, Any]]:
+    pieces = [piece.strip() for piece in re.split(r"(?<=[.!?])\s+", text.strip()) if piece.strip()]
+    if not pieces and text.strip():
+        pieces = [text.strip()]
+    if not pieces:
+        pieces = ["No speech was detected."]
+
+    step = duration_seconds / max(1, len(pieces))
+    return [
+        {
+            "id": i,
+            "start": round(i * step, 2),
+            "end": round((i + 1) * step, 2),
+            "text": piece,
+        }
+        for i, piece in enumerate(pieces)
+    ]
+```
+
+The real path writes each byte value to a temporary file, calls Faster-Whisper for batched inference with voice activity detection and word timestamps, and converts the returned iterator into JSON-serializable segment dictionaries.
+
+```python
+    def _transcribe_with_whisper(
+        self,
+        audio_bytes: bytes,
+        audio_format: str,
+    ) -> dict[str, Any]:
+        pipe = self._load_pipe()
+        suffix = "." + re.sub(r"[^A-Za-z0-9]+", "", audio_format or "wav")
+        with tempfile.NamedTemporaryFile(suffix=suffix) as audio_file:
+            audio_file.write(audio_bytes)
+            audio_file.flush()
+            segments_iter, info = pipe.transcribe(
+                audio_file.name,
+                language=self.language,
+                vad_filter=self.vad_filter,
+                vad_parameters={
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 200,
+                },
+                word_timestamps=True,
+                without_timestamps=False,
+                temperature=0,
+                batch_size=self.whisper_batch_size,
+            )
+
+            segments = []
+            for i, segment in enumerate(segments_iter):
+                segments.append(
+                    {
+                        "id": int(getattr(segment, "id", i)),
+                        "start": float(getattr(segment, "start", 0.0)),
+                        "end": float(getattr(segment, "end", 0.0)),
+                        "text": str(getattr(segment, "text", "")).strip(),
+                    }
+                )
+            transcript = " ".join(segment["text"] for segment in segments).strip()
+            duration = float(getattr(info, "duration", 0.0) or 0.0)
+            language = str(getattr(info, "language", self.language or "") or "")
+
+        if not segments:
+            transcript = "No speech detected."
+            segments = [
+                {
+                    "id": 0,
+                    "start": 0.0,
+                    "end": round(duration, 2),
+                    "text": transcript,
+                }
+            ]
+
+        return {
+            "transcript": transcript,
+            "language": language,
+            "duration_seconds": duration,
+            "segments_json": json.dumps(segments, ensure_ascii=False),
+        }
+```
+
+The Faster-Whisper model is cached on the UDF instance after first use. Device, compute type, language, VAD behavior, model ID, local-files-only mode, and Whisper's internal batch size are configurable independently of Vane's Arrow batch size.
+
+At the call site, the UDF output is declared as one row per input audio item. Segment expansion happens later.
+
+```python
+    transcripts = rel.map_batches(transcriber, **map_kwargs)
+    transcript_table = transcripts.to_arrow_table()
+
+    summaries = summarize_rows(transcript_table, args)
+    subtitles = subtitle_rows(
+        transcript_table,
+        translated_language=args.translated_language,
+    )
+```
+
+## 3. Summarize transcripts
+
+`summarize_rows` dispatches to the selected summary backend while keeping the output schema stable. The local branch is a bounded text preview. The OpenAI branch asks for compact JSON and falls back to a shortened raw response if the provider does not return the expected keys.
+
+```python
+def summarize_rows(table: pa.Table, args: argparse.Namespace) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    output = []
+    for row in rows:
+        transcript = str(row["transcript"] or "")
+        if args.summary_backend == "local":
+            summary = local_summary(transcript, max_chars=args.summary_max_chars)
+            translated = f"[{args.translated_language} translation not generated] {summary}"
+        elif args.summary_backend == "openai":
+            summary, translated = openai_summary(
+                transcript,
+                model=args.openai_model,
+                translated_language=args.translated_language,
+            )
+        else:
+            raise ValueError(f"Unsupported summary backend: {args.summary_backend}")
+
+        output.append(
+            {
+                "id": row["id"],
+                "path": row["path"],
+                "language": row["language"],
+                "transcript": transcript,
+                "summary": summary,
+                "translated_summary": translated,
+            }
+        )
+    return output
+```
+
+The summary stage operates after materialization and produces plain Python dictionaries, which the script later turns back into a Relation for previewing.
+
+## 4. Expand and embed subtitle segments
+
+The segment JSON is expanded into one row per timestamped piece. The example preserves source ID and path, a segment ID, start and end times, the original text, and a clearly marked translated-text placeholder.
+
+```python
+def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for parent in table.to_pylist():
+        segments = json.loads(parent["segments_json"] or "[]")
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            rows.append(
+                {
+                    "id": int(parent["id"]),
+                    "path": str(parent["path"]),
+                    "segment_id": int(segment.get("id", len(rows))),
+                    "start": float(segment.get("start", 0.0)),
+                    "end": float(segment.get("end", 0.0)),
+                    "text": text,
+                    "translated_text": (f"[{translated_language} translation not generated] {text}"),
+                }
+            )
+    if not rows:
+        raise RuntimeError("No subtitle segments were produced.")
+    return rows
+```
+
+Vane's Transformers provider then embeds the original segment text. As in the other embedding examples, the helper validates row count and the output column before appending embeddings.
+
+```python
+    subtitle_rel = relation_from_dicts(conn, subtitles)
+    embedded_only = embed_text(
+        subtitle_rel,
+        "text",
+        provider="transformers",
+        model=args.embedding_model_id,
+        output_column="embedding",
+        execution_backend=args.embedding_execution_backend,
+        batch_size=args.embedding_batch_size,
+    )
+    embedded = append_embedding(conn, subtitle_rel, embedded_only)
+    embedded_table = embedded.to_arrow_table()
+```
+
+## 5. Inspect the outputs
+
+The default output directory contains:
+
+- `summaries.csv`, with transcript, summary, and translated-summary fields;
+- `subtitles.csv`, with one row per timestamped segment;
+- `segment_embeddings.csv`, with source identity, timestamps, text, and embedding dimension.
+
+The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors are used in the in-memory Relation but the CSV intentionally records only their dimensions.
+
+## Scaling and model deployment
+
+Transcription and embedding have separate execution backends and batch sizes. For GPU speech recognition, an actor backend can reuse the cached Faster-Whisper model, while the embedding stage can use a different actor pool and resource shape. Every worker must be able to import the optional dependencies and access the model cache or model path.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) for sample WAV generation, OpenAI summary prompting, model-loading errors, and all arguments.
+
+## Multimodal Structured Outputs
+
+Route: /docs/data/tutorials/examples/multimodal-structured-outputs
+Source: docs/data/tutorials/examples/multimodal-structured-outputs.mdx
+
+A model can answer a visual question correctly for the wrong reason—for example, by exploiting clues in the text instead of reading the image. This tutorial follows [`examples/multimodal_structured_outputs.py`](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) to compare vision-language answers with text-only answers and classify whether the image helped or hurt.
+
+The evaluation pipeline:
+
+1. Loads synthetic color questions or a small AI2D sample from The Cauldron.
+2. Asks the model each multiple-choice question with its image.
+3. Asks the same question without the image.
+4. Parses both answers, measures accuracy, and assigns a diagnostic quadrant.
+5. Optionally asks the vision-language model to diagnose failure rows.
+
+The default dataset is synthetic, but inference still uses an OpenAI-compatible model endpoint. By default that endpoint is the Hugging Face router and the API key is read from `HF_TOKEN`.
+
+## 1. Define structured result contracts
+
+The choice response contains one answer letter. The judge response separates detailed reasoning, a concise hypothesis, and a coarse attribution. Pydantic models provide the structured-output contract when the selected endpoint supports SDK parsing.
+
+```python
+class ChoiceResponse(BaseModel):
+    """Structured answer for a multiple-choice question."""
+
+    choice: str = Field(
+        ...,
+        description="The selected answer letter, such as A, B, C, or D.",
+    )
+
+
+class JudgeResponse(BaseModel):
+    """Structured diagnostic feedback for a failed example."""
+
+    reasoning: str = Field(..., description="Why the model likely answered that way.")
+    hypothesis: str = Field(..., description="A concise cause of the error.")
+    attribution: str = Field(
+        ...,
+        description="One of: question, image, model, or other.",
+    )
+```
+
+Prompt-only mode omits those Python return types and relies on the same system messages to request JSON directly. That path supports OpenAI-compatible servers that do not implement structured parsing.
+
+## 2. Start with a visual dataset you can audit
+
+The synthetic source creates solid-color PNGs and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
+
+```python
+def synthetic_rows(limit: int) -> list[dict[str, Any]]:
+    """Return a tiny local vision QA set that needs the image to answer."""
+    color_rows = [
+        ("red", "A", (220, 32, 32)),
+        ("blue", "B", (32, 96, 220)),
+        ("green", "C", (32, 160, 80)),
+        ("yellow", "D", (230, 200, 32)),
+    ]
+    rows: list[dict[str, Any]] = []
+    choices = "A. red\nB. blue\nC. green\nD. yellow"
+    for color, answer, rgb in color_rows:
+        rows.append(
+            {
+                "id": f"synthetic-{color}",
+                "source": "synthetic",
+                "question": (f"Which color fills the attached square?\n{choices}\nReturn the answer letter."),
+                "answer": answer,
+                "image": solid_png(96, 96, rgb),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+```
+
+The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become an Arrow Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
+
+## 3. Run inference with the image
+
+Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, sampling settings, and execution backend.
+
+```python
+    common_prompt_options = {
+        "provider": "openai",
+        "model": args.model,
+        "api_key": api_key,
+        "use_chat_completions": True,
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+        "execution_backend": args.execution_backend,
+    }
+    if base_url:
+        common_prompt_options["base_url"] = base_url
+
+    choice_return_format = ChoiceResponse if args.structured_output_mode == "parse" else None
+    judge_return_format = JudgeResponse if args.structured_output_mode == "parse" else None
+
+    with_image_responses = prompt(
+        rel,
+        "question",
+        image_columns=["image"],
+        system_message=VISION_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_with_image",
+        **common_prompt_options,
+    )
+    with_image = append_prompt_output(
+        conn,
+        rel,
+        with_image_responses,
+        "response_with_image",
+    )
+    eval_with_image = add_choice_eval(
+        with_image,
+        "response_with_image",
+        "predicted_with_image",
+        "is_correct_with_image",
+    )
+```
+
+`append_prompt_output` checks the output row count and requested column before attaching results to the source Relation by position. This catches missing or extra rows and missing output columns; it does not independently verify row order.
+
+## 4. Repeat the question without the image
+
+The ablation uses the already enriched Relation but does not pass `image_columns`. It writes to a separate response column and applies the same answer-normalization logic.
+
+```python
+    without_image_responses = prompt(
+        eval_with_image,
+        "question",
+        system_message=TEXT_ONLY_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_without_image",
+        **common_prompt_options,
+    )
+    without_image = append_prompt_output(
+        conn,
+        eval_with_image,
+        without_image_responses,
+        "response_without_image",
+    )
+    evaluated = add_choice_eval(
+        without_image,
+        "response_without_image",
+        "predicted_without_image",
+        "is_correct_without_image",
+    )
+    classified = classify_quadrants(evaluated)
+```
+
+Answer normalization first tries the structured `choice` field, then a JSON-looking pattern, and finally any standalone A–D token. It records both the normalized choice and a Boolean correctness column.
+
+## 5. Classify diagnostic quadrants
+
+The two correctness values produce four mutually exclusive outcomes:
+
+- Both Correct: the answer succeeds with or without visual evidence.
+- Image Helped: only the vision run succeeds.
+- Image Hurt: only the text-only run succeeds.
+- Both Incorrect: neither run succeeds.
+
+The classification itself stays in SQL over the Relation.
+
+```python
+def classify_quadrants(rel: Any) -> Any:
+    alias = relation_alias("quadrant", rel)
+    return rel.query(
+        alias,
+        f"""
+        select
+        {alias}.*,
         case
-            when lower(text) like '%missing signature%' then 'missing_signature'
-            when lower(text) like '%expired%' then 'expired_reference'
-            else null
-        end as rule_hit
-    from docs
-    where lower(text) like '%missing signature%'
-       or lower(text) like '%expired%'
-""")
+            when is_correct_with_image and is_correct_without_image then 'Both Correct'
+            when is_correct_with_image and not is_correct_without_image then 'Image Helped'
+            when not is_correct_with_image and is_correct_without_image then 'Image Hurt'
+            else 'Both Incorrect'
+        end as quadrant
+        from {alias}
+        """,
+    )
 ```
 
-## Structured model pass
+The script prints accuracy with the image, accuracy without it, and the delta, followed by row-level predictions and aggregated quadrant counts. On the synthetic dataset, Image Helped is the expected result for an image-aware model because the question has no textual clue about the generated square.
 
-`prompt(...)` returns the configured output column. Explicitly combine that column with source metadata when the final output needs identifiers and document attributes, and validate row counts before writing the result.
+## 6. Ask a VLM to diagnose failures
 
-Install the provider and schema dependencies in the active environment before running this optional stage:
-
-```bash
-uv pip install openai pydantic
-```
+Unless the judge stage is skipped, only Image Hurt and Both Incorrect rows proceed. The script constructs a diagnostic prompt containing the question, correct answer, and both model choices, then includes the image again for the judge.
 
 ```python
-from pydantic import BaseModel
+    judge_responses = prompt(
+        judge_input,
+        "judge_prompt",
+        image_columns=["image"],
+        system_message=JUDGE_SYSTEM_PROMPT,
+        return_format=judge_return_format,
+        output_column="judge_response",
+        max_tokens=args.judge_max_tokens,
+        **{key: value for key, value in common_prompt_options.items() if key != "max_tokens"},
+    )
+    judged = append_prompt_output(
+        conn,
+        judge_input,
+        judge_responses,
+        "judge_response",
+    )
+```
 
-class AuditResult(BaseModel):
-    status: str
-    reason: str
+The final preview extracts attribution, hypothesis, and reasoning from the judge JSON. This stage is diagnostic model output, not ground truth; use it to organize review rather than to replace human inspection.
 
-audit_only = docs.prompt(
-    "text",
-    provider="openai",
-    system_message="Audit the insurance document for missing evidence. Return JSON.",
-    return_format=AuditResult,
-    output_column="audit_json",
+## Provider and execution choices
+
+The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, structured-output mode, and execution backend are configurable. When using a Ray backend, workers need network access to the endpoint and the same Vane AI dependencies.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) for image normalization, AI2D loading, answer parsing, metric queries, and every argument.
+
+## Claims Disposition from Multimodal Evidence
+
+Route: /docs/data/tutorials/use-cases/claims-disposition
+Source: docs/data/tutorials/use-cases/claims-disposition.mdx
+
+A vehicle claim spans multiple systems: structured claim records live in PostgreSQL, while damage photos and supporting documents live in MinIO. This tutorial follows the `claims-disposition` use case to turn those inputs into one reviewable recommendation per claim.
+
+Use case source: [AstroVela/demo-scene/claims-disposition](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition).
+
+The use case is organized around the questions a claims team must answer: Is the submission complete? Are the documents readable? What do the photos actually show? Does the evidence support moving toward payment, or should the claim be returned for more material or escalated to an adjuster? Evidence extraction and disposition are deliberately separated: OCR and AI report facts, while explicit SQL rules produce the recommendation.
+
+| Business stage | Question answered | How Vane supports it |
+| --- | --- | --- |
+| Organize the submission | Which files belong to the claim, and which required materials are present? | SQL Relations preserve claim and file identity while expanding `materials_json` |
+| Read supporting documents | Can the claim number, claimant name, and loss date be recovered reliably? | A stateful OCR UDF (`@vane.cls`) reuses the object-store client and OCR engine across documents |
+| Assess damage photos | Is the vehicle visible, is damage clear, and what parts appear affected? | The Vane AI API extracts a bounded set of visual facts without deciding the claim outcome |
+| Qualify the evidence | Is each object, document, photo, and model response safe to use? | Stateless UDFs (`@vane.func`) apply repeatable checks to each row |
+| Recommend the next step | Should the team request material, review manually, deny, or proceed toward payment? | SQL aggregates all evidence and applies the business rules in a fixed priority order |
+
+The business flow is `collect the submission → read supporting documents → assess photo evidence → reconcile all facts → recommend the next action`. It has the same inputs, evidence standards, and outputs whether it runs locally for a small workload or on Ray for a larger batch. The deployment choice changes processing capacity, not the claims policy.
+
+## Default scenario and inputs
+
+The fixture is small enough to inspect but covers every terminal workflow outcome. Runtime processing reads only from PostgreSQL and MinIO; the local fixture files are used to seed those services before the pipeline starts.
+
+| Source | Grain | What it contributes |
+| --- | --- | --- |
+| PostgreSQL claims table | One row per claim | Claim ID, description, submission time, and ordered `materials_json` |
+| MinIO damage photos | One JPEG per claim | Vehicle evidence for quality analysis and multimodal fact extraction |
+| MinIO supporting documents | One PNG per claim | Claim number, claimant name, and loss date for OCR and completeness rules |
+
+The four claims make the policy concrete before you read its implementation:
+
+| Claim | Evidence story | Expected disposition |
+| --- | --- | --- |
+| `CLM-APPROVE` | Complete packet with clear minor vehicle damage | `approve_for_payment` |
+| `CLM-DENY` | Complete packet whose photo shows no meaningful damage | `deny_claim` |
+| `CLM-MISSING` | Supporting form is present, but the claimant name is blank | `request_more_materials` |
+| `CLM-REVIEW` | Complete packet, but the visual damage remains ambiguous | `manual_review` |
+
+## 1. Recover verifiable claim details from supporting documents
+
+Before a claim can be assessed, the team needs to know that the supporting form is present, readable, and tied to the right claim. The workflow preserves the claim and material identifiers and calls `document_ocr_json(bucket, object_key)` for each available supporting document. This gives every document the same OCR treatment regardless of how the workload is deployed.
+
+The stateful `@vane.cls` function creates RapidOCR only when it reaches the first usable document, then reuses the same engine and MinIO client for later documents. This avoids paying model initialization cost for every file and makes larger document batches practical:
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="document_ocr_json",
+    gpus=0,
 )
-
-docs_table = docs.to_arrow_table()
-audit_table = audit_only.to_arrow_table()
-audited = con.from_arrow(docs_table.append_column("audit_json", audit_table["audit_json"]))
+class DocumentOcrActor:
+    def __init__(self, minio_config: MinioConfig, engine_factory=None) -> None:
+        self.store = MinioStore(minio_config)
+        self._engine_factory = engine_factory or _build_rapidocr
+        self.engine = None
 ```
 
-## Output shape
+The `int_claim_document_ocr_udf` SQL selects only available PNG supporting documents, preserves the claim and material keys, and calls the OCR function in its `select` list:
 
-Recommended output columns:
+```sql
+select
+  claim_id,
+  material_index,
+  document_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as document_ocr_json
+from int_claim_object_facts
+where object_exists
+  and role = 'supporting_document'
+  and media_type = 'image/png';
+```
 
-- `document_id`
-- `claim_id`
-- `document_type`
-- `rule_hit`
-- `audit_json`
-- `source_uri`
+The OCR output stays beside its trusted claim and material keys. It is then combined with object hashes, photo-quality checks, extracted document fields, and document-quality results. SQL rolls these file-level facts up to one row per claim, counts required and usable materials, and prepares only eligible photos for visual analysis. Local execution reads a precomputed OCR lookup, while Ray invokes the stateful Actor directly; the evidence associated with the claim is identical in both modes.
 
-## Validation
+## 2. Establish what the damage photos actually show
 
-Before using this workflow in production:
-
-- Keep deterministic rule hits auditable.
-- Version prompts and model choices.
-- Store source document references.
-- Sample false positives and false negatives.
-- Review model output before it drives operational decisions.
-
-## Scope notes
-
-This page does not define legal advice, claims policy, OCR, insurance ontology, or policy-system integration. Add those capabilities upstream or as explicit UDF stages.
-
-## Tender Compliance Check
-
-Route: /docs/data/examples/tender-compliance-check
-Source: docs/data/examples/tender-compliance-check.mdx
-
-This example describes a Vane Data pattern for tender or procurement compliance checks.
-
-Vane Data does not ship a dedicated tender parser or compliance engine. It provides SQL, relation APIs, and AI helpers that can be composed into a review workflow.
-
-## Goal
-
-Compare tender documents against a checklist and produce structured compliance results that can be reviewed, sampled, and audited.
-
-## Input tables
-
-Documents:
-
-- `document_id`
-- `section`
-- `text`
-- `source_uri`
-
-Checklist:
-
-- `rule_id`
-- `requirement`
-- `severity`
-
-## SQL preparation
+A photo should influence the claim only when it is usable and its evidence is clear. For each verified image, the workflow asks a deliberately narrow set of questions using the image bytes, claim description, and photo-quality context. On Ray, that request is made through the `vane.ai.prompt` AI Function:
 
 ```python
-import vane
-
-con = vane.connect()
-
-docs = con.sql("""
-    select document_id, section, text, source_uri
-    from read_parquet('data/tender_docs/*.parquet')
-    where text is not null
-""")
-
-rules = con.sql("""
-    select rule_id, requirement, severity
-    from read_csv_auto('data/tender_rules.csv')
-""")
+        result = vane.ai.prompt(
+            relation,
+            "prompt_text",
+            image_columns=["image_bytes"],
+            provider="openai",
+            model=config.ai.model,
+            provider_options=provider_options,
+            prompt_options=prompt_options,
+            system_message=DAMAGE_SYSTEM_MESSAGE,
+            output_column="raw_damage_response",
+            num_gpus=0,
+        )
 ```
 
-## Build checks
+The requested facts include whether a vehicle is visible, whether the target vehicle is clear, whether damage is visible, affected parts, damage types, a severity hint, confidence, and evidence limitations. Claim ID, file ID, photo order, and image hash come from the trusted claim record and remain outside model control. The local provider path and the Ray AI Function produce the same fact table. Crucially, the model never returns a disposition: it describes the evidence, and the claims policy decides what happens next.
 
-Use SQL to make the model workload explicit. Review the cross join size before sending prompts to a provider.
+## 3. Turn model responses into trusted claim facts
+
+An AI response is not yet evidence that a claims rule should consume. Raw model JSON never enters the disposition rules directly. A stateless `@vane.func` binds each response back to its claim, file, and content hash and normalizes it to the strict damage-result contract:
 
 ```python
-docs.to_table("docs")
-rules.to_table("rules")
-
-checks = con.sql("""
-    select
-        d.document_id,
-        d.section,
-        d.source_uri,
-        r.rule_id,
-        r.severity,
-        'Requirement: ' || r.requirement || '\nDocument text: ' || d.text as prompt
-    from docs d
-    cross join rules r
-""")
+@vane.func(return_dtype="VARCHAR", name="photo_damage_result_json")
+def photo_damage_result_json(
+    raw_response: str,
+    claim_id: str,
+    file_id: str,
+    sha256: str,
+) -> str:
+    return parse_photo_damage_result(raw_response, claim_id, file_id, sha256)
 ```
 
-## Structured model check
+`int_claim_damage_validation_inputs` first binds every response to its trusted claim, file, order, and SHA-256. SQL then calls the stateless UDF directly so that the same validation is applied to every photo:
 
-`prompt(...)` returns the configured output column. Explicitly combine that result with the check rows before summarizing, and validate row counts before writing the result.
-
-Install the provider and schema dependencies in the active environment before running this optional stage:
-
-```bash
-uv pip install openai pydantic
+```sql
+create or replace table int_claim_damage_validation_udf as
+-- Normalize each untrusted model response through a direct Runner SQL UDF call.
+select
+  claim_id,
+  file_id,
+  file_order,
+  photo_sha256,
+  photo_quality_json,
+  raw_damage_response,
+  photo_damage_result_json(
+    coalesce(raw_damage_response, ''),
+    claim_id,
+    file_id,
+    photo_sha256
+  ) as damage_result_json
+from int_claim_damage_validation_inputs;
 ```
 
-```python
-from pydantic import BaseModel
+The following pure SQL Relation parses the canonical JSON and derives the two narrow inputs used by disposition policy. A positive result requires determinate, high-confidence, visually grounded low-to-moderate damage; a negative result requires the same evidence quality and a clear absence of visible damage:
 
-class ComplianceResult(BaseModel):
-    compliant: bool
-    evidence: str
-    reason: str
+```sql
+classified_photo_results as (
+  -- Accept only determinate, high-confidence positive or negative findings.
+  select
+    *,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and coalesce(damage_visible, false)
+      and meaningful_damaged_parts
+      and meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('minor', 'moderate') as positive_damage_result,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and not coalesce(damage_visible, false)
+      and not meaningful_damaged_parts
+      and not meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('none', 'unknown') as negative_damage_result
+  from classified_photo_inputs
+),
+```
 
-result_only = checks.prompt(
-    "prompt",
-    provider="openai",
-    return_format=ComplianceResult,
-    output_column="result_json",
+The stateless UDF makes every model response conform to the same evidence format; inspectable SQL decides whether confidence and visual support meet the business threshold. Looking across all usable photos also reveals conflicting positive and negative evidence instead of allowing one image to silently overrule another.
+
+## 4. Apply the claims team's disposition priorities
+
+Once document and photo facts are qualified, the workflow considers the whole claim rather than any single file. `int_claim_damage_facts` brings together every usable photo and exposes failures, uncertainty, high-severity risk, and conflicting evidence. The decision SQL then evaluates four possible recommendations. Missing or unusable material leads to `request_more_materials`; uncertainty, conflicts, or elevated risk leads to `manual_review`; only a complete and internally consistent submission can reach a deny or approve recommendation.
+
+```sql
+candidate_rules as (
+  -- Group signals into the four possible disposition candidates.
+  select
+    *,
+    (
+      unsupported_or_invalid_material
+      or missing_required_photo
+      or missing_required_document
+      or photo_unreadable
+      or photo_quality_too_low
+      or document_field_unreadable
+      or model_input_unusable
+    ) as request_materials_candidate,
+    (
+      model_output_failed
+      or damage_model_uncertain
+      or vehicle_not_visible
+      or target_vehicle_unclear
+      or damage_has_uncertainty
+      or high_severity_risk
+      or conflicting_damage_results
+    ) as manual_review_signal,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and negative_damage_result_count = usable_photo_count
+      and positive_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as deny_candidate,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and positive_damage_result_count >= 1
+      and positive_damage_result_count = successful_model_result_count
+      and negative_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as approve_candidate
+  from rule_signals
+),
+
+priority_rules as (
+  -- Apply precedence: request materials, then manual review, then deny or approve.
+  select
+    *,
+    request_materials_candidate as matches_request_more_materials,
+    not request_materials_candidate
+      and (
+        manual_review_signal
+        or (not deny_candidate and not approve_candidate)
+      ) as matches_manual_review
+  from candidate_rules
 )
-
-checks_table = checks.to_arrow_table()
-result_table = result_only.to_arrow_table()
-checked = con.from_arrow(checks_table.append_column("result_json", result_table["result_json"]))
 ```
 
-## Summarize
+That explicit order matters. A claim with a missing document and a damage-looking photo still requests material; a claim with conflicting photos still goes to review. Neither can fall through to an automatic recommendation.
+
+## 5. Publish a recommendation that an adjuster can review
+
+The `claim_disposition` mart has one row per claim. It maps the mutually exclusive match flags to the outcome and keeps the explanation beside it:
+
+| Output field | Purpose |
+| --- | --- |
+| `disposition` and `disposition_confidence` | Selected workflow outcome and rule-assigned confidence |
+| `primary_reason_code` and `reason_summary` | First actionable reason in business priority order |
+| `next_action` | Material request, adjuster review, denial review, or settlement workflow |
+| `supporting_facts_json` | Material counts, OCR fields, photo quality, model facts, conflicts, and risks used by SQL |
+| `created_by` and `decided_at` | Rule identifier/version and run timestamp |
+
+The current project installs Vane from public PyPI and defaults to `runner: local`. With PostgreSQL, MinIO, and the local Qwen endpoint running, execute `python scripts/run_demo.py e2e` from the use-case directory. The command seeds four claims and eight objects, runs real OCR and multimodal inference, publishes four PostgreSQL rows, and verifies the four expected outcomes shown above. Set `runner: ray` in `runtime.yml` to exercise the distributed OCR Actor and `vane.ai.prompt` path with the same fixture and SQL DAG.
+
+These are workflow recommendations, not liability findings, payment calculations, or regulated final decisions. The reusable business pattern is the separation of responsibilities: OCR and AI turn files into observations, stateless UDFs reject malformed or untrustworthy results, and SQL reconciles the evidence and applies the claims policy. Local and Ray are deployment options for the same review process, so scaling the workload does not create a second set of decision rules.
+
+## Adapt the pattern
+
+- Replace the PostgreSQL fixture with a source that still provides one row per claim and ordered material locators.
+- Put claim photos and documents behind the same S3-compatible byte contract, even if MinIO is replaced.
+- Swap the OCR engine or multimodal endpoint while preserving their typed fact boundaries.
+- Extend the decision SQL with explicit, testable business rules; keep payment and denial conclusions out of the model prompt.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition) for the staging Relations, OCR actor, prompt contract, damage aggregation, and publication path.
+
+## Governing Evidence for Enterprise Agents
+
+Route: /docs/data/tutorials/use-cases/enterprise-agent-evidence
+Source: docs/data/tutorials/use-cases/enterprise-agent-evidence.mdx
+
+Enterprise evidence is usually scattered across document stores, support systems, media archives, and business databases. An Agent should not receive an ungoverned bundle of retrieved files and decide for itself whether that evidence is complete, current, or internally consistent. This tutorial follows the `enterprise-agent-evidence` use case to build governed multimodal context before any evidence reaches an Agent.
+
+Use case source: [AstroVela/demo-scene/enterprise-agent-evidence](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence).
+
+The example parses document, image, audio, and text assets once, links those reusable features to business cases, and uses SQL to detect missing requirements, conflicting claims, observations outside the freshness window, and blocking risks. Vane is useful here because modality-specific Python processing and cross-record SQL policy remain in one typed Relation flow. Model inference and retrieval are intentionally outside the pipeline; its output is an auditable context table plus a prioritized human review queue.
+
+The data flow is:
+
+1. Read business cases, evidence requirements, evidence links, and a catalog of publicly sourced assets as Relations.
+2. Process each referenced asset in a modality-specific batch UDF.
+3. Join reusable asset features to case-specific evidence links.
+4. Compare the evidence with requirements and with other claims in the same case.
+5. Build `ready`, `needs_review`, or `blocked` Agent contexts and a review queue.
+
+## Default scenario and inputs
+
+The offline scenario separates business metadata from physical assets. This distinction is central to the design: a case references an `asset_id` instead of copying file content, so one parsed file can support several cases.
+
+| Input | Grain | Role in the pipeline |
+| --- | --- | --- |
+| `cases.csv` | One row per business case | Account, business question, and review date for four cases |
+| `requirements.csv` | One required modality per case | Declares which evidence types must be present |
+| `evidence_links.csv` | One case-to-asset link | Supplies eight observations, source systems, titles, and optional claims |
+| `asset_catalog.csv` | One row per physical asset | Locates five files spanning document, text, image, and audio modalities, with provenance and license data |
+
+The five version-pinned, publicly sourced assets come from Apache Arrow and Wikimedia Commons. The default run is offline: it reads the checked-in Markdown, SVG, and WAV payloads rather than fetching them during the pipeline.
+
+## 1. Parse every asset once
+
+The source catalog has one row per physical asset, while `evidence_links` can associate the same asset with more than one business case. Processing the asset catalog before that join avoids repeating document, image, or audio work for every case that references the file.
+
+Each modality gets its own `map_batches` branch and processor, but every branch returns the same feature schema. The compatible branches can therefore be combined into one `asset_features` Relation.
+
+| Modality | Current processing | Main facts or risks |
+| --- | --- | --- |
+| `document` | Decode UTF-8 while preserving document text | Token count, empty content, invalid UTF-8 |
+| `text` | Decode UTF-8 and normalize whitespace | Token count, short text, invalid UTF-8 |
+| `image` | Parse SVG dimensions | Width, height, missing dimensions, low resolution |
+| `audio` | Read PCM WAV metadata | Duration, sample rate, invalid or very short audio |
 
 ```python
-checked.to_table("checked")
+def build_asset_feature_relations(
+    public_assets: Any,
+    modalities: list[str],
+    args: argparse.Namespace,
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    stage_functions = {
+        "document": "process_document_asset_batch",
+        "image": "process_image_asset_batch",
+        "audio": "process_audio_asset_batch",
+        "text": "process_text_asset_batch",
+    }
+    udf_options = batch_udf_options(args.execution_backend)
+    relations: list[Any] = []
+    backend_metadata: dict[str, dict[str, Any]] = {}
+    for modality in SUPPORTED_MODALITIES:
+        if modality not in modalities:
+            continue
+        source = public_assets.filter(f"modality = '{modality}'").order("record_id")
+        relations.append(
+            source.map_batches(
+                importable_batch_function(stage_functions[modality]),
+                schema=ASSET_FEATURE_SCHEMA,
+                batch_size=args.batch_size,
+                **udf_options,
+            )
+        )
+        backend_metadata[f"process_{modality}_asset"] = backend_metadata_entry(
+            args.execution_backend
+        )
 
-summary = con.sql("""
-    select
-        document_id,
-        severity,
-        count(*) as checks
-    from checked
-    group by document_id, severity
-""")
-
-summary.show()
+    features = relations[0]
+    for relation in relations[1:]:
+        features = features.union(relation)
+    return features, backend_metadata
 ```
 
-## Scale-out
+The shared output contract preserves provenance and license fields while adding content text, hashes, byte and token counts, media metrics, a processing decision, and risk flags. This is the reusable asset-level contract; it contains no case-specific conclusion.
 
-Ray is already the default runner. When SQL preparation, UDF stages, or model calls need cluster workers, set `RAY_ADDRESS` before launching the process as described in [Deployment](/docs/data/deploy/deployment).
+## 2. Bind asset facts to business evidence
 
-Set provider concurrency based on API limits, rate limits, and model-serving capacity.
+An evidence link supplies the business meaning that a reusable asset does not have: case ID, source system, observation date, title, and an optional key-value claim. The join produces one typed row per case-to-asset link and carries all source and license provenance forward.
 
-## Validation
-
-Before using results in a compliance workflow:
-
-- Version the checklist and prompt.
-- Keep source document references.
-- Review high-severity failures manually.
-- Sample compliant and non-compliant outputs.
-- Treat model output as review evidence, not legal advice.
-
-## Scope notes
-
-This page does not define legal advice, procurement policy, document parsing, or a tender-specific connector. It documents how to express the workflow with Vane Data SQL and AI helpers.
-
-## Multimodal Data Lake
-
-Route: /docs/data/examples/multimodal-data-lake
-Source: docs/data/examples/multimodal-data-lake.mdx
-
-This page follows the four canonical media and model scripts in the Vane repository:
-
-- `examples/querying_images.py`
-- `examples/image_generation.py`
-- `examples/voice_ai_analytics.py`
-- `examples/multimodal_structured_outputs.py`
-
-They demonstrate image decoding and analysis, image generation, audio transcription and embedding, and vision-language evaluation with structured output.
-
-## Create a clean environment
-
-After installing `uv` as described in [Installation](/docs/data/quickstart/installation), sparsely clone only the example scripts into a new directory:
-
-```bash
-git clone --depth 1 --filter=blob:none --sparse \
-  https://github.com/AstroVela/vane.git vane-examples
-cd vane-examples
-git sparse-checkout set examples
-
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install vane-ai numpy pyarrow Pillow openai pydantic
-uv pip install torch
-uv pip install sentence-transformers transformers
+```python
+def build_evidence_features(conn: Any) -> Any:
+    return conn.sql(
+        """
+        select
+          l.record_id,
+          l.case_id,
+          a.asset_id,
+          a.modality as evidence_type,
+          a.modality,
+          l.source_system,
+          a.source_uri,
+          a.source_page_uri,
+          a.source_version,
+          a.license_id,
+          a.license_uri,
+          l.observed_at,
+          l.evidence_title,
+          a.evidence_text,
+          l.claim_key,
+          l.claim_value,
+          a.content_sha256,
+          a.byte_size,
+          a.token_count,
+          a.asset_decision,
+          case
+            when lower(l.claim_value) = 'blocked'
+              then list_append(a.risk_flags, 'asserted_blocker')
+            else a.risk_flags
+          end as risk_flags,
+          a.risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as risk_count,
+          a.blocking_risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as blocking_risk_count,
+          a.media_metrics
+        from evidence_links l
+        join asset_features a using (asset_id)
+        order by l.case_id, l.record_id
+        """
+    )
 ```
 
-The sparse checkout excludes the `vane/` and `duckdb/` source directories, so the Python process and local Ray workers use the installed wheel. This environment runs every default sample on the page. For GPU acceleration, install a CUDA-enabled PyTorch build compatible with the operating system, GPU, and driver; use [PyTorch Start Locally](https://pytorch.org/get-started/locally/) when the default package is not the right build. Confirm that `python -c "import torch; print(torch.cuda.is_available())"` prints `True`; Vane's Transformers provider then requests one Ray GPU automatically. The first voice example downloads `sentence-transformers/all-MiniLM-L6-v2` unless it is already cached. The structured-output example also needs provider credentials because synthetic input removes the dataset dependency, not the model call.
+This is also where a case-specific assertion such as a blocking status becomes a governance risk. The underlying asset remains reusable and unchanged.
 
-If PyPI downloads are slow, append the Tsinghua mirror to an install command:
+## 3. Find gaps and contradictions with SQL
 
-```bash
-uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+Requirements and evidence are separate Relations, so missing evidence is an anti-join: every required modality without a matching evidence row becomes a gap. Conflicts are grouped by case and claim key; more than one distinct value turns the supporting rows into a reviewable contradiction.
+
+```python
+    evidence_gaps_rel = conn.sql(
+        """
+        select
+          r.case_id,
+          c.account_id,
+          r.evidence_type as missing_evidence_type,
+          'missing_required_evidence' as reason
+        from case_requirements r
+        join business_cases c using (case_id)
+        left join evidence_features e
+          on e.case_id = r.case_id
+         and e.evidence_type = r.evidence_type
+        where e.record_id is null
+        order by r.case_id, r.evidence_type
+        """
+    )
+    conn.sql("drop table if exists evidence_gaps")
+    evidence_gaps_rel.to_table("evidence_gaps")
+
+    evidence_conflicts_rel = conn.sql(
+        """
+        select
+          case_id,
+          claim_key,
+          count(distinct claim_value) as distinct_values,
+          string_agg(distinct claim_value, ', ' order by claim_value) as claim_values,
+          string_agg(record_id, ', ' order by record_id) as evidence_ids
+        from evidence_features
+        where claim_key <> '' and claim_value <> ''
+        group by case_id, claim_key
+        having count(distinct claim_value) > 1
+        order by case_id, claim_key
+        """
+    )
+    conn.sql("drop table if exists evidence_conflicts")
+    evidence_conflicts_rel.to_table("evidence_conflicts")
 ```
 
-The mirror changes where packages are downloaded from; it does not choose a compatible CUDA build for the machine.
+Freshness is evaluated separately by comparing each observation date with the case review date. The final rollup also retains ordered evidence IDs, asset IDs, source systems, modalities, license IDs, and a human-readable context string.
 
-## Run the local media samples
+## 4. Decide whether context may reach the Agent
 
-These three commands use generated input and do not need storage credentials, an external dataset, or a hosted model provider:
+The review state is a deterministic policy over the rollups. Missing evidence, conflicting claims, or a blocking risk marks the context as `blocked`. Evidence outside the freshness window and non-blocking risks produce `needs_review`. Only a complete, consistent, current, and risk-free case is `ready`.
 
-```bash
-python examples/querying_images.py --source sample --limit 5
-python examples/image_generation.py --source sample --limit 4
-python examples/voice_ai_analytics.py --source sample --limit 3
+```sql
+          case
+            when coalesce(g.missing_evidence_count, 0) > 0
+              or coalesce(k.conflict_count, 0) > 0
+              or coalesce(e.blocking_risk_count, 0) > 0 then 'blocked'
+            when coalesce(e.stale_evidence_count, 0) > 0
+              or coalesce(e.risk_count, 0) > 0 then 'needs_review'
+            else 'ready'
+          end as review_state
 ```
 
-With the current built-in samples, the scripts report 5 analyzed images, 4 generated placeholder images, 3 transcripts, and 6 embedded subtitle rows.
+This policy happens before an Agent prompt is built. A blocked context still exists for auditing and remediation, but it is not presented as approved evidence.
 
-## Image querying
+The four default cases make every policy branch visible:
 
-`querying_images.py` generates or loads image bytes, decodes them in `AnalyzeRedRegionsBatch`, counts red pixels, and writes ranked previews. Its default output directory contains:
+| Case | Evidence result | Review state |
+| --- | --- | --- |
+| `case-arrow-docs` | Two modalities, no gap, conflict, risk, or stale evidence | `ready` |
+| `case-wikimedia-media` | One conflicting claim and one rejected low-resolution image | `blocked` |
+| `case-incomplete-bundle` | Missing the required audio modality | `blocked` |
+| `case-stale-docs` | Complete evidence, but one observation is stale | `needs_review` |
 
-- `images/` with decoded PNG previews
-- `masks/` with red-region masks
-- `top_red_images.csv` with ranked metadata
+## 5. Produce Agent context and a review queue
 
-To analyze local files:
+All cases remain in `agent_context`; the review queue is simply the non-ready subset in handling order. A second aggregation gives operational counts by state.
 
-```bash
-python examples/querying_images.py \
-  --source glob \
-  --image-glob '/path/to/images/*' \
-  --limit 100 \
-  --top-k 20
+```python
+    review_queue = agent_context.filter("review_state <> 'ready'").order(
+        REVIEW_QUEUE_ORDER
+    )
+    status_summary = agent_context.aggregate(
+        "review_state, count(*) as cases, sum(evidence_count) as evidence_records"
+    ).order("review_state")
 ```
 
-The `--source open-images` mode reads a bounded list of public OpenImages objects and therefore needs network access.
+Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review.
 
-## Image generation
+| Output | Purpose |
+| --- | --- |
+| `asset_features.parquet` | One parsed row per unique asset |
+| `evidence_features.parquet` | Eight typed case-to-asset evidence rows |
+| `agent_context.parquet` | Governed context for all four cases |
+| `evidence_gaps.csv` | Missing required modalities |
+| `evidence_conflicts.csv` | Conflicting claims and their evidence IDs |
+| `review_queue.csv` | Blocked and needs-review cases in handling order |
+| `status_summary.csv` | Counts by review state |
 
-The default `placeholder` backend creates deterministic PNGs using only the base package. It is intended to validate relation, UDF, batching, and output behavior before downloading a diffusion model. Outputs are written to `examples/output/image_generation/` with a `metadata.csv` manifest.
+The central pattern is to govern evidence as data before using it as model context. Retrieval can find relevant material, and an Agent can reason over approved context, but neither should silently decide whether a required source is absent or two records disagree.
 
-For real Stable Diffusion generation, install the model runtime and request a Ray GPU resource explicitly:
+## Adapt the pattern
 
-```bash
-uv pip install diffusers transformers accelerate torch Pillow
+For a real deployment, preserve the same four boundaries:
 
-python examples/image_generation.py \
-  --source sample \
-  --backend diffusers \
-  --device cuda \
-  --dtype float16 \
-  --gpus 1 \
-  --limit 4
+- map internal review subjects to `cases` and declare mandatory evidence in `requirements`;
+- store case-to-object relationships and observation dates in `evidence_links` instead of duplicating payloads;
+- replace the lightweight Markdown, SVG, and WAV processors while keeping the shared asset feature schema;
+- version the SQL policy for gaps, conflicts, freshness, and review state, then expose only approved context to the downstream Agent.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence) for the media processors, input Relations, freshness rollup, output schemas, and fixture data.
+
+## Building a Multimodal Training Release
+
+Route: /docs/data/tutorials/use-cases/multimodal-training-data
+Source: docs/data/tutorials/use-cases/multimodal-training-data.mdx
+
+A training-data release needs one consistent, queryable schema even when its source assets are documents, images, audio clips, and plain text. This tutorial follows the `multimodal-training-data` use case to turn those four modalities into a typed feature table, a release dataset, and a reviewable rejection set.
+
+Use case source: [AstroVela/demo-scene/multimodal-training-data](https://github.com/AstroVela/demo-scene/tree/main/multimodal-training-data).
+
+The default catalog contains five version-pinned, publicly sourced assets. Four pass the release policy; one low-resolution SVG is rejected. The example is intentionally about the data pipeline rather than model training. Vane lets each modality use the right Python batch processor, then brings all branches back into one typed Relation for release policy, summaries, and writers.
+
+The pipeline:
+
+1. Reads the asset catalog into one source Relation.
+2. Filters that Relation into one branch per modality.
+3. Parses every branch with a typed batch UDF.
+4. Unions compatible feature rows into one table.
+5. Uses Relation filters and aggregations to produce accepted, rejected, and summary artifacts.
+
+## Default assets and input contract
+
+`training_assets.csv` has one row per source asset. Each row identifies the modality, source URI, license, dataset split, MIME type, local payload path, expected content hash, optional text, and modality metadata.
+
+| Record | Modality and source | Purpose | Default result |
+| --- | --- | --- | --- |
+| `arrow-project-readme` | Apache Arrow Markdown document | Document decoding and line counting | Accepted |
+| `arrow-python-readme` | Apache Arrow Markdown text | Whitespace normalization and token counting | Accepted |
+| `wikimedia-generic-file` | Wikimedia 512×512 SVG | Image that passes the resolution policy | Accepted |
+| `wikimedia-download-icon` | Wikimedia 136×168 SVG | Low-resolution gate | Rejected |
+| `wikimedia-audio` | Wikimedia 2.4-second WAV | Duration and sample-rate extraction | Accepted |
+
+The files are checked into the use case with their source and license metadata, so the normal pipeline run is offline. This checked-in asset snapshot is a concrete release fixture, not a claim that these five files form a useful training dataset.
+
+## 1. Define one feature contract for every modality
+
+Each processor can produce different media metrics and feature JSON, but `build_feature_row` owns the columns shared by the release. It records content identity, size, text, token count, quality, decision, risk flags, metrics, and modality-specific features.
+
+The release policy is visible at this boundary: a missing license becomes a risk flag, and a record is accepted only when there are no flags and its quality score is at least `0.8`.
+
+```python
+def build_feature_row(
+    row: dict[str, Any],
+    *,
+    payload: bytes,
+    content_text: str,
+    flags: list[str],
+    quality_score: float,
+    metrics: dict[str, int | float | None],
+    features: dict[str, Any],
+) -> dict[str, Any]:
+    if not str(row.get("license_id") or "").strip():
+        flags.append("missing_license")
+    quality_score = round(max(0.0, quality_score - 0.25 * ("missing_license" in flags)), 3)
+    decision = "accepted" if not flags and quality_score >= 0.8 else "rejected"
+    return {
+        "record_id": row["record_id"],
+        "modality": row["modality"],
+        "source_uri": row["source_uri"],
+        "license_id": row.get("license_id") or "",
+        "split": row["split"],
+        "mime_type": row["mime_type"],
+        "content_text": content_text,
+        "content_sha256": hashlib.sha256(payload).hexdigest(),
+        "byte_size": len(payload),
+        "token_count": len(tokenize(content_text)),
+        "quality_score": quality_score,
+        "decision": decision,
+        "risk_flags": flags,
+        "media_metrics": metrics,
+        "feature_json": json.dumps(features, sort_keys=True),
+    }
 ```
 
-The model is downloaded on first use unless `--local-files-only` is set or `--model-id` points to a local model directory.
+Keeping the decision on every feature row is useful: the full feature table can explain the release, while the release itself remains a simple filtered Relation.
 
-## Voice AI analytics
+## 2. Extract modality-specific features
 
-The default voice workflow generates short WAV samples, uses deterministic placeholder transcripts, creates local summaries and subtitle rows, and embeds every subtitle segment. It writes `summaries.csv`, `subtitles.csv`, and `segment_embeddings.csv` under `examples/output/voice_ai_analytics/`.
+Every function returns through the same builder, so media-specific logic cannot accidentally change the tabular contract.
 
-For real transcription:
+| Modality | Current parser | Main rejection signals |
+| --- | --- | --- |
+| `document` | Decode UTF-8 and count lines | Invalid UTF-8 or empty content |
+| `text` | Decode UTF-8, collapse whitespace, and count tokens | Invalid UTF-8 or fewer than four tokens |
+| `image` | Parse SVG XML and read dimensions or `viewBox` | Invalid image, missing dimensions, or below 512×512 |
+| `audio` | Read PCM WAV sample rate and frames | Invalid audio or shorter than 0.005 seconds |
 
-```bash
-uv pip install faster-whisper av
+The image branch shows the modality boundary in full. It derives media metrics and flags locally, then returns through the shared release contract.
 
-python examples/voice_ai_analytics.py \
-  --source glob \
-  --audio-glob '/path/to/audio/*.wav' \
-  --transcription-backend faster-whisper \
-  --device cuda \
-  --compute-type float16 \
-  --gpus 1 \
-  --limit 10
+```python
+def process_image(row: dict[str, Any]) -> dict[str, Any]:
+    payload = decode_payload(row)
+    flags: list[str] = []
+    metrics = empty_metrics()
+    image_format = "unknown"
+    if row["mime_type"] == "image/svg+xml":
+        try:
+            width, height = svg_dimensions(payload)
+            image_format = "svg"
+            metrics["width"] = width
+            metrics["height"] = height
+            if not width or not height:
+                flags.append("missing_dimensions")
+            elif width < 512 or height < 512:
+                flags.append("low_resolution")
+        except ET.ParseError:
+            flags.append("invalid_image")
+    else:
+        flags.append("invalid_image")
+
+    return build_feature_row(
+        row,
+        payload=payload,
+        content_text=str(row.get("text") or ""),
+        flags=flags,
+        quality_score=1.0 - 0.5 * len(flags),
+        metrics=metrics,
+        features={
+            "metadata": json.loads(row["metadata_json"] or "{}"),
+            "format": image_format,
+        },
+    )
 ```
 
-This mode still needs the Transformers extra for subtitle embeddings. Add `--summary-backend openai` only when the `openai` package, provider credentials, and the desired model configuration are available.
+These are deliberately lightweight processors. The extensible part of the example is the boundary: a richer PDF parser, image decoder, speech model, or language detector can replace a branch while continuing to return the same feature schema.
 
-## Multimodal structured output
+## 3. Run one typed branch per modality
 
-The structured-output script asks the same multiple-choice question with and without an image, compares accuracy, classifies each row into an evaluation quadrant, and optionally sends failure cases through a judge pass.
+The orchestrator filters the source Relation by modality and assigns the matching importable batch function. `map_batches` applies the shared schema to every branch, and `union` reconstructs one multimodal feature Relation.
 
-Using the default Hugging Face router:
+```python
+def build_feature_relations(
+    conn: Any,
+    raw_assets: Any,
+    args: argparse.Namespace,
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    udf_options = batch_udf_options(args.execution_backend)
+    stage_functions = {
+        "document": "process_document_batch",
+        "image": "process_image_batch",
+        "audio": "process_audio_batch",
+        "text": "process_text_batch",
+    }
+    relations: list[Any] = []
+    backend_metadata: dict[str, dict[str, Any]] = {}
+    for modality in SUPPORTED_MODALITIES:
+        source = raw_assets.filter(f"modality = '{modality}'").order("record_id")
+        relations.append(
+            source.map_batches(
+                importable_batch_function(stage_functions[modality]),
+                schema=TRAINING_FEATURE_SCHEMA,
+                batch_size=args.batch_size,
+                **udf_options,
+            )
+        )
+        backend_metadata[f"process_{modality}"] = backend_metadata_entry(args.execution_backend)
 
-```bash
-export HF_TOKEN=your_hugging_face_token
-python examples/multimodal_structured_outputs.py \
-  --source synthetic \
-  --limit 1 \
-  --skip-judge
+    features = relations[0]
+    for relation in relations[1:]:
+        features = features.union(relation)
+    return features, backend_metadata
 ```
 
-Using another OpenAI-compatible endpoint:
+The execution backend changes how the batch functions run, not how the four branches are filtered, unioned, or queried afterward.
 
-```bash
-export MODEL_API_KEY=your_api_key
-python examples/multimodal_structured_outputs.py \
-  --source synthetic \
-  --limit 1 \
-  --api-key-env MODEL_API_KEY \
-  --base-url https://provider.example/v1 \
-  --model provider/model-name \
-  --structured-output-mode prompt \
-  --skip-judge
+## 4. Split the release from the review set
+
+Once all modalities share a schema, publication becomes ordinary relational work. Released records are ordered by split and modality; rejected records are ordered for review; the summary groups quality and decision counts by modality.
+
+```python
+    training_release_rel = feature_records.filter("decision = 'accepted'").order(
+        "split, modality, record_id"
+    )
+    conn.sql("drop table if exists training_release")
+    training_release_rel.to_table("training_release")
+    training_release = conn.sql("select * from training_release")
+
+    rejected_records_rel = feature_records.filter("decision = 'rejected'").order(
+        "quality_score, modality, record_id"
+    )
+    conn.sql("drop table if exists rejected_records")
+    rejected_records_rel.to_table("rejected_records")
+    rejected_records = conn.sql("select * from rejected_records")
+
+    modality_summary_rel = feature_records.aggregate(
+        """
+        modality,
+        count(*) as records,
+        sum(byte_size) as total_bytes,
+        round(avg(quality_score), 3) as avg_quality_score,
+        sum(case when decision = 'accepted' then 1 else 0 end) as accepted,
+        sum(case when decision = 'rejected' then 1 else 0 end) as rejected
+        """
+    ).order("modality")
 ```
 
-Remove `--skip-judge` to enable the failure-analysis call. Use real AI2D samples only after installing the dataset dependencies:
+The default summary gives immediate feedback for every branch:
 
-```bash
-uv pip install datasets Pillow
-python examples/multimodal_structured_outputs.py \
-  --source hf-ai2d \
-  --limit 4
+| Modality | Input | Average quality | Released | Rejected |
+| --- | ---: | ---: | ---: | ---: |
+| `audio` | 1 | 1.000 | 1 | 0 |
+| `document` | 1 | 1.000 | 1 | 0 |
+| `image` | 2 | 0.750 | 1 | 1 |
+| `text` | 1 | 1.000 | 1 | 0 |
+
+The rejected row is `wikimedia-download-icon`: its actual 136×168 dimensions produce `low_resolution` and a quality score of `0.500`.
+
+Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record.
+
+| Output | Purpose |
+| --- | --- |
+| `feature_records.parquet` | Every accepted and rejected feature row, including flags and media metrics |
+| `training_release.parquet` | The four records that pass the example release policy |
+| `rejected_records.csv` | Rejected records and their specific reasons |
+| `modality_summary.csv` | Counts, bytes, average quality, and decisions by modality |
+| `manifest.json` | Source mode, release policy, schemas, counts, and execution backends |
+
+The full feature table is as important as the release table: it makes the release decision reproducible and gives rejected data a path back into curation instead of discarding it invisibly.
+
+## Adapt the pattern
+
+- Point `--input` at another asset manifest that preserves the catalog columns and per-asset license metadata.
+- Replace a modality processor with PDF parsing, raster decoding, ASR, or richer quality analysis while returning `TRAINING_FEATURE_SCHEMA`.
+- Keep release policy over shared columns so new media types do not require a different publication path.
+- Treat the example thresholds as versioned policy inputs; they are illustrative gates, not calibrated quality benchmarks.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/multimodal-training-data) for the input projection, catalog of publicly sourced assets, Arrow schemas, writers, and snapshot metadata.
+
+## Procurement Compliance Audit
+
+Route: /docs/data/tutorials/use-cases/procurement-compliance-audit
+Source: docs/data/tutorials/use-cases/procurement-compliance-audit.mdx
+
+Procurement review often combines two kinds of evidence that are hard to inspect together: structured expert scores and unstructured committee records. This tutorial follows the `procurement-compliance-audit` use case to connect both forms of evidence and produce deterministic, evidence-backed review findings.
+
+Use case source: [AstroVela/demo-scene/procurement-compliance-audit](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit).
+
+The synthetic scenario starts with a concrete anomaly. Expert `EXP-001` recommended Jingwei Automation before the tender, participated without recusing, and later scored that supplier well above the other experts. Removing that expert's scores changes the winner from `SUP-JW-001` to `SUP-ZJ-002`.
+
+The use case follows the questions a procurement reviewer would ask: Did an expert recommend a supplier before the tender? Did that expert then participate without recusing? Was the score materially different from peer scores? Would the award change without that score? The workflow keeps evidence reading separate from compliance judgment so every finding can be traced to both source records and an explicit rule.
+
+| Review stage | Question answered | How Vane supports it |
+| --- | --- | --- |
+| Assemble the tender record | Which project, supplier, expert, score, and evidence file does each row describe? | SQL Relations preserve trusted identities and normalize supplier names and aliases |
+| Read committee records | What text can be recovered from recommendation records and meeting minutes? | A stateful OCR UDF (`@vane.cls`) reuses the object-store client and OCR engine across evidence files |
+| Identify recommendation and recusal facts | Who recommended which supplier, who participated, and who recused? | The Vane AI API extracts only the facts needed for review |
+| Qualify extracted evidence | Does each response match the expected document role and fact format? | A stateless UDF (`@vane.func`) applies the same deterministic validation to every response |
+| Measure impact and issue findings | Is the score anomalous, and did it affect the winning supplier? | SQL compares peer scores, reranks suppliers, and applies review rules with visible thresholds |
+
+The review flow is `assemble the tender record → read committee evidence → identify recommendation and recusal facts → test score and award impact → publish findings and next actions`. It produces the same evidence and findings whether it runs locally for a small review or on Ray for a larger evidence set. The model reports what the records contain; it never declares a compliance violation.
+
+## Default tender and inputs
+
+The fixture represents project `PRJ-2026-001`, an intelligent production-line upgrade tender. The runtime pipeline reads business rows from PostgreSQL and the two evidence images from MinIO.
+
+| Input | Grain | Default data |
+| --- | --- | --- |
+| Project | One row per tender | Declared winner `SUP-JW-001`, score-bias threshold `15.0`, AI confidence floor `0.75` |
+| Suppliers | One row per supplier | Three canonical suppliers and their aliases |
+| Expert scores | One expert-supplier pair per row | Complete 4×3 matrix, or 12 score rows |
+| Evidence metadata | One row per file | Recommendation record `EVD-REC-001` and committee minutes `EVD-MIN-001` |
+| MinIO objects | One PNG per evidence row | The two images used by OCR and Qwen |
+
+The suspicious score is concrete: `EXP-001` gives `SUP-JW-001` a score of `98`, while the other three experts give it `80`, `81`, and `79`.
+
+## 1. Turn committee records into traceable evidence
+
+A compliance review must preserve where every statement came from. Before extracting any fact, the workflow keeps each image tied to its trusted project ID, file ID, and record role, then calls `evidence_ocr_json(bucket, object_key)` to make the content searchable. Recommendation records and committee minutes therefore remain distinct pieces of evidence throughout the review.
+
+The stateful `@vane.cls` function creates RapidOCR only when it reaches the first usable image, then reuses the same engine and MinIO client for later files. That avoids repeated model startup and supports efficient review of larger evidence sets:
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="evidence_ocr_json",
+    gpus=0,
+)
+class EvidenceOcrActor:
+    """Stateful MinIO image OCR function that initializes one reusable engine."""
+
+    def __init__(
+        self,
+        minio_config: MinioConfig,
+        engine_factory=None,
+        store_factory=MinioStore,
+    ) -> None:
+        self.store = store_factory(minio_config)
+        self._engine_factory = engine_factory or build_rapidocr
+        self.engine = None
 ```
 
-Keep API keys in environment variables, not in command history, source files, or committed configuration.
+The `int_evidence_ocr_udf` SQL preserves the trusted evidence identity and puts the OCR result beside it:
 
-## Default Ray execution
+```sql
+select
+  project_id,
+  file_id,
+  role,
+  bucket,
+  object_key,
+  media_type,
+  evidence_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as ocr_json
+from stg_evidence_images;
+```
 
-All four scripts rely on Vane's default Ray runner. They do not set `VANE_RUNNER`, call `vane.configure(...)`, or choose a task or actor backend. `--gpus 1` only adds a Ray GPU resource request to the model UDF; it does not select the runner.
+The next SQL step turns the OCR result into status, text, confidence, and line-count columns while retaining the original evidence keys. This gives reviewers searchable content without weakening the chain back to the source file. Local execution reads a precomputed OCR lookup, while Ray invokes the stateful Actor directly; both produce the same evidence record for subsequent review.
 
-Set `RAY_ADDRESS` before starting a script to use an existing cluster. Every worker must have the matching dependencies and access to the same files, model cache, and credentials.
+## 2. Identify recommendation, participation, and recusal facts
 
-## Promote outputs safely
+The reviewer needs a narrow set of facts from the records: the document type, expert, supplier, whether a recommendation was made, whether the expert participated, and whether the expert recused. For every image that passes the OCR quality threshold, the workflow combines image bytes and OCR text with the trusted record role and canonical supplier context. On Ray, that request is made through the `vane.ai.prompt` AI Function:
 
-- Validate row counts and stable IDs before joining model output to source metadata.
-- Keep raw bytes only when downstream consumers require them.
-- Record model IDs, prompts, and generation parameters with produced data.
-- Test provider and model failures on bounded inputs.
-- Let the destination system own catalog commits and snapshot semantics after Vane writes the curated files.
+```python
+            result = vane.ai.prompt(
+                relation,
+                "prompt_text",
+                image_columns=["image_bytes"],
+                provider=config.ai.provider,
+                model=config.ai.model,
+                provider_options=provider_options,
+                prompt_options=prompt_options,
+                system_message=AUDIT_FACT_SYSTEM_MESSAGE,
+                output_column="raw_response",
+                num_gpus=0,
+            )
+```
+
+The local provider path and the Ray AI Function produce the same fact table and apply the same one-retry format check. Project ID, file ID, and record role stay anchored to the trusted source rather than the model response. The response contains the document type, expert ID, supplier name, recommendation, participation, recusal, an evidence quote, and confidence. It intentionally excludes risk level, score bias, award impact, and any compliance verdict.
+
+The raw response then crosses a separate deterministic boundary. `@vane.func` registers a stateless validator that either returns canonical fact JSON or rejects the response contract:
+
+```python
+@vane.func(return_dtype="VARCHAR", name="validate_audit_fact_json")
+def validate_audit_fact_json_udf(raw_response: str) -> str:
+    return validate_audit_fact_json(raw_response)
+```
+
+`int_conflict_validation_inputs` first binds each untrusted response to the project, file, and trusted evidence role from PostgreSQL. SQL then invokes the stateless validator directly so that every extracted fact passes the same acceptance rules:
+
+```sql
+create or replace table int_conflict_validation_udf as
+-- Normalize each untrusted AI response through a direct Runner SQL UDF call.
+select
+  project_id,
+  file_id,
+  role,
+  validate_audit_fact_json(raw_response) as fact_json
+from int_conflict_validation_inputs;
+```
+
+The next SQL step exposes typed facts only when the model's document type agrees with the trusted source role. A committee-minutes response therefore cannot be treated as a recommendation record merely because the raw JSON says so. The stateless UDF standardizes the response, while SQL protects evidence identity and determines how each record may be interpreted.
+
+## 3. Test whether the flagged score changed the award outcome
+
+The recommendation and minutes facts are joined by expert identity, then the extracted supplier name is resolved against canonical names and aliases. From there, ordinary SQL can compare the flagged expert with peers and rerun the award ranking without that expert.
+
+The core business test compares two versions of the tender: the supplier averages as awarded, and the averages after excluding the flagged expert. SQL recalculates the second ranking and uses supplier ID as a deterministic tie-breaker:
+
+```sql
+without_flagged_averages as (
+  -- Recompute supplier rankings after excluding the flagged expert.
+  select
+    scores.project_id,
+    scores.supplier_id,
+    avg(scores.score) as average_score
+  from stg_scores as scores
+  inner join matched_signal as signal
+    on signal.project_id = scores.project_id
+   and scores.expert_id <> signal.flagged_expert_id
+  group by scores.project_id, scores.supplier_id
+),
+without_flagged_ranks as (
+  select
+    *,
+    row_number() over (
+      partition by project_id
+      order by average_score desc, supplier_id
+    ) as supplier_rank
+  from without_flagged_averages
+)
+```
+
+The resulting review record brings together the expert score, peer average, score delta, configured threshold, original winner, recalculated winner, and `award_changed` flag. For the fixture, the peer average is `80.0`, so the expert's `98` creates an `18.0` point delta against the `15.0` threshold. The full matrix ranks `SUP-JW-001` first at `84.5`; without `EXP-001`, `SUP-ZJ-002` ranks first at `90.0`. These transparent calculations—not the model response—determine whether the case meets an audit rule.
+
+## 4. Express compliance policy as auditable review rules
+
+Only sufficiently supported facts that agree with the declared original winner can produce a finding. Each policy condition becomes a reviewable rule with a stable ID, subject, measured value, threshold, source-evidence references, recommended action, and confidence. The first branch shows the pattern:
+
+```sql
+  -- EXP-001: the related expert participated without recusing.
+  select
+    project_id || ':EXP-001-conflict-not-recused' as finding_id,
+    project_id,
+    'EXP-001-conflict-not-recused' as rule_id,
+    'high' as severity,
+    'expert' as subject_type,
+    flagged_expert_id as subject_id,
+    related_supplier_id as supplier_id,
+    'recused' as metric_name,
+    0.0::double as metric_value,
+    1.0::double as threshold_value,
+    '专家曾推荐相关供应商，参加评审且未回避。' as finding_summary,
+    cast(to_json(list_value(recommendation_file_id, minutes_file_id)) as varchar)
+      as evidence_file_ids_json,
+    '暂停定标并复核专家回避义务。' as recommended_action,
+    round(least(recommendation_confidence, minutes_confidence), 4) as confidence
+  from eligible
+  where recommended is true
+    and participated is true
+    and recused is false
+```
+
+For the fixture, the three rule branches produce:
+
+| Rule | Severity | Deterministic condition | Fixture result |
+| --- | --- | --- | --- |
+| `EXP-001-conflict-not-recused` | High | Recommended the supplier, participated, and did not recuse | Matched |
+| `EXP-002-score-bias` | Medium | Same conflict facts and score delta at least 15 points | Matched at 18 points |
+| `EXP-003-award-impact` | High | Same conflict facts and winner changes without the expert | Matched, `SUP-JW-001` → `SUP-ZJ-002` |
+
+The branches can be tested and changed independently without retraining or reprompting the model.
+
+## 5. Summarize risk and recommend the next action
+
+The default scenario produces three finding rows—two high severity and one medium severity—and one project summary with status `review_required`. If either document fact falls below the confidence floor, the summary becomes `insufficient_evidence`; a sufficiently supported project with no findings becomes `passed`.
+
+The current project installs Vane from public PyPI and defaults to `runner: local`. With PostgreSQL, MinIO, and local Qwen running, execute `python scripts/run_demo.py e2e`. The command seeds the synthetic tender, performs real OCR and multimodal inference, and writes:
+
+| Output | Rows | Purpose |
+| --- | ---: | --- |
+| `audit_findings.jsonl` | 3 | Rule, severity, subject, metric, threshold, evidence IDs, and action |
+| `audit_summary.jsonl` | 1 | Project status, finding counts, flagged expert, and winner recalculation |
+
+Set `runner: ray` in `runtime.yml` to exercise the distributed OCR Actor and `vane.ai.prompt` path with the same fixture, SQL DAG, and outputs.
+
+`review_required` is an evidence-backed workflow signal, not a legal, disciplinary, or final compliance decision. The reusable business pattern is the separation of responsibilities: OCR and AI make unstructured records searchable and extract limited facts, the stateless UDF rejects responses that do not meet the evidence format, and SQL measures score and award impact against visible policy thresholds. Local and Ray are deployment options for the same review process, so scaling the workload does not change how a finding is justified.
+
+## Adapt the pattern
+
+- Replace the four PostgreSQL source tables while preserving project, supplier, score, and evidence grains.
+- Point the evidence rows at your S3-compatible object store and keep trusted roles outside model output.
+- Replace OCR or the OpenAI-compatible model while preserving the typed fact contract.
+- Add new audit findings as explicit SQL branches with reviewable metrics and thresholds; do not ask the model for the final risk conclusion.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit) for source Relations, prompts, supplier alias resolution, the complete score query, and JSONL publication.
+
+## Web Text Deduplication with Global LSH
+
+Route: /docs/data/tutorials/use-cases/web-text-deduplication
+Source: docs/data/tutorials/use-cases/web-text-deduplication.mdx
+
+Near-duplicate web pages are rarely byte-for-byte identical. Navigation changes, timestamps, small edits, and mirrored domains make raw hashes too strict, while comparing every pair is too expensive as a corpus grows. This tutorial follows the `web-text-deduplication` use case to build a deterministic pipeline with MinHash fingerprints, global LSH candidates, exact Jaccard verification, and graph-based clusters.
+
+Use case source: [AstroVela/demo-scene/web-text-deduplication](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication).
+
+The default fixture contains 24 documents: six three-member duplicate groups and six singletons. The pipeline reduces the 276 possible global pairs to 18 LSH candidates, accepts 18 duplicate edges, and retains 12 representative documents.
+
+Vane is useful here because batch text transforms, a corpus-wide SQL self-join, exact pair scoring, and recursive graph clustering stay in one Relation pipeline. Each intermediate Relation can also be published for tuning or review instead of hiding the decision inside a single opaque deduplication call.
+
+The algorithm has six stages:
+
+1. Normalize text and create ordered five-token shingles.
+2. Compute a 64-value MinHash signature and eight LSH band keys per document.
+3. Use a global Relation self-join to find documents sharing a band.
+4. Calculate exact shingle Jaccard for every candidate pair.
+5. Turn accepted pairs into graph edges and find connected components.
+6. Select one stable representative from each component.
+
+## Default corpus and input contract
+
+The checked-in `documents.csv` is deliberately small enough to inspect while still exercising exact duplicates, near duplicates, cross-domain matching, singleton clusters, and deterministic representative selection.
+
+| Rows | Construction | What it tests |
+| ---: | --- | --- |
+| 6 | One canonical page for each of six topics | The preferred copy in each duplicate group |
+| 6 | Mirrors with byte-identical body text on another domain | Exact cross-domain duplicates |
+| 6 | Revisions with one changed word | Near duplicates that raw hashes miss |
+| 6 | Unrelated short documents | Singleton clusters |
+
+The six topics cover billing reconciliation, incident routing, model promotion, retention policy, retrieval indexing, and support routing. Every input row has six base columns:
+
+| Column | Role |
+| --- | --- |
+| `doc_id` | Unique document identity |
+| `source` | Source classification |
+| `domain` | Domain used for cross-site diagnostics |
+| `crawled_at` | Date used by representative ranking |
+| `title` | Human-readable page title |
+| `body` | Text that is fingerprinted and compared |
+
+## 1. Normalize text into comparable shingles
+
+Normalization decomposes Unicode, removes combining marks, lowercases, maps punctuation to spaces, and collapses whitespace. The shingle function preserves token order: documents with at least five tokens use five-token windows, while a shorter document becomes one whole-document shingle.
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return " ".join(text.split())
+
+
+def token_shingles(tokens: list[str], *, size: int = SHINGLE_SIZE) -> set[str]:
+    if not tokens:
+        return set()
+    if len(tokens) < size:
+        return {" ".join(tokens)}
+    return {" ".join(tokens[idx : idx + size]) for idx in range(len(tokens) - size + 1)}
+```
+
+Using shingles instead of a token set makes local word order part of similarity. That is important for web text where two pages may share a vocabulary without actually copying the same passage.
+
+## 2. Build MinHash signatures and LSH bands
+
+Each shingle is hashed under 64 deterministic seeds. Taking the minimum value for every seed produces a compact signature whose coordinate overlap estimates set similarity. The signature is then divided into eight bands of eight values and each band is hashed into a join key.
+
+```python
+def hash_int(value: str, *, seed: int) -> int:
+    digest = hashlib.blake2b(f"{seed}:{value}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "little")
+
+
+def minhash_signature(
+    values: set[str],
+    *,
+    hashes: int = MINHASH_VALUES,
+    seed: int = MINHASH_SEED,
+) -> list[int]:
+    if not values:
+        return [0] * hashes
+    return [
+        min(hash_int(value, seed=seed + hash_index) for value in values)
+        for hash_index in range(hashes)
+    ]
+
+
+def lsh_band_keys(
+    signature: list[int], *, rows_per_band: int = LSH_ROWS_PER_BAND
+) -> list[str]:
+    if rows_per_band <= 0 or len(signature) % rows_per_band != 0:
+        raise ValueError("signature length must be divisible by rows_per_band")
+
+    keys: list[str] = []
+    for offset in range(0, len(signature), rows_per_band):
+        band_index = offset // rows_per_band
+        band_values = signature[offset : offset + rows_per_band]
+        payload = f"{band_index}:" + ",".join(str(value) for value in band_values)
+        digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=8).hexdigest()
+        keys.append(f"{band_index:03d}:{digest}")
+    return keys
+```
+
+The batch UDF produces normalized text, token and shingle statistics, a signature, and band keys for each document. Vane applies that function to the document Relation and materializes a reusable `fingerprinted` Relation:
+
+```python
+    fingerprinted_rel = conn.sql("select * from documents order by doc_id").map_batches(
+        importable_fingerprint_documents_batch(),
+        schema=FINGERPRINT_SCHEMA,
+        batch_size=args.batch_size,
+        **udf_options,
+    )
+```
+
+## 3. Generate candidates with a global Relation join
+
+The band arrays are expanded into `band_memberships`. A self-join on band number and band hash produces candidate document pairs; `left_doc_id < right_doc_id` removes self-pairs and reverse-order pair duplicates. Grouping counts how many bands each candidate shares.
+
+The join is global rather than restricted to a domain. That lets the pipeline catch syndicated or mirrored text across sites.
+
+```python
+    candidate_pairs_rel = conn.sql(
+        """
+        with candidate_ids as (
+          select
+            l.doc_id as left_doc_id,
+            r.doc_id as right_doc_id,
+            l.domain as left_domain,
+            r.domain as right_domain,
+            count(*) as shared_bands
+          from band_memberships l
+          join band_memberships r
+            on l.band_index = r.band_index
+           and l.lsh_band = r.lsh_band
+           and l.doc_id < r.doc_id
+          group by l.doc_id, r.doc_id, l.domain, r.domain
+        )
+        select
+          c.left_doc_id,
+          c.right_doc_id,
+          c.left_domain,
+          c.right_domain,
+          c.shared_bands,
+          l.shingle_set as left_shingle_set,
+          r.shingle_set as right_shingle_set,
+          l.signature as left_signature,
+          r.signature as right_signature
+        from candidate_ids c
+        join fingerprinted l on l.doc_id = c.left_doc_id
+        join fingerprinted r on r.doc_id = c.right_doc_id
+        order by c.left_doc_id, c.right_doc_id
+        """
+    )
+```
+
+LSH is a candidate generator, not the final duplicate rule. Sharing a band is enough to make a pair worth inspecting, but not enough to create a duplicate edge.
+
+## 4. Verify candidates with exact Jaccard
+
+The scoring UDF computes both exact shingle Jaccard and signature overlap. Only exact Jaccard at or above `0.7` sets `is_duplicate`; MinHash overlap remains diagnostic so approximate collisions cannot silently become accepted duplicate edges.
+
+```python
+        exact_score = jaccard(
+            row["left_shingle_set"], row["right_shingle_set"]
+        )
+        minhash_score = signature_overlap(row["left_signature"], row["right_signature"])
+        exact_match = exact_score >= SHINGLE_JACCARD_THRESHOLD
+        signature_match = minhash_score >= SIGNATURE_OVERLAP_THRESHOLD
+        is_duplicate = exact_match
+        if exact_match and signature_match:
+            reason = "jaccard_and_minhash"
+        elif exact_match:
+            reason = "jaccard_match"
+        elif signature_match:
+            reason = "minhash_only_rejected"
+        else:
+            reason = "below_jaccard_threshold"
+```
+
+This two-stage design makes the tradeoff legible: LSH controls how much of the pair space is scored, while exact Jaccard controls which pairs become duplicate edges.
+
+## 5. Build duplicate clusters as connected components
+
+Pairwise duplicates form an undirected graph. The recursive SQL adds a self-edge for every document, adds both directions for every accepted pair, computes reachability, and chooses the smallest reachable document ID as the component root.
+
+```python
+def cluster_relation_sql(conn: Any) -> Any:
+    return conn.sql(
+        """
+        with recursive
+        edges as (
+          select doc_id as src_doc_id, doc_id as dst_doc_id from documents
+          union
+          select left_doc_id as src_doc_id, right_doc_id as dst_doc_id from duplicate_pairs
+          union
+          select right_doc_id as src_doc_id, left_doc_id as dst_doc_id from duplicate_pairs
+        ),
+        reach(src_doc_id, dst_doc_id) as (
+          select src_doc_id, dst_doc_id from edges
+          union
+          select r.src_doc_id, e.dst_doc_id
+          from reach r
+          join edges e on e.src_doc_id = r.dst_doc_id
+        ),
+        components as (
+          select src_doc_id as doc_id, min(dst_doc_id) as root_doc_id
+          from reach
+          group by src_doc_id
+        ),
+        cluster_sizes as (
+          select root_doc_id, count(*) as cluster_size
+          from components
+          group by root_doc_id
+        )
+        select
+          'cluster-' || c.root_doc_id as cluster_id,
+          c.doc_id,
+          cs.cluster_size
+        from components c
+        join cluster_sizes cs using (root_doc_id)
+        order by cluster_id, c.doc_id
+        """
+    )
+```
+
+Connected components matter when duplicates are transitive. If A matches B and B matches C, all three belong to one duplicate cluster even when A and C were never direct LSH candidates.
+
+## 6. Select one representative per cluster
+
+The final ranking prefers the most recently crawled document, then the one with more tokens, then the smallest document ID. This makes representative selection deterministic while favoring a recent, information-rich copy.
+
+```sql
+            row_number() over (
+              partition by c.cluster_id
+              order by d.crawled_at desc, f.token_count desc, d.doc_id
+            ) as rank
+```
+
+## Run the default corpus
+
+From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. Its results make every reduction step concrete:
+
+| Metric | Default result | Interpretation |
+| --- | ---: | --- |
+| Input documents | 24 | 18 grouped documents plus 6 singletons |
+| Possible global pairs | 276 | The full `n(n-1)/2` baseline |
+| LSH candidates | 18 | 93.48% fewer pairs require exact scoring |
+| Accepted edges | 18 | 6 exact and 12 near-duplicate pairs |
+| Duplicate clusters | 6 | Each contains a canonical page, mirror, and revision |
+| Singleton clusters | 6 | Unrelated documents remain independent |
+| Representatives | 12 | One retained document per cluster |
+
+All 18 candidate pairs cross domains in the default fixture. That is why candidate generation is global: grouping by domain first would miss every intended duplicate.
+
+The primary release is `deduped_documents.parquet`; the supporting outputs explain how each representative was chosen:
+
+| Output | Purpose |
+| --- | --- |
+| `fingerprinted.parquet` | Normalized text, shingles, signatures, and LSH bands |
+| `candidate_summary.csv` | Global pair baseline, candidate count, and reduction |
+| `scored_pairs.parquet` | Exact and approximate scores for each candidate |
+| `duplicate_pairs.csv` | Accepted graph edges and decision reasons |
+| `clusters.csv` | Cluster membership for every input document |
+| `cluster_inspection.csv` | Review view for multi-member clusters |
+| `deduped_documents.parquet` | The 12 selected representatives |
+| `manifest.json` | Source classification, algorithm settings, counts, and backends |
+
+## Adapt the pattern
+
+- Supply a CSV or Parquet file with `doc_id`, `source`, `domain`, `crawled_at`, `title`, and `body`; optional WARC lineage columns are preserved when present.
+- Evaluate shingle size, LSH bands, and the Jaccard threshold against labeled pairs from your corpus. LSH can miss a true duplicate that never shares a band, while exact scoring filters false-positive candidates before graph-edge creation.
+- Keep candidate generation global when mirrors can cross sites. Use domain only as a diagnostic or an intentional business boundary.
+- The optional Common Crawl path reads pinned WARC byte ranges and extracts HTML blocks into the same base columns, so the fingerprinting and clustering stages remain unchanged.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication) for the optional Common Crawl source, band expansion, all diagnostic Relations, artifact writers, and fixture data.
 
 ## Deployment
 

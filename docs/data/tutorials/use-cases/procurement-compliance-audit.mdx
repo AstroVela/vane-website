@@ -1,0 +1,219 @@
+---
+title: Procurement Compliance Audit
+---
+
+Procurement review often combines two kinds of evidence that are hard to inspect together: structured expert scores and unstructured committee records. This tutorial follows the `procurement-compliance-audit` use case to connect both forms of evidence and produce deterministic, evidence-backed review findings.
+
+Use case source: [AstroVela/demo-scene/procurement-compliance-audit](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit).
+
+The synthetic scenario starts with a concrete anomaly. Expert `EXP-001` recommended Jingwei Automation before the tender, participated without recusing, and later scored that supplier well above the other experts. Removing that expert's scores changes the winner from `SUP-JW-001` to `SUP-ZJ-002`.
+
+The use case follows the questions a procurement reviewer would ask: Did an expert recommend a supplier before the tender? Did that expert then participate without recusing? Was the score materially different from peer scores? Would the award change without that score? The workflow keeps evidence reading separate from compliance judgment so every finding can be traced to both source records and an explicit rule.
+
+| Review stage | Question answered | How Vane supports it |
+| --- | --- | --- |
+| Assemble the tender record | Which project, supplier, expert, score, and evidence file does each row describe? | SQL Relations preserve trusted identities and normalize supplier names and aliases |
+| Read committee records | What text can be recovered from recommendation records and meeting minutes? | A stateful OCR UDF (`@vane.cls`) reuses the object-store client and OCR engine across evidence files |
+| Identify recommendation and recusal facts | Who recommended which supplier, who participated, and who recused? | The Vane AI API extracts only the facts needed for review |
+| Qualify extracted evidence | Does each response match the expected document role and fact format? | A stateless UDF (`@vane.func`) applies the same deterministic validation to every response |
+| Measure impact and issue findings | Is the score anomalous, and did it affect the winning supplier? | SQL compares peer scores, reranks suppliers, and applies review rules with visible thresholds |
+
+The review flow is `assemble the tender record → read committee evidence → identify recommendation and recusal facts → test score and award impact → publish findings and next actions`. It produces the same evidence and findings whether it runs locally for a small review or on Ray for a larger evidence set. The model reports what the records contain; it never declares a compliance violation.
+
+## Default tender and inputs
+
+The fixture represents project `PRJ-2026-001`, an intelligent production-line upgrade tender. The runtime pipeline reads business rows from PostgreSQL and the two evidence images from MinIO.
+
+| Input | Grain | Default data |
+| --- | --- | --- |
+| Project | One row per tender | Declared winner `SUP-JW-001`, score-bias threshold `15.0`, AI confidence floor `0.75` |
+| Suppliers | One row per supplier | Three canonical suppliers and their aliases |
+| Expert scores | One expert-supplier pair per row | Complete 4×3 matrix, or 12 score rows |
+| Evidence metadata | One row per file | Recommendation record `EVD-REC-001` and committee minutes `EVD-MIN-001` |
+| MinIO objects | One PNG per evidence row | The two images used by OCR and Qwen |
+
+The suspicious score is concrete: `EXP-001` gives `SUP-JW-001` a score of `98`, while the other three experts give it `80`, `81`, and `79`.
+
+## 1. Turn committee records into traceable evidence
+
+A compliance review must preserve where every statement came from. Before extracting any fact, the workflow keeps each image tied to its trusted project ID, file ID, and record role, then calls `evidence_ocr_json(bucket, object_key)` to make the content searchable. Recommendation records and committee minutes therefore remain distinct pieces of evidence throughout the review.
+
+The stateful `@vane.cls` function creates RapidOCR only when it reaches the first usable image, then reuses the same engine and MinIO client for later files. That avoids repeated model startup and supports efficient review of larger evidence sets:
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="evidence_ocr_json",
+    gpus=0,
+)
+class EvidenceOcrActor:
+    """Stateful MinIO image OCR function that initializes one reusable engine."""
+
+    def __init__(
+        self,
+        minio_config: MinioConfig,
+        engine_factory=None,
+        store_factory=MinioStore,
+    ) -> None:
+        self.store = store_factory(minio_config)
+        self._engine_factory = engine_factory or build_rapidocr
+        self.engine = None
+```
+
+The `int_evidence_ocr_udf` SQL preserves the trusted evidence identity and puts the OCR result beside it:
+
+```sql
+select
+  project_id,
+  file_id,
+  role,
+  bucket,
+  object_key,
+  media_type,
+  evidence_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as ocr_json
+from stg_evidence_images;
+```
+
+The next SQL step turns the OCR result into status, text, confidence, and line-count columns while retaining the original evidence keys. This gives reviewers searchable content without weakening the chain back to the source file. Local execution reads a precomputed OCR lookup, while Ray invokes the stateful Actor directly; both produce the same evidence record for subsequent review.
+
+## 2. Identify recommendation, participation, and recusal facts
+
+The reviewer needs a narrow set of facts from the records: the document type, expert, supplier, whether a recommendation was made, whether the expert participated, and whether the expert recused. For every image that passes the OCR quality threshold, the workflow combines image bytes and OCR text with the trusted record role and canonical supplier context. On Ray, that request is made through the `vane.ai.prompt` AI Function:
+
+```python
+            result = vane.ai.prompt(
+                relation,
+                "prompt_text",
+                image_columns=["image_bytes"],
+                provider=config.ai.provider,
+                model=config.ai.model,
+                provider_options=provider_options,
+                prompt_options=prompt_options,
+                system_message=AUDIT_FACT_SYSTEM_MESSAGE,
+                output_column="raw_response",
+                num_gpus=0,
+            )
+```
+
+The local provider path and the Ray AI Function produce the same fact table and apply the same one-retry format check. Project ID, file ID, and record role stay anchored to the trusted source rather than the model response. The response contains the document type, expert ID, supplier name, recommendation, participation, recusal, an evidence quote, and confidence. It intentionally excludes risk level, score bias, award impact, and any compliance verdict.
+
+The raw response then crosses a separate deterministic boundary. `@vane.func` registers a stateless validator that either returns canonical fact JSON or rejects the response contract:
+
+```python
+@vane.func(return_dtype="VARCHAR", name="validate_audit_fact_json")
+def validate_audit_fact_json_udf(raw_response: str) -> str:
+    return validate_audit_fact_json(raw_response)
+```
+
+`int_conflict_validation_inputs` first binds each untrusted response to the project, file, and trusted evidence role from PostgreSQL. SQL then invokes the stateless validator directly so that every extracted fact passes the same acceptance rules:
+
+```sql
+create or replace table int_conflict_validation_udf as
+-- Normalize each untrusted AI response through a direct Runner SQL UDF call.
+select
+  project_id,
+  file_id,
+  role,
+  validate_audit_fact_json(raw_response) as fact_json
+from int_conflict_validation_inputs;
+```
+
+The next SQL step exposes typed facts only when the model's document type agrees with the trusted source role. A committee-minutes response therefore cannot be treated as a recommendation record merely because the raw JSON says so. The stateless UDF standardizes the response, while SQL protects evidence identity and determines how each record may be interpreted.
+
+## 3. Test whether the flagged score changed the award outcome
+
+The recommendation and minutes facts are joined by expert identity, then the extracted supplier name is resolved against canonical names and aliases. From there, ordinary SQL can compare the flagged expert with peers and rerun the award ranking without that expert.
+
+The core business test compares two versions of the tender: the supplier averages as awarded, and the averages after excluding the flagged expert. SQL recalculates the second ranking and uses supplier ID as a deterministic tie-breaker:
+
+```sql
+without_flagged_averages as (
+  -- Recompute supplier rankings after excluding the flagged expert.
+  select
+    scores.project_id,
+    scores.supplier_id,
+    avg(scores.score) as average_score
+  from stg_scores as scores
+  inner join matched_signal as signal
+    on signal.project_id = scores.project_id
+   and scores.expert_id <> signal.flagged_expert_id
+  group by scores.project_id, scores.supplier_id
+),
+without_flagged_ranks as (
+  select
+    *,
+    row_number() over (
+      partition by project_id
+      order by average_score desc, supplier_id
+    ) as supplier_rank
+  from without_flagged_averages
+)
+```
+
+The resulting review record brings together the expert score, peer average, score delta, configured threshold, original winner, recalculated winner, and `award_changed` flag. For the fixture, the peer average is `80.0`, so the expert's `98` creates an `18.0` point delta against the `15.0` threshold. The full matrix ranks `SUP-JW-001` first at `84.5`; without `EXP-001`, `SUP-ZJ-002` ranks first at `90.0`. These transparent calculations—not the model response—determine whether the case meets an audit rule.
+
+## 4. Express compliance policy as auditable review rules
+
+Only sufficiently supported facts that agree with the declared original winner can produce a finding. Each policy condition becomes a reviewable rule with a stable ID, subject, measured value, threshold, source-evidence references, recommended action, and confidence. The first branch shows the pattern:
+
+```sql
+  -- EXP-001: the related expert participated without recusing.
+  select
+    project_id || ':EXP-001-conflict-not-recused' as finding_id,
+    project_id,
+    'EXP-001-conflict-not-recused' as rule_id,
+    'high' as severity,
+    'expert' as subject_type,
+    flagged_expert_id as subject_id,
+    related_supplier_id as supplier_id,
+    'recused' as metric_name,
+    0.0::double as metric_value,
+    1.0::double as threshold_value,
+    '专家曾推荐相关供应商，参加评审且未回避。' as finding_summary,
+    cast(to_json(list_value(recommendation_file_id, minutes_file_id)) as varchar)
+      as evidence_file_ids_json,
+    '暂停定标并复核专家回避义务。' as recommended_action,
+    round(least(recommendation_confidence, minutes_confidence), 4) as confidence
+  from eligible
+  where recommended is true
+    and participated is true
+    and recused is false
+```
+
+For the fixture, the three rule branches produce:
+
+| Rule | Severity | Deterministic condition | Fixture result |
+| --- | --- | --- | --- |
+| `EXP-001-conflict-not-recused` | High | Recommended the supplier, participated, and did not recuse | Matched |
+| `EXP-002-score-bias` | Medium | Same conflict facts and score delta at least 15 points | Matched at 18 points |
+| `EXP-003-award-impact` | High | Same conflict facts and winner changes without the expert | Matched, `SUP-JW-001` → `SUP-ZJ-002` |
+
+The branches can be tested and changed independently without retraining or reprompting the model.
+
+## 5. Summarize risk and recommend the next action
+
+The default scenario produces three finding rows—two high severity and one medium severity—and one project summary with status `review_required`. If either document fact falls below the confidence floor, the summary becomes `insufficient_evidence`; a sufficiently supported project with no findings becomes `passed`.
+
+The current project installs Vane from public PyPI and defaults to `runner: local`. With PostgreSQL, MinIO, and local Qwen running, execute `python scripts/run_demo.py e2e`. The command seeds the synthetic tender, performs real OCR and multimodal inference, and writes:
+
+| Output | Rows | Purpose |
+| --- | ---: | --- |
+| `audit_findings.jsonl` | 3 | Rule, severity, subject, metric, threshold, evidence IDs, and action |
+| `audit_summary.jsonl` | 1 | Project status, finding counts, flagged expert, and winner recalculation |
+
+Set `runner: ray` in `runtime.yml` to exercise the distributed OCR Actor and `vane.ai.prompt` path with the same fixture, SQL DAG, and outputs.
+
+`review_required` is an evidence-backed workflow signal, not a legal, disciplinary, or final compliance decision. The reusable business pattern is the separation of responsibilities: OCR and AI make unstructured records searchable and extract limited facts, the stateless UDF rejects responses that do not meet the evidence format, and SQL measures score and award impact against visible policy thresholds. Local and Ray are deployment options for the same review process, so scaling the workload does not change how a finding is justified.
+
+## Adapt the pattern
+
+- Replace the four PostgreSQL source tables while preserving project, supplier, score, and evidence grains.
+- Point the evidence rows at your S3-compatible object store and keep trusted roles outside model output.
+- Replace OCR or the OpenAI-compatible model while preserving the typed fact contract.
+- Add new audit findings as explicit SQL branches with reviewable metrics and thresholds; do not ask the model for the final risk conclusion.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit) for source Relations, prompts, supplier alias resolution, the complete score query, and JSONL publication.

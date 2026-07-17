@@ -1,0 +1,276 @@
+---
+title: MinHash 文本去重
+---
+
+重复和近似重复文本会扭曲训练语料、检索索引和分析结果。本教程沿着 [`examples/minhash_dedupe.py`](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py) 完成一条依赖较少的完整去重流程：规范化文本、计算 MinHash 签名、用局部敏感哈希生成候选对、验证候选对，再为每个连通分量保留一个代表行。
+
+脚本接受内置文本块、CSV 文件或从本地 HTML 文件提取的文本。默认样例同时包含完全重复、标点与大小写变体、无关文本和短样板内容，因此无需下载网页语料就能检查算法行为。
+
+## 处理流程
+
+算法有意把两个工作分开：
+
+- MinHash 与 LSH 以较低成本减少需要比较的文本对数量。
+- 默认使用精确的 shingle Jaccard 相似度校验候选，校验通过后才形成图中的边。
+
+连通分量让去重关系具备传递性：如果第一行匹配第二行，第二行又匹配第三行，那么即使第一行和第三行没有直接成为候选对，三者仍属于同一个重复簇。
+
+## 1. 规范化、生成 shingle 并哈希文本
+
+规范化过程会分解 Unicode 字符、删除组合标记、转成小写、把标点和下划线替换为空格，并折叠空白。规范化后的 `token` 再组成单词 n-gram，也就是 `shingle`。
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def word_shingles(normalized: str, ngram_size: int) -> list[str]:
+    tokens = normalized.split()
+    if not tokens:
+        return []
+    if len(tokens) <= ngram_size:
+        return [" ".join(tokens)]
+    return [" ".join(tokens[i : i + ngram_size]) for i in range(len(tokens) - ngram_size + 1)]
+
+
+def stable_hash_u64(value: str) -> int:
+    digest = hashlib.blake2b(value.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="little") % HASH_PRIME
+
+
+def permutation_coefficients(num_hashes: int, seed: int) -> list[tuple[int, int]]:
+    rng = random.Random(seed)
+    return [
+        (
+            rng.randrange(1, HASH_PRIME - 1),
+            rng.randrange(0, HASH_PRIME - 1),
+        )
+        for _ in range(num_hashes)
+    ]
+
+
+def minhash_signature(
+    shingles: list[str],
+    coefficients: list[tuple[int, int]],
+) -> list[int]:
+    if not shingles:
+        return [0] * len(coefficients)
+
+    values = [stable_hash_u64(shingle) for shingle in set(shingles)]
+    signature = [HASH_PRIME] * len(coefficients)
+    for hashed in values:
+        for i, (a, b) in enumerate(coefficients):
+            candidate = (a * hashed + b) % HASH_PRIME
+            if candidate < signature[i]:
+                signature[i] = candidate
+    return signature
+```
+
+随机系数由种子控制，每个 `shingle` 使用稳定的 BLAKE2b 哈希。因此，相同输入与配置在重复运行时会得到相同签名。
+
+## 2. 在批量 UDF 中应用 MinHash
+
+`NormalizeMinHashBatch` 在一次 Arrow 批处理遍历中计算所有预处理字段。签名和 `shingle` 被编码为 JSON，使 UDF 能返回简单、明确的 Relation schema，供后续 Python 阶段使用。
+
+```python
+class NormalizeMinHashBatch:
+    """Batch UDF that normalizes text and computes MinHash signatures."""
+
+    def __init__(self, *, num_hashes: int, ngram_size: int, seed: int):
+        self.num_hashes = num_hashes
+        self.ngram_size = ngram_size
+        self.coefficients = permutation_coefficients(num_hashes, seed)
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        node_ids = batch["node_id"].to_pylist()
+        block_ids = batch["block_id"].to_pylist()
+        blocks = [str(value or "") for value in batch["block"].to_pylist()]
+
+        normalized_values = []
+        minhash_values = []
+        shingle_values = []
+        for block in blocks:
+            normalized = normalize_text(block)
+            shingles = word_shingles(normalized, self.ngram_size)
+            normalized_values.append(normalized)
+            shingle_values.append(json.dumps(shingles, ensure_ascii=False))
+            minhash_values.append(
+                json.dumps(
+                    minhash_signature(shingles, self.coefficients),
+                    separators=(",", ":"),
+                )
+            )
+
+        return pa.table(
+            {
+                "node_id": pa.array(node_ids, type=pa.int64()),
+                "block_id": pa.array(block_ids, type=pa.string()),
+                "block": pa.array(blocks, type=pa.string()),
+                "content_normalized": pa.array(
+                    normalized_values,
+                    type=pa.string(),
+                ),
+                "minhashes_json": pa.array(minhash_values, type=pa.string()),
+                "shingles_json": pa.array(shingle_values, type=pa.string()),
+            }
+        )
+```
+
+默认配置使用 64 个哈希值、五词 `shingle` 和随机种子 42。UDF 默认在本地运行，也可以用相同 schema 调度到 Ray task 或 actor 后端。
+
+## 3. 选择 LSH 形状
+
+LSH 配置会把每个签名分成若干 `band`。`band` 越多，文本对越容易发生碰撞；每个 `band` 的行越多，则需要更强的带内匹配。如果调用方没有同时提供这两个值，脚本会遍历签名长度的因数对，并最小化目标阈值附近的综合假阳性与假阴性误差。
+
+```python
+def optimal_lsh_params(
+    threshold: float,
+    num_hashes: int,
+    *,
+    false_positive_weight: float = 0.5,
+    false_negative_weight: float = 0.5,
+) -> tuple[int, int]:
+    best_error = float("inf")
+    best = (1, num_hashes)
+    for bands in range(1, num_hashes + 1):
+        if num_hashes % bands != 0:
+            continue
+        rows_per_band = num_hashes // bands
+        fp = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=True,
+        )
+        fn = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=False,
+        )
+        error = fp * false_positive_weight + fn * false_negative_weight
+        if error < best_error:
+            best_error = error
+            best = (bands, rows_per_band)
+    return best
+```
+
+手动指定形状时，`band` 数与每个 `band` 的行数之积必须等于哈希数量。
+
+## 4. 生成并验证候选对
+
+每个 `band` 切片会被哈希成 bucket key，共享 bucket 的行成为候选对。当 bucket 的成员数超过 `max_bucket_size` 时，候选展开方式会从全量两两组合切换为以首节点为中心的星形边。因此，这个阈值限制的是大型样板 bucket 中候选边的增长速度，而不是 bucket 本身的规模。
+
+```python
+def lsh_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    bands: int,
+    rows_per_band: int,
+    threshold: float,
+    exact_jaccard: bool,
+    max_bucket_size: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    buckets: dict[tuple[int, str], set[int]] = defaultdict(set)
+    minhash_by_node: dict[int, list[int]] = {}
+    shingles_by_node: dict[int, set[str]] = {}
+    block_by_node: dict[int, str] = {}
+
+    for row in rows:
+        node_id = int(row["node_id"])
+        signature = [int(value) for value in json.loads(row["minhashes_json"])]
+        minhash_by_node[node_id] = signature
+        shingles_by_node[node_id] = set(json.loads(row["shingles_json"]))
+        block_by_node[node_id] = str(row["block_id"])
+
+        for band in range(bands):
+            start = band * rows_per_band
+            end = start + rows_per_band
+            buckets[(band, band_key(signature[start:end]))].add(node_id)
+
+    raw_pairs: set[tuple[int, int]] = set()
+    bucket_rows = []
+    for (band, digest), members in buckets.items():
+        if len(members) < 2:
+            continue
+        nodes = sorted(members)
+        bucket_rows.append(
+            {
+                "band": band,
+                "bucket_hash": digest,
+                "member_count": len(nodes),
+                "members": "|".join(str(node) for node in nodes),
+            }
+        )
+        if len(nodes) > max_bucket_size:
+            rep = nodes[0]
+            raw_pairs.update((rep, node) for node in nodes[1:])
+        else:
+            raw_pairs.update(combinations(nodes, 2))
+
+    candidate_rows = []
+    for u, v in sorted(raw_pairs):
+        score = jaccard(shingles_by_node[u], shingles_by_node[v])
+        if exact_jaccard and score < threshold:
+            continue
+        candidate_rows.append(
+            {
+                "u": u,
+                "v": v,
+                "u_block_id": block_by_node[u],
+                "v_block_id": block_by_node[v],
+                "jaccard": score,
+            }
+        )
+    return candidate_rows, bucket_rows
+```
+
+默认启用精确 Jaccard 校验。跳过它会让 bucket 碰撞直接成为图中的边，速度更快，但筛选能力更弱。
+
+## 5. 把匹配转换成重复簇
+
+通过当前校验策略的候选对构成一张无向图。一个小型并查集实现会把每个连通分量中最小的节点 ID 作为稳定代表。
+
+```python
+class UnionFind:
+    def __init__(self, nodes: list[int]):
+        self.parent = {node: node for node in nodes}
+
+    def find(self, node: int) -> int:
+        parent = self.parent[node]
+        if parent != node:
+            self.parent[node] = self.find(parent)
+        return self.parent[node]
+
+    def union(self, left: int, right: int) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
+        if left_root == right_root:
+            return
+        if left_root < right_root:
+            self.parent[right_root] = left_root
+        else:
+            self.parent[left_root] = right_root
+```
+
+接下来，每行会得到连通分量标识，并被拆分到保留集合或重复集合。只有包含至少两个成员的分量才会生成簇记录。
+
+## 6. 检查输出
+
+输出目录包含六类互补产物：
+
+- `annotated.csv` 包含每个输入行及其连通分量归属；
+- `deduped.csv` 为每个连通分量保留一个代表；
+- `duplicates.csv` 包含被移除的行；
+- `clusters.csv` 汇总重复组及其代表；
+- `candidate_pairs.csv` 记录被纳入图中的候选边及 Jaccard 分数；如果跳过精确校验，所有 LSH 候选都会直接成为图边；
+- `lsh_buckets.csv` 记录发生碰撞的 `band` bucket。
+
+终端摘要会报告输入行数、选定的 LSH 形状、碰撞 bucket 数量、候选对数量、移除的重复行和保留比例。调节阈值时，应结合候选文件与簇文件：前者解释某条边为何存在，后者展示这些边的传递影响。
+
+CSV 与 HTML 加载、概率积分和结果序列化的完整实现请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py)。

@@ -56,7 +56,7 @@ docs/
     index.mdx          docs home and audience-based entry points
     quickstart/        product intro, installation, SQL and Python quickstarts
     concepts/          architecture and mental models
-    examples/          example catalog and reusable example template
+    tutorials/         tutorial overview, examples, use cases, and reusable template
     deploy/            runner configuration and Ray deployment material
     contributing/      development and contribution workflow
   manifest.json        generated docs metadata manifest
@@ -76,14 +76,16 @@ such as Apache Doris: MDX content lives under `docs/data/`, Docusaurus scans the
 folder for public `/docs/data/...` routes, and sidebar order is generated from
 `src/docs/sidebar.data.json`. Chinese docs live under
 `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/` with matching English
-slugs, so `examples/my-example.mdx` becomes `/zh-CN/docs/data/examples/my-example`.
+slugs, so `tutorials/examples/my-example.mdx` becomes
+`/zh-CN/docs/data/tutorials/examples/my-example`.
 
 ### Add a new page
 
 1. Create `docs/data/<section>/<slug>.mdx`. Add a `title` frontmatter field, then
    write the body in Markdown or MDX. Do not add a top-level `#` heading; the
    page title comes from frontmatter. The public Vane Data route mirrors the docs folder, for example
-   `docs/data/examples/my-example.mdx` becomes `/docs/data/examples/my-example`.
+   `docs/data/tutorials/examples/my-example.mdx` becomes
+   `/docs/data/tutorials/examples/my-example`.
 
    ```mdx
    ---
@@ -101,7 +103,7 @@ slugs, so `examples/my-example.mdx` becomes `/zh-CN/docs/data/examples/my-exampl
    ```
 
    Choose an existing section folder when possible: `quickstart`, `concepts`,
-   `examples`, `deploy`, or `contributing`.
+   `tutorials`, `deploy`, or `contributing`.
 
 2. Register the MDX file in `src/docs/registry.ts` by adding it to `DOCS_PAGES`
    with the desired public slug, source path, and the same title.
@@ -110,7 +112,15 @@ slugs, so `examples/my-example.mdx` becomes `/zh-CN/docs/data/examples/my-exampl
    its slug under the desired group:
 
    ```json
-   { "group": "Examples", "items": [{ "slug": "examples/my-example" }] }
+   {
+     "group": "Tutorials",
+     "items": [
+       {
+         "group": "Examples",
+         "items": [{ "slug": "tutorials/examples/my-example" }]
+       }
+     ]
+   }
    ```
 
 4. Add or update the Chinese page at

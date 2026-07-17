@@ -63,48 +63,120 @@
       }
     },
     {
-      "slug": "examples",
-      "title": "Examples",
-      "source": "docs/data/examples/index.mdx",
-      "route": "/docs/data/examples",
+      "slug": "tutorials",
+      "title": "Overview",
+      "source": "docs/data/tutorials/index.mdx",
+      "route": "/docs/data/tutorials",
       "frontmatter": {
-        "title": "Examples"
+        "title": "Overview"
       }
     },
     {
-      "slug": "examples/training-data-pipeline",
-      "title": "Training Data Pipeline",
-      "source": "docs/data/examples/training-data-pipeline.mdx",
-      "route": "/docs/data/examples/training-data-pipeline",
+      "slug": "tutorials/examples/common-crawl",
+      "title": "Working with Common Crawl",
+      "source": "docs/data/tutorials/examples/common-crawl.mdx",
+      "route": "/docs/data/tutorials/examples/common-crawl",
       "frontmatter": {
-        "title": "Training Data Pipeline"
+        "title": "Working with Common Crawl"
       }
     },
     {
-      "slug": "examples/insurance-document-audit",
-      "title": "Insurance Document Audit",
-      "source": "docs/data/examples/insurance-document-audit.mdx",
-      "route": "/docs/data/examples/insurance-document-audit",
+      "slug": "tutorials/examples/minhash-dedupe",
+      "title": "MinHash Text Deduplication",
+      "source": "docs/data/tutorials/examples/minhash-dedupe.mdx",
+      "route": "/docs/data/tutorials/examples/minhash-dedupe",
       "frontmatter": {
-        "title": "Insurance Document Audit"
+        "title": "MinHash Text Deduplication"
       }
     },
     {
-      "slug": "examples/tender-compliance-check",
-      "title": "Tender Compliance Check",
-      "source": "docs/data/examples/tender-compliance-check.mdx",
-      "route": "/docs/data/examples/tender-compliance-check",
+      "slug": "tutorials/examples/llms-red-pajamas",
+      "title": "Semantic Search on Red Pajamas",
+      "source": "docs/data/tutorials/examples/llms-red-pajamas.mdx",
+      "route": "/docs/data/tutorials/examples/llms-red-pajamas",
       "frontmatter": {
-        "title": "Tender Compliance Check"
+        "title": "Semantic Search on Red Pajamas"
       }
     },
     {
-      "slug": "examples/multimodal-data-lake",
-      "title": "Multimodal Data Lake",
-      "source": "docs/data/examples/multimodal-data-lake.mdx",
-      "route": "/docs/data/examples/multimodal-data-lake",
+      "slug": "tutorials/examples/querying-images",
+      "title": "Querying Image Data",
+      "source": "docs/data/tutorials/examples/querying-images.mdx",
+      "route": "/docs/data/tutorials/examples/querying-images",
       "frontmatter": {
-        "title": "Multimodal Data Lake"
+        "title": "Querying Image Data"
+      }
+    },
+    {
+      "slug": "tutorials/examples/image-generation",
+      "title": "Generating Images from Text",
+      "source": "docs/data/tutorials/examples/image-generation.mdx",
+      "route": "/docs/data/tutorials/examples/image-generation",
+      "frontmatter": {
+        "title": "Generating Images from Text"
+      }
+    },
+    {
+      "slug": "tutorials/examples/voice-ai-analytics",
+      "title": "Voice AI Analytics",
+      "source": "docs/data/tutorials/examples/voice-ai-analytics.mdx",
+      "route": "/docs/data/tutorials/examples/voice-ai-analytics",
+      "frontmatter": {
+        "title": "Voice AI Analytics"
+      }
+    },
+    {
+      "slug": "tutorials/examples/multimodal-structured-outputs",
+      "title": "Multimodal Structured Outputs",
+      "source": "docs/data/tutorials/examples/multimodal-structured-outputs.mdx",
+      "route": "/docs/data/tutorials/examples/multimodal-structured-outputs",
+      "frontmatter": {
+        "title": "Multimodal Structured Outputs"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/claims-disposition",
+      "title": "Claims Disposition from Multimodal Evidence",
+      "source": "docs/data/tutorials/use-cases/claims-disposition.mdx",
+      "route": "/docs/data/tutorials/use-cases/claims-disposition",
+      "frontmatter": {
+        "title": "Claims Disposition from Multimodal Evidence"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/enterprise-agent-evidence",
+      "title": "Governing Evidence for Enterprise Agents",
+      "source": "docs/data/tutorials/use-cases/enterprise-agent-evidence.mdx",
+      "route": "/docs/data/tutorials/use-cases/enterprise-agent-evidence",
+      "frontmatter": {
+        "title": "Governing Evidence for Enterprise Agents"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/multimodal-training-data",
+      "title": "Building a Multimodal Training Release",
+      "source": "docs/data/tutorials/use-cases/multimodal-training-data.mdx",
+      "route": "/docs/data/tutorials/use-cases/multimodal-training-data",
+      "frontmatter": {
+        "title": "Building a Multimodal Training Release"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/procurement-compliance-audit",
+      "title": "Procurement Compliance Audit",
+      "source": "docs/data/tutorials/use-cases/procurement-compliance-audit.mdx",
+      "route": "/docs/data/tutorials/use-cases/procurement-compliance-audit",
+      "frontmatter": {
+        "title": "Procurement Compliance Audit"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/web-text-deduplication",
+      "title": "Web Text Deduplication with Global LSH",
+      "source": "docs/data/tutorials/use-cases/web-text-deduplication.mdx",
+      "route": "/docs/data/tutorials/use-cases/web-text-deduplication",
+      "frontmatter": {
+        "title": "Web Text Deduplication with Global LSH"
       }
     },
     {
@@ -168,32 +240,82 @@
       ]
     },
     {
-      "group": "Examples",
+      "group": "Tutorials",
       "items": [
         {
-          "slug": "examples",
-          "label": "Examples",
-          "route": "/docs/data/examples"
+          "slug": "tutorials",
+          "label": "Overview",
+          "route": "/docs/data/tutorials"
         },
         {
-          "slug": "examples/training-data-pipeline",
-          "label": "Training Data Pipeline",
-          "route": "/docs/data/examples/training-data-pipeline"
+          "group": "Examples",
+          "items": [
+            {
+              "slug": "tutorials/examples/common-crawl",
+              "label": "Working with Common Crawl",
+              "route": "/docs/data/tutorials/examples/common-crawl"
+            },
+            {
+              "slug": "tutorials/examples/minhash-dedupe",
+              "label": "MinHash Text Deduplication",
+              "route": "/docs/data/tutorials/examples/minhash-dedupe"
+            },
+            {
+              "slug": "tutorials/examples/llms-red-pajamas",
+              "label": "Semantic Search on Red Pajamas",
+              "route": "/docs/data/tutorials/examples/llms-red-pajamas"
+            },
+            {
+              "slug": "tutorials/examples/querying-images",
+              "label": "Querying Image Data",
+              "route": "/docs/data/tutorials/examples/querying-images"
+            },
+            {
+              "slug": "tutorials/examples/image-generation",
+              "label": "Generating Images from Text",
+              "route": "/docs/data/tutorials/examples/image-generation"
+            },
+            {
+              "slug": "tutorials/examples/voice-ai-analytics",
+              "label": "Voice AI Analytics",
+              "route": "/docs/data/tutorials/examples/voice-ai-analytics"
+            },
+            {
+              "slug": "tutorials/examples/multimodal-structured-outputs",
+              "label": "Multimodal Structured Outputs",
+              "route": "/docs/data/tutorials/examples/multimodal-structured-outputs"
+            }
+          ]
         },
         {
-          "slug": "examples/insurance-document-audit",
-          "label": "Insurance Document Audit",
-          "route": "/docs/data/examples/insurance-document-audit"
-        },
-        {
-          "slug": "examples/tender-compliance-check",
-          "label": "Tender Compliance Check",
-          "route": "/docs/data/examples/tender-compliance-check"
-        },
-        {
-          "slug": "examples/multimodal-data-lake",
-          "label": "Multimodal Data Lake",
-          "route": "/docs/data/examples/multimodal-data-lake"
+          "group": "Use cases",
+          "items": [
+            {
+              "slug": "tutorials/use-cases/claims-disposition",
+              "label": "Claims Disposition from Multimodal Evidence",
+              "route": "/docs/data/tutorials/use-cases/claims-disposition"
+            },
+            {
+              "slug": "tutorials/use-cases/enterprise-agent-evidence",
+              "label": "Governing Evidence for Enterprise Agents",
+              "route": "/docs/data/tutorials/use-cases/enterprise-agent-evidence"
+            },
+            {
+              "slug": "tutorials/use-cases/multimodal-training-data",
+              "label": "Building a Multimodal Training Release",
+              "route": "/docs/data/tutorials/use-cases/multimodal-training-data"
+            },
+            {
+              "slug": "tutorials/use-cases/procurement-compliance-audit",
+              "label": "Procurement Compliance Audit",
+              "route": "/docs/data/tutorials/use-cases/procurement-compliance-audit"
+            },
+            {
+              "slug": "tutorials/use-cases/web-text-deduplication",
+              "label": "Web Text Deduplication with Global LSH",
+              "route": "/docs/data/tutorials/use-cases/web-text-deduplication"
+            }
+          ]
         }
       ]
     },

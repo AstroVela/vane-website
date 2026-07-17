@@ -7,7 +7,10 @@ const routes = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
 assert.match(routes, /routePath\('\/solutions\/enterprise-agent'\)/)
 assert.match(page, /const AUDIT_CODE = `[^`]*import vane[\s\S]*attach_function\([\s\S]*con\.sql\([\s\S]*ai_prompt\([\s\S]*write_parquet\(/)
 assert.match(page, /ENTERPRISE_DESIGN_PARTNER_MAILTO/)
-assert.match(page, /\/docs\/data\/examples\/insurance-document-audit/)
-assert.doesNotMatch(`${page}\n${routes}`, /\/use-cases(?:\/|\b)/)
+assert.match(
+  page,
+  /\/docs\/data\/tutorials\/use-cases\/enterprise-agent-evidence/,
+)
+assert.doesNotMatch(`${page}\n${routes}`, /['"`]\/use-cases(?:\/|\b)/)
 
 console.log('Enterprise solution content check passed.')

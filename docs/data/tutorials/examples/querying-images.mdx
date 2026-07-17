@@ -1,0 +1,173 @@
+---
+title: Querying Image Data
+---
+
+Image workflows often begin with tabular metadata but need to decode binary objects before they can answer visual questions. This tutorial follows [`examples/querying_images.py`](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py) to find the images with the largest red regions, while keeping paths, file sizes, dimensions, preview bytes, and masks in one Vane Relation.
+
+The script can read three sources:
+
+- generated sample images, which are the offline default;
+- local files matched by a glob;
+- a public OpenImages validation prefix listed and downloaded over HTTPS.
+
+All three paths produce the same columns—`id`, `path`, `size`, and `image_bytes`—so the analysis stage is independent of storage.
+
+## 1. Bound the input
+
+For local and OpenImages inputs, optional minimum and maximum file sizes are applied before analysis. The remote path also limits how many object-list entries it scans before downloading the requested number of images. These controls matter because decoding every image is much more expensive than inspecting metadata.
+
+The built-in sample generates five simple scenes: a large red wall, a red sign, a small traffic light, a blue image, and a red border. That mix makes the ranking and saved masks easy to verify visually.
+
+## 2. Detect red regions
+
+The detector converts an RGB image to HSV. Red wraps around the hue axis, so the hue condition accepts values at both the high and low ends of the range. Saturation and value thresholds remove gray or dark pixels, and a mode filter cleans isolated mask noise.
+
+```python
+def magic_red_detector(image: Image.Image) -> Image.Image:
+    """Return a mask covering red regions in an RGB image."""
+    hsv = np.asarray(image.convert("HSV"))
+    lower = np.array([245, 100, 100], dtype=np.uint8)
+    upper = np.array([10, 255, 255], dtype=np.uint8)
+
+    hue = hsv[:, :, 0]
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    hue_mask = (hue >= lower[0]) | (hue <= upper[0])
+    saturation_mask = (saturation >= lower[1]) & (saturation <= upper[1])
+    value_mask = (value >= lower[2]) & (value <= upper[2])
+    mask = hue_mask & saturation_mask & value_mask
+
+    mask_image = Image.fromarray(mask.astype(np.uint8) * 255)
+    return mask_image.filter(ImageFilter.ModeFilter(size=5))
+```
+
+This is intentionally a transparent heuristic rather than a learned model. It makes the tutorial's focus—how complex data is processed in a batch UDF—easy to inspect.
+
+## 3. Analyze Arrow batches
+
+`AnalyzeRedRegionsBatch` decodes each binary value with Pillow, converts it to RGB, creates the mask, counts nonzero mask pixels, and returns both RGB preview PNG bytes and mask PNG bytes. It also records the red fraction so images of different dimensions remain comparable.
+
+```python
+class AnalyzeRedRegionsBatch:
+    """Batch UDF that decodes images and computes red-region masks."""
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch["id"].to_pylist()
+        paths = batch["path"].to_pylist()
+        sizes = batch["size"].to_pylist()
+        image_values = batch["image_bytes"].to_pylist()
+
+        widths = []
+        heights = []
+        red_pixels = []
+        red_fractions = []
+        preview_values = []
+        mask_values = []
+
+        for image_bytes in image_values:
+            image = Image.open(io.BytesIO(bytes(image_bytes or b""))).convert("RGB")
+            mask = magic_red_detector(image)
+            mask_array = np.asarray(mask)
+            red_count = int(np.count_nonzero(mask_array))
+            total_pixels = image.width * image.height
+
+            widths.append(int(image.width))
+            heights.append(int(image.height))
+            red_pixels.append(red_count)
+            red_fractions.append(red_count / max(1, total_pixels))
+            preview_values.append(pil_to_png_bytes(image))
+            mask_values.append(pil_to_png_bytes(mask.convert("RGB")))
+
+        return pa.table(
+            {
+                "id": pa.array(ids, type=pa.int64()),
+                "path": pa.array(paths, type=pa.string()),
+                "size": pa.array(sizes, type=pa.int64()),
+                "width": pa.array(widths, type=pa.int64()),
+                "height": pa.array(heights, type=pa.int64()),
+                "red_pixels": pa.array(red_pixels, type=pa.int64()),
+                "red_fraction": pa.array(red_fractions, type=pa.float64()),
+                "preview_png": pa.array(preview_values, type=pa.binary()),
+                "red_mask_png": pa.array(mask_values, type=pa.binary()),
+            }
+        )
+```
+
+The UDF returns a new table rather than mutating input rows. That makes every output type explicit at the `map_batches` call site.
+
+```python
+    analyzed = rel.map_batches(
+        AnalyzeRedRegionsBatch(),
+        schema={
+            "id": duckdb.sqltypes.BIGINT,
+            "path": duckdb.sqltypes.VARCHAR,
+            "size": duckdb.sqltypes.BIGINT,
+            "width": duckdb.sqltypes.BIGINT,
+            "height": duckdb.sqltypes.BIGINT,
+            "red_pixels": duckdb.sqltypes.BIGINT,
+            "red_fraction": duckdb.sqltypes.DOUBLE,
+            "preview_png": duckdb.sqltypes.BLOB,
+            "red_mask_png": duckdb.sqltypes.BLOB,
+        },
+        batch_size=args.batch_size,
+        execution_backend=args.execution_backend,
+    )
+```
+
+The default backend is local. The same UDF can run as a Ray task or actor after every worker has NumPy and Pillow available.
+
+## 4. Rank and save visual results
+
+After materialization, the script sorts first by red pixel count and then by red fraction, keeps the requested top rows, and writes paired image and mask files. The metadata CSV connects each saved file back to its source row.
+
+```python
+def save_outputs(table: pa.Table, output_dir: Path, top_k: int) -> pa.Table:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image_dir = output_dir / "images"
+    mask_dir = output_dir / "masks"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = sorted(
+        table.to_pylist(),
+        key=lambda row: (int(row["red_pixels"]), float(row["red_fraction"])),
+        reverse=True,
+    )[:top_k]
+    output_rows = []
+    for rank, row in enumerate(rows, start=1):
+        stem = f"{rank:03d}-{sanitize_file_stem(row['id'])}"
+        image_path = image_dir / f"{stem}.png"
+        mask_path = mask_dir / f"{stem}-red-mask.png"
+        image_path.write_bytes(row["preview_png"])
+        mask_path.write_bytes(row["red_mask_png"])
+        output_rows.append(
+            {
+                "rank": rank,
+                "id": row["id"],
+                "path": row["path"],
+                "size": row["size"],
+                "width": row["width"],
+                "height": row["height"],
+                "red_pixels": row["red_pixels"],
+                "red_fraction": row["red_fraction"],
+                "image_path": str(image_path),
+                "red_mask_path": str(mask_path),
+            }
+        )
+
+    metadata_path = output_dir / "top_red_images.csv"
+    with metadata_path.open("w", newline="", encoding="utf-8") as metadata_file:
+        writer = csv.DictWriter(metadata_file, fieldnames=list(output_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(output_rows)
+
+    return pa.table({key: pa.array([row[key] for row in output_rows]) for key in output_rows[0]})
+```
+
+The default output directory contains an `images` directory, a `masks` directory, and `top_red_images.csv`. The terminal preview shows rank, source path, dimensions, red pixel count, red fraction, and both saved paths.
+
+## What to change for another visual query
+
+Keep the source Relation and output contract, then replace `magic_red_detector` with the visual rule or model needed by your task. Returning derived bytes alongside scalar metrics is useful when reviewers need both a sortable score and a visual explanation of that score.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py) for sample-image generation, local glob loading, and the public OpenImages listing path.

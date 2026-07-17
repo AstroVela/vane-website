@@ -1,0 +1,212 @@
+---
+title: 多模态结构化输出
+---
+
+模型可能用错误的理由答对视觉问题，例如利用文本线索，而不是读取图像。本教程沿着 [`examples/multimodal_structured_outputs.py`](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py)，比较视觉语言回答与纯文本回答，并判断图像是否帮助或干扰了回答。
+
+评估流程会：
+
+1. 加载合成颜色问题，或从 The Cauldron 读取少量 AI2D 样例。
+2. 带图像向模型询问每个选择题。
+3. 不带图像再次询问同一问题。
+4. 解析两个答案、计算准确率并分配诊断象限。
+5. 可选地让视觉语言模型诊断失败数据行。
+
+默认数据集是合成的，但推理仍然使用 OpenAI 兼容的模型端点。默认端点是 Hugging Face 路由服务，API key 从 `HF_TOKEN` 读取。
+
+## 1. 定义结构化结果契约
+
+选择题响应包含一个答案字母。诊断响应把详细推理、简短假设和粗粒度归因分开。所选端点支持 SDK 解析时，Pydantic 模型会提供结构化输出契约。
+
+```python
+class ChoiceResponse(BaseModel):
+    """Structured answer for a multiple-choice question."""
+
+    choice: str = Field(
+        ...,
+        description="The selected answer letter, such as A, B, C, or D.",
+    )
+
+
+class JudgeResponse(BaseModel):
+    """Structured diagnostic feedback for a failed example."""
+
+    reasoning: str = Field(..., description="Why the model likely answered that way.")
+    hypothesis: str = Field(..., description="A concise cause of the error.")
+    attribution: str = Field(
+        ...,
+        description="One of: question, image, model, or other.",
+    )
+```
+
+仅提示词模式会省略这些 Python 返回类型，只依靠相同的系统消息直接请求 JSON。这条路径可以支持没有实现结构化解析的 OpenAI 兼容服务器。
+
+## 2. 从可以审计的视觉数据集开始
+
+合成数据源会创建纯色 PNG 和一道四选一问题。由于每个答案都确实依赖图像，它很适合快速验证消融逻辑。
+
+```python
+def synthetic_rows(limit: int) -> list[dict[str, Any]]:
+    """Return a tiny local vision QA set that needs the image to answer."""
+    color_rows = [
+        ("red", "A", (220, 32, 32)),
+        ("blue", "B", (32, 96, 220)),
+        ("green", "C", (32, 160, 80)),
+        ("yellow", "D", (230, 200, 32)),
+    ]
+    rows: list[dict[str, Any]] = []
+    choices = "A. red\nB. blue\nC. green\nD. yellow"
+    for color, answer, rgb in color_rows:
+        rows.append(
+            {
+                "id": f"synthetic-{color}",
+                "source": "synthetic",
+                "question": (f"Which color fills the attached square?\n{choices}\nReturn the answer letter."),
+                "answer": answer,
+                "image": solid_png(96, 96, rgb),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+```
+
+AI2D 输入从 Hugging Face 流式读取数据行，取得第一轮用户和助手消息，把助手答案规范化为 A–D，将第一张图转换为字节，并且只保留完整样例。两个数据源都会变成包含 `id`、`source`、`question`、`answer` 和二进制 `image` 列的 Arrow Relation。
+
+## 3. 带图像运行推理
+
+通用 provider 选项只组装一次，使多模态、纯文本和诊断调用共享模型、端点、采样设置与执行后端。
+
+```python
+    common_prompt_options = {
+        "provider": "openai",
+        "model": args.model,
+        "api_key": api_key,
+        "use_chat_completions": True,
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+        "execution_backend": args.execution_backend,
+    }
+    if base_url:
+        common_prompt_options["base_url"] = base_url
+
+    choice_return_format = ChoiceResponse if args.structured_output_mode == "parse" else None
+    judge_return_format = JudgeResponse if args.structured_output_mode == "parse" else None
+
+    with_image_responses = prompt(
+        rel,
+        "question",
+        image_columns=["image"],
+        system_message=VISION_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_with_image",
+        **common_prompt_options,
+    )
+    with_image = append_prompt_output(
+        conn,
+        rel,
+        with_image_responses,
+        "response_with_image",
+    )
+    eval_with_image = add_choice_eval(
+        with_image,
+        "response_with_image",
+        "predicted_with_image",
+        "is_correct_with_image",
+    )
+```
+
+`append_prompt_output` 会在按位置把结果接回源 Relation 之前，检查输出行数和请求的列。这样可以发现多行、少行或缺少输出列的情况，但不能独立验证行顺序。
+
+## 4. 不带图像重复提问
+
+消融阶段使用已经扩充的 Relation，但不传 `image_columns`。它写入单独的响应列，并应用相同的答案规范化逻辑。
+
+```python
+    without_image_responses = prompt(
+        eval_with_image,
+        "question",
+        system_message=TEXT_ONLY_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_without_image",
+        **common_prompt_options,
+    )
+    without_image = append_prompt_output(
+        conn,
+        eval_with_image,
+        without_image_responses,
+        "response_without_image",
+    )
+    evaluated = add_choice_eval(
+        without_image,
+        "response_without_image",
+        "predicted_without_image",
+        "is_correct_without_image",
+    )
+    classified = classify_quadrants(evaluated)
+```
+
+答案规范化会先尝试结构化的 `choice` 字段，再尝试类似 JSON 的模式，最后寻找独立的 A–D 字符。它同时记录规范化选项和布尔型正确性列。
+
+## 5. 划分诊断象限
+
+两个正确性值产生四个互斥结果：
+
+- Both Correct：有无视觉证据都能回答正确。
+- Image Helped：只有多模态推理回答正确。
+- Image Hurt：只有纯文本运行回答正确。
+- Both Incorrect：两次都回答错误。
+
+分类由 Relation 上的 SQL 完成。
+
+```python
+def classify_quadrants(rel: Any) -> Any:
+    alias = relation_alias("quadrant", rel)
+    return rel.query(
+        alias,
+        f"""
+        select
+        {alias}.*,
+        case
+            when is_correct_with_image and is_correct_without_image then 'Both Correct'
+            when is_correct_with_image and not is_correct_without_image then 'Image Helped'
+            when not is_correct_with_image and is_correct_without_image then 'Image Hurt'
+            else 'Both Incorrect'
+        end as quadrant
+        from {alias}
+        """,
+    )
+```
+
+脚本会打印带图准确率、不带图准确率以及差值，再展示逐行预测和聚合象限计数。对于合成数据集，图像感知正常的模型应得到 Image Helped，因为问题文本里没有关于生成色块的线索。
+
+## 6. 让 VLM 诊断失败
+
+除非跳过 `judge` 诊断阶段，否则只有 Image Hurt 和 Both Incorrect 行会继续。脚本构造一个包含问题、正确答案以及两次模型选项的诊断提示，再次把图像提供给诊断模型。
+
+```python
+    judge_responses = prompt(
+        judge_input,
+        "judge_prompt",
+        image_columns=["image"],
+        system_message=JUDGE_SYSTEM_PROMPT,
+        return_format=judge_return_format,
+        output_column="judge_response",
+        max_tokens=args.judge_max_tokens,
+        **{key: value for key, value in common_prompt_options.items() if key != "max_tokens"},
+    )
+    judged = append_prompt_output(
+        conn,
+        judge_input,
+        judge_responses,
+        "judge_response",
+    )
+```
+
+最终预览会从诊断 JSON 中提取 `attribution`、`hypothesis` 和 `reasoning`。这个阶段产生的是诊断模型输出，而不是真值；应当用它组织评审，而不是取代人工检查。
+
+## 模型服务与执行方式
+
+默认通过 Hugging Face 的 OpenAI 兼容路由服务访问 `Qwen/Qwen3-VL-8B-Instruct`。基础 URL、API key 环境变量、模型、temperature、token 上限、结构化输出模式和执行后端都可配置。使用 Ray 后端时，执行节点需要能访问模型端点，并安装相同的 Vane AI 依赖。
+
+图像规范化、AI2D 加载、答案解析、指标查询以及全部参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py)。

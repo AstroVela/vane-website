@@ -1,0 +1,45 @@
+---
+title: 概览
+---
+
+这些示例展示了 Vane 如何在实际数据工作流中组合 Relation、SQL、批量 UDF、AI 函数，以及可配置的本地或 Ray 执行方式。每篇文档都对应 Vane 生态中的可运行源码：先交代问题，再分阶段拆解处理流程，解释关键实现选择，最后说明应检查哪些产物。
+
+大多数脚本默认使用小型、自包含的样例数据。你可以先在本地理解工作流，再切换到真实数据集、模型或服务。
+
+## 运行示例脚本
+
+先按照[安装](/zh-CN/docs/data/quickstart/installation)页面创建环境并安装已发布的 Vane wheel。只下载可运行脚本时，可以使用 `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`，然后执行 `cd vane-examples` 和 `git sparse-checkout set examples`。通过 `uv pip install vane-ai numpy pyarrow` 安装通用运行依赖，再根据各篇文档补充示例专用依赖。
+
+Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，因此示例脚本和本地 Ray worker 会导入已安装的 wheel，而不是相邻的源码副本。
+
+## 示例
+
+| 示例 | 你将构建什么 | 默认输入 |
+| --- | --- | --- |
+| [处理 Common Crawl 数据](/docs/data/tutorials/examples/common-crawl) | 解码 WET 记录、按语言过滤、切分网页文本并生成嵌入 | WARC 结构的内置记录 |
+| [MinHash 文本去重](/docs/data/tutorials/examples/minhash-dedupe) | 规范化文本、生成 MinHash 签名、查找 LSH 候选并为每个连通分量保留一行 | 内置的重复文本块 |
+| [Red Pajamas 语义检索](/docs/data/tutorials/examples/llms-red-pajamas) | 为 StackExchange 风格问题生成嵌入，并把低分问题匹配到相关的高分问题 | 内置的问题对 |
+| [查询图像数据](/docs/data/tutorials/examples/querying-images) | 加载图像字节、在批量 UDF 中检测红色区域，并为图像和掩码排序 | 生成的样例图像 |
+| [从文本生成图像](/docs/data/tutorials/examples/image-generation) | 使用占位后端或 Stable Diffusion，把提示词行转换为 PNG 字节 | 确定性的占位图像 |
+| [语音 AI 分析](/docs/data/tutorials/examples/voice-ai-analytics) | 转写音频、总结转录文本、生成字幕行并为片段创建嵌入 | 生成的音频与预设转录文本 |
+| [多模态结构化输出](/docs/data/tutorials/examples/multimodal-structured-outputs) | 比较带图与纯文本回答、划分评估象限并诊断失败 | 合成视觉问题与托管 VLM |
+
+## 用例
+
+这些用例会组合多个源系统、模态分支或 SQL 派生表。页面集中说明核心处理与决策路径，不展开运维脚手架。
+
+| 用例 | 你将构建什么 | 默认场景 |
+| --- | --- | --- |
+| [基于多模态证据的理赔处置](/docs/data/tutorials/use-cases/claims-disposition) | 组合理赔记录、照片、OCR、多模态事实和有序 SQL 规则，为每个理赔案件生成一条工作流建议 | 覆盖全部建议结果的四个合成案件 |
+| [企业 Agent 证据治理](/docs/data/tutorials/use-cases/enterprise-agent-evidence) | 解析可复用多模态资产、识别证据缺口与冲突，并构建经过治理的 Agent 上下文和审查队列 | 五个公开来源资产关联到四个合成业务事项 |
+| [多模态训练数据发布集](/docs/data/tutorials/use-cases/multimodal-training-data) | 把文档、图像、音频和文本分支处理成统一的发布表与可审查的拒绝记录集 | 五个固定版本的公开来源资产 |
+| [采购合规审计](/docs/data/tutorials/use-cases/procurement-compliance-audit) | 从证据图像抽取事实、比较专家评分、重新计算中标方并生成确定性审计发现 | 一个包含两张证据图像的合成招标项目 |
+| [基于全局 LSH 的网页文本去重](/docs/data/tutorials/use-cases/web-text-deduplication) | 生成全局 LSH 候选、用精确 Jaccard 校验、形成图聚类并保留代表文档 | 24 篇包含重复组与单例的文档 |
+
+## 如何选择
+
+文本与嵌入工作流可以从 Common Crawl 或 Red Pajamas 开始。精简的 MinHash 示例适合了解算法；全局网页文本用例则继续覆盖候选诊断、精确校验、聚类和发布。图像生成、图像查询、语音和结构化输出示例展示了二进制媒体与模型结果如何在 Arrow 支撑的 Relation 中流转。如果需要由多个输入和明确下游策略组成的完整工作流，可以选择理赔、采购、Agent 证据或训练数据发布用例。
+
+## 代码来源
+
+这些页面中的每个代码块都复制自对应的源码项目。示例使用 Vane 仓库 `examples/` 下的文件，用例使用 `demo-scene` 仓库中同名目录下的文件。正文只负责解释和串联这些片段，可运行项目始终是最终依据。

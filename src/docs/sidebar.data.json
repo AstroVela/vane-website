@@ -16,13 +16,31 @@
     ]
   },
   {
-    "group": "Examples",
+    "group": "Tutorials",
     "items": [
-      { "slug": "examples" },
-      { "slug": "examples/training-data-pipeline" },
-      { "slug": "examples/insurance-document-audit" },
-      { "slug": "examples/tender-compliance-check" },
-      { "slug": "examples/multimodal-data-lake" }
+      { "slug": "tutorials", "label": "Overview", "key": "Tutorials overview" },
+      {
+        "group": "Examples",
+        "items": [
+          { "slug": "tutorials/examples/common-crawl" },
+          { "slug": "tutorials/examples/minhash-dedupe" },
+          { "slug": "tutorials/examples/llms-red-pajamas" },
+          { "slug": "tutorials/examples/querying-images" },
+          { "slug": "tutorials/examples/image-generation" },
+          { "slug": "tutorials/examples/voice-ai-analytics" },
+          { "slug": "tutorials/examples/multimodal-structured-outputs" }
+        ]
+      },
+      {
+        "group": "Use cases",
+        "items": [
+          { "slug": "tutorials/use-cases/claims-disposition" },
+          { "slug": "tutorials/use-cases/enterprise-agent-evidence" },
+          { "slug": "tutorials/use-cases/multimodal-training-data" },
+          { "slug": "tutorials/use-cases/procurement-compliance-audit" },
+          { "slug": "tutorials/use-cases/web-text-deduplication" }
+        ]
+      }
     ]
   },
   {

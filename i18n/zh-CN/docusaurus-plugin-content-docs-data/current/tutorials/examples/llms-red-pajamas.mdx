@@ -1,0 +1,159 @@
+---
+title: Red Pajamas 语义检索
+---
+
+StackExchange 上有很多得分较低的问题，同时站内已经存在高度相关、得分更高的问题。本教程沿着 [`examples/llms_red_pajamas.py`](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py)，使用 Vane 构建一条紧凑的语义匹配流程。
+
+你将完成：
+
+1. 从内置样例或 S3 上的 Red Pajamas JSONL 样例加载 StackExchange 风格的数据行。
+2. 为每个问题生成嵌入。
+3. 把数据分成低分查询与高分候选。
+4. 按余弦相似度排序候选，并可选择把匹配结果写入 CSV。
+
+内置数据包含三组明显的查询与候选，适合在读取远程数据集或把模型任务调度到 Ray 之前验证处理流程。
+
+## 1. 加载类型明确的问题行
+
+远程路径通过 DuckDB 的 HTTP/S3 支持读取 JSONL。它保留问题文本，从嵌套元数据中提取 URL 与分数，删除没有可用分数的行，并在 SQL 中应用行数上限。
+
+```python
+def load_redpajama_relation(conn: Any, path: str, limit: int) -> Any:
+    try:
+        conn.execute("INSTALL httpfs")
+        conn.execute("LOAD httpfs")
+    except Exception:
+        pass
+    try:
+        conn.execute("SET s3_region='us-west-2'")
+        conn.execute("SET s3_url_style='path'")
+    except Exception:
+        pass
+
+    path_sql = sql_literal(path)
+    return conn.sql(
+        f"""
+        with raw as (
+            select
+                text,
+                to_json(meta) as meta_json
+            from read_json_auto({path_sql}, maximum_object_size=16777216)
+            where text is not null
+        ),
+        parsed as (
+            select
+                row_number() over () - 1 as id,
+                text,
+                coalesce(json_extract_string(meta_json, '$.url'), '') as url,
+                try_cast(
+                    json_extract_string(meta_json, '$.question_score') as bigint
+                ) as question_score
+            from raw
+        )
+        select id, text, url, question_score
+        from parsed
+        where question_score is not null
+        limit {int(limit)}
+        """
+    )
+```
+
+两个数据源分支都生成相同的四列：生成的行 ID、问题文本、URL 和整数分数。脚本默认加载六条内置数据；选择 Red Pajamas 数据源后会切换到公开样例路径。
+
+## 2. 生成嵌入
+
+生成嵌入前，脚本可以用 SQL 截断过长的问题文本。随后，Vane AI 函数使用 Transformers 模型为 `text` 列生成嵌入，并返回 `embedding` 列。
+
+```python
+    embedded_only = embed_text(
+        rel,
+        "text",
+        provider="transformers",
+        model=args.model_id,
+        output_column="embedding",
+        execution_backend=args.execution_backend,
+        max_chunk_chars=args.max_chunk_chars,
+        batch_size=args.batch_size,
+    )
+    embedded = append_embedding(conn, rel, embedded_only)
+    embedded_table = embedded.to_arrow_table()
+```
+
+示例在接回嵌入之前，会验证嵌入 Relation 与输入行数完全一致，并且包含请求的输出列。默认模型是 `sentence-transformers/all-MiniLM-L6-v2`；缓存已经准备好时，仅本地文件模式可以阻止模型下载。
+
+## 3. 匹配低分与高分问题
+
+代码通过规范化每个向量并计算点积来得到余弦相似度。分数不高于查询阈值的行成为查询，分数不低于候选阈值的行进入搜索池。
+
+```python
+def normalize_embedding(value: Any) -> np.ndarray:
+    array = np.asarray(value, dtype=np.float32)
+    norm = np.linalg.norm(array)
+    if norm == 0:
+        return array
+    return array / norm
+
+
+def semantic_matches(
+    table: pa.Table,
+    *,
+    query_score_max: int,
+    candidate_score_min: int,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    queries = [row for row in rows if row["question_score"] <= query_score_max]
+    candidates = [row for row in rows if row["question_score"] >= candidate_score_min]
+
+    if not queries:
+        raise RuntimeError("No low-score query rows matched --query-score-max.")
+    if not candidates:
+        raise RuntimeError("No high-score candidate rows matched --candidate-score-min.")
+
+    candidate_vectors = [normalize_embedding(candidate["embedding"]) for candidate in candidates]
+    results: list[dict[str, Any]] = []
+
+    for query in queries:
+        query_vector = normalize_embedding(query["embedding"])
+        scored = [
+            (float(np.dot(query_vector, candidate_vector)), candidate)
+            for candidate, candidate_vector in zip(
+                candidates,
+                candidate_vectors,
+                strict=True,
+            )
+            if candidate["id"] != query["id"]
+        ]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        for rank, (similarity, candidate) in enumerate(scored[:top_k], start=1):
+            results.append(
+                {
+                    "query_id": query["id"],
+                    "query_score": query["question_score"],
+                    "query_text": query["text"],
+                    "match_rank": rank,
+                    "match_id": candidate["id"],
+                    "match_score": candidate["question_score"],
+                    "similarity": similarity,
+                    "match_text": candidate["text"],
+                    "match_url": candidate["url"],
+                }
+            )
+    if not results:
+        raise RuntimeError("No semantic matches were produced; check score thresholds.")
+    return results
+```
+
+默认阈值把分数不高于 2 的问题作为查询，把分数不低于 10 的问题作为候选。`top_k` 默认为一，增大它会为每个查询输出多个有序候选。如果搜索任一侧为空，函数会抛出错误，让阈值配置错误立即可见。
+
+## 4. 检查或持久化匹配结果
+
+每条结果都会保留两个问题、两个分数、匹配名次、余弦相似度和匹配问题的 URL。脚本把这些字典转换回 Arrow Relation，并用 SQL 排序、缩短终端预览。
+
+提供输出路径后，相同的完整匹配行会写入 CSV。终端摘要会报告生成嵌入的输入行数以及产生的匹配数。
+
+## 扩展说明
+
+为了便于教学，数据加载与相似度循环采用直接实现。嵌入阶段可配置为本地、Ray task 或 Ray actor 执行，因此当模型推理占据主要耗时时，应优先扩展这一阶段。面对大得多的候选集，可以用向量索引或分区相似度策略替换进程内全量配对，同时保留这里展示的数据结构。
+
+样例行、输出序列化以及全部参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py)。

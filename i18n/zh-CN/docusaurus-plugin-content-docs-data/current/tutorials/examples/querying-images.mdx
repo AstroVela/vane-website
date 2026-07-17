@@ -1,0 +1,173 @@
+---
+title: 查询图像数据
+---
+
+图像处理通常从表格元数据开始，但在回答视觉问题之前，需要先解码二进制对象。本教程沿着 [`examples/querying_images.py`](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py) 查找红色区域最大的图像，同时把路径、文件大小、尺寸、预览字节和掩码保留在同一个 Vane Relation 中。
+
+脚本可以读取三类数据源：
+
+- 生成的样例图像，也是默认的离线输入；
+- 由 glob 匹配的本地文件；
+- 通过 HTTPS 列举和下载的 Open Images 验证集公开对象前缀。
+
+三种路径都会产生相同的列——`id`、`path`、`size` 和 `image_bytes`——因此分析阶段与存储位置无关。
+
+## 1. 限制输入规模
+
+对于本地和 Open Images 输入，可以在分析前设置可选的最小与最大文件大小。远程输入还会限制为了找到待下载图像而扫描的对象条目数。这些限制很重要，因为解码每张图像远比检查元数据昂贵。
+
+内置样例会生成五个简单场景：一面大红墙、一个红色标牌、一盏小交通灯、一张蓝色图像和一个红色边框。这种组合让排序结果和保存的掩码很容易通过目视验证。
+
+## 2. 检测红色区域
+
+检测器把 RGB 图像转换为 HSV。红色跨越色相轴的首尾，因此色相条件会同时接受高端和低端值。饱和度与明度阈值会删除灰色或过暗像素，众数滤波器（mode filter）则清理孤立的掩码噪声。
+
+```python
+def magic_red_detector(image: Image.Image) -> Image.Image:
+    """Return a mask covering red regions in an RGB image."""
+    hsv = np.asarray(image.convert("HSV"))
+    lower = np.array([245, 100, 100], dtype=np.uint8)
+    upper = np.array([10, 255, 255], dtype=np.uint8)
+
+    hue = hsv[:, :, 0]
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    hue_mask = (hue >= lower[0]) | (hue <= upper[0])
+    saturation_mask = (saturation >= lower[1]) & (saturation <= upper[1])
+    value_mask = (value >= lower[2]) & (value <= upper[2])
+    mask = hue_mask & saturation_mask & value_mask
+
+    mask_image = Image.fromarray(mask.astype(np.uint8) * 255)
+    return mask_image.filter(ImageFilter.ModeFilter(size=5))
+```
+
+这里刻意使用透明的启发式规则，而不是学习模型，使教程重点——复杂数据如何在批量 UDF 中处理——更容易检查。
+
+## 3. 分析 Arrow 批次
+
+`AnalyzeRedRegionsBatch` 使用 Pillow 解码每个二进制值并转换为 RGB，随后生成掩码、统计非零掩码像素，并返回 RGB 预览 PNG 字节与掩码 PNG 字节。它还记录红色比例，让尺寸不同的图像可以比较。
+
+```python
+class AnalyzeRedRegionsBatch:
+    """Batch UDF that decodes images and computes red-region masks."""
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        ids = batch["id"].to_pylist()
+        paths = batch["path"].to_pylist()
+        sizes = batch["size"].to_pylist()
+        image_values = batch["image_bytes"].to_pylist()
+
+        widths = []
+        heights = []
+        red_pixels = []
+        red_fractions = []
+        preview_values = []
+        mask_values = []
+
+        for image_bytes in image_values:
+            image = Image.open(io.BytesIO(bytes(image_bytes or b""))).convert("RGB")
+            mask = magic_red_detector(image)
+            mask_array = np.asarray(mask)
+            red_count = int(np.count_nonzero(mask_array))
+            total_pixels = image.width * image.height
+
+            widths.append(int(image.width))
+            heights.append(int(image.height))
+            red_pixels.append(red_count)
+            red_fractions.append(red_count / max(1, total_pixels))
+            preview_values.append(pil_to_png_bytes(image))
+            mask_values.append(pil_to_png_bytes(mask.convert("RGB")))
+
+        return pa.table(
+            {
+                "id": pa.array(ids, type=pa.int64()),
+                "path": pa.array(paths, type=pa.string()),
+                "size": pa.array(sizes, type=pa.int64()),
+                "width": pa.array(widths, type=pa.int64()),
+                "height": pa.array(heights, type=pa.int64()),
+                "red_pixels": pa.array(red_pixels, type=pa.int64()),
+                "red_fraction": pa.array(red_fractions, type=pa.float64()),
+                "preview_png": pa.array(preview_values, type=pa.binary()),
+                "red_mask_png": pa.array(mask_values, type=pa.binary()),
+            }
+        )
+```
+
+UDF 返回一张新表，而不是修改输入行。这样，每个输出类型都会在 `map_batches` 调用处显式声明。
+
+```python
+    analyzed = rel.map_batches(
+        AnalyzeRedRegionsBatch(),
+        schema={
+            "id": duckdb.sqltypes.BIGINT,
+            "path": duckdb.sqltypes.VARCHAR,
+            "size": duckdb.sqltypes.BIGINT,
+            "width": duckdb.sqltypes.BIGINT,
+            "height": duckdb.sqltypes.BIGINT,
+            "red_pixels": duckdb.sqltypes.BIGINT,
+            "red_fraction": duckdb.sqltypes.DOUBLE,
+            "preview_png": duckdb.sqltypes.BLOB,
+            "red_mask_png": duckdb.sqltypes.BLOB,
+        },
+        batch_size=args.batch_size,
+        execution_backend=args.execution_backend,
+    )
+```
+
+默认在本地执行。只要每个执行节点都安装了 NumPy 和 Pillow，相同 UDF 就能作为 Ray task 或 actor 运行。
+
+## 4. 排序并保存视觉结果
+
+物化以后，脚本先按红色像素数、再按红色比例降序排列，保留前 N 行，并写出成对的图像与掩码文件。元数据 CSV 会把每个保存文件关联回源数据行。
+
+```python
+def save_outputs(table: pa.Table, output_dir: Path, top_k: int) -> pa.Table:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image_dir = output_dir / "images"
+    mask_dir = output_dir / "masks"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = sorted(
+        table.to_pylist(),
+        key=lambda row: (int(row["red_pixels"]), float(row["red_fraction"])),
+        reverse=True,
+    )[:top_k]
+    output_rows = []
+    for rank, row in enumerate(rows, start=1):
+        stem = f"{rank:03d}-{sanitize_file_stem(row['id'])}"
+        image_path = image_dir / f"{stem}.png"
+        mask_path = mask_dir / f"{stem}-red-mask.png"
+        image_path.write_bytes(row["preview_png"])
+        mask_path.write_bytes(row["red_mask_png"])
+        output_rows.append(
+            {
+                "rank": rank,
+                "id": row["id"],
+                "path": row["path"],
+                "size": row["size"],
+                "width": row["width"],
+                "height": row["height"],
+                "red_pixels": row["red_pixels"],
+                "red_fraction": row["red_fraction"],
+                "image_path": str(image_path),
+                "red_mask_path": str(mask_path),
+            }
+        )
+
+    metadata_path = output_dir / "top_red_images.csv"
+    with metadata_path.open("w", newline="", encoding="utf-8") as metadata_file:
+        writer = csv.DictWriter(metadata_file, fieldnames=list(output_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(output_rows)
+
+    return pa.table({key: pa.array([row[key] for row in output_rows]) for key in output_rows[0]})
+```
+
+默认输出目录包含 `images` 目录、`masks` 目录以及 `top_red_images.csv`。终端预览会显示名次、源路径、尺寸、红色像素数、红色比例以及两个保存路径。
+
+## 如何改造成其他视觉查询
+
+保留数据源 Relation 和输出契约，再把 `magic_red_detector` 替换为任务所需的视觉规则或模型即可。如果评审人员既需要可排序的分数，也需要对分数的视觉解释，那么同时返回派生字节与标量指标会非常实用。
+
+样例图像生成、本地 glob 加载与公开 OpenImages 列表路径请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/querying_images.py)。

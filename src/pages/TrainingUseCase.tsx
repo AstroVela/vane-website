@@ -272,7 +272,7 @@ export default function TrainingUseCase() {
               {copy.lead}
             </p>
             <div className="training-hero-actions">
-              <Button solid to="/docs/data/examples/training-data-pipeline" arrow>{copy.runPipeline}</Button>
+              <Button solid to="/docs/data/tutorials/use-cases/multimodal-training-data" arrow>{copy.runPipeline}</Button>
               <Button href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>{copy.requestDemo}</Button>
             </div>
           </div>
@@ -368,7 +368,7 @@ export default function TrainingUseCase() {
         <div className="wrap">
           <Cta title={copy.ctaTitle}>
             <Button solid href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>{copy.designPartner}</Button>
-            <Button to="/docs/data/examples">{copy.readDocs}</Button>
+            <Button to="/docs/data/tutorials">{copy.readDocs}</Button>
           </Cta>
         </div>
       </section>

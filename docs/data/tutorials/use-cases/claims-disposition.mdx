@@ -1,0 +1,260 @@
+---
+title: Claims Disposition from Multimodal Evidence
+---
+
+A vehicle claim spans multiple systems: structured claim records live in PostgreSQL, while damage photos and supporting documents live in MinIO. This tutorial follows the `claims-disposition` use case to turn those inputs into one reviewable recommendation per claim.
+
+Use case source: [AstroVela/demo-scene/claims-disposition](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition).
+
+The use case is organized around the questions a claims team must answer: Is the submission complete? Are the documents readable? What do the photos actually show? Does the evidence support moving toward payment, or should the claim be returned for more material or escalated to an adjuster? Evidence extraction and disposition are deliberately separated: OCR and AI report facts, while explicit SQL rules produce the recommendation.
+
+| Business stage | Question answered | How Vane supports it |
+| --- | --- | --- |
+| Organize the submission | Which files belong to the claim, and which required materials are present? | SQL Relations preserve claim and file identity while expanding `materials_json` |
+| Read supporting documents | Can the claim number, claimant name, and loss date be recovered reliably? | A stateful OCR UDF (`@vane.cls`) reuses the object-store client and OCR engine across documents |
+| Assess damage photos | Is the vehicle visible, is damage clear, and what parts appear affected? | The Vane AI API extracts a bounded set of visual facts without deciding the claim outcome |
+| Qualify the evidence | Is each object, document, photo, and model response safe to use? | Stateless UDFs (`@vane.func`) apply repeatable checks to each row |
+| Recommend the next step | Should the team request material, review manually, deny, or proceed toward payment? | SQL aggregates all evidence and applies the business rules in a fixed priority order |
+
+The business flow is `collect the submission → read supporting documents → assess photo evidence → reconcile all facts → recommend the next action`. It has the same inputs, evidence standards, and outputs whether it runs locally for a small workload or on Ray for a larger batch. The deployment choice changes processing capacity, not the claims policy.
+
+## Default scenario and inputs
+
+The fixture is small enough to inspect but covers every terminal workflow outcome. Runtime processing reads only from PostgreSQL and MinIO; the local fixture files are used to seed those services before the pipeline starts.
+
+| Source | Grain | What it contributes |
+| --- | --- | --- |
+| PostgreSQL claims table | One row per claim | Claim ID, description, submission time, and ordered `materials_json` |
+| MinIO damage photos | One JPEG per claim | Vehicle evidence for quality analysis and multimodal fact extraction |
+| MinIO supporting documents | One PNG per claim | Claim number, claimant name, and loss date for OCR and completeness rules |
+
+The four claims make the policy concrete before you read its implementation:
+
+| Claim | Evidence story | Expected disposition |
+| --- | --- | --- |
+| `CLM-APPROVE` | Complete packet with clear minor vehicle damage | `approve_for_payment` |
+| `CLM-DENY` | Complete packet whose photo shows no meaningful damage | `deny_claim` |
+| `CLM-MISSING` | Supporting form is present, but the claimant name is blank | `request_more_materials` |
+| `CLM-REVIEW` | Complete packet, but the visual damage remains ambiguous | `manual_review` |
+
+## 1. Recover verifiable claim details from supporting documents
+
+Before a claim can be assessed, the team needs to know that the supporting form is present, readable, and tied to the right claim. The workflow preserves the claim and material identifiers and calls `document_ocr_json(bucket, object_key)` for each available supporting document. This gives every document the same OCR treatment regardless of how the workload is deployed.
+
+The stateful `@vane.cls` function creates RapidOCR only when it reaches the first usable document, then reuses the same engine and MinIO client for later documents. This avoids paying model initialization cost for every file and makes larger document batches practical:
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="document_ocr_json",
+    gpus=0,
+)
+class DocumentOcrActor:
+    def __init__(self, minio_config: MinioConfig, engine_factory=None) -> None:
+        self.store = MinioStore(minio_config)
+        self._engine_factory = engine_factory or _build_rapidocr
+        self.engine = None
+```
+
+The `int_claim_document_ocr_udf` SQL selects only available PNG supporting documents, preserves the claim and material keys, and calls the OCR function in its `select` list:
+
+```sql
+select
+  claim_id,
+  material_index,
+  document_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as document_ocr_json
+from int_claim_object_facts
+where object_exists
+  and role = 'supporting_document'
+  and media_type = 'image/png';
+```
+
+The OCR output stays beside its trusted claim and material keys. It is then combined with object hashes, photo-quality checks, extracted document fields, and document-quality results. SQL rolls these file-level facts up to one row per claim, counts required and usable materials, and prepares only eligible photos for visual analysis. Local execution reads a precomputed OCR lookup, while Ray invokes the stateful Actor directly; the evidence associated with the claim is identical in both modes.
+
+## 2. Establish what the damage photos actually show
+
+A photo should influence the claim only when it is usable and its evidence is clear. For each verified image, the workflow asks a deliberately narrow set of questions using the image bytes, claim description, and photo-quality context. On Ray, that request is made through the `vane.ai.prompt` AI Function:
+
+```python
+        result = vane.ai.prompt(
+            relation,
+            "prompt_text",
+            image_columns=["image_bytes"],
+            provider="openai",
+            model=config.ai.model,
+            provider_options=provider_options,
+            prompt_options=prompt_options,
+            system_message=DAMAGE_SYSTEM_MESSAGE,
+            output_column="raw_damage_response",
+            num_gpus=0,
+        )
+```
+
+The requested facts include whether a vehicle is visible, whether the target vehicle is clear, whether damage is visible, affected parts, damage types, a severity hint, confidence, and evidence limitations. Claim ID, file ID, photo order, and image hash come from the trusted claim record and remain outside model control. The local provider path and the Ray AI Function produce the same fact table. Crucially, the model never returns a disposition: it describes the evidence, and the claims policy decides what happens next.
+
+## 3. Turn model responses into trusted claim facts
+
+An AI response is not yet evidence that a claims rule should consume. Raw model JSON never enters the disposition rules directly. A stateless `@vane.func` binds each response back to its claim, file, and content hash and normalizes it to the strict damage-result contract:
+
+```python
+@vane.func(return_dtype="VARCHAR", name="photo_damage_result_json")
+def photo_damage_result_json(
+    raw_response: str,
+    claim_id: str,
+    file_id: str,
+    sha256: str,
+) -> str:
+    return parse_photo_damage_result(raw_response, claim_id, file_id, sha256)
+```
+
+`int_claim_damage_validation_inputs` first binds every response to its trusted claim, file, order, and SHA-256. SQL then calls the stateless UDF directly so that the same validation is applied to every photo:
+
+```sql
+create or replace table int_claim_damage_validation_udf as
+-- Normalize each untrusted model response through a direct Runner SQL UDF call.
+select
+  claim_id,
+  file_id,
+  file_order,
+  photo_sha256,
+  photo_quality_json,
+  raw_damage_response,
+  photo_damage_result_json(
+    coalesce(raw_damage_response, ''),
+    claim_id,
+    file_id,
+    photo_sha256
+  ) as damage_result_json
+from int_claim_damage_validation_inputs;
+```
+
+The following pure SQL Relation parses the canonical JSON and derives the two narrow inputs used by disposition policy. A positive result requires determinate, high-confidence, visually grounded low-to-moderate damage; a negative result requires the same evidence quality and a clear absence of visible damage:
+
+```sql
+classified_photo_results as (
+  -- Accept only determinate, high-confidence positive or negative findings.
+  select
+    *,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and coalesce(damage_visible, false)
+      and meaningful_damaged_parts
+      and meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('minor', 'moderate') as positive_damage_result,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and not coalesce(damage_visible, false)
+      and not meaningful_damaged_parts
+      and not meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('none', 'unknown') as negative_damage_result
+  from classified_photo_inputs
+),
+```
+
+The stateless UDF makes every model response conform to the same evidence format; inspectable SQL decides whether confidence and visual support meet the business threshold. Looking across all usable photos also reveals conflicting positive and negative evidence instead of allowing one image to silently overrule another.
+
+## 4. Apply the claims team's disposition priorities
+
+Once document and photo facts are qualified, the workflow considers the whole claim rather than any single file. `int_claim_damage_facts` brings together every usable photo and exposes failures, uncertainty, high-severity risk, and conflicting evidence. The decision SQL then evaluates four possible recommendations. Missing or unusable material leads to `request_more_materials`; uncertainty, conflicts, or elevated risk leads to `manual_review`; only a complete and internally consistent submission can reach a deny or approve recommendation.
+
+```sql
+candidate_rules as (
+  -- Group signals into the four possible disposition candidates.
+  select
+    *,
+    (
+      unsupported_or_invalid_material
+      or missing_required_photo
+      or missing_required_document
+      or photo_unreadable
+      or photo_quality_too_low
+      or document_field_unreadable
+      or model_input_unusable
+    ) as request_materials_candidate,
+    (
+      model_output_failed
+      or damage_model_uncertain
+      or vehicle_not_visible
+      or target_vehicle_unclear
+      or damage_has_uncertainty
+      or high_severity_risk
+      or conflicting_damage_results
+    ) as manual_review_signal,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and negative_damage_result_count = usable_photo_count
+      and positive_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as deny_candidate,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and positive_damage_result_count >= 1
+      and positive_damage_result_count = successful_model_result_count
+      and negative_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as approve_candidate
+  from rule_signals
+),
+
+priority_rules as (
+  -- Apply precedence: request materials, then manual review, then deny or approve.
+  select
+    *,
+    request_materials_candidate as matches_request_more_materials,
+    not request_materials_candidate
+      and (
+        manual_review_signal
+        or (not deny_candidate and not approve_candidate)
+      ) as matches_manual_review
+  from candidate_rules
+)
+```
+
+That explicit order matters. A claim with a missing document and a damage-looking photo still requests material; a claim with conflicting photos still goes to review. Neither can fall through to an automatic recommendation.
+
+## 5. Publish a recommendation that an adjuster can review
+
+The `claim_disposition` mart has one row per claim. It maps the mutually exclusive match flags to the outcome and keeps the explanation beside it:
+
+| Output field | Purpose |
+| --- | --- |
+| `disposition` and `disposition_confidence` | Selected workflow outcome and rule-assigned confidence |
+| `primary_reason_code` and `reason_summary` | First actionable reason in business priority order |
+| `next_action` | Material request, adjuster review, denial review, or settlement workflow |
+| `supporting_facts_json` | Material counts, OCR fields, photo quality, model facts, conflicts, and risks used by SQL |
+| `created_by` and `decided_at` | Rule identifier/version and run timestamp |
+
+The current project installs Vane from public PyPI and defaults to `runner: local`. With PostgreSQL, MinIO, and the local Qwen endpoint running, execute `python scripts/run_demo.py e2e` from the use-case directory. The command seeds four claims and eight objects, runs real OCR and multimodal inference, publishes four PostgreSQL rows, and verifies the four expected outcomes shown above. Set `runner: ray` in `runtime.yml` to exercise the distributed OCR Actor and `vane.ai.prompt` path with the same fixture and SQL DAG.
+
+These are workflow recommendations, not liability findings, payment calculations, or regulated final decisions. The reusable business pattern is the separation of responsibilities: OCR and AI turn files into observations, stateless UDFs reject malformed or untrustworthy results, and SQL reconciles the evidence and applies the claims policy. Local and Ray are deployment options for the same review process, so scaling the workload does not create a second set of decision rules.
+
+## Adapt the pattern
+
+- Replace the PostgreSQL fixture with a source that still provides one row per claim and ordered material locators.
+- Put claim photos and documents behind the same S3-compatible byte contract, even if MinIO is replaced.
+- Swap the OCR engine or multimodal endpoint while preserving their typed fact boundaries.
+- Extend the decision SQL with explicit, testable business rules; keep payment and denial conclusions out of the model prompt.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition) for the staging Relations, OCR actor, prompt contract, damage aggregation, and publication path.

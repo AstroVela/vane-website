@@ -1,0 +1,159 @@
+---
+title: Semantic Search on Red Pajamas
+---
+
+StackExchange contains many lower-scoring questions even when a closely related, higher-scoring question already exists. This tutorial follows [`examples/llms_red_pajamas.py`](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) to build a compact semantic-matching pipeline with Vane.
+
+You will:
+
+1. Load StackExchange-style rows from a built-in sample or the Red Pajamas JSONL sample on S3.
+2. Generate an embedding for each question.
+3. Divide rows into low-score queries and high-score candidates.
+4. Rank candidates by cosine similarity and optionally write the matches to CSV.
+
+The built-in data contains three obvious query-candidate pairs, which makes it useful for verifying the pipeline before reading the remote dataset or scheduling model work on Ray.
+
+## 1. Load typed question rows
+
+The remote path uses DuckDB's HTTP/S3 support to read JSONL. It preserves the question text, extracts the URL and score from the nested metadata, removes rows without a usable score, and applies the row limit in SQL.
+
+```python
+def load_redpajama_relation(conn: Any, path: str, limit: int) -> Any:
+    try:
+        conn.execute("INSTALL httpfs")
+        conn.execute("LOAD httpfs")
+    except Exception:
+        pass
+    try:
+        conn.execute("SET s3_region='us-west-2'")
+        conn.execute("SET s3_url_style='path'")
+    except Exception:
+        pass
+
+    path_sql = sql_literal(path)
+    return conn.sql(
+        f"""
+        with raw as (
+            select
+                text,
+                to_json(meta) as meta_json
+            from read_json_auto({path_sql}, maximum_object_size=16777216)
+            where text is not null
+        ),
+        parsed as (
+            select
+                row_number() over () - 1 as id,
+                text,
+                coalesce(json_extract_string(meta_json, '$.url'), '') as url,
+                try_cast(
+                    json_extract_string(meta_json, '$.question_score') as bigint
+                ) as question_score
+            from raw
+        )
+        select id, text, url, question_score
+        from parsed
+        where question_score is not null
+        limit {int(limit)}
+        """
+    )
+```
+
+Both source branches produce the same four columns: a generated row ID, question text, URL, and integer score. By default the script loads six built-in rows; selecting the Red Pajamas source switches to the public sample path.
+
+## 2. Generate embeddings
+
+Before embedding, the script can truncate long question text with SQL. The Vane AI function then embeds the `text` column with a Transformers model and returns an `embedding` column.
+
+```python
+    embedded_only = embed_text(
+        rel,
+        "text",
+        provider="transformers",
+        model=args.model_id,
+        output_column="embedding",
+        execution_backend=args.execution_backend,
+        max_chunk_chars=args.max_chunk_chars,
+        batch_size=args.batch_size,
+    )
+    embedded = append_embedding(conn, rel, embedded_only)
+    embedded_table = embedded.to_arrow_table()
+```
+
+The example validates that the embedding Relation has exactly as many rows as the input and contains the requested output column before attaching it. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
+
+## 3. Match low-score and high-score questions
+
+Cosine similarity is computed by normalizing each vector and taking a dot product. Rows at or below the query threshold become queries, while rows at or above the candidate threshold become the search pool.
+
+```python
+def normalize_embedding(value: Any) -> np.ndarray:
+    array = np.asarray(value, dtype=np.float32)
+    norm = np.linalg.norm(array)
+    if norm == 0:
+        return array
+    return array / norm
+
+
+def semantic_matches(
+    table: pa.Table,
+    *,
+    query_score_max: int,
+    candidate_score_min: int,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    queries = [row for row in rows if row["question_score"] <= query_score_max]
+    candidates = [row for row in rows if row["question_score"] >= candidate_score_min]
+
+    if not queries:
+        raise RuntimeError("No low-score query rows matched --query-score-max.")
+    if not candidates:
+        raise RuntimeError("No high-score candidate rows matched --candidate-score-min.")
+
+    candidate_vectors = [normalize_embedding(candidate["embedding"]) for candidate in candidates]
+    results: list[dict[str, Any]] = []
+
+    for query in queries:
+        query_vector = normalize_embedding(query["embedding"])
+        scored = [
+            (float(np.dot(query_vector, candidate_vector)), candidate)
+            for candidate, candidate_vector in zip(
+                candidates,
+                candidate_vectors,
+                strict=True,
+            )
+            if candidate["id"] != query["id"]
+        ]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        for rank, (similarity, candidate) in enumerate(scored[:top_k], start=1):
+            results.append(
+                {
+                    "query_id": query["id"],
+                    "query_score": query["question_score"],
+                    "query_text": query["text"],
+                    "match_rank": rank,
+                    "match_id": candidate["id"],
+                    "match_score": candidate["question_score"],
+                    "similarity": similarity,
+                    "match_text": candidate["text"],
+                    "match_url": candidate["url"],
+                }
+            )
+    if not results:
+        raise RuntimeError("No semantic matches were produced; check score thresholds.")
+    return results
+```
+
+The default thresholds treat scores up to 2 as queries and scores of at least 10 as candidates. `top_k` defaults to one, but increasing it emits several ranked alternatives for each query. The function raises an error when either side of the search is empty, which makes threshold mistakes visible.
+
+## 4. Inspect or persist matches
+
+Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to an Arrow Relation and uses SQL to order and shorten the terminal preview.
+
+When an output path is supplied, the same full match rows are written to CSV. The terminal summary reports how many input rows were embedded and how many matches were produced.
+
+## Scaling notes
+
+The dataset load and similarity loop are intentionally straightforward for a tutorial. The embedding stage exposes local, Ray task, and Ray actor execution backends, so it is the first stage to move when model inference dominates runtime. For a much larger candidate set, replace the in-process all-pairs ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) for sample rows, output serialization, and every argument.
