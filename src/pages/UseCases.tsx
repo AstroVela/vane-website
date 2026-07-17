@@ -11,6 +11,7 @@ import Cta from '../components/Cta'
 import PixelIcon from '../components/PixelIcon'
 import { USE_CASES } from './useCasesData'
 import { pickLocale, useSiteLocale } from '../siteI18n'
+import { vaneSourceFileUrl } from '../siteLinks'
 
 function Pipeline({ steps }: { steps: string[] }) {
   return (
@@ -142,7 +143,9 @@ export default function UseCases() {
               </div>
               <div className="exrow">
                 <span className="ex">{copy.example} <u>{u.example}</u></span>
-                <Button sm to="/docs" arrow>{copy.openExample}</Button>
+                <Button sm href={vaneSourceFileUrl(u.example)} target="_blank" rel="noreferrer" arrow>
+                  {copy.openExample}
+                </Button>
               </div>
             </UseCaseBlock>
           ))}

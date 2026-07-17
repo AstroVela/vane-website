@@ -6,6 +6,7 @@ import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
 import HomeHeroExecution from '../components/HomeHeroExecution'
 import Cta from '../components/Cta'
+import BenchmarkScopeNote from '../components/BenchmarkScopeNote'
 import PixelIcon, { type PixelIconName } from '../components/PixelIcon'
 import PlatformArchitecture from '../components/PlatformArchitecture'
 import { Link } from '../router'
@@ -145,12 +146,12 @@ export default function Home() {
       proofLead: 'Benchmarking multimodal AI pipelines across audio, video, document, and image workloads.',
       comparisonLabel: 'Vane Data vs Ray Data vs Daft · tuned elapsed time',
       environmentLabel: 'Test environment',
+      modifiedVram: 'modified VRAM',
       lowerElapsedTime: 'lower',
       higherElapsedTime: 'higher',
       elapsedTime: 'Elapsed time (seconds)',
       logScale: 'Tuned batch sizes · log scale · lower is better',
       chartAria: 'Grouped elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
-      chartHint: 'Bar labels show compact seconds. Batch sizes are tuned per engine and workload. OOM is a status, not a duration.',
       workloads: {
         document: 'Document',
         image: 'Image',
@@ -182,12 +183,12 @@ export default function Home() {
       proofLead: '针对音频、视频、文档和图像工作负载，评测多模态 AI 流水线的推理性能。',
       comparisonLabel: 'Vane Data、Ray Data 与 Daft · batch_size 调优后耗时',
       environmentLabel: '测试环境',
+      modifiedVram: '显存改装版',
       lowerElapsedTime: '更低',
       higherElapsedTime: '更高',
       elapsedTime: '端到端耗时（秒）',
       logScale: 'batch_size 调优后 · 对数尺度 · 越低越好',
       chartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中的分组耗时柱状图',
-      chartHint: '柱顶显示简化秒数。batch size 按引擎和 workload 调整。OOM 仅表示运行状态，不表示耗时。',
       workloads: {
         document: '文档',
         image: '图像',
@@ -287,7 +288,11 @@ export default function Home() {
                 <span>{copy.environmentLabel}</span>
                 <p>
                   <span>{BENCHMARK_ENVIRONMENT.cpuCores} CPU cores · {BENCHMARK_ENVIRONMENT.memoryGb} GB RAM</span>
-                  <span>{BENCHMARK_ENVIRONMENT.gpu} · {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB GPU memory</span>
+                  <span>
+                    {BENCHMARK_ENVIRONMENT.gpu}
+                    {BENCHMARK_ENVIRONMENT.gpuMemoryModified ? ` (${copy.modifiedVram})` : ''}
+                    {' · '}{BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB GPU memory
+                  </span>
                 </p>
               </div>
               <dl className="home-benchmark-results">
@@ -396,7 +401,7 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              <p className="home-chart-footnote">{copy.chartHint}</p>
+              <BenchmarkScopeNote locale={locale} />
             </Box>
           </div>
         </div>

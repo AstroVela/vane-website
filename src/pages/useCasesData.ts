@@ -1,5 +1,4 @@
-/* Seven detailed use cases — Problem / Pipeline / Code / Input·Output / When /
-   Example. Code is pre-highlighted markup using the current public APIs. */
+/* Seven detailed use cases backed by the canonical scripts under vane/examples. */
 import type {PixelIconName} from '../components/PixelIcon'
 
 export type UseCase = {
@@ -32,32 +31,22 @@ export const USE_CASES = [
     titleZh: '网页文本转嵌入',
     tag: 'embeddings',
     tagZh: 'embedding',
-    pipeline: ['read_parquet', 'filter SQL', 'chunk_text', 'SQL ai_embed', 'write_parquet'],
-    pipelineZh: ['read_parquet', 'SQL 过滤', 'chunk_text', 'SQL ai_embed', 'write_parquet'],
+    pipeline: ['WARC rows', 'decode English pages', 'chunk text', 'embed_text', 'write files'],
+    pipelineZh: ['WARC 行', '解码英文页面', '文本分块', 'embed_text', '写出文件'],
     problem:
-      'Turning web-scale crawl dumps into clean, chunked embeddings usually means stitching SQL filtering, Python chunking, a GPU embedding model and Parquet output across separate systems.',
+      'Web crawl records need to be decoded, language-filtered, chunked, embedded, and written without losing their source IDs.',
     problemZh:
-      '要把网页级抓取数据变成可检索语料，通常不能靠临时脚本拼 SQL、分块、GPU embedding 和 Parquet 写出。',
-    input: '2.1 TB Common Crawl parquet',
-    inputZh: '2.1 TB Common Crawl Parquet',
-    output: '480M chunk embeddings · 768-d',
-    outputZh: '4.8 亿 chunk embeddings · 768 维',
-    when: 'Building a retrieval corpus or a pretraining filter from raw crawl data.',
-    whenZh: '从原始爬取数据构建检索语料或预训练过滤器时使用。',
+      '网页抓取记录需要经过解码、语言过滤、分块、嵌入和写出，同时保留稳定的来源 ID。',
+    input: '5 built-in WARC-shaped records',
+    inputZh: '5 条内置 WARC 形态记录',
+    output: '3 English pages · 7 chunks · 384-d embeddings',
+    outputZh: '3 个英文页面 · 7 个分块 · 384 维嵌入',
+    when: 'Preparing retrieval or training data from Common Crawl WET/WARC input.',
+    whenZh: '从 Common Crawl WET/WARC 输入准备检索或训练数据时使用。',
     filename: 'common_crawl.py',
     example: 'examples/common_crawl.py',
-    code: `docs <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT url, text FROM read_parquet('s3://cc/*.parquet')"</span><span class="p">)</span>
-chunks <span class="p">=</span> docs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>chunk_text<span class="p">,</span> schema<span class="p">=</span>chunk_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
-chunks<span class="p">.</span><span class="f">to_table</span><span class="p">(</span><span class="s">"chunks"</span><span class="p">)</span>
-emb <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
-SELECT url, text,
-       ai_embed(text, struct_pack(
-           provider := 'transformers',
-           model := 'sentence-transformers/all-MiniLM-L6-v2'
-       )) AS embedding
-FROM chunks
-"""</span><span class="p">)</span>
-emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://corpus/embeddings/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="c"># Uses the default Ray runner</span>
+<span class="f">python</span> examples/common_crawl.py`,
   },
   {
     id: 'search',
@@ -66,30 +55,22 @@ emb<span class="p">.</span><span class="f">write_parquet</span><span class="p">(
     titleZh: '语义搜索',
     tag: 'retrieval',
     tagZh: '检索',
-    pipeline: ['SQL ai_embed', 'write index', 'cosine query'],
-    pipelineZh: ['SQL ai_embed', '写入索引', 'cosine query'],
+    pipeline: ['question rows', 'embed_text', 'split by score', 'cosine match', 'show'],
+    pipelineZh: ['问题数据', 'embed_text', '按分数分组', '余弦匹配', '展示'],
     problem:
-      'You need an offline index of a large Q&A corpus and a way to match related records without standing up a vector DB just to experiment.',
+      'A bounded Q&A corpus needs an offline semantic-matching pass before you commit to a separate vector database.',
     problemZh:
-      '想先验证大型问答语料的相关匹配，不必一开始就部署向量数据库。',
-    input: '14M StackExchange questions',
-    inputZh: '1400 万条 StackExchange 问题',
-    output: 'top-k similar per query',
-    outputZh: '每个查询的 top-k 相似结果',
-    when: 'Prototyping retrieval or near-duplicate matching over a static corpus.',
-    whenZh: '在静态语料上原型验证检索或近重复匹配时使用。',
-    filename: 'semantic_search.py',
-    example: 'examples/semantic_search.py',
-    code: `idx <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
-SELECT id, title, body,
-       ai_embed(body, struct_pack(
-           provider := 'transformers',
-           model := 'sentence-transformers/all-MiniLM-L6-v2'
-       )) AS embedding
-FROM read_parquet('s3://qa/*.parquet')
-"""</span><span class="p">)</span>
-idx<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://index/qa/v1/part-00000.parquet"</span><span class="p">)</span>
-hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execute</span><span class="p">(</span><span class="s">"SELECT id FROM read_parquet('s3://index/qa/v1/part-00000.parquet') ORDER BY list_cosine_similarity(embedding, ?::FLOAT[]) DESC LIMIT 10"</span><span class="p">, [</span>q<span class="p">]).</span><span class="f">fetchall</span><span class="p">()</span>`,
+      '在引入独立向量数据库前，可以先对有限问答语料完成一次离线语义匹配验证。',
+    input: '6 built-in StackExchange-style questions',
+    inputZh: '6 条内置 StackExchange 风格问题',
+    output: '6 embeddings · 3 top semantic matches',
+    outputZh: '6 条嵌入 · 3 条最佳语义匹配',
+    when: 'Prototyping retrieval or related-question matching over a static corpus.',
+    whenZh: '在静态语料上原型验证检索或相关问题匹配时使用。',
+    filename: 'llms_red_pajamas.py',
+    example: 'examples/llms_red_pajamas.py',
+    code: `<span class="c"># Uses the default sample and model settings</span>
+<span class="f">python</span> examples/llms_red_pajamas.py`,
   },
   {
     id: 'dedupe',
@@ -98,25 +79,22 @@ hits <span class="p">=</span> conn<span class="p">.</span><span class="f">execut
     titleZh: '文本去重',
     tag: 'preprocessing',
     tagZh: '预处理',
-    pipeline: ['normalize', 'minhash', 'lsh_bands (flat_map)', 'keep one'],
-    pipelineZh: ['标准化', 'MinHash', 'LSH band（flat_map）', '保留一条'],
+    pipeline: ['normalize', 'MinHash', 'LSH candidates', 'components', 'keep one'],
+    pipelineZh: ['标准化', 'MinHash', 'LSH 候选', '连通分量', '保留一条'],
     problem:
-      'Near-duplicate dedup at scale needs MinHash signatures and LSH bucketing wired into your data pipeline — not a one-off notebook.',
+      'Near-duplicate text must be grouped reproducibly, with candidate pairs and cluster decisions available for inspection.',
     problemZh:
-      '大规模近重复去重，需要把 MinHash 与 LSH 分桶接入正式流水线，而不是停留在 notebook。',
-    input: '900M documents',
-    inputZh: '9 亿文档',
-    output: '612M unique (32% removed)',
-    outputZh: '6.12 亿唯一文档（移除 32%）',
-    when: 'Cleaning a training set before tokenization or embedding.',
-    whenZh: '在分词或 embedding 前清洗训练集时使用。',
+      '近重复文本需要以可复现方式分组，并保留可检查的候选对与聚类决策。',
+    input: '10 built-in documents',
+    inputZh: '10 条内置文档',
+    output: '5 retained representatives + audit CSVs',
+    outputZh: '5 条保留代表记录 + 审计 CSV',
+    when: 'Cleaning text before tokenization, training, or embedding.',
+    whenZh: '在分词、训练或嵌入前清洗文本时使用。',
     filename: 'minhash_dedupe.py',
     example: 'examples/minhash_dedupe.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, text FROM read_parquet('s3://raw/*.parquet')"</span><span class="p">)</span>
-sig <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>minhash_128<span class="p">,</span> schema<span class="p">=</span>signature_schema<span class="p">)</span>
-buckets <span class="p">=</span> sig<span class="p">.</span><span class="f">flat_map</span><span class="p">(</span>lsh_bands_16<span class="p">,</span> schema<span class="p">=</span>band_schema<span class="p">)</span>
-clean <span class="p">=</span> buckets<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>keep_one_per_cluster<span class="p">,</span> schema<span class="p">=</span>clean_schema<span class="p">)</span>
-clean<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://clean/text/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="c"># No model-specific dependency required</span>
+<span class="f">python</span> examples/minhash_dedupe.py`,
   },
   {
     id: 'images',
@@ -125,24 +103,22 @@ clean<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     titleZh: '图像流水线',
     tag: 'vision',
     tagZh: '视觉',
-    pipeline: ['manifest sql', 'decode_image', 'DetectFeatures (actor)', 'write'],
-    pipelineZh: ['manifest SQL', 'decode_image', 'DetectFeatures（actor）', '写出'],
+    pipeline: ['image bytes', 'AnalyzeRedRegionsBatch', 'rank', 'save images', 'save masks'],
+    pipelineZh: ['图像字节', 'AnalyzeRedRegionsBatch', '排序', '保存图像', '保存遮罩'],
     problem:
-      'Decoding millions of images and running a vision model means juggling IO, CPU decode and GPU inference with the right batch sizes by hand.',
+      'Image bytes need a batched decode-and-analysis path that preserves metadata and emits inspectable previews.',
     problemZh:
-      '数百万图片的解码、视觉模型推理和写出，要同时协调 IO、CPU 与 GPU batch。',
-    input: '12M images',
-    inputZh: '1200 万张图像',
-    output: 'detections + CLIP features',
-    outputZh: '检测结果 + CLIP 特征',
-    when: 'Tagging, filtering, or feature-extracting a large image dataset.',
-    whenZh: '给大型图像数据集打标签、过滤或抽取特征时使用。',
+      '图像字节需要批量解码与分析，同时保留元数据并输出可检查的预览。',
+    input: '5 generated sample images',
+    inputZh: '5 张生成的样例图片',
+    output: 'ranked metadata · PNG previews · red masks',
+    outputZh: '排序元数据 · PNG 预览 · 红色区域遮罩',
+    when: 'Validating image UDF batching and file outputs before adapting a real dataset.',
+    whenZh: '在接入真实数据集前验证图像 UDF 批处理与文件输出时使用。',
     filename: 'querying_images.py',
     example: 'examples/querying_images.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, path FROM read_parquet('s3://images/manifest.parquet')"</span><span class="p">)</span>
-imgs <span class="p">=</span> rel<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>decode_image<span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">128</span><span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_task"</span><span class="p">)</span>
-feats <span class="p">=</span> imgs<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">DetectFeatures</span><span class="p">,</span> schema<span class="p">=</span>feature_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">4</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">64</span><span class="p">)</span>
-feats<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://features/images/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="c"># Pillow is the only example-specific dependency</span>
+<span class="f">python</span> examples/querying_images.py`,
   },
   {
     id: 'imagegen',
@@ -151,24 +127,22 @@ feats<span class="p">.</span><span class="f">write_parquet</span><span class="p"
     titleZh: '图像生成',
     tag: 'generation',
     tagZh: '生成',
-    pipeline: ['prompts sql', 'Diffusion (model actor)', 'write'],
-    pipelineZh: ['prompts SQL', 'Diffusion（model actor）', '写出'],
+    pipeline: ['prompt rows', 'GenerateImageFromTextBatch', 'PNG files', 'metadata CSV'],
+    pipelineZh: ['提示词数据', 'GenerateImageFromTextBatch', 'PNG 文件', '元数据 CSV'],
     problem:
-      'Generating images for a whole prompt table means managing a GPU model actor, batching, and writing results back — repeatedly.',
+      'A prompt table needs a reproducible batched generation path and a manifest that keeps each image tied to its source row.',
     problemZh:
-      '对整张 prompt 表批量生成图像时，需要稳定管理 GPU model actor、batching 和结果回写。',
-    input: '50K prompts',
-    inputZh: '5 万条 prompt',
-    output: '50K images · 1024²',
-    outputZh: '5 万张图像 · 1024²',
-    when: 'Synthetic-data generation or bulk creative rendering.',
-    whenZh: '合成数据生成或批量创意渲染时使用。',
+      '提示词表需要可复现的批量生成路径，并用清单把每张图片与来源行关联起来。',
+    input: '4 built-in prompts',
+    inputZh: '4 条内置提示词',
+    output: '4 deterministic placeholder PNGs + metadata',
+    outputZh: '4 张确定性占位 PNG + 元数据',
+    when: 'Checking pipeline behavior locally before opting into a diffusion model and GPU.',
+    whenZh: '在启用扩散模型和 GPU 前，本地检查流水线行为时使用。',
     filename: 'image_generation.py',
     example: 'examples/image_generation.py',
-    code: `prompts <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, prompt FROM read_parquet('s3://prompts.parquet')"</span><span class="p">)</span>
-images <span class="p">=</span> prompts<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span>
-    <span class="t">Diffusion</span><span class="p">,</span> schema<span class="p">=</span>image_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">2</span><span class="p">,</span> batch_size<span class="p">=</span><span class="n">16</span><span class="p">)</span>
-images<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://generated/images/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="c"># Placeholder is the default backend</span>
+<span class="f">python</span> examples/image_generation.py`,
   },
   {
     id: 'multimodal',
@@ -177,26 +151,22 @@ images<span class="p">.</span><span class="f">write_parquet</span><span class="p
     titleZh: '多模态结构化输出',
     tag: 'multimodal',
     tagZh: '多模态',
-    pipeline: ['image+text sql', 'VLM (schema)', 'Judge', 'write'],
-    pipelineZh: ['图像+文本 SQL', 'VLM（schema）', 'Judge', '写出'],
+    pipeline: ['synthetic image+question', 'VLM with image', 'VLM text-only', 'compare', 'optional judge'],
+    pipelineZh: ['合成图像+问题', '带图 VLM', '纯文本 VLM', '对比', '可选评审'],
     problem:
-      'Getting reliable structured fields out of a vision-language model — and grading them — needs schema enforcement plus a second judge pass.',
+      'Vision-language answers need typed parsing and a controlled comparison with the same question asked without its image.',
     problemZh:
-      '要从 VLM 得到可信字段，不能只看生成结果；还需要 schema 约束和二次评审。',
-    input: '300K document images',
-    inputZh: '30 万张文档图像',
-    output: 'typed JSON + judge score',
-    outputZh: '类型化 JSON + judge 分数',
-    when: 'Extracting structured data from documents or images at scale.',
-    whenZh: '从文档或图像中大规模抽取结构化数据时使用。',
+      '视觉语言模型的回答需要类型化解析，并与去掉图片后的同一问题进行受控对比。',
+    input: '1 synthetic multiple-choice image + provider key',
+    inputZh: '1 张合成选择题图片 + 服务商密钥',
+    output: 'typed answers + evaluation quadrant',
+    outputZh: '类型化答案 + 评估象限',
+    when: 'Evaluating whether a VLM actually uses visual evidence and diagnosing failures.',
+    whenZh: '评估 VLM 是否真正使用视觉证据并诊断失败时使用。',
     filename: 'multimodal_structured_outputs.py',
     example: 'examples/multimodal_structured_outputs.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, image, question FROM 's3://docs/*.parquet'"</span><span class="p">)</span>
-ans <span class="p">=</span> rel<span class="p">.</span><span class="f">prompt</span><span class="p">(</span>
-    <span class="s">"question"</span><span class="p">,</span> image_columns<span class="p">=[</span><span class="s">"image"</span><span class="p">],</span> provider<span class="p">=</span><span class="s">"openai"</span><span class="p">,</span>
-    return_format<span class="p">=</span><span class="t">Receipt</span><span class="p">,</span> output_column<span class="p">=</span><span class="s">"receipt_json"</span><span class="p">)</span>
-graded <span class="p">=</span> ans<span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Judge</span><span class="p">,</span> schema<span class="p">=</span>judge_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">)</span>
-graded<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://extracted/receipts/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="k">export</span> HF_TOKEN<span class="p">=</span>your_hugging_face_token
+<span class="f">python</span> examples/multimodal_structured_outputs.py <span class="p">--</span>limit <span class="n">1</span> <span class="p">--</span>skip-judge`,
   },
   {
     id: 'voice',
@@ -205,33 +175,21 @@ graded<span class="p">.</span><span class="f">write_parquet</span><span class="p
     titleZh: '语音 AI 分析',
     tag: 'audio',
     tagZh: '音频',
-    pipeline: ['audio SQL', 'Transcribe', 'Summarize', 'SQL ai_embed'],
-    pipelineZh: ['audio SQL', 'Transcribe', 'Summarize', 'SQL ai_embed'],
+    pipeline: ['audio rows', 'transcribe', 'summarize', 'subtitle rows', 'embed_text'],
+    pipelineZh: ['音频数据', '转写', '摘要', '字幕分段', 'embed_text'],
     problem:
-      'A voice-analytics pipeline chains transcription, summarization, captioning and embedding — each a different model, each needing batching on GPUs.',
+      'Audio analytics combines transcription-level metadata with searchable embeddings for each subtitle segment.',
     problemZh:
-      '通话分析要串起转写、摘要、caption 和 embedding；每一步模型都要做好 GPU batching。',
-    input: '120K call recordings',
-    inputZh: '12 万段通话录音',
-    output: 'transcript · summary · embedding',
-    outputZh: '转写 · 摘要 · embedding',
-    when: 'Call analytics, meeting summaries, or audio search.',
-    whenZh: '通话分析、会议摘要或音频搜索时使用。',
+      '音频分析需要把转写级元数据与每个字幕分段的可搜索嵌入组合起来。',
+    input: '3 generated WAV samples',
+    inputZh: '3 段生成的 WAV 样例',
+    output: '3 transcripts/summaries · 6 embedded segments',
+    outputZh: '3 条转写/摘要 · 6 个嵌入分段',
+    when: 'Validating an audio-to-search pipeline before enabling Whisper or hosted summaries.',
+    whenZh: '在启用 Whisper 或托管摘要前验证音频到检索流水线时使用。',
     filename: 'voice_ai_analytics.py',
     example: 'examples/voice_ai_analytics.py',
-    code: `rel <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"SELECT id, audio FROM read_parquet('s3://calls/*.parquet')"</span><span class="p">)</span>
-out <span class="p">=</span> <span class="p">(</span>rel
-   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Transcribe</span><span class="p">,</span> schema<span class="p">=</span>transcript_schema<span class="p">,</span> execution_backend<span class="p">=</span><span class="s">"ray_actor"</span><span class="p">,</span> gpus<span class="p">=</span><span class="n">1</span><span class="p">,</span> actor_number<span class="p">=</span><span class="n">4</span><span class="p">)</span>
-   <span class="p">.</span><span class="f">map_batches</span><span class="p">(</span><span class="t">Summarize</span><span class="p">,</span> schema<span class="p">=</span>summary_schema<span class="p">,</span> batch_size<span class="p">=</span><span class="n">32</span><span class="p">))</span>
-out<span class="p">.</span><span class="f">to_table</span><span class="p">(</span><span class="s">"transcribed"</span><span class="p">)</span>
-ready <span class="p">=</span> conn<span class="p">.</span><span class="f">sql</span><span class="p">(</span><span class="s">"""
-SELECT id, transcript, summary,
-       ai_embed(summary, struct_pack(
-           provider := 'transformers',
-           model := 'sentence-transformers/all-MiniLM-L6-v2'
-       )) AS embedding
-FROM transcribed
-"""</span><span class="p">)</span>
-ready<span class="p">.</span><span class="f">write_parquet</span><span class="p">(</span><span class="s">"s3://analytics/voice/v1/part-00000.parquet"</span><span class="p">)</span>`,
+    code: `<span class="c"># Placeholder transcription; local summary; real embeddings</span>
+<span class="f">python</span> examples/voice_ai_analytics.py`,
   },
 ] satisfies UseCase[]

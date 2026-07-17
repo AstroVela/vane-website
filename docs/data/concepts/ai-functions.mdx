@@ -37,7 +37,7 @@ local model runtimes. Install Vane once; Vane then loads provider adapters
 lazily, so only the library for the selected provider needs to be added.
 
 ```bash
-pip install vane-ai
+uv pip install vane-ai
 ```
 
 | Provider | Prompt | Embed | Runtime and setup |
@@ -58,7 +58,7 @@ The examples below use the OpenAI provider. Install its client and expose the
 credential to the process that executes the query:
 
 ```bash
-pip install vane-ai openai
+uv pip install vane-ai openai
 export OPENAI_API_KEY="<your-token>"
 
 # Optional: set this only for an OpenAI-compatible endpoint.

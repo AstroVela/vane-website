@@ -2,124 +2,164 @@
 title: 多模态数据湖
 ---
 
-本示例展示 Vane Data 如何在湖仓或数仓交接之前准备多模态记录。
-
-当源行包含媒体路径、媒体字节或抽取文本，并且 pipeline 需要通过 Python UDF 或 AI 辅助逻辑添加标签、文本、embedding、评分或结构化模型输出时，可使用该模式。
-
-相关源脚本：
+本页以 Vane 代码仓库中的四个媒体与模型脚本为权威实现：
 
 - `examples/querying_images.py`
+- `examples/image_generation.py`
 - `examples/voice_ai_analytics.py`
 - `examples/multimodal_structured_outputs.py`
 
-## 目标
+它们分别展示图片解码与分析、图片生成、音频转写与 embedding，以及带结构化输出的视觉语言模型评估。
 
-读取多模态记录，通过显式的 Python 或 AI 阶段进行增强，并为下游系统写出整理后的表输出。
+## 创建干净环境
 
-## 数据分区
+先按照[安装](/zh-CN/docs/data/quickstart/installation)页面安装 `uv`，再使用 sparse checkout，把示例脚本检出到新目录：
 
-原始分区：
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
 
-- 原始字节或路径。
-- 源元数据。
-- 写入时间戳。
-
-处理后分区：
-
-- 解码文本或抽取特征。
-- 标签。
-- embedding。
-- 模型输出。
-
-整理后分区：
-
-- 稳定 ID。
-- 规范化元数据。
-- 质量标记。
-- 下游可用列。
-
-## Vane Data pipeline
-
-UDF 返回源标识符和派生列。除非下游系统明确需要，否则不要将媒体字节放入最终输出。
-
-```python
-import pyarrow as pa
-import vane
-
-con = vane.connect()
-
-raw = con.sql("""
-    select id, media_type, uri, payload
-    from read_parquet('s3://bucket/raw_media/*.parquet')
-    where uri is not null
-""")
-
-def enrich_batch(batch: pa.Table) -> pa.Table:
-    ids = batch.column("id").to_pylist()
-    media_types = batch.column("media_type").to_pylist()
-    uris = batch.column("uri").to_pylist()
-
-    return pa.table({
-        "id": ids,
-        "media_type": media_types,
-        "uri": uris,
-        "label": ["unclassified"] * batch.num_rows,
-        "text": [""] * batch.num_rows,
-    })
-
-features = raw.map_batches(
-    enrich_batch,
-    schema={
-        "id": "BIGINT",
-        "media_type": "VARCHAR",
-        "uri": "VARCHAR",
-        "label": "VARCHAR",
-        "text": "VARCHAR",
-    },
-    batch_size=32,
-    execution_backend="subprocess_actor",
-)
-
-features.write_parquet("s3://bucket/processed/media_features/")
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow Pillow openai pydantic
+uv pip install torch
+uv pip install sentence-transformers transformers
 ```
 
-在生产 pipeline 中，将解码器、模型、OCR、转写或 provider 逻辑放入 UDF，同时保持返回 schema 显式。
+Sparse checkout 不会检出 `vane/` 和 `duckdb/` 源码目录，因此 Python 进程和本地 Ray worker 都会使用已安装的 wheel。这个环境可以运行本页所有默认样本。要使用 GPU 加速，请根据操作系统、GPU 和驱动安装兼容的 CUDA PyTorch build；默认包不适用时，请通过 [PyTorch Start Locally](https://pytorch.org/get-started/locally/)选择安装命令。确认 `python -c "import torch; print(torch.cuda.is_available())"` 输出 `True` 后，Vane 的 Transformers provider 会自动申请一个 Ray GPU。首次运行语音示例时，如果本机尚无缓存，会下载 `sentence-transformers/all-MiniLM-L6-v2`。结构化输出示例还需要 provider 凭证，因为合成输入只消除了数据集依赖，不会取消模型调用。
 
-## Doris 与 Iceberg 交接
+如果 PyPI 下载较慢，可以在安装命令末尾追加清华镜像：
 
-Vane Data 不包含原生 Doris 连接器。使用 Vane Data 写出干净的 Parquet，然后用 Doris 工具加载到 Doris。
-
-Vane Data 不定义 Vane 专用 Iceberg catalog API。使用 Vane Data 完成准备和 Parquet 输出，再由湖仓 catalog 或表管理工具负责 Iceberg 提交和快照语义。
-
-## 扩展
-
-Ray 已经是默认 runner。验证有界的本地路径后，把 UDF 从显式 subprocess backend 改为 Ray actor：
-
-```python
-features = raw.map_batches(
-    enrich_batch,
-    schema={
-        "id": "BIGINT",
-        "media_type": "VARCHAR",
-        "uri": "VARCHAR",
-        "label": "VARCHAR",
-        "text": "VARCHAR",
-    },
-    batch_size=32,
-    execution_backend="ray_actor",
-    gpus=1,
-    concurrency=4,
-)
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-每个 Ray worker 都必须能够访问与 driver 相同的存储、凭证、模型文件和 Python 依赖。
+镜像只改变包的下载来源，不会替用户选择与当前机器兼容的 CUDA build。
 
-## 校验
+## 运行本地媒体样本
 
-发布多模态数据集前：
+下面三条命令使用生成的输入，不需要存储凭证、外部数据集或托管模型 provider：
 
-- 检查原始、处理后和整理后分区之间的行数。
-- 验证每个输出行都有稳定 ID。
-- 只有下游确实需要时，才保留媒体字节。
-- 确认 schema 与将消费输出的数仓、湖仓或 catalog 兼容。
-- 扩展规模前，测试模型和 provider 故障处理。
+```bash
+python examples/querying_images.py --source sample --limit 5
+python examples/image_generation.py --source sample --limit 4
+python examples/voice_ai_analytics.py --source sample --limit 3
+```
+
+使用当前内置样本时，脚本会报告 5 张已分析图片、4 张生成的 placeholder 图片、3 条转写，以及 6 个已生成 embedding 的字幕行。
+
+## 图片查询
+
+`querying_images.py` 会生成或加载图片字节，在 `AnalyzeRedRegionsBatch` 中解码图片、统计红色像素，并写出排序后的预览。默认输出目录包含：
+
+- `images/`：解码后的 PNG 预览
+- `masks/`：红色区域 mask
+- `top_red_images.csv`：排序后的元数据
+
+分析本地文件：
+
+```bash
+python examples/querying_images.py \
+  --source glob \
+  --image-glob '/path/to/images/*' \
+  --limit 100 \
+  --top-k 20
+```
+
+`--source open-images` 模式会读取有界数量的公开 OpenImages 对象，因此需要网络访问。
+
+## 图片生成
+
+默认 `placeholder` backend 只依赖基础包，并生成确定性的 PNG。它用于在下载扩散模型前验证 relation、UDF、batching 和输出行为。结果写入 `examples/output/image_generation/`，其中包含 `metadata.csv` manifest。
+
+要运行真实 Stable Diffusion，请安装模型 runtime，并显式申请 Ray GPU 资源：
+
+```bash
+uv pip install diffusers transformers accelerate torch Pillow
+
+python examples/image_generation.py \
+  --source sample \
+  --backend diffusers \
+  --device cuda \
+  --dtype float16 \
+  --gpus 1 \
+  --limit 4
+```
+
+首次运行时会下载模型；设置 `--local-files-only` 或让 `--model-id` 指向本地模型目录后则不会下载。
+
+## 语音 AI 分析
+
+默认语音 workflow 会生成短 WAV 样本，使用确定性的 placeholder 转写，创建本地摘要和字幕行，再为每个字幕片段生成 embedding。它会在 `examples/output/voice_ai_analytics/` 下写出 `summaries.csv`、`subtitles.csv` 和 `segment_embeddings.csv`。
+
+运行真实转写：
+
+```bash
+uv pip install faster-whisper av
+
+python examples/voice_ai_analytics.py \
+  --source glob \
+  --audio-glob '/path/to/audio/*.wav' \
+  --transcription-backend faster-whisper \
+  --device cuda \
+  --compute-type float16 \
+  --gpus 1 \
+  --limit 10
+```
+
+这个模式仍需要 Transformers extra 来生成字幕 embedding。只有在已经安装 `openai`、配置 provider 凭证和目标模型后，才添加 `--summary-backend openai`。
+
+## 多模态结构化输出
+
+结构化输出脚本会分别在有图和无图条件下询问同一道选择题，对比准确率，把每一行划分到评估象限，并可选地把失败样本发送给 judge 再次分析。
+
+使用默认 Hugging Face router：
+
+```bash
+export HF_TOKEN=your_hugging_face_token
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --skip-judge
+```
+
+使用其他 OpenAI 兼容端点：
+
+```bash
+export MODEL_API_KEY=your_api_key
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --api-key-env MODEL_API_KEY \
+  --base-url https://provider.example/v1 \
+  --model provider/model-name \
+  --structured-output-mode prompt \
+  --skip-judge
+```
+
+移除 `--skip-judge` 可以启用失败分析调用。只有安装数据集依赖后才使用真实 AI2D 样本：
+
+```bash
+uv pip install datasets Pillow
+python examples/multimodal_structured_outputs.py \
+  --source hf-ai2d \
+  --limit 4
+```
+
+请把 API key 保存在环境变量中，不要写入命令历史、源文件或提交到仓库的配置。
+
+## 默认 Ray 执行
+
+四个脚本都依赖 Vane 的默认 Ray runner。它们不会设置 `VANE_RUNNER`、调用 `vane.configure(...)`，也不会选择 task 或 actor backend。`--gpus 1` 只会为模型 UDF 添加 Ray GPU 资源请求，不会选择 runner。
+
+如需使用已有集群，请在启动脚本前设置 `RAY_ADDRESS`。每个 worker 都必须安装匹配的依赖，并能访问相同的文件、模型缓存和凭证。
+
+## 安全发布输出
+
+- 把模型输出与源元数据连接前，校验行数和稳定 ID。
+- 只有下游消费者确实需要时才保留原始字节。
+- 随生成数据记录模型 ID、提示词和生成参数。
+- 在有界输入上测试 provider 和模型失败。
+- Vane 写出整理后的文件后，由目标系统负责 catalog commit 和 snapshot 语义。

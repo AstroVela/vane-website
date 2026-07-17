@@ -2,47 +2,129 @@
 title: 示例
 ---
 
-这些示例展示如何将 Vane Data SQL、Python UDF、AI helper 和 Ray 支持的执行组合成实用的数据准备 workflow。
+Vane 代码仓库中的脚本是本节内容的权威实现。文档负责说明依赖安装和运行方式；如果细节存在差异，以 `examples/` 下的脚本为准。
 
-如果你需要理解 workflow 形态，请先阅读下面的文档页。如果需要可运行参数、样本数据行为或实现细节，请阅读源脚本。
+## 从干净环境开始
 
-## 示例页面
+先按照[安装](/zh-CN/docs/data/quickstart/installation)页面安装 `uv`，再使用 sparse checkout，仅检出代码仓库中的示例脚本：
 
-| 示例 | 适用场景 | 典型资源 |
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AstroVela/vane.git vane-examples
+cd vane-examples
+git sparse-checkout set examples
+
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install vane-ai numpy pyarrow
+```
+
+Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，因此 Python 进程和本地 Ray worker 都会导入已安装的 wheel。安装命令会添加 Vane，以及示例直接导入的 NumPy 和 PyArrow；Vane 会把 Ray 作为运行时依赖安装。Ray 是默认 runner：未设置 `RAY_ADDRESS` 时，下面的命令会在当前机器启动或复用 Ray。脚本不会设置 runner 或 execution backend。
+
+如果 `vane-ai` 尚未为你的 Python 版本或 Linux 平台提供 wheel，请参阅[安装](/zh-CN/docs/data/quickstart/installation)。
+
+## 按需安装依赖
+
+在同一个已激活环境中运行：
+
+```bash
+# querying_images.py
+uv pip install Pillow
+
+# embedding workflow 使用的 PyTorch
+uv pip install torch
+
+# common_crawl.py、llms_red_pajamas.py 和 voice_ai_analytics.py
+uv pip install sentence-transformers transformers
+
+# multimodal_structured_outputs.py
+uv pip install openai pydantic
+```
+
+`minhash_dedupe.py` 和 `image_generation.py` 的默认 placeholder 模式只需要基础包。首次运行 Transformers 示例时，如果本机尚无缓存，会下载 `sentence-transformers/all-MiniLM-L6-v2`。
+
+要使用 GPU 加速，请根据操作系统、GPU 和驱动安装兼容的 CUDA PyTorch build；默认包不适用时，请通过 [PyTorch Start Locally](https://pytorch.org/get-started/locally/)选择安装命令。运行 embedding 示例前确认当前环境能够看到 GPU：
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+当 `torch.cuda.is_available()` 为 `True` 时，Vane 的 Transformers provider 会自动申请一个 Ray GPU。如果 PyPI 下载较慢，可以在安装命令末尾追加清华镜像，例如：
+
+```bash
+uv pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+镜像只改变包的下载来源，不会替用户选择与当前机器兼容的 CUDA build。
+
+真实模型和远程数据集模式还有独立的可选依赖：
+
+```bash
+# image_generation.py --backend diffusers
+uv pip install diffusers transformers accelerate torch Pillow
+
+# voice_ai_analytics.py --transcription-backend faster-whisper
+uv pip install faster-whisper av
+
+# multimodal_structured_outputs.py --source hf-ai2d
+uv pip install datasets Pillow
+```
+
+## 运行有界样本
+
+下面的命令使用内置样本或合成输入。前六条不需要存储凭证或外部数据集：
+
+```bash
+python examples/minhash_dedupe.py --source sample --limit 10
+python examples/querying_images.py --source sample --limit 5
+python examples/image_generation.py --source sample --limit 4
+python examples/common_crawl.py --source sample --limit 5
+python examples/llms_red_pajamas.py --source sample --limit 6
+python examples/voice_ai_analytics.py --source sample --limit 3
+```
+
+多模态结构化输出示例使用合成图片数据，但仍会调用视觉语言模型。它的默认端点是 Hugging Face 的 OpenAI 兼容 router：
+
+```bash
+export HF_TOKEN=your_hugging_face_token
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --skip-judge
+```
+
+如需使用其他 OpenAI 兼容服务，请把密钥放在环境变量中，并显式传入服务配置。如果端点没有实现 OpenAI SDK 的结构化输出解析 API，请使用 prompt 模式：
+
+```bash
+export MODEL_API_KEY=your_api_key
+python examples/multimodal_structured_outputs.py \
+  --source synthetic \
+  --limit 1 \
+  --api-key-env MODEL_API_KEY \
+  --base-url https://provider.example/v1 \
+  --model provider/model-name \
+  --structured-output-mode prompt \
+  --skip-judge
+```
+
+不要把 provider 密钥写入源文件，也不要将其提交到代码仓库。
+
+## 权威脚本
+
+| 脚本 | 默认 workflow | 默认输出 |
 | --- | --- | --- |
-| [训练数据流水线](/zh-CN/docs/data/examples/training-data-pipeline) | 文本过滤、分块、embedding 生成和去重模式 | 默认使用 CPU；可选 embedding 模型依赖 |
-| [保险文档审计](/zh-CN/docs/data/examples/insurance-document-audit) | SQL 优先的文档检查，并可选结构化 LLM 审查 | CPU；可选 AI provider |
-| [招标合规检查](/zh-CN/docs/data/examples/tender-compliance-check) | 规则表连接和结构化合规提示词 | CPU；可选 AI provider |
-| [多模态数据湖](/zh-CN/docs/data/examples/multimodal-data-lake) | 湖仓或数仓交接前的媒体增强 | 取决于 UDF，使用 CPU 或 GPU |
+| `examples/common_crawl.py` | 解码样本 WARC 行、保留英文页面、切分文本并生成 embedding | `examples/output/common_crawl/` |
+| `examples/minhash_dedupe.py` | 标准化文本、计算 MinHash、生成 LSH 候选，并为每个连通分量保留一行 | `examples/output/minhash_dedupe/` |
+| `examples/llms_red_pajamas.py` | 为样本 StackExchange 问题生成 embedding，并打印语义匹配 | 终端；添加 `--output-csv PATH` 可写出 CSV |
+| `examples/querying_images.py` | 生成样本图片、检测红色区域，并保存图片与 mask 预览 | `examples/output/querying_images/` |
+| `examples/image_generation.py` | 根据提示词生成确定性的 placeholder PNG | `examples/output/image_generation/` |
+| `examples/voice_ai_analytics.py` | 生成样本音频，使用 placeholder 转写和本地摘要，再为字幕片段生成 embedding | `examples/output/voice_ai_analytics/` |
+| `examples/multimodal_structured_outputs.py` | 对比 VLM 在有图和无图条件下的回答，并可选评审失败样本 | 终端 |
 
-## 源脚本
+[训练数据流水线](/zh-CN/docs/data/examples/training-data-pipeline)介绍三个文本 workflow；[多模态数据湖](/zh-CN/docs/data/examples/multimodal-data-lake)介绍四个图片、音频和 VLM workflow。
 
-仓库包含以脚本为入口的示例，可改造到你的项目中：
+[保险文档审计](/zh-CN/docs/data/examples/insurance-document-audit)和[招标合规检查](/zh-CN/docs/data/examples/tender-compliance-check)是需要你自备输入数据和 provider 配置的改造模板，不对应代码仓库中的同名脚本。
 
-- `examples/common_crawl.py`
-- `examples/minhash_dedupe.py`
-- `examples/llms_red_pajamas.py`
-- `examples/querying_images.py`
-- `examples/image_generation.py`
-- `examples/voice_ai_analytics.py`
-- `examples/multimodal_structured_outputs.py`
+## 使用已有 Ray 集群
 
-部分脚本提供内置样本数据模式，便于你在连接外部数据前测试 pipeline 形态。
-
-## 如何改造示例
-
-改造示例时：
-
-1. 如果脚本提供样本或合成源模式，请从它开始。
-2. 将源加载与转换分离。
-3. 保持每个 UDF 的输出 schema 显式。
-4. 保留稳定标识符，以便模型输出可以关联回源行。
-5. 只有在本地样本正常后，再迁移到真实数据。
-6. 将 benchmark 脚本视为性能参考，而不是产品 API。
-7. 不要从示例名称推断当前未支持的连接器。
-
-## 扩展路径
-
-Ray 是 Vane 的默认 runner；未配置集群地址时，它会在当前机器启动。请先使用有界的本地数据；确认数据契约正确后，再把显式使用 `subprocess_task` 或 `subprocess_actor` backend 的阶段改为 `ray_task` 或 `ray_actor`。
-
-同一 pipeline 需要使用已有集群时，请在启动进程前设置 `RAY_ADDRESS`。集群启动与连接流程请参阅[部署](/zh-CN/docs/data/deploy/deployment)。
+在启动脚本前设置 `RAY_ADDRESS`。每个 worker 都需要安装相同版本的 Vane 和对应示例依赖，并能访问所需数据、模型文件和凭证。无需修改脚本，也无需添加 runner 参数。集群设置请参阅[部署](/zh-CN/docs/data/deploy/deployment)。

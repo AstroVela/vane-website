@@ -5,18 +5,19 @@ import Box from '../components/Box'
 import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
 import Cta from '../components/Cta'
+import BenchmarkScopeNote from '../components/BenchmarkScopeNote'
 import {
   BENCHMARK_ENGINE_NAMES,
   BENCHMARK_ENVIRONMENT,
   BENCHMARK_RESULTS,
   DEFAULT_BATCH_BENCHMARK_RESULTS,
-  VANE_FASTER_THAN_RAY_COUNT,
   type BenchmarkBatchSize,
   formatBatchSize,
   formatSeconds,
   runtimeChangePercent,
 } from '../benchmarkData'
 import { pickLocale, useSiteLocale } from '../siteI18n'
+import { BENCHMARK_WORKFLOW_URL } from '../siteLinks'
 
 const TUNED_CHART_MIN_SECONDS = 50
 const TUNED_CHART_TICKS = [50, 300, 1000, 3000, 10000] as const
@@ -73,7 +74,16 @@ export default function Benchmarks() {
       description: 'Observed end-to-end wall-clock results for document, image, audio, and video workloads on one 36-core single-node environment.',
       eyebrow: 'Benchmarks',
       heading: 'Single-node multimodal pipeline benchmarks',
-      lead: 'Tuned and default batch-size results from the same recorded single-node environment.',
+      leadPrefix: 'The benchmark workflow is',
+      leadSeparator: ' ',
+      leadLink: 'here',
+      leadSuffix: '.',
+      environment: 'Test environment',
+      singleNode: 'single node',
+      cpuCores: 'CPU cores',
+      memory: 'RAM',
+      gpuMemory: 'GPU memory',
+      modifiedVram: 'modified VRAM',
       summary: 'Primary result',
       summaryTitle: 'Tuned batch-size results',
       table: {
@@ -85,7 +95,6 @@ export default function Benchmarks() {
       notSet: 'Not set',
       lowerChange: 'lower',
       higherChange: 'higher',
-      lower: 'End-to-end wall-clock seconds; lower is better. Comparison columns show Vane Data relative to each baseline. OOM means the run exhausted memory under this configuration.',
       oom: 'OOM',
       workloads: {
         document: 'Document',
@@ -93,14 +102,8 @@ export default function Benchmarks() {
         audio: 'Audio',
         video: 'Video',
       },
-      labels: {
-        hardware: 'Hardware',
-        method: 'Method',
-      },
-      method: 'End-to-end wall-clock seconds; lower is better. Batch size tuned per engine and workload.',
       tunedLogScale: 'Tuned batch sizes · log scale · lower is better',
       tunedChartAria: 'Grouped tuned elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
-      tunedChartHint: 'Bar labels show compact seconds. Batch sizes are tuned per engine and workload. OOM is a status, not a duration.',
       defaultEyebrow: 'Reference',
       defaultTitle: 'Default batch-size results',
       defaultLead: 'Results from the same recorded single-node environment before per-engine batch-size tuning.',
@@ -108,8 +111,6 @@ export default function Benchmarks() {
       defaultLogScale: 'Default batch size · log scale · lower is better',
       engineLegend: 'Engines',
       chartAria: 'Grouped default batch-size elapsed-time bars for Vane Data, Ray Data, and Daft across four workloads',
-      chartHint: 'Bar labels show compact seconds. OOM is a run status, not a duration.',
-      disclosure: 'Scope: the comparison assumes the same workload inputs and output contract. Dataset scale, engine versions, run count, cache state, concurrency, and output target were not recorded, so these are observed results rather than a fully reproducible benchmark.',
       readDocs: 'Read the Docs',
       explore: 'Explore use cases',
     },
@@ -118,7 +119,16 @@ export default function Benchmarks() {
       description: '在一台 36 核单机环境中，对文档、图像、音频和视频 workload 进行端到端 wall-clock 耗时对比。',
       eyebrow: '基准测试',
       heading: '单机多模态流水线基准测试',
-      lead: '同一台已记录单机环境中的 batch size 调优结果与默认结果。',
+      leadPrefix: 'Benchmark 测试流程见',
+      leadSeparator: '',
+      leadLink: '这里',
+      leadSuffix: '。',
+      environment: '测试环境',
+      singleNode: '单机',
+      cpuCores: '个 CPU 核心',
+      memory: '内存',
+      gpuMemory: '显存',
+      modifiedVram: '显存改装版',
       summary: '主要结果',
       summaryTitle: 'batch size 调优结果',
       table: {
@@ -130,7 +140,6 @@ export default function Benchmarks() {
       notSet: '未设置',
       lowerChange: '更低',
       higherChange: '更高',
-      lower: '单位为端到端 wall-clock 秒，越低越好。对比列表示 Vane Data 相对基线的耗时变化。OOM 表示在本次配置下运行时内存耗尽。',
       oom: 'OOM',
       workloads: {
         document: '文档',
@@ -138,14 +147,8 @@ export default function Benchmarks() {
         audio: '音频',
         video: '视频',
       },
-      labels: {
-        hardware: '硬件环境',
-        method: '测量方式',
-      },
-      method: '端到端 wall-clock 秒数，越低越好；batch size 按引擎和 workload 调整。',
       tunedLogScale: 'batch size 调优后 · 对数尺度 · 越低越好',
       tunedChartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中调优 batch size 后的分组耗时柱状图',
-      tunedChartHint: '柱顶显示简化秒数。batch size 按引擎和 workload 调整。OOM 仅表示运行状态，不表示耗时。',
       defaultEyebrow: '参考结果',
       defaultTitle: '默认 batch size 结果',
       defaultLead: '同一台已记录单机环境中，未按引擎调整 batch size 时的结果。',
@@ -153,28 +156,10 @@ export default function Benchmarks() {
       defaultLogScale: '默认 batch size · 对数尺度 · 越低越好',
       engineLegend: '引擎',
       chartAria: 'Vane Data、Ray Data 和 Daft 在四类 workload 中使用默认 batch size 的分组耗时柱状图',
-      chartHint: '柱顶显示简化秒数。OOM 表示运行状态，不表示耗时。',
-      disclosure: '适用范围：对比假设各引擎使用相同 workload 输入和输出语义。现有记录未包含数据规模、引擎版本、运行次数、缓存状态、并发和输出目标，因此这些数据是实测结果，不是完全可复现的 benchmark。',
       readDocs: '阅读文档',
       explore: '浏览用例',
     },
   )
-  const videoRayChange = runtimeChangePercent(
-    BENCHMARK_RESULTS[3].vaneSeconds,
-    BENCHMARK_RESULTS[3].rayDataSeconds,
-  )
-  const completedDaftResults = BENCHMARK_RESULTS.filter(
-    (result) => result.daftSeconds !== null,
-  )
-  const fasterThanDaftCount = completedDaftResults.filter(
-    (result) => result.daftSeconds !== null && result.vaneSeconds < result.daftSeconds,
-  ).length
-  const tunedSummary = pickLocale(
-    locale,
-    `Vane Data was lower than Ray Data on ${VANE_FASTER_THAN_RAY_COUNT} / ${BENCHMARK_RESULTS.length} tuned workloads (Video: ${Math.abs(videoRayChange).toFixed(1)}% higher), and lower than Daft on ${fasterThanDaftCount} / ${completedDaftResults.length} completed comparisons. Daft OOM: Image, Audio.`,
-    `Vane Data 在 ${VANE_FASTER_THAN_RAY_COUNT} / ${BENCHMARK_RESULTS.length} 类调优 workload 中耗时低于 Ray Data（Video 高 ${Math.abs(videoRayChange).toFixed(1)}%），并在与 Daft 的 ${fasterThanDaftCount} / ${completedDaftResults.length} 项已完成对比中耗时更低。Daft OOM：Image、Audio。`,
-  )
-
   return (
     <>
       <Head>
@@ -190,7 +175,11 @@ export default function Benchmarks() {
         <div className="wrap">
           <Eyebrow>{copy.eyebrow}</Eyebrow>
           <h1 className="h1">{copy.heading}</h1>
-          <p className="lead">{copy.lead}</p>
+          <p className="lead">
+            {copy.leadPrefix}{copy.leadSeparator}
+            <a className="benchmark-workflow-link" href={BENCHMARK_WORKFLOW_URL} target="_blank" rel="noreferrer">{copy.leadLink}</a>
+            {copy.leadSuffix}
+          </p>
         </div>
       </section>
 
@@ -202,16 +191,13 @@ export default function Benchmarks() {
             <Eyebrow>{copy.summary}</Eyebrow>
             <h2 className="h2">{copy.summaryTitle}</h2>
           </div>
-          <p className="benchmark-tuned-summary">{tunedSummary}</p>
-          <Box flat className="benchmark-context">
-            <dl className="benchmark-context-grid">
-              <div>
-                <dt>{copy.labels.hardware}</dt>
-                <dd>{BENCHMARK_ENVIRONMENT.cpuCores} CPU cores · {BENCHMARK_ENVIRONMENT.memoryGb} GB RAM · {BENCHMARK_ENVIRONMENT.gpu} · {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB GPU memory</dd>
-              </div>
-              <div><dt>{copy.labels.method}</dt><dd>{copy.method}</dd></div>
-            </dl>
-          </Box>
+          <p className="benchmark-environment">
+            <strong>{copy.environment}:</strong>{' '}
+            {copy.singleNode} · {BENCHMARK_ENVIRONMENT.cpuCores} {copy.cpuCores} ·{' '}
+            {BENCHMARK_ENVIRONMENT.memoryGb} GB {copy.memory} · {BENCHMARK_ENVIRONMENT.gpu}
+            {BENCHMARK_ENVIRONMENT.gpuMemoryModified ? ` (${copy.modifiedVram})` : ''} ·{' '}
+            {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB {copy.gpuMemory}
+          </p>
           <Box flat className="home-benchmark-chart benchmark-tuned-chart">
             <div className="azt">{copy.elapsedTime}</div>
             <div className="home-chart-meta">
@@ -283,7 +269,7 @@ export default function Benchmarks() {
                 </div>
               </div>
             </div>
-            <p className="home-chart-footnote">{copy.tunedChartHint}</p>
+            <BenchmarkScopeNote locale={locale} />
           </Box>
           <Box flat className="benchmark-table-wrap">
             <table className="summary benchmark-summary">
@@ -347,7 +333,6 @@ export default function Benchmarks() {
               </tbody>
             </table>
           </Box>
-          <p className="benchmark-note">{copy.lower}</p>
         </div>
       </section>
 
@@ -429,9 +414,8 @@ export default function Benchmarks() {
                 </div>
               </div>
             </div>
-            <p className="home-chart-footnote">{copy.chartHint}</p>
+            <BenchmarkScopeNote locale={locale} />
           </Box>
-          <p className="benchmark-disclosure">{copy.disclosure}</p>
         </div>
       </section>
 

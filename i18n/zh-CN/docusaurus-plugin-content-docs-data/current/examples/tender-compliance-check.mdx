@@ -69,6 +69,12 @@ checks = con.sql("""
 
 `prompt(...)` 返回已配置的输出列。汇总前，请显式地将结果与检查行组合，并在写出结果前校验行数。
 
+运行这个可选阶段前，请在当前环境中安装 provider 和 schema 依赖：
+
+```bash
+uv pip install openai pydantic
+```
+
 ```python
 from pydantic import BaseModel
 
@@ -82,7 +88,6 @@ result_only = checks.prompt(
     provider="openai",
     return_format=ComplianceResult,
     output_column="result_json",
-    execution_backend="subprocess_actor",
 )
 
 checks_table = checks.to_arrow_table()

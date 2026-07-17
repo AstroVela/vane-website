@@ -4,15 +4,14 @@ import Mark from './Mark'
 import { DISCORD_URL, GITHUB_URL } from '../siteLinks'
 
 /* Paper footer with ink text, organized as a 5-column sitemap. The `home`
-   variant carries the longer blurb + the `pip install` line in the brand
-   column; the default variant (Use Cases / Benchmarks pages) shows the short
-   tagline. The link columns are identical across variants. */
+   variant adds the `pip install` line in the brand column; the link columns
+   are identical across variants. */
 export default function Footer({ home = false }: { home?: boolean }) {
   const locale = useSiteLocale()
   const copy = pickLocale(
     locale,
     {
-      homeBlurb: 'The multimodal engine for AI pipelines and agents. Run SQL, Python UDFs, embeddings, and model inference on Ray.',
+      homeBlurb: 'Unifies multimodal data, intelligence, and continuous learning with Python and SQL interfaces, seamlessly scaling from local environments to Ray clusters.',
       blurb: 'Unifies multimodal data, intelligence, and continuous learning with Python and SQL interfaces, seamlessly scaling from local environments to Ray clusters.',
       product: 'Product',
       training: 'Multimodal Data Pipeline',
@@ -32,7 +31,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
       built: 'Built for engineers.',
     },
     {
-      homeBlurb: '面向 AI 流水线与 Agents 的多模态原生引擎。在 Ray 上运行 SQL、Python UDF、embeddings 和模型推理。',
+      homeBlurb: '通过 Python 和 SQL 接口统一多模态数据处理、智能计算与持续学习，并从本地环境无缝扩展到 Ray 集群。',
       blurb: '面向 AI 流水线与 Agents 的多模态原生引擎。',
       product: '产品',
       training: '多模态数据流水线',
