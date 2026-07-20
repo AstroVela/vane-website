@@ -3882,28 +3882,22 @@ This page covers the tested local development flow. The commands below create a 
 
 ## Build from source
 
-Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended, is the primary development version, and is used by the Ubuntu 24.04 x86-64 CI development path. Other native toolchains and distributions may require additional setup.
+Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended and is used by the primary Ubuntu 24.04 x86-64 development path. The tested path requires Git with `git subtree` support, a C++20 compiler, CMake 3.29+, Ninja, ccache, and the vcpkg baseline pinned by the repository. Other native toolchains and distributions may require additional setup.
 
-Clone the repository with submodules:
+Clone the repository normally. The DuckDB engine fork is included directly under `external/duckdb`, so no separate submodule initialization is required:
 
 ```bash
-git clone --recursive https://github.com/AstroVela/vane.git
+git clone https://github.com/AstroVela/vane.git
 cd vane
 ```
 
-If the checkout already exists and submodules are missing:
-
-```bash
-git submodule update --init --recursive
-```
-
-On Ubuntu 24.04, install the native build tools used by CI:
+On Ubuntu 24.04, install the native build and shell-formatting tools used by CI:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
   autoconf automake bison build-essential ccache curl flex git libtool \
-  ninja-build pkg-config tar unzip zip
+  ninja-build pkg-config shfmt tar unzip zip
 ```
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create and activate a Python 3.12 virtual environment and install the build dependency group declared by the repository:
@@ -3920,7 +3914,7 @@ Bootstrap the pinned C++ dependencies from the repository root:
 bash scripts/bootstrap_vcpkg.sh
 ```
 
-The helper reads the exact baseline from `vcpkg.json`, installs packages into `vcpkg_installed`, reuses the repository's vcpkg binary cache, and verifies the committed native-dependency license bundle. Vane's CMake configuration discovers `vcpkg_installed` automatically, so do not set `CMAKE_TOOLCHAIN_FILE`.
+The helper reads the exact baseline from `vcpkg.json`, installs packages into `vcpkg_installed`, reuses the repository's vcpkg binary cache, and verifies the committed native-dependency license bundle. Vane's CMake configuration discovers `vcpkg_installed` automatically, so do not set `CMAKE_TOOLCHAIN_FILE`. When intentionally changing native dependencies, regenerate the license bundle with `python scripts/sync_vcpkg_licenses.py` and review its diff.
 
 Build and install a local, non-editable Release-mode package:
 
@@ -3931,7 +3925,7 @@ export SKBUILD_CMAKE_BUILD_TYPE=Release
 uv pip install . --no-build-isolation
 ```
 
-Using `uv pip install` instead of `uv sync` is intentional: the default Ray runner imports Vane in worker processes, while an editable installation can invoke CMake again during each worker import. Rerun the install command after changing source code; Python-only changes do not require a native recompile, while native changes reuse the incremental build directory. Rerun `scripts/bootstrap_vcpkg.sh` after changing `vcpkg.json`. If CMake options change, select a fresh `SKBUILD_BUILD_DIR` or remove the old build directory before rebuilding.
+Using `uv pip install` instead of `uv sync` is intentional: the default Ray runner imports Vane in worker processes, while an editable installation can invoke CMake again during each worker import. Do not use an editable install. Rerun the install command after changing source code; Python-only changes do not require a native recompile, while changes below `src/duckdb_py/` or `external/duckdb/src/` do and reuse the incremental build directory. Rerun `scripts/bootstrap_vcpkg.sh` after changing `vcpkg.json`. If CMake options change, select a fresh `SKBUILD_BUILD_DIR` or remove the old build directory before rebuilding.
 
 ## Formatting
 
@@ -3939,19 +3933,76 @@ The source `CONTRIBUTING.md` describes formatting through `scripts/format`. Inst
 
 ```bash
 uv pip install pre-commit
+pre-commit install
+```
+
+Run `pre-commit install` once per clone.
+
+The root formatter uses `shfmt` from `PATH` for shell files; the Ubuntu command above installs it. Before formatting `external/duckdb`, install the additional versions required by DuckDB's formatter:
+
+```bash
+uv pip install "black>=24" "clang_format==11.0.1" cmake-format
 ```
 
 Examples:
 
 ```bash
 scripts/format root --changed
-scripts/format submodule --changed
+scripts/format duckdb --changed
 scripts/format workspace --changed
+pre-commit run --from-ref origin/main --to-ref HEAD
 ```
 
-The root formatter avoids scanning `external/duckdb` by default. Use the submodule command when changing DuckDB internals.
+The root formatter avoids scanning `external/duckdb` by default. Use the `duckdb` command when changing DuckDB internals; `workspace` runs both formatters.
 
-## Tests
+## Updating the DuckDB subtree
+
+The official engine baseline is imported from `duckdb/duckdb` as a squashed subtree snapshot. Pull a reviewed upstream revision using the same mode:
+
+```bash
+git subtree pull --prefix=external/duckdb --squash \
+  https://github.com/duckdb/duckdb.git main
+```
+
+The subtree metadata records the exact official DuckDB revision in `git-subtree-split`. Vane-specific engine changes live as subsequent commits under `external/duckdb`; review and resolve them when updating the official baseline. When replaying a change formerly maintained in another repository, preserve its author and date and record the original commit and upstream parent as commit trailers.
+
+Inspect the content-derived identity of the current DuckDB tree without modifying the checkout:
+
+```bash
+python scripts/sync_duckdb_source_id.py --print
+```
+
+The script computes the full Git tree object for `external/duckdb`, including staged, unstaged, and untracked non-ignored engine files, without changing the real Git index or object store. Native configuration registers the external tree as a CMake configuration dependency, so timestamp-visible changes trigger reconfiguration. A lightweight build target also refreshes a generated header in the CMake build directory; DuckDB's version object and default in-tree static extension entry points consume that header, so mode-only changes update every runtime SourceID on the first incremental build. When both Git metadata and a source-distribution manifest are unavailable, the script derives the same Git-compatible identity from the materialized files; the local PEP 517 backend injects the full `DUCKDB_SOURCE_ID` into source distributions for subsequent builds.
+
+The SourceID manifest and generated header are ignored build metadata and must not be committed. Ordinary engine changes therefore require no tracked identity update and do not create a shared generated file that can conflict across pull requests. Update `SOURCE_PROVENANCE.md` and `OVERRIDE_GIT_DESCRIBE` in `pyproject.toml` only when the imported upstream baseline, DuckDB version line, or historical mapping changes.
+
+To inspect or export the subtree history with DuckDB-rooted paths, split it to a temporary branch:
+
+```bash
+git subtree split --prefix=external/duckdb --ignore-joins -b duckdb-history
+git log --stat duckdb-history
+```
+
+The `--ignore-joins` option produces a compact, self-contained history containing the official snapshot and subsequent Vane engine commits. To reconnect the split branch to DuckDB's complete upstream history, fetch `duckdb/duckdb` first and omit `--ignore-joins`; Git then uses the recorded `git-subtree-split` revision as the join point.
+
+## Native C++ tests
+
+The complete native gate builds DuckDB, distributed exchange, and the test runner with the same pinned Arrow and C++20 configuration used by CI. It starts from a fresh CMake configuration to avoid configuration drift:
+
+```bash
+scripts/run_native_tests.sh "[distributed]"
+```
+
+Run a named engine test or the complete unit suite with the same build:
+
+```bash
+scripts/run_native_tests.sh "test name" -s
+scripts/run_native_tests.sh
+```
+
+The build uses two parallel compile jobs by default to stay within standard CI runner memory. Set `VANE_NATIVE_BUILD_JOBS` to a larger positive integer when the local machine has more capacity.
+
+## Python tests
 
 Install the test dependency group, then run the same base-installation gate as CI:
 
@@ -3960,11 +4011,35 @@ uv pip install --group test
 scripts/run_release_tests.sh
 ```
 
-The broader compatibility suite and a focused local test can be run separately:
+The broader compatibility suites and a focused local test can be run separately:
 
 ```bash
 python -m pytest tests/fast
+python -m pytest tests/slow
+python -m pytest tests/ai
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-Some compatibility tests require optional services, credentials, model weights, or GPUs and should skip with a clear reason when that environment is absent.
+Tests requiring an externally provisioned service are excluded by default. Run them explicitly when the service and credentials are available:
+
+```bash
+python -m pytest -m external_service tests/fast
+```
+
+Other optional tests may require network access, model weights, GPUs, credentials, or a local Ray setup. They should skip with a clear reason when the environment is absent and must not silently use a maintainer's local endpoint or credentials.
+
+## Debugging Ray workers
+
+Set `DUCKDB_DISTRIBUTED_DEBUG=1`. Native debug output uses `DistributedDebugStream()` and appears in Ray worker error logs, normally below `/tmp/ray/session_latest/logs/worker-*.err`. Plain C `stdout` output is not reliably captured by Ray workers.
+
+## Release artifacts
+
+Build and validate an sdist before opening a release pull request:
+
+```bash
+uv pip install build
+python -m build --sdist
+python scripts/check_release_artifacts.py dist/*.tar.gz
+```
+
+Record the full `external/duckdb` tree ID reported by `python scripts/sync_duckdb_source_id.py --print`. The PEP 517 backend injects that identity into the sdist. See `RELEASE.md` in the source repository for the complete release process.

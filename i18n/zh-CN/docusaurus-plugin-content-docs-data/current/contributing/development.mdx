@@ -6,28 +6,22 @@ title: 开发
 
 ## 从源码构建
 
-当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。Vane 支持 Python 3.10、3.11 和 3.12。推荐使用 Python 3.12，它是主要开发版本，也是 Ubuntu 24.04 x86-64 CI 开发流程使用的版本。其他 native toolchain 和 Linux 发行版可能需要额外配置。
+当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。Vane 支持 Python 3.10、3.11 和 3.12。推荐使用 Python 3.12，主要的 Ubuntu 24.04 x86-64 开发流程使用该版本。经过测试的流程要求 Git 支持 `git subtree`，并提供 C++20 compiler、CMake 3.29+、Ninja、ccache，以及代码库锁定的 vcpkg baseline。其他 native toolchain 和 Linux 发行版可能需要额外配置。
 
-克隆代码库，并拉取子模块：
+按常规方式克隆代码库。DuckDB 引擎 fork 已直接包含在 `external/duckdb` 中，无需单独初始化 submodule：
 
 ```bash
-git clone --recursive https://github.com/AstroVela/vane.git
+git clone https://github.com/AstroVela/vane.git
 cd vane
 ```
 
-如果检出目录已存在但子模块缺失：
-
-```bash
-git submodule update --init --recursive
-```
-
-在 Ubuntu 24.04 上，安装 CI 使用的 native 构建工具：
+在 Ubuntu 24.04 上，安装 CI 使用的 native 构建工具和 shell 格式化工具：
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
   autoconf automake bison build-essential ccache curl flex git libtool \
-  ninja-build pkg-config tar unzip zip
+  ninja-build pkg-config shfmt tar unzip zip
 ```
 
 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，然后创建并激活 Python 3.12 虚拟环境，再安装代码库声明的构建 dependency group：
@@ -44,7 +38,7 @@ uv pip install --group build
 bash scripts/bootstrap_vcpkg.sh
 ```
 
-该脚本会从 `vcpkg.json` 读取精确 baseline，把软件包安装到 `vcpkg_installed`，复用代码库的 vcpkg binary cache，并校验已经提交的 native 依赖许可证清单。Vane 的 CMake 配置会自动发现 `vcpkg_installed`，因此不要设置 `CMAKE_TOOLCHAIN_FILE`。
+该脚本会从 `vcpkg.json` 读取精确 baseline，把软件包安装到 `vcpkg_installed`，复用代码库的 vcpkg binary cache，并校验已经提交的 native 依赖许可证清单。Vane 的 CMake 配置会自动发现 `vcpkg_installed`，因此不要设置 `CMAKE_TOOLCHAIN_FILE`。有意修改 native 依赖时，请运行 `python scripts/sync_vcpkg_licenses.py` 重新生成许可证清单，并检查其 diff。
 
 构建并安装本地、非 editable 的 Release-mode 软件包：
 
@@ -55,7 +49,7 @@ export SKBUILD_CMAKE_BUILD_TYPE=Release
 uv pip install . --no-build-isolation
 ```
 
-这里有意使用 `uv pip install` 而不是 `uv sync`：默认 Ray runner 会在 worker 进程中导入 Vane，而 editable 安装可能在每个 worker 导入时再次调用 CMake。修改源码后，请重新运行安装命令；仅修改 Python 不需要重新编译 native 代码，native 改动则会复用增量构建目录。修改 `vcpkg.json` 后，请重新运行 `scripts/bootstrap_vcpkg.sh`。如果 CMake option 发生变化，请选择新的 `SKBUILD_BUILD_DIR`，或在重新构建前删除旧构建目录。
+这里有意使用 `uv pip install` 而不是 `uv sync`：默认 Ray runner 会在 worker 进程中导入 Vane，而 editable 安装可能在每个 worker 导入时再次调用 CMake。请勿使用 editable 安装。修改源码后，请重新运行安装命令；仅修改 Python 不需要重新编译 native 代码，修改 `src/duckdb_py/` 或 `external/duckdb/src/` 下的代码则需要重新编译，并会复用增量构建目录。修改 `vcpkg.json` 后，请重新运行 `scripts/bootstrap_vcpkg.sh`。如果 CMake option 发生变化，请选择新的 `SKBUILD_BUILD_DIR`，或在重新构建前删除旧构建目录。
 
 ## 格式化
 
@@ -63,19 +57,76 @@ uv pip install . --no-build-isolation
 
 ```bash
 uv pip install pre-commit
+pre-commit install
+```
+
+每个 clone 只需运行一次 `pre-commit install`。
+
+根目录格式化器会使用 `PATH` 中的 `shfmt` 处理 shell 文件；上面的 Ubuntu 命令已安装该工具。格式化 `external/duckdb` 前，请安装 DuckDB formatter 要求的其他特定版本：
+
+```bash
+uv pip install "black>=24" "clang_format==11.0.1" cmake-format
 ```
 
 示例：
 
 ```bash
 scripts/format root --changed
-scripts/format submodule --changed
+scripts/format duckdb --changed
 scripts/format workspace --changed
+pre-commit run --from-ref origin/main --to-ref HEAD
 ```
 
-根目录格式化器默认避免扫描 `external/duckdb`。修改 DuckDB 内部实现时，请使用子模块命令。
+根目录格式化器默认避免扫描 `external/duckdb`。修改 DuckDB 内部实现时，请使用 `duckdb` 命令；`workspace` 会依次运行两套格式化器。
 
-## 测试
+## 更新 DuckDB subtree
+
+官方引擎 baseline 以 squash 后的 subtree 快照从 `duckdb/duckdb` 导入。更新到经过审核的 upstream revision 时，请使用相同模式：
+
+```bash
+git subtree pull --prefix=external/duckdb --squash \
+  https://github.com/duckdb/duckdb.git main
+```
+
+subtree metadata 会在 `git-subtree-split` 中记录对应的 DuckDB 官方 revision。Vane 特有的引擎改动会作为后续 commit 保留在 `external/duckdb` 下；更新官方 baseline 时，需要审核并解决这些改动。重放此前在其他代码库中维护的改动时，请保留原作者和提交日期，并通过 commit trailers 记录原始 commit 及其 upstream parent。
+
+如需在不修改 checkout 的情况下查看当前 DuckDB tree 基于内容生成的 identity，请运行：
+
+```bash
+python scripts/sync_duckdb_source_id.py --print
+```
+
+该脚本会计算 `external/duckdb` 完整的 Git tree object，包括已暂存、未暂存以及未被忽略的 untracked 引擎文件，同时不会修改真实的 Git index 或 object store。Native configuration 会把 external tree 注册为 CMake configuration dependency，因此能通过时间戳观察到的变化会触发重新配置。轻量 build target 还会刷新 CMake build directory 中生成的 header；DuckDB version object 和默认 in-tree static extension entry points 都会使用该 header，因此即使改动只涉及文件 mode，第一次增量构建也会更新所有 runtime SourceID。当 Git metadata 和 sdist manifest 都不可用时，脚本会从实际文件推导出相同的 Git-compatible identity；本地 PEP 517 backend 会把完整的 `DUCKDB_SOURCE_ID` 注入 sdist，供后续构建使用。
+
+SourceID manifest 和生成的 header 都是已忽略的构建 metadata，不得提交到代码库。因此，普通引擎改动不需要修改 tracked identity，也不会产生可能在多个 pull request 之间冲突的共享生成文件。只有导入的 upstream baseline、DuckDB version line 或历史映射发生变化时，才需要更新 `SOURCE_PROVENANCE.md`，以及 `pyproject.toml` 中的 `OVERRIDE_GIT_DESCRIBE`。
+
+如需使用以 DuckDB 为根目录的路径检查或导出 subtree 历史，可将其拆分到临时 branch：
+
+```bash
+git subtree split --prefix=external/duckdb --ignore-joins -b duckdb-history
+git log --stat duckdb-history
+```
+
+`--ignore-joins` 会生成紧凑且自包含的历史，其中包括官方快照以及后续的 Vane 引擎 commit。若要把拆分后的 branch 重新连接到 DuckDB 的完整 upstream 历史，请先 fetch `duckdb/duckdb`，并省略 `--ignore-joins`；Git 随后会使用记录的 `git-subtree-split` revision 作为连接点。
+
+## Native C++ 测试
+
+完整的 native gate 会使用与 CI 相同的锁定 Arrow 和 C++20 配置，构建 DuckDB、distributed exchange 和 test runner。为避免配置漂移，该脚本会从全新的 CMake 配置开始：
+
+```bash
+scripts/run_native_tests.sh "[distributed]"
+```
+
+使用同一套构建运行指定的引擎测试或完整 unit suite：
+
+```bash
+scripts/run_native_tests.sh "test name" -s
+scripts/run_native_tests.sh
+```
+
+为控制标准 CI runner 的内存占用，默认并行执行两个编译任务。本地机器资源更充足时，可将 `VANE_NATIVE_BUILD_JOBS` 设置为更大的正整数。
+
+## Python 测试
 
 安装测试 dependency group，然后运行与 CI 相同的 base-installation gate：
 
@@ -88,7 +139,31 @@ scripts/run_release_tests.sh
 
 ```bash
 python -m pytest tests/fast
+python -m pytest tests/slow
+python -m pytest tests/ai
 python -m pytest tests/fast/test_udf_process.py
 ```
 
-部分兼容性测试需要可选服务、凭据、模型权重或 GPU；缺少相应环境时，这些测试应给出明确原因并跳过。
+需要外部预置服务的测试默认会被排除。服务和凭据可用时，可显式运行：
+
+```bash
+python -m pytest -m external_service tests/fast
+```
+
+其他可选测试可能需要网络、模型权重、GPU、凭据或本地 Ray 环境。缺少相应环境时，这些测试应给出明确原因并跳过，不得静默使用维护者的本地 endpoint 或凭据。
+
+## 调试 Ray workers
+
+设置 `DUCKDB_DISTRIBUTED_DEBUG=1`。Native debug output 通过 `DistributedDebugStream()` 输出，并会出现在 Ray worker error logs 中，通常位于 `/tmp/ray/session_latest/logs/worker-*.err`。Ray workers 无法可靠捕获普通 C `stdout` 输出。
+
+## Release artifacts
+
+打开 release pull request 前，请构建并验证 sdist：
+
+```bash
+uv pip install build
+python -m build --sdist
+python scripts/check_release_artifacts.py dist/*.tar.gz
+```
+
+记录 `python scripts/sync_duckdb_source_id.py --print` 输出的完整 `external/duckdb` tree ID。PEP 517 backend 会将该 identity 注入 sdist。完整 release 流程请参阅源码仓库中的 `RELEASE.md`。
