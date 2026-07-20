@@ -6,6 +6,12 @@ export const LEGACY_DOC_SLUGS = {
   'concepts/architecture': 'index',
   'concepts/execution-model': 'index',
   examples: 'tutorials',
+  'examples/training-data-pipeline': 'tutorials',
+  'examples/multimodal-data-lake': 'tutorials',
+  'examples/insurance-document-audit':
+    'tutorials/use-cases/claims-disposition',
+  'examples/tender-compliance-check':
+    'tutorials/use-cases/procurement-compliance-audit',
   'examples/common-crawl': 'tutorials/examples/common-crawl',
   'examples/minhash-dedupe': 'tutorials/examples/minhash-dedupe',
   'examples/llms-red-pajamas': 'tutorials/examples/llms-red-pajamas',

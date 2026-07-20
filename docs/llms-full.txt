@@ -940,9 +940,39 @@ Most scripts default to small, self-contained sample data. You can understand th
 
 ## Run the example scripts
 
-Follow [Installation](/docs/data/quickstart/installation) to create an environment and install the published Vane wheel. To download only the runnable scripts, use `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`, then run `cd vane-examples` and `git sparse-checkout set examples`. Install the common runtime packages with `uv pip install vane-ai numpy pyarrow`, and add the example-specific dependencies described on each page.
+Follow [Installation](/docs/data/quickstart/installation) to create an environment and install the published Vane wheel. To download only the runnable scripts, use `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`, then run `cd vane-examples` and `git sparse-checkout set examples`. Install the common runtime packages with `uv pip install vane-ai numpy pyarrow`, and add the example-specific dependencies listed below.
 
 The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so the scripts and local Ray workers import the installed wheel rather than a neighboring source checkout.
+
+### Install only what you need
+
+The base environment above is enough for MinHash deduplication and placeholder image generation. Install additional packages only for the workflow you plan to run:
+
+| Examples | Additional packages for the default sample | Optional modes |
+| --- | --- | --- |
+| Common Crawl and Red Pajamas | `uv pip install torch sentence-transformers transformers` | Use the local-files-only option after `sentence-transformers/all-MiniLM-L6-v2` is cached; Common Crawl can skip embeddings |
+| Querying images | `uv pip install Pillow` | The OpenImages source also needs network access |
+| Image generation | None for the placeholder backend | Stable Diffusion needs `uv pip install diffusers transformers accelerate torch Pillow` |
+| Voice AI analytics | `uv pip install torch sentence-transformers transformers` | Faster-Whisper needs `uv pip install faster-whisper av`; OpenAI summaries need `uv pip install openai` |
+| Multimodal structured outputs | `uv pip install openai pydantic` and a provider token | AI2D input additionally needs `uv pip install datasets Pillow` |
+
+For a CUDA-enabled workflow, install the PyTorch build that matches the operating system, GPU, and driver. The default PyPI build is not always the correct CUDA build.
+
+### Run bounded samples
+
+Run these commands from the sparse checkout root. They use built-in or generated inputs; only the structured-output example requires a hosted model by default.
+
+| Example | Bounded command | Default result |
+| --- | --- | --- |
+| Common Crawl | `python examples/common_crawl.py --source sample --limit 5` | Pages, chunks, and embeddings under `examples/output/common_crawl/` |
+| MinHash deduplication | `python examples/minhash_dedupe.py --source sample --limit 10` | Annotated, retained, duplicate, cluster, candidate, and bucket CSV files under `examples/output/minhash_dedupe/` |
+| Red Pajamas | `python examples/llms_red_pajamas.py --source sample --limit 6` | Matches in the terminal; add `--output-csv PATH` to persist them |
+| Querying images | `python examples/querying_images.py --source sample --limit 5` | Image previews, masks, and `top_red_images.csv` under `examples/output/querying_images/` |
+| Image generation | `python examples/image_generation.py --source sample --limit 4` | Placeholder PNG files and `metadata.csv` under `examples/output/image_generation/` |
+| Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
+| Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `HF_TOKEN` before using the default endpoint |
+
+The scripts leave the Vane runner unset, so the installed package default applies. Set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. Individual processing stages expose local, Ray task, or Ray actor execution options; those options change placement, not the sample contract.
 
 ## Examples
 

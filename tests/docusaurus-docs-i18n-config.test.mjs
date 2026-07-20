@@ -143,6 +143,12 @@ test('removed deployment pages redirect to the consolidated deployment guide', (
 test('renamed tutorial routes preserve the previous examples URLs', () => {
   const redirects = {
     examples: 'tutorials',
+    'examples/training-data-pipeline': 'tutorials',
+    'examples/multimodal-data-lake': 'tutorials',
+    'examples/insurance-document-audit':
+      'tutorials/use-cases/claims-disposition',
+    'examples/tender-compliance-check':
+      'tutorials/use-cases/procurement-compliance-audit',
     'examples/example-tutorials/common-crawl': 'tutorials/examples/common-crawl',
     'examples/end-to-end-use-cases/enterprise-agent-evidence':
       'tutorials/use-cases/enterprise-agent-evidence',
@@ -269,7 +275,17 @@ test('quickstart describes Ray as the default runner and deployment documents th
   }
 })
 
-test('wheel-backed examples sparsely check out scripts without package sources', () => {
+test('wheel-backed examples document sparse checkout and bounded commands', () => {
+  const boundedCommands = [
+    'python examples/common_crawl.py --source sample --limit 5',
+    'python examples/minhash_dedupe.py --source sample --limit 10',
+    'python examples/llms_red_pajamas.py --source sample --limit 6',
+    'python examples/querying_images.py --source sample --limit 5',
+    'python examples/image_generation.py --source sample --limit 4',
+    'python examples/voice_ai_analytics.py --source sample --limit 3',
+    'python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge',
+  ]
+
   for (const source of wheelExampleSources) {
     assert.match(source, /git clone --depth 1 --filter=blob:none --sparse/)
     assert.match(source, /https:\/\/github\.com\/AstroVela\/vane\.git vane-examples/)
@@ -277,6 +293,10 @@ test('wheel-backed examples sparsely check out scripts without package sources',
     assert.match(source, /git sparse-checkout set examples/)
     assert.doesNotMatch(source, /^git clone https:\/\/github\.com\/AstroVela\/vane\.git$/m)
     assert.match(source, /`vane\/` and `duckdb\/`|`vane\/` 和 `duckdb\/`/)
+    assert.doesNotMatch(source, /^```(?:bash|sh|shell)\b/m)
+    for (const command of boundedCommands) {
+      assert.ok(source.includes(`\`${command}\``))
+    }
   }
 })
 

@@ -8,9 +8,39 @@ title: 概览
 
 ## 运行示例脚本
 
-先按照[安装](/zh-CN/docs/data/quickstart/installation)页面创建环境并安装已发布的 Vane wheel。只下载可运行脚本时，可以使用 `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`，然后执行 `cd vane-examples` 和 `git sparse-checkout set examples`。通过 `uv pip install vane-ai numpy pyarrow` 安装通用运行依赖，再根据各篇文档补充示例专用依赖。
+先按照[安装](/zh-CN/docs/data/quickstart/installation)页面创建环境并安装已发布的 Vane wheel。只下载可运行脚本时，可以使用 `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`，然后执行 `cd vane-examples` 和 `git sparse-checkout set examples`。通过 `uv pip install vane-ai numpy pyarrow` 安装通用运行依赖，再按下表补充示例专用依赖。
 
 Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，因此示例脚本和本地 Ray worker 会导入已安装的 wheel，而不是相邻的源码副本。
+
+### 按需安装依赖
+
+上面的基础环境足以运行 MinHash 去重和占位图像生成。只需为准备运行的工作流安装额外依赖：
+
+| 示例 | 默认样例需要的额外依赖 | 可选模式 |
+| --- | --- | --- |
+| Common Crawl 与 Red Pajamas | `uv pip install torch sentence-transformers transformers` | 缓存 `sentence-transformers/all-MiniLM-L6-v2` 后可启用仅本地文件选项；Common Crawl 也可以跳过嵌入阶段 |
+| 查询图像 | `uv pip install Pillow` | OpenImages 数据源还需要网络访问 |
+| 图像生成 | 占位后端无需额外依赖 | Stable Diffusion 需要 `uv pip install diffusers transformers accelerate torch Pillow` |
+| 语音 AI 分析 | `uv pip install torch sentence-transformers transformers` | Faster-Whisper 需要 `uv pip install faster-whisper av`；OpenAI 摘要需要 `uv pip install openai` |
+| 多模态结构化输出 | `uv pip install openai pydantic` 和 provider token | AI2D 输入还需要 `uv pip install datasets Pillow` |
+
+使用 CUDA 工作流时，请安装与操作系统、GPU 和驱动匹配的 PyTorch build。PyPI 默认包不一定是适合当前机器的 CUDA build。
+
+### 运行有界样例
+
+在 sparse checkout 根目录运行以下命令。它们使用内置或生成的输入；只有结构化输出示例默认需要托管模型。
+
+| 示例 | 有界运行命令 | 默认结果 |
+| --- | --- | --- |
+| Common Crawl | `python examples/common_crawl.py --source sample --limit 5` | 页面、文本块和嵌入写入 `examples/output/common_crawl/` |
+| MinHash 去重 | `python examples/minhash_dedupe.py --source sample --limit 10` | 标注、保留、重复、聚类、候选与桶 CSV 写入 `examples/output/minhash_dedupe/` |
+| Red Pajamas | `python examples/llms_red_pajamas.py --source sample --limit 6` | 在终端显示匹配；添加 `--output-csv PATH` 可以持久化结果 |
+| 查询图像 | `python examples/querying_images.py --source sample --limit 5` | 图像预览、掩码和 `top_red_images.csv` 写入 `examples/output/querying_images/` |
+| 图像生成 | `python examples/image_generation.py --source sample --limit 4` | 占位 PNG 与 `metadata.csv` 写入 `examples/output/image_generation/` |
+| 语音 AI 分析 | `python examples/voice_ai_analytics.py --source sample --limit 3` | 摘要、字幕和片段嵌入写入 `examples/output/voice_ai_analytics/` |
+| 多模态结构化输出 | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | 在终端显示评估行；使用默认端点前需要设置 `HF_TOKEN` |
+
+这些脚本不会显式设置 Vane runner，因此会采用已安装包的默认值。要使用已有 Ray 集群，请在启动前设置 `RAY_ADDRESS`。每个 worker 都需要安装相同的示例专用依赖，并能访问相同的数据、模型缓存和凭证。各处理阶段可以选择本地、Ray task 或 Ray actor 执行方式；这些选项只改变执行位置，不改变样例契约。
 
 ## 示例
 
