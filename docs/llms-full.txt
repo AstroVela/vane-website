@@ -1905,7 +1905,7 @@ def load_laion_relation(conn: Any, parquet_path: str, limit: int) -> Any:
 
 Keeping both sources schema-compatible means the generation UDF never needs to know whether a row came from local sample data or a remote corpus.
 
-## 2. Verify the pipeline with deterministic PNGs
+## 2. Verify the pipeline with deterministic PNG files
 
 The placeholder hashes each prompt and derives a color palette from the digest. It writes a valid RGB PNG using only the Python standard library, so identical prompt text, width, and height produce identical bytes.
 
@@ -2347,7 +2347,7 @@ Prompt-only mode omits those Python return types and relies on the same system m
 
 ## 2. Start with a visual dataset you can audit
 
-The synthetic source creates solid-color PNGs and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
+The synthetic source creates solid-color PNG files and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
 
 ```python
 def synthetic_rows(limit: int) -> list[dict[str, Any]]:
@@ -2995,7 +2995,7 @@ All cases remain in `agent_context`; the review queue is simply the non-ready su
     ).order("review_state")
 ```
 
-Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review.
+Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
 
 | Output | Purpose |
 | --- | --- |
@@ -3226,7 +3226,7 @@ The default summary gives immediate feedback for every branch:
 
 The rejected row is `wikimedia-download-icon`: its actual 136×168 dimensions produce `low_resolution` and a quality score of `0.500`.
 
-Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record.
+Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
 
 | Output | Purpose |
 | --- | --- |
@@ -3713,7 +3713,7 @@ The final ranking prefers the most recently crawled document, then the one with 
 
 ## Run the default corpus
 
-From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. Its results make every reduction step concrete:
+From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner. The results make every reduction step concrete:
 
 | Metric | Default result | Interpretation |
 | --- | ---: | --- |

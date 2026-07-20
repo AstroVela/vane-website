@@ -43,7 +43,7 @@ Prompt-only mode omits those Python return types and relies on the same system m
 
 ## 2. Start with a visual dataset you can audit
 
-The synthetic source creates solid-color PNGs and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
+The synthetic source creates solid-color PNG files and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
 
 ```python
 def synthetic_rows(limit: int) -> list[dict[str, Any]]:

@@ -215,7 +215,7 @@ def build_evidence_features(conn: Any) -> Any:
     ).order("review_state")
 ```
 
-在用例目录运行 `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`。默认运行成功时会报告四个业务事项、五个公开来源资产、八条证据记录、一项缺失要求、一项冲突声明，以及三个需要处理的事项。
+在用例目录运行 `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`。默认运行成功时会报告四个业务事项、五个公开来源资产、八条证据记录、一项缺失要求、一项冲突声明，以及三个需要处理的事项。这里使用 `local-fast` 是有意的：项目启动检查要求 Vane 使用进程内 Relation 路径，因为命名表位于客户端连接中。它是这个离线 fixture 的实现要求，不是公共 `local` runner 的另一个名称。
 
 | 输出 | 用途 |
 | --- | --- |

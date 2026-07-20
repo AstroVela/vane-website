@@ -135,7 +135,7 @@ export const USE_CASES = [
       '提示词表需要可复现的批量生成路径，并用清单把每张图片与来源行关联起来。',
     input: '4 built-in prompts',
     inputZh: '4 条内置提示词',
-    output: '4 deterministic placeholder PNGs + metadata',
+    output: '4 deterministic placeholder PNG files + metadata',
     outputZh: '4 张确定性占位 PNG + 元数据',
     when: 'Checking pipeline behavior locally before opting into a diffusion model and GPU.',
     whenZh: '在启用扩散模型和 GPU 前，本地检查流水线行为时使用。',

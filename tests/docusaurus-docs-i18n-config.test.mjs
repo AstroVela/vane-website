@@ -73,10 +73,12 @@ const exampleRunnerSources = [
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/procurement-compliance-audit.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/web-text-deduplication.mdx',
 ].map((file) => readFileSync(file, 'utf8'))
-const wheelExampleSources = [
-  'docs/data/tutorials/index.mdx',
+const tutorialOverviewSource = readFileSync('docs/data/tutorials/index.mdx', 'utf8')
+const chineseTutorialOverviewSource = readFileSync(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/index.mdx',
-].map((file) => readFileSync(file, 'utf8'))
+  'utf8',
+)
+const wheelExampleSources = [tutorialOverviewSource, chineseTutorialOverviewSource]
 const packageSource = readFileSync('package.json', 'utf8')
 const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
 const devScriptSource = readFileSync('scripts/dev.mjs', 'utf8')
@@ -160,6 +162,18 @@ test('renamed tutorial routes preserve the previous examples URLs', () => {
       new RegExp(`'?(?:${legacySlug})'?:\\s*'${currentSlug}'`),
     )
   }
+})
+
+test('Chinese tutorial overview keeps links in the Chinese locale', () => {
+  assert.doesNotMatch(chineseTutorialOverviewSource, /\]\(\/docs\/data\/tutorials\//)
+  assert.match(
+    chineseTutorialOverviewSource,
+    /\]\(\/zh-CN\/docs\/data\/tutorials\/examples\/common-crawl\)/,
+  )
+  assert.match(
+    chineseTutorialOverviewSource,
+    /\]\(\/zh-CN\/docs\/data\/tutorials\/use-cases\/claims-disposition\)/,
+  )
 })
 
 test('Operations sidebar category is localized in Chinese Data docs', () => {

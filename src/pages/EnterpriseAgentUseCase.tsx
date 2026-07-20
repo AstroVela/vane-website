@@ -40,8 +40,8 @@ findings = con.sql("""
 
 findings.write_parquet("audit_findings.parquet")`
 
-const ENTERPRISE_EVIDENCE_DOC =
-  '/docs/data/tutorials/use-cases/enterprise-agent-evidence'
+const CLAIMS_DISPOSITION_DOC =
+  '/docs/data/tutorials/use-cases/claims-disposition'
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -364,7 +364,7 @@ export default function EnterpriseAgentUseCase() {
               {copy.lead}
             </p>
             <div className="enterprise-hero-actions">
-              <Button solid to={ENTERPRISE_EVIDENCE_DOC} arrow>{copy.runPipeline}</Button>
+              <Button solid to={CLAIMS_DISPOSITION_DOC} arrow>{copy.runPipeline}</Button>
               <Button href={ENTERPRISE_DESIGN_PARTNER_MAILTO} arrow>{copy.requestDemo}</Button>
             </div>
             <div className="enterprise-hero-meta">
@@ -428,7 +428,7 @@ export default function EnterpriseAgentUseCase() {
       <section className="section enterprise-section" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <Cta title={copy.ctaTitle}>
-            <Button solid to={ENTERPRISE_EVIDENCE_DOC} arrow>{copy.runPipeline}</Button>
+            <Button solid to={CLAIMS_DISPOSITION_DOC} arrow>{copy.runPipeline}</Button>
             <Button href={ENTERPRISE_DESIGN_PARTNER_MAILTO} arrow>{copy.requestDemo}</Button>
           </Cta>
         </div>

@@ -9,7 +9,7 @@ assert.match(page, /const AUDIT_CODE = `[^`]*import vane[\s\S]*attach_function\(
 assert.match(page, /ENTERPRISE_DESIGN_PARTNER_MAILTO/)
 assert.match(
   page,
-  /\/docs\/data\/tutorials\/use-cases\/enterprise-agent-evidence/,
+  /\/docs\/data\/tutorials\/use-cases\/claims-disposition/,
 )
 assert.doesNotMatch(`${page}\n${routes}`, /['"`]\/use-cases(?:\/|\b)/)
 

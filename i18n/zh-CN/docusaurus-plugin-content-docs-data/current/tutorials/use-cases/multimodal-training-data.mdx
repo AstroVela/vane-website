@@ -203,7 +203,7 @@ def build_feature_relations(
 
 被拒绝的记录是 `wikimedia-download-icon`：实际尺寸 136×168 产生 `low_resolution`，质量分为 `0.500`。
 
-运行 `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py` 即可执行离线处理流程。它会报告五个原始资产、四条发布记录和一条拒绝记录。
+运行 `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py` 即可执行离线处理流程。它会报告五个原始资产、四条发布记录和一条拒绝记录。这里使用 `local-fast` 是有意的：项目启动检查要求 Vane 使用进程内 Relation 路径，因为命名表位于客户端连接中。它是这个离线 fixture 的实现要求，不是公共 `local` runner 的另一个名称。
 
 | 输出 | 用途 |
 | --- | --- |

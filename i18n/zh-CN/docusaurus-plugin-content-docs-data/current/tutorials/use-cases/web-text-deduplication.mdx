@@ -242,7 +242,7 @@ def cluster_relation_sql(conn: Any) -> Any:
 
 ## 运行默认语料
 
-在用例目录执行 `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`。离线输入不需要网页爬虫或模型端点，每一步缩减都有明确结果：
+在用例目录执行 `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`。离线输入不需要网页爬虫或模型端点。这里使用 `local-fast` 是有意的：项目启动检查要求 Vane 使用进程内 Relation 路径，因为命名表位于客户端连接中。它是这个离线 fixture 的实现要求，不是公共 `local` runner 的另一个名称。每一步缩减都有明确结果：
 
 | 指标 | 默认结果 | 含义 |
 | --- | ---: | --- |

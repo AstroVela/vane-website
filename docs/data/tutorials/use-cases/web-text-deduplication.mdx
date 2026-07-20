@@ -242,7 +242,7 @@ The final ranking prefers the most recently crawled document, then the one with 
 
 ## Run the default corpus
 
-From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. Its results make every reduction step concrete:
+From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner. The results make every reduction step concrete:
 
 | Metric | Default result | Interpretation |
 | --- | ---: | --- |

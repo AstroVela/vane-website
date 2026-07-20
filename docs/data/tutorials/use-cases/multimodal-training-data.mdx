@@ -203,7 +203,7 @@ The default summary gives immediate feedback for every branch:
 
 The rejected row is `wikimedia-download-icon`: its actual 136×168 dimensions produce `low_resolution` and a quality score of `0.500`.
 
-Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record.
+Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
 
 | Output | Purpose |
 | --- | --- |

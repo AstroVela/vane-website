@@ -46,7 +46,7 @@ def load_laion_relation(conn: Any, parquet_path: str, limit: int) -> Any:
 
 Keeping both sources schema-compatible means the generation UDF never needs to know whether a row came from local sample data or a remote corpus.
 
-## 2. Verify the pipeline with deterministic PNGs
+## 2. Verify the pipeline with deterministic PNG files
 
 The placeholder hashes each prompt and derives a color palette from the digest. It writes a valid RGB PNG using only the Python standard library, so identical prompt text, width, and height produce identical bytes.
 

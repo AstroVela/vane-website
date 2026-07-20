@@ -215,7 +215,7 @@ All cases remain in `agent_context`; the review queue is simply the non-ready su
     ).order("review_state")
 ```
 
-Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review.
+Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
 
 | Output | Purpose |
 | --- | --- |
