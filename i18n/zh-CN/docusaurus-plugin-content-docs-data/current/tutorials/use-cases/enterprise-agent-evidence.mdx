@@ -1,0 +1,241 @@
+---
+title: 企业 Agent 证据治理
+---
+
+企业证据通常分散在文档库、支持系统、媒体归档和业务数据库中。企业 Agent 不应该收到一组未经治理的检索文件后，再自行判断证据是否完整、是否仍在时效范围内、是否自相矛盾。本教程沿着 `enterprise-agent-evidence` 用例，在任何证据到达 Agent 之前构建经过治理的多模态上下文。
+
+用例源码：[AstroVela/demo-scene/enterprise-agent-evidence](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence)。
+
+这个示例只解析一次文档、图像、音频和文本资产，再把可复用特征关联到业务事项，并用 SQL 识别缺失要求、相互冲突的声明、超出时效窗口的观测记录和阻断风险。Vane 的价值在于让模态专属的 Python 处理与跨记录 SQL 策略保留在同一条类型明确的 Relation 数据流中。模型推理与检索被刻意留在流程之外；流程输出是一张可审计的上下文表和一个按优先级排列的人工审查队列。
+
+数据流如下：
+
+1. 将业务事项、证据要求、证据关联和公开来源资产清单读取为 Relation。
+2. 在模态专属的批量 UDF 中处理每个被引用的资产。
+3. 把可复用资产特征关联到事项专属的证据记录。
+4. 将证据与要求以及同一事项中的其他声明进行比较。
+5. 构建状态为 `ready`、`needs_review` 或 `blocked` 的 Agent 上下文和审查队列。
+
+## 默认场景与输入
+
+离线场景把业务元数据与物理资产分开。这一区分是整个设计的核心：业务事项通过 `asset_id` 引用资产，而不是复制文件内容，因此解析一次的文件可以支持多个事项。
+
+| 输入 | 数据粒度 | 在流程中的作用 |
+| --- | --- | --- |
+| `cases.csv` | 每个业务事项一行 | 四个事项的账户、业务问题和审查日期 |
+| `requirements.csv` | 每个事项的每种必需模态一行 | 声明必须具备哪些证据类型 |
+| `evidence_links.csv` | 每条事项到资产的关联一行 | 提供八条观测记录、源系统、标题和可选声明 |
+| `asset_catalog.csv` | 每个物理资产一行 | 定位涵盖文档、文本、图像和音频模态的五个文件，并保存来源与许可证 |
+
+五个固定版本的公开来源资产来自 Apache Arrow 和 Wikimedia Commons。默认运行完全离线：处理流程读取仓库内的 Markdown、SVG 和 WAV 文件内容，不会在执行期间重新下载。
+
+## 1. 每个资产只解析一次
+
+源资产清单中每个物理资产占一行，而 `evidence_links` 可以把同一个资产关联到多个业务事项。在关联之前处理资产清单，可以避免为每个引用该文件的事项重复执行文档、图像或音频处理。
+
+每种模态都有自己的 `map_batches` 分支和处理器，但所有分支都返回相同的特征 schema。因此这些类型兼容的分支可以合并成一个 `asset_features` Relation。
+
+| 模态 | 当前处理 | 主要事实或风险 |
+| --- | --- | --- |
+| `document` | 解码 UTF-8，并保留文档文本 | token 数、空内容、无效 UTF-8 |
+| `text` | 解码 UTF-8 并规范空白 | token 数、文本过短、无效 UTF-8 |
+| `image` | 解析 SVG 尺寸 | 宽高、尺寸缺失、分辨率过低 |
+| `audio` | 读取 PCM WAV 元数据 | 时长、采样率、无效或过短音频 |
+
+```python
+def build_asset_feature_relations(
+    public_assets: Any,
+    modalities: list[str],
+    args: argparse.Namespace,
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    stage_functions = {
+        "document": "process_document_asset_batch",
+        "image": "process_image_asset_batch",
+        "audio": "process_audio_asset_batch",
+        "text": "process_text_asset_batch",
+    }
+    udf_options = batch_udf_options(args.execution_backend)
+    relations: list[Any] = []
+    backend_metadata: dict[str, dict[str, Any]] = {}
+    for modality in SUPPORTED_MODALITIES:
+        if modality not in modalities:
+            continue
+        source = public_assets.filter(f"modality = '{modality}'").order("record_id")
+        relations.append(
+            source.map_batches(
+                importable_batch_function(stage_functions[modality]),
+                schema=ASSET_FEATURE_SCHEMA,
+                batch_size=args.batch_size,
+                **udf_options,
+            )
+        )
+        backend_metadata[f"process_{modality}_asset"] = backend_metadata_entry(
+            args.execution_backend
+        )
+
+    features = relations[0]
+    for relation in relations[1:]:
+        features = features.union(relation)
+    return features, backend_metadata
+```
+
+共享输出契约在加入内容文本、内容哈希、字节数、token 数、媒体指标、处理决策和风险标记的同时，保留来源与许可证字段。这是可复用的资产级契约，其中不包含事项专属结论。
+
+## 2. 把资产事实绑定到业务证据
+
+证据关联提供了可复用资产本身不具备的业务含义：事项 ID、源系统、观测日期、标题以及可选的键值声明。这个关联为每条事项到资产的关系生成一行类型明确的记录，并继续保留全部来源与许可证信息。
+
+```python
+def build_evidence_features(conn: Any) -> Any:
+    return conn.sql(
+        """
+        select
+          l.record_id,
+          l.case_id,
+          a.asset_id,
+          a.modality as evidence_type,
+          a.modality,
+          l.source_system,
+          a.source_uri,
+          a.source_page_uri,
+          a.source_version,
+          a.license_id,
+          a.license_uri,
+          l.observed_at,
+          l.evidence_title,
+          a.evidence_text,
+          l.claim_key,
+          l.claim_value,
+          a.content_sha256,
+          a.byte_size,
+          a.token_count,
+          a.asset_decision,
+          case
+            when lower(l.claim_value) = 'blocked'
+              then list_append(a.risk_flags, 'asserted_blocker')
+            else a.risk_flags
+          end as risk_flags,
+          a.risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as risk_count,
+          a.blocking_risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as blocking_risk_count,
+          a.media_metrics
+        from evidence_links l
+        join asset_features a using (asset_id)
+        order by l.case_id, l.record_id
+        """
+    )
+```
+
+事项专属的阻断状态也是在这里变成治理风险。底层资产仍然保持可复用且不发生改变。
+
+## 3. 用 SQL 查找缺口与矛盾
+
+要求和证据是两个独立 Relation，因此缺失证据可以用反连接（anti-join）表达：每个没有匹配证据行的必需模态都会成为一个缺口。冲突则按事项和声明键聚合；同一个键出现多个不同值时，相关证据行就构成一条可审查的矛盾记录。
+
+```python
+    evidence_gaps_rel = conn.sql(
+        """
+        select
+          r.case_id,
+          c.account_id,
+          r.evidence_type as missing_evidence_type,
+          'missing_required_evidence' as reason
+        from case_requirements r
+        join business_cases c using (case_id)
+        left join evidence_features e
+          on e.case_id = r.case_id
+         and e.evidence_type = r.evidence_type
+        where e.record_id is null
+        order by r.case_id, r.evidence_type
+        """
+    )
+    conn.sql("drop table if exists evidence_gaps")
+    evidence_gaps_rel.to_table("evidence_gaps")
+
+    evidence_conflicts_rel = conn.sql(
+        """
+        select
+          case_id,
+          claim_key,
+          count(distinct claim_value) as distinct_values,
+          string_agg(distinct claim_value, ', ' order by claim_value) as claim_values,
+          string_agg(record_id, ', ' order by record_id) as evidence_ids
+        from evidence_features
+        where claim_key <> '' and claim_value <> ''
+        group by case_id, claim_key
+        having count(distinct claim_value) > 1
+        order by case_id, claim_key
+        """
+    )
+    conn.sql("drop table if exists evidence_conflicts")
+    evidence_conflicts_rel.to_table("evidence_conflicts")
+```
+
+时效性会通过比较每条观测日期与事项审查日期单独计算。最终汇总结果还会保留有序的证据 ID、资产 ID、源系统、模态、许可证 ID，以及便于阅读的上下文文本。
+
+## 4. 决定上下文能否到达 Agent
+
+审查状态是汇总结果之上的确定性策略。缺失证据、冲突声明或阻断性风险会把上下文标记为 `blocked`；超出时效窗口的证据和非阻断性风险会产生 `needs_review`；只有完整、一致、仍在时效窗口内且无风险的事项才是 `ready`。
+
+```sql
+          case
+            when coalesce(g.missing_evidence_count, 0) > 0
+              or coalesce(k.conflict_count, 0) > 0
+              or coalesce(e.blocking_risk_count, 0) > 0 then 'blocked'
+            when coalesce(e.stale_evidence_count, 0) > 0
+              or coalesce(e.risk_count, 0) > 0 then 'needs_review'
+            else 'ready'
+          end as review_state
+```
+
+这条策略在构造 Agent 提示词之前执行。被阻断的上下文仍然存在，便于审计和补救，但不会作为已经批准的证据提供给 Agent。
+
+四个默认案件让每条策略分支都有具体结果：
+
+| 案件 | 证据结果 | 审查状态 |
+| --- | --- | --- |
+| `case-arrow-docs` | 两种模态，没有缺口、冲突、风险或超出时效窗口的证据 | `ready` |
+| `case-wikimedia-media` | 一项冲突主张和一个被拒绝的低分辨率图像 | `blocked` |
+| `case-incomplete-bundle` | 缺少必需的 audio 模态 | `blocked` |
+| `case-stale-docs` | 证据完整，但有一条观测记录超出时效窗口 | `needs_review` |
+
+## 5. 生成 Agent 上下文与审查队列
+
+所有事项都会保留在 `agent_context` 中；审查队列只是其中状态不为 `ready` 的子集，并按照处理顺序排列。另一个聚合会按状态提供运营计数。
+
+```python
+    review_queue = agent_context.filter("review_state <> 'ready'").order(
+        REVIEW_QUEUE_ORDER
+    )
+    status_summary = agent_context.aggregate(
+        "review_state, count(*) as cases, sum(evidence_count) as evidence_records"
+    ).order("review_state")
+```
+
+在用例目录运行 `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`。默认运行成功时会报告四个业务事项、五个公开来源资产、八条证据记录、一项缺失要求、一项冲突声明，以及三个需要处理的事项。这里使用 `local-fast` 是有意的：项目启动检查要求 Vane 使用进程内 Relation 路径，因为命名表位于客户端连接中。它是这个离线 fixture 的实现要求，不是公共 `local` runner 的另一个名称。
+
+| 输出 | 用途 |
+| --- | --- |
+| `asset_features.parquet` | 每个唯一资产一条解析结果 |
+| `evidence_features.parquet` | 八条带类型的案件到资产证据行 |
+| `agent_context.parquet` | 四个事项经过治理的上下文 |
+| `evidence_gaps.csv` | 缺失的必需模态 |
+| `evidence_conflicts.csv` | 冲突主张及其证据 ID |
+| `review_queue.csv` | 按处理顺序排列的 `blocked` 和 `needs_review` 事项 |
+| `status_summary.csv` | 按审查状态统计的数量 |
+
+这个用例的核心模式，是在把证据当作模型上下文之前，先把它作为数据进行治理。检索可以找到相关材料，Agent 可以在获批上下文上推理，但两者都不应该自行判定必需来源是否缺失，或者两条记录是否互相矛盾。
+
+## 适配真实企业数据
+
+真实部署可以继续保留相同的四个边界：
+
+- 把内部审查对象映射到 `cases`，并在 `requirements` 中声明必需证据；
+- 在 `evidence_links` 中保存事项到对象的关系和观测日期，不复制文件内容；
+- 替换轻量的 Markdown、SVG 和 WAV 处理器，同时保持共享资产特征 schema；
+- 对缺口、冲突、时效性和审查状态的 SQL 策略进行版本管理，只把获批上下文交给下游 Agent。
+
+媒体处理器、输入 Relation、时效性汇总、输出 schema 和示例数据请查看[完整用例](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence)。

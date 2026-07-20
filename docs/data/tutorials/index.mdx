@@ -1,0 +1,75 @@
+---
+title: Overview
+---
+
+These examples show how Vane combines Relations, SQL, batch UDFs, AI functions, and configurable local or Ray-backed execution in practical data workflows. Each page follows runnable source in the Vane ecosystem: it introduces the problem, walks through the pipeline in stages, explains the important implementation choices, and closes with the outputs to inspect.
+
+Most scripts default to small, self-contained sample data. You can understand the workflow locally before switching to a real dataset, model, or service.
+
+## Run the example scripts
+
+Follow [Installation](/docs/data/quickstart/installation) to create an environment and install the published Vane wheel. To download only the runnable scripts, use `git clone --depth 1 --filter=blob:none --sparse https://github.com/AstroVela/vane.git vane-examples`, then run `cd vane-examples` and `git sparse-checkout set examples`. Install the common runtime packages with `uv pip install vane-ai numpy pyarrow`, and add the example-specific dependencies listed below.
+
+The sparse checkout keeps the `vane/` and `duckdb/` source directories out of the working tree, so the scripts and local Ray workers import the installed wheel rather than a neighboring source checkout.
+
+### Install only what you need
+
+The base environment above is enough for MinHash deduplication and placeholder image generation. Install additional packages only for the workflow you plan to run:
+
+| Examples | Additional packages for the default sample | Optional modes |
+| --- | --- | --- |
+| Common Crawl and Red Pajamas | `uv pip install torch sentence-transformers transformers` | Use the local-files-only option after `sentence-transformers/all-MiniLM-L6-v2` is cached; Common Crawl can skip embeddings |
+| Querying images | `uv pip install Pillow` | The OpenImages source also needs network access |
+| Image generation | None for the placeholder backend | Stable Diffusion needs `uv pip install diffusers transformers accelerate torch Pillow` |
+| Voice AI analytics | `uv pip install torch sentence-transformers transformers` | Faster-Whisper needs `uv pip install faster-whisper av`; OpenAI summaries need `uv pip install openai` |
+| Multimodal structured outputs | `uv pip install openai pydantic` and a provider token | AI2D input additionally needs `uv pip install datasets Pillow` |
+
+For a CUDA-enabled workflow, install the PyTorch build that matches the operating system, GPU, and driver. The default PyPI build is not always the correct CUDA build.
+
+### Run bounded samples
+
+Run these commands from the sparse checkout root. They use built-in or generated inputs; only the structured-output example requires a hosted model by default.
+
+| Example | Bounded command | Default result |
+| --- | --- | --- |
+| Common Crawl | `python examples/common_crawl.py --source sample --limit 5` | Pages, chunks, and embeddings under `examples/output/common_crawl/` |
+| MinHash deduplication | `python examples/minhash_dedupe.py --source sample --limit 10` | Annotated, retained, duplicate, cluster, candidate, and bucket CSV files under `examples/output/minhash_dedupe/` |
+| Red Pajamas | `python examples/llms_red_pajamas.py --source sample --limit 6` | Matches in the terminal; add `--output-csv PATH` to persist them |
+| Querying images | `python examples/querying_images.py --source sample --limit 5` | Image previews, masks, and `top_red_images.csv` under `examples/output/querying_images/` |
+| Image generation | `python examples/image_generation.py --source sample --limit 4` | Placeholder PNG files and `metadata.csv` under `examples/output/image_generation/` |
+| Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
+| Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `HF_TOKEN` before using the default endpoint |
+
+The scripts leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. The configured runner materializes the Relation workflow without changing the sample contract.
+
+## Examples
+
+| Example | What you will build | Default input |
+| --- | --- | --- |
+| [Working with Common Crawl](/docs/data/tutorials/examples/common-crawl) | Decode WET records, filter by language, split web text, and create embeddings | Built-in WARC-shaped records |
+| [MinHash text deduplication](/docs/data/tutorials/examples/minhash-dedupe) | Normalize text, generate MinHash signatures, find LSH candidates, and keep one row per component | Built-in duplicate text blocks |
+| [Semantic search on Red Pajamas](/docs/data/tutorials/examples/llms-red-pajamas) | Embed StackExchange-style questions and match low-score questions to related high-score ones | Built-in question pairs |
+| [Querying image data](/docs/data/tutorials/examples/querying-images) | Load image bytes, detect red regions in a batch UDF, and rank image-mask pairs | Generated sample images |
+| [Generating images from text](/docs/data/tutorials/examples/image-generation) | Turn prompt rows into PNG bytes with a placeholder or Stable Diffusion backend | Deterministic placeholder images |
+| [Voice AI analytics](/docs/data/tutorials/examples/voice-ai-analytics) | Transcribe audio, summarize transcripts, create subtitle rows, and embed segments | Generated audio with placeholder transcripts |
+| [Multimodal structured outputs](/docs/data/tutorials/examples/multimodal-structured-outputs) | Compare vision and text-only answers, classify evaluation quadrants, and diagnose failures | Synthetic visual questions plus a hosted VLM |
+
+## Use cases
+
+These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding.
+
+| Use case | What you will build | Default scenario |
+| --- | --- | --- |
+| [Claims disposition from multimodal evidence](/docs/data/tutorials/use-cases/claims-disposition) | Combine claim records, photos, OCR, multimodal facts, and ordered SQL rules into one recommendation per claim | Four synthetic claims covering every disposition |
+| [Enterprise Agent evidence governance](/docs/data/tutorials/use-cases/enterprise-agent-evidence) | Parse reusable multimodal assets, detect evidence gaps and conflicts, and build governed Agent context plus a review queue | Five publicly sourced assets linked to four synthetic cases |
+| [Multimodal training data release](/docs/data/tutorials/use-cases/multimodal-training-data) | Process document, image, audio, and text branches into one typed release table and a reviewable rejection set | Five version-pinned, publicly sourced assets |
+| [Procurement compliance audit](/docs/data/tutorials/use-cases/procurement-compliance-audit) | Extract facts from evidence images, compare expert scores, recalculate the winner, and emit deterministic audit findings | One synthetic tender with two evidence images |
+| [Web text deduplication with global LSH](/docs/data/tutorials/use-cases/web-text-deduplication) | Generate global LSH candidates, verify them with exact Jaccard, form graph clusters, and retain representatives | 24 documents with duplicate groups and singletons |
+
+## Choosing an example
+
+Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and structured outputs show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
+
+## Code provenance
+
+Every fenced code block on these pages is copied from its corresponding source project. The examples use files under `examples/` in the Vane repository; the use cases use their named directories in the `demo-scene` repository. The prose explains and connects those excerpts, while the runnable project remains the source of truth.

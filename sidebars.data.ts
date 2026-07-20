@@ -5,6 +5,7 @@ type DocsSidebarItem =
   | {
       slug: string
       label?: string
+      key?: string
       to?: never
     }
   | {
@@ -46,7 +47,7 @@ function isGroup(entry: DocsSidebarEntry): entry is DocsSidebarGroup {
 }
 
 function docIdForSlug(slug: string): string {
-  return slug === 'examples' ? 'examples/index' : slug
+  return slug === 'tutorials' ? 'tutorials/index' : slug
 }
 
 function toSidebarItem(entry: DocsSidebarEntry): DataSidebarItem {
@@ -72,7 +73,7 @@ function toSidebarItem(entry: DocsSidebarEntry): DataSidebarItem {
         type: 'doc',
         id: docIdForSlug(entry.slug),
         label: entry.label,
-        key: entry.label,
+        key: entry.key ?? entry.label,
         ...(entry.slug === 'index' && {className: 'docs-data-overview-link'}),
       }
     : docIdForSlug(entry.slug)

@@ -38,30 +38,70 @@ export const DOCS_PAGES = {
     title: 'AI Functions',
     titleZh: 'AI 函数',
   },
-  examples: {
-    source: 'docs/data/examples/index.mdx',
-    title: 'Examples',
-    titleZh: '示例',
+  tutorials: {
+    source: 'docs/data/tutorials/index.mdx',
+    title: 'Overview',
+    titleZh: '概览',
   },
-  'examples/training-data-pipeline': {
-    source: 'docs/data/examples/training-data-pipeline.mdx',
-    title: 'Training Data Pipeline',
-    titleZh: '训练数据流水线',
+  'tutorials/examples/common-crawl': {
+    source: 'docs/data/tutorials/examples/common-crawl.mdx',
+    title: 'Working with Common Crawl',
+    titleZh: '处理 Common Crawl 数据',
   },
-  'examples/insurance-document-audit': {
-    source: 'docs/data/examples/insurance-document-audit.mdx',
-    title: 'Insurance Document Audit',
-    titleZh: '保险文档审计',
+  'tutorials/examples/minhash-dedupe': {
+    source: 'docs/data/tutorials/examples/minhash-dedupe.mdx',
+    title: 'MinHash Text Deduplication',
+    titleZh: 'MinHash 文本去重',
   },
-  'examples/tender-compliance-check': {
-    source: 'docs/data/examples/tender-compliance-check.mdx',
-    title: 'Tender Compliance Check',
-    titleZh: '招标合规检查',
+  'tutorials/examples/llms-red-pajamas': {
+    source: 'docs/data/tutorials/examples/llms-red-pajamas.mdx',
+    title: 'Semantic Search on Red Pajamas',
+    titleZh: 'Red Pajamas 语义检索',
   },
-  'examples/multimodal-data-lake': {
-    source: 'docs/data/examples/multimodal-data-lake.mdx',
-    title: 'Multimodal Data Lake',
-    titleZh: '多模态数据湖',
+  'tutorials/examples/querying-images': {
+    source: 'docs/data/tutorials/examples/querying-images.mdx',
+    title: 'Querying Image Data',
+    titleZh: '查询图像数据',
+  },
+  'tutorials/examples/image-generation': {
+    source: 'docs/data/tutorials/examples/image-generation.mdx',
+    title: 'Generating Images from Text',
+    titleZh: '从文本生成图像',
+  },
+  'tutorials/examples/voice-ai-analytics': {
+    source: 'docs/data/tutorials/examples/voice-ai-analytics.mdx',
+    title: 'Voice AI Analytics',
+    titleZh: '语音 AI 分析',
+  },
+  'tutorials/examples/multimodal-structured-outputs': {
+    source: 'docs/data/tutorials/examples/multimodal-structured-outputs.mdx',
+    title: 'Multimodal Structured Outputs',
+    titleZh: '多模态结构化输出',
+  },
+  'tutorials/use-cases/claims-disposition': {
+    source: 'docs/data/tutorials/use-cases/claims-disposition.mdx',
+    title: 'Claims Disposition from Multimodal Evidence',
+    titleZh: '基于多模态证据的理赔处置',
+  },
+  'tutorials/use-cases/enterprise-agent-evidence': {
+    source: 'docs/data/tutorials/use-cases/enterprise-agent-evidence.mdx',
+    title: 'Governing Evidence for Enterprise Agents',
+    titleZh: '企业 Agent 证据治理',
+  },
+  'tutorials/use-cases/multimodal-training-data': {
+    source: 'docs/data/tutorials/use-cases/multimodal-training-data.mdx',
+    title: 'Building a Multimodal Training Release',
+    titleZh: '构建多模态训练数据发布集',
+  },
+  'tutorials/use-cases/procurement-compliance-audit': {
+    source: 'docs/data/tutorials/use-cases/procurement-compliance-audit.mdx',
+    title: 'Procurement Compliance Audit',
+    titleZh: '采购合规审计',
+  },
+  'tutorials/use-cases/web-text-deduplication': {
+    source: 'docs/data/tutorials/use-cases/web-text-deduplication.mdx',
+    title: 'Web Text Deduplication with Global LSH',
+    titleZh: '基于全局 LSH 的网页文本去重',
   },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',
@@ -81,6 +121,7 @@ export type DocsSidebarItem =
   | {
       slug: DocSlug
       label?: string
+      key?: string
       to?: never
     }
   | {
@@ -130,7 +171,9 @@ export function isDocSlug(slug: string | undefined): slug is DocSlug {
 const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   'Getting Started': '快速开始',
   Concepts: '核心概念',
+  Tutorials: '教程',
   Examples: '示例',
+  'Use cases': '端到端用例',
   Operations: '运维',
   Contributing: '贡献',
 }

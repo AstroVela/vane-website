@@ -1,0 +1,241 @@
+---
+title: Voice AI Analytics
+---
+
+Audio becomes much easier to search and analyze after it has been converted into timestamped, typed rows. After loading the audio, this tutorial follows [`examples/voice_ai_analytics.py`](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) through four processing stages: transcribe audio, summarize each transcript, expand segments into subtitle rows, and embed the segment text for retrieval.
+
+Two execution paths share the same data contract:
+
+- The default sample path generates short WAV tones and pairs them with deterministic placeholder transcripts.
+- The real path reads local audio files and transcribes them with Faster-Whisper.
+
+Summaries can also stay local or use OpenAI. The local option truncates the transcript and marks translation as not generated; the OpenAI option requests both a summary and a translated summary.
+
+## 1. Load audio bytes
+
+The sample Relation contains row IDs, logical paths, WAV bytes, and preset transcripts. For real input, the glob Relation reads matching files as binary values and derives the audio format from each suffix. Both paths therefore feed the same columns into the transcription UDF.
+
+```python
+def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
+    paths = sorted(glob.glob(audio_glob))[:limit]
+    if not paths:
+        raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
+
+    rows = [
+        {
+            "id": i,
+            "path": path,
+            "audio_format": Path(path).suffix.lstrip(".").lower() or "audio",
+            "audio_bytes": Path(path).read_bytes(),
+            "fallback_transcript": f"Audio file {Path(path).name} is ready for transcription.",
+        }
+        for i, path in enumerate(paths)
+    ]
+    return relation_from_dicts(
+        conn,
+        rows,
+        {
+            "id": "BIGINT",
+            "path": "VARCHAR",
+            "audio_format": "VARCHAR",
+            "audio_bytes": "BLOB",
+            "fallback_transcript": "VARCHAR",
+        },
+    )
+```
+
+The file limit is applied before bytes are read, which keeps local exploration bounded.
+
+## 2. Transcribe each batch
+
+The placeholder path divides its supplied transcript into sentence-like segments with evenly spaced timestamps. It provides a stable way to verify downstream schemas without loading a speech model.
+
+```python
+def split_segments(text: str, *, duration_seconds: float = 12.0) -> list[dict[str, Any]]:
+    pieces = [piece.strip() for piece in re.split(r"(?<=[.!?])\s+", text.strip()) if piece.strip()]
+    if not pieces and text.strip():
+        pieces = [text.strip()]
+    if not pieces:
+        pieces = ["No speech was detected."]
+
+    step = duration_seconds / max(1, len(pieces))
+    return [
+        {
+            "id": i,
+            "start": round(i * step, 2),
+            "end": round((i + 1) * step, 2),
+            "text": piece,
+        }
+        for i, piece in enumerate(pieces)
+    ]
+```
+
+The real path writes each byte value to a temporary file, calls Faster-Whisper for batched inference with voice activity detection and word timestamps, and converts the returned iterator into JSON-serializable segment dictionaries.
+
+```python
+    def _transcribe_with_whisper(
+        self,
+        audio_bytes: bytes,
+        audio_format: str,
+    ) -> dict[str, Any]:
+        pipe = self._load_pipe()
+        suffix = "." + re.sub(r"[^A-Za-z0-9]+", "", audio_format or "wav")
+        with tempfile.NamedTemporaryFile(suffix=suffix) as audio_file:
+            audio_file.write(audio_bytes)
+            audio_file.flush()
+            segments_iter, info = pipe.transcribe(
+                audio_file.name,
+                language=self.language,
+                vad_filter=self.vad_filter,
+                vad_parameters={
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 200,
+                },
+                word_timestamps=True,
+                without_timestamps=False,
+                temperature=0,
+                batch_size=self.whisper_batch_size,
+            )
+
+            segments = []
+            for i, segment in enumerate(segments_iter):
+                segments.append(
+                    {
+                        "id": int(getattr(segment, "id", i)),
+                        "start": float(getattr(segment, "start", 0.0)),
+                        "end": float(getattr(segment, "end", 0.0)),
+                        "text": str(getattr(segment, "text", "")).strip(),
+                    }
+                )
+            transcript = " ".join(segment["text"] for segment in segments).strip()
+            duration = float(getattr(info, "duration", 0.0) or 0.0)
+            language = str(getattr(info, "language", self.language or "") or "")
+
+        if not segments:
+            transcript = "No speech detected."
+            segments = [
+                {
+                    "id": 0,
+                    "start": 0.0,
+                    "end": round(duration, 2),
+                    "text": transcript,
+                }
+            ]
+
+        return {
+            "transcript": transcript,
+            "language": language,
+            "duration_seconds": duration,
+            "segments_json": json.dumps(segments, ensure_ascii=False),
+        }
+```
+
+The Faster-Whisper model is cached on the UDF instance after first use. Device, compute type, language, VAD behavior, model ID, local-files-only mode, and Whisper's internal batch size are configurable independently of Vane's Arrow batch size.
+
+At the call site, the UDF output is declared as one row per input audio item. Segment expansion happens later.
+
+```python
+    transcripts = rel.map_batches(transcriber.__call__, **map_kwargs)
+    transcript_table = collect_relation(transcripts)
+
+    summaries = summarize_rows(transcript_table, args)
+    subtitles = subtitle_rows(
+        transcript_table,
+        translated_language=args.translated_language,
+    )
+```
+
+## 3. Summarize transcripts
+
+`summarize_rows` dispatches to the selected summary backend while keeping the output schema stable. The local branch is a bounded text preview. The OpenAI branch asks for compact JSON and falls back to a shortened raw response if the provider does not return the expected keys.
+
+```python
+def summarize_rows(table: pa.Table, args: argparse.Namespace) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    output = []
+    for row in rows:
+        transcript = str(row["transcript"] or "")
+        if args.summary_backend == "local":
+            summary = local_summary(transcript, max_chars=args.summary_max_chars)
+            translated = f"[{args.translated_language} translation not generated] {summary}"
+        elif args.summary_backend == "openai":
+            summary, translated = openai_summary(
+                transcript,
+                model=args.openai_model,
+                translated_language=args.translated_language,
+            )
+        else:
+            raise ValueError(f"Unsupported summary backend: {args.summary_backend}")
+
+        output.append(
+            {
+                "id": row["id"],
+                "path": row["path"],
+                "language": row["language"],
+                "transcript": transcript,
+                "summary": summary,
+                "translated_summary": translated,
+            }
+        )
+    return output
+```
+
+The summary stage operates after materialization and produces plain Python dictionaries, which the script later turns back into a Relation for previewing.
+
+## 4. Expand and embed subtitle segments
+
+The segment JSON is expanded into one row per timestamped piece. The example preserves source ID and path, a segment ID, start and end times, the original text, and a clearly marked translated-text placeholder.
+
+```python
+def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for parent in table.to_pylist():
+        segments = json.loads(parent["segments_json"] or "[]")
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            rows.append(
+                {
+                    "id": int(parent["id"]),
+                    "path": str(parent["path"]),
+                    "segment_id": int(segment.get("id", len(rows))),
+                    "start": float(segment.get("start", 0.0)),
+                    "end": float(segment.get("end", 0.0)),
+                    "text": text,
+                    "translated_text": (f"[{translated_language} translation not generated] {text}"),
+                }
+            )
+    if not rows:
+        raise RuntimeError("No subtitle segments were produced.")
+    return rows
+```
+
+Vane's Transformers provider then embeds the original segment text. As in the other embedding examples, the helper validates row count and the output column before appending embeddings.
+
+```python
+    subtitle_rel = relation_from_dicts(conn, subtitles)
+    embedded_only = embed_text(
+        subtitle_rel,
+        "text",
+        provider="transformers",
+        model=args.embedding_model_id,
+        output_column="embedding",
+        batch_size=args.embedding_batch_size,
+    )
+    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
+```
+
+## 5. Inspect the outputs
+
+The default output directory contains:
+
+- `summaries.csv`, with transcript, summary, and translated-summary fields;
+- `subtitles.csv`, with one row per timestamped segment;
+- `segment_embeddings.csv`, with source identity, timestamps, text, and embedding dimension.
+
+The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors remain in the in-memory result, but the CSV intentionally records only their dimensions.
+
+## Scaling and model deployment
+
+Transcription and embedding retain separate batch-size controls, while the full Relation workflow is materialized through Vane's configured runner. For GPU speech recognition, pass the requested GPU resource and make sure every worker can import the optional dependencies and access the model cache or model path.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) for sample WAV generation, OpenAI summary prompting, model-loading errors, and all arguments.

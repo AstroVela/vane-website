@@ -1,0 +1,211 @@
+---
+title: Multimodal Structured Outputs
+---
+
+A model can answer a visual question correctly for the wrong reason—for example, by exploiting clues in the text instead of reading the image. This tutorial follows [`examples/multimodal_structured_outputs.py`](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) to compare vision-language answers with text-only answers and classify whether the image helped or hurt.
+
+The evaluation pipeline:
+
+1. Loads synthetic color questions or a small AI2D sample from The Cauldron.
+2. Asks the model each multiple-choice question with its image.
+3. Asks the same question without the image.
+4. Parses both answers, measures accuracy, and assigns a diagnostic quadrant.
+5. Optionally asks the vision-language model to diagnose failure rows.
+
+The default dataset is synthetic, but inference still uses an OpenAI-compatible model endpoint. By default that endpoint is the Hugging Face router and the API key is read from `HF_TOKEN`.
+
+## 1. Define structured result contracts
+
+The choice response contains one answer letter. The judge response separates detailed reasoning, a concise hypothesis, and a coarse attribution. Pydantic models provide the structured-output contract when the selected endpoint supports SDK parsing.
+
+```python
+class ChoiceResponse(BaseModel):
+    """Structured answer for a multiple-choice question."""
+
+    choice: str = Field(
+        ...,
+        description="The selected answer letter, such as A, B, C, or D.",
+    )
+
+
+class JudgeResponse(BaseModel):
+    """Structured diagnostic feedback for a failed example."""
+
+    reasoning: str = Field(..., description="Why the model likely answered that way.")
+    hypothesis: str = Field(..., description="A concise cause of the error.")
+    attribution: str = Field(
+        ...,
+        description="One of: question, image, model, or other.",
+    )
+```
+
+Prompt-only mode omits those Python return types and relies on the same system messages to request JSON directly. That path supports OpenAI-compatible servers that do not implement structured parsing.
+
+## 2. Start with a visual dataset you can audit
+
+The synthetic source creates solid-color PNG files and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
+
+```python
+def synthetic_rows(limit: int) -> list[dict[str, Any]]:
+    """Return a tiny local vision QA set that needs the image to answer."""
+    color_rows = [
+        ("red", "A", (220, 32, 32)),
+        ("blue", "B", (32, 96, 220)),
+        ("green", "C", (32, 160, 80)),
+        ("yellow", "D", (230, 200, 32)),
+    ]
+    rows: list[dict[str, Any]] = []
+    choices = "A. red\nB. blue\nC. green\nD. yellow"
+    for color, answer, rgb in color_rows:
+        rows.append(
+            {
+                "id": f"synthetic-{color}",
+                "source": "synthetic",
+                "question": (f"Which color fills the attached square?\n{choices}\nReturn the answer letter."),
+                "answer": answer,
+                "image": solid_png(96, 96, rgb),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+```
+
+The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become a Vane Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
+
+## 3. Run inference with the image
+
+Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, and sampling settings.
+
+```python
+    common_prompt_options = {
+        "provider": "openai",
+        "model": args.model,
+        "api_key": api_key,
+        "use_chat_completions": True,
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+    }
+    if base_url:
+        common_prompt_options["base_url"] = base_url
+
+    choice_return_format = ChoiceResponse if args.structured_output_mode == "parse" else None
+    judge_return_format = JudgeResponse if args.structured_output_mode == "parse" else None
+
+    with_image_responses = prompt(
+        rel,
+        "question",
+        image_columns=["image"],
+        system_message=VISION_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_with_image",
+        **common_prompt_options,
+    )
+    with_image = append_prompt_output(
+        conn,
+        rel,
+        with_image_responses,
+        "response_with_image",
+    )
+    eval_with_image = add_choice_eval(
+        with_image,
+        "response_with_image",
+        "predicted_with_image",
+        "is_correct_with_image",
+    )
+```
+
+`append_prompt_output` checks the output row count and requested column before attaching results to the source Relation by position. This catches missing or extra rows and missing output columns; it does not independently verify row order.
+
+## 4. Repeat the question without the image
+
+The ablation uses the already enriched Relation but does not pass `image_columns`. It writes to a separate response column and applies the same answer-normalization logic.
+
+```python
+    without_image_responses = prompt(
+        eval_with_image,
+        "question",
+        system_message=TEXT_ONLY_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_without_image",
+        **common_prompt_options,
+    )
+    without_image = append_prompt_output(
+        conn,
+        eval_with_image,
+        without_image_responses,
+        "response_without_image",
+    )
+    evaluated = add_choice_eval(
+        without_image,
+        "response_without_image",
+        "predicted_without_image",
+        "is_correct_without_image",
+    )
+    classified = classify_quadrants(evaluated)
+```
+
+Answer normalization first tries the structured `choice` field, then a JSON-looking pattern, and finally any standalone A–D token. It records both the normalized choice and a Boolean correctness column.
+
+## 5. Classify diagnostic quadrants
+
+The two correctness values produce four mutually exclusive outcomes:
+
+- Both Correct: the answer succeeds with or without visual evidence.
+- Image Helped: only the vision run succeeds.
+- Image Hurt: only the text-only run succeeds.
+- Both Incorrect: neither run succeeds.
+
+The classification itself stays in SQL over the Relation.
+
+```python
+def classify_quadrants(rel: Any) -> Any:
+    alias = relation_alias("quadrant", rel)
+    return rel.query(
+        alias,
+        f"""
+        select
+        {alias}.*,
+        case
+            when is_correct_with_image and is_correct_without_image then 'Both Correct'
+            when is_correct_with_image and not is_correct_without_image then 'Image Helped'
+            when not is_correct_with_image and is_correct_without_image then 'Image Hurt'
+            else 'Both Incorrect'
+        end as quadrant
+        from {alias}
+        """,
+    )
+```
+
+The script prints accuracy with the image, accuracy without it, and the delta, followed by row-level predictions and aggregated quadrant counts. On the synthetic dataset, Image Helped is the expected result for an image-aware model because the question has no textual clue about the generated square.
+
+## 6. Ask a VLM to diagnose failures
+
+Unless the judge stage is skipped, only Image Hurt and Both Incorrect rows proceed. The script constructs a diagnostic prompt containing the question, correct answer, and both model choices, then includes the image again for the judge.
+
+```python
+    judge_responses = prompt(
+        judge_input,
+        "judge_prompt",
+        image_columns=["image"],
+        system_message=JUDGE_SYSTEM_PROMPT,
+        return_format=judge_return_format,
+        output_column="judge_response",
+        max_tokens=args.judge_max_tokens,
+        **{key: value for key, value in common_prompt_options.items() if key != "max_tokens"},
+    )
+    judged = append_prompt_output(
+        conn,
+        judge_input,
+        judge_responses,
+        "judge_response",
+    )
+```
+
+The final preview extracts attribution, hypothesis, and reasoning from the judge JSON. This stage is diagnostic model output, not ground truth; use it to organize review rather than to replace human inspection.
+
+## Provider and execution choices
+
+The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, and structured-output mode are configurable. Execution follows Vane's configured runner; with Ray, workers need network access to the endpoint and the same Vane AI dependencies.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) for image normalization, AI2D loading, answer parsing, metric queries, and every argument.

@@ -1,0 +1,241 @@
+---
+title: Governing Evidence for Enterprise Agents
+---
+
+Enterprise evidence is usually scattered across document stores, support systems, media archives, and business databases. An Agent should not receive an ungoverned bundle of retrieved files and decide for itself whether that evidence is complete, current, or internally consistent. This tutorial follows the `enterprise-agent-evidence` use case to build governed multimodal context before any evidence reaches an Agent.
+
+Use case source: [AstroVela/demo-scene/enterprise-agent-evidence](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence).
+
+The example parses document, image, audio, and text assets once, links those reusable features to business cases, and uses SQL to detect missing requirements, conflicting claims, observations outside the freshness window, and blocking risks. Vane is useful here because modality-specific Python processing and cross-record SQL policy remain in one typed Relation flow. Model inference and retrieval are intentionally outside the pipeline; its output is an auditable context table plus a prioritized human review queue.
+
+The data flow is:
+
+1. Read business cases, evidence requirements, evidence links, and a catalog of publicly sourced assets as Relations.
+2. Process each referenced asset in a modality-specific batch UDF.
+3. Join reusable asset features to case-specific evidence links.
+4. Compare the evidence with requirements and with other claims in the same case.
+5. Build `ready`, `needs_review`, or `blocked` Agent contexts and a review queue.
+
+## Default scenario and inputs
+
+The offline scenario separates business metadata from physical assets. This distinction is central to the design: a case references an `asset_id` instead of copying file content, so one parsed file can support several cases.
+
+| Input | Grain | Role in the pipeline |
+| --- | --- | --- |
+| `cases.csv` | One row per business case | Account, business question, and review date for four cases |
+| `requirements.csv` | One required modality per case | Declares which evidence types must be present |
+| `evidence_links.csv` | One case-to-asset link | Supplies eight observations, source systems, titles, and optional claims |
+| `asset_catalog.csv` | One row per physical asset | Locates five files spanning document, text, image, and audio modalities, with provenance and license data |
+
+The five version-pinned, publicly sourced assets come from Apache Arrow and Wikimedia Commons. The default run is offline: it reads the checked-in Markdown, SVG, and WAV payloads rather than fetching them during the pipeline.
+
+## 1. Parse every asset once
+
+The source catalog has one row per physical asset, while `evidence_links` can associate the same asset with more than one business case. Processing the asset catalog before that join avoids repeating document, image, or audio work for every case that references the file.
+
+Each modality gets its own `map_batches` branch and processor, but every branch returns the same feature schema. The compatible branches can therefore be combined into one `asset_features` Relation.
+
+| Modality | Current processing | Main facts or risks |
+| --- | --- | --- |
+| `document` | Decode UTF-8 while preserving document text | Token count, empty content, invalid UTF-8 |
+| `text` | Decode UTF-8 and normalize whitespace | Token count, short text, invalid UTF-8 |
+| `image` | Parse SVG dimensions | Width, height, missing dimensions, low resolution |
+| `audio` | Read PCM WAV metadata | Duration, sample rate, invalid or very short audio |
+
+```python
+def build_asset_feature_relations(
+    public_assets: Any,
+    modalities: list[str],
+    args: argparse.Namespace,
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    stage_functions = {
+        "document": "process_document_asset_batch",
+        "image": "process_image_asset_batch",
+        "audio": "process_audio_asset_batch",
+        "text": "process_text_asset_batch",
+    }
+    udf_options = batch_udf_options(args.execution_backend)
+    relations: list[Any] = []
+    backend_metadata: dict[str, dict[str, Any]] = {}
+    for modality in SUPPORTED_MODALITIES:
+        if modality not in modalities:
+            continue
+        source = public_assets.filter(f"modality = '{modality}'").order("record_id")
+        relations.append(
+            source.map_batches(
+                importable_batch_function(stage_functions[modality]),
+                schema=ASSET_FEATURE_SCHEMA,
+                batch_size=args.batch_size,
+                **udf_options,
+            )
+        )
+        backend_metadata[f"process_{modality}_asset"] = backend_metadata_entry(
+            args.execution_backend
+        )
+
+    features = relations[0]
+    for relation in relations[1:]:
+        features = features.union(relation)
+    return features, backend_metadata
+```
+
+The shared output contract preserves provenance and license fields while adding content text, hashes, byte and token counts, media metrics, a processing decision, and risk flags. This is the reusable asset-level contract; it contains no case-specific conclusion.
+
+## 2. Bind asset facts to business evidence
+
+An evidence link supplies the business meaning that a reusable asset does not have: case ID, source system, observation date, title, and an optional key-value claim. The join produces one typed row per case-to-asset link and carries all source and license provenance forward.
+
+```python
+def build_evidence_features(conn: Any) -> Any:
+    return conn.sql(
+        """
+        select
+          l.record_id,
+          l.case_id,
+          a.asset_id,
+          a.modality as evidence_type,
+          a.modality,
+          l.source_system,
+          a.source_uri,
+          a.source_page_uri,
+          a.source_version,
+          a.license_id,
+          a.license_uri,
+          l.observed_at,
+          l.evidence_title,
+          a.evidence_text,
+          l.claim_key,
+          l.claim_value,
+          a.content_sha256,
+          a.byte_size,
+          a.token_count,
+          a.asset_decision,
+          case
+            when lower(l.claim_value) = 'blocked'
+              then list_append(a.risk_flags, 'asserted_blocker')
+            else a.risk_flags
+          end as risk_flags,
+          a.risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as risk_count,
+          a.blocking_risk_count
+            + case when lower(l.claim_value) = 'blocked' then 1 else 0 end
+            as blocking_risk_count,
+          a.media_metrics
+        from evidence_links l
+        join asset_features a using (asset_id)
+        order by l.case_id, l.record_id
+        """
+    )
+```
+
+This is also where a case-specific assertion such as a blocking status becomes a governance risk. The underlying asset remains reusable and unchanged.
+
+## 3. Find gaps and contradictions with SQL
+
+Requirements and evidence are separate Relations, so missing evidence is an anti-join: every required modality without a matching evidence row becomes a gap. Conflicts are grouped by case and claim key; more than one distinct value turns the supporting rows into a reviewable contradiction.
+
+```python
+    evidence_gaps_rel = conn.sql(
+        """
+        select
+          r.case_id,
+          c.account_id,
+          r.evidence_type as missing_evidence_type,
+          'missing_required_evidence' as reason
+        from case_requirements r
+        join business_cases c using (case_id)
+        left join evidence_features e
+          on e.case_id = r.case_id
+         and e.evidence_type = r.evidence_type
+        where e.record_id is null
+        order by r.case_id, r.evidence_type
+        """
+    )
+    conn.sql("drop table if exists evidence_gaps")
+    evidence_gaps_rel.to_table("evidence_gaps")
+
+    evidence_conflicts_rel = conn.sql(
+        """
+        select
+          case_id,
+          claim_key,
+          count(distinct claim_value) as distinct_values,
+          string_agg(distinct claim_value, ', ' order by claim_value) as claim_values,
+          string_agg(record_id, ', ' order by record_id) as evidence_ids
+        from evidence_features
+        where claim_key <> '' and claim_value <> ''
+        group by case_id, claim_key
+        having count(distinct claim_value) > 1
+        order by case_id, claim_key
+        """
+    )
+    conn.sql("drop table if exists evidence_conflicts")
+    evidence_conflicts_rel.to_table("evidence_conflicts")
+```
+
+Freshness is evaluated separately by comparing each observation date with the case review date. The final rollup also retains ordered evidence IDs, asset IDs, source systems, modalities, license IDs, and a human-readable context string.
+
+## 4. Decide whether context may reach the Agent
+
+The review state is a deterministic policy over the rollups. Missing evidence, conflicting claims, or a blocking risk marks the context as `blocked`. Evidence outside the freshness window and non-blocking risks produce `needs_review`. Only a complete, consistent, current, and risk-free case is `ready`.
+
+```sql
+          case
+            when coalesce(g.missing_evidence_count, 0) > 0
+              or coalesce(k.conflict_count, 0) > 0
+              or coalesce(e.blocking_risk_count, 0) > 0 then 'blocked'
+            when coalesce(e.stale_evidence_count, 0) > 0
+              or coalesce(e.risk_count, 0) > 0 then 'needs_review'
+            else 'ready'
+          end as review_state
+```
+
+This policy happens before an Agent prompt is built. A blocked context still exists for auditing and remediation, but it is not presented as approved evidence.
+
+The four default cases make every policy branch visible:
+
+| Case | Evidence result | Review state |
+| --- | --- | --- |
+| `case-arrow-docs` | Two modalities, no gap, conflict, risk, or stale evidence | `ready` |
+| `case-wikimedia-media` | One conflicting claim and one rejected low-resolution image | `blocked` |
+| `case-incomplete-bundle` | Missing the required audio modality | `blocked` |
+| `case-stale-docs` | Complete evidence, but one observation is stale | `needs_review` |
+
+## 5. Produce Agent context and a review queue
+
+All cases remain in `agent_context`; the review queue is simply the non-ready subset in handling order. A second aggregation gives operational counts by state.
+
+```python
+    review_queue = agent_context.filter("review_state <> 'ready'").order(
+        REVIEW_QUEUE_ORDER
+    )
+    status_summary = agent_context.aggregate(
+        "review_state, count(*) as cases, sum(evidence_count) as evidence_records"
+    ).order("review_state")
+```
+
+Run the offline use case with `VANE_RUNNER=local-fast .venv/bin/python src/enterprise_multimodal_agent.py`. A successful default run reports four business cases, five publicly sourced assets, eight evidence records, one missing requirement, one conflicting claim, and three cases requiring review. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
+
+| Output | Purpose |
+| --- | --- |
+| `asset_features.parquet` | One parsed row per unique asset |
+| `evidence_features.parquet` | Eight typed case-to-asset evidence rows |
+| `agent_context.parquet` | Governed context for all four cases |
+| `evidence_gaps.csv` | Missing required modalities |
+| `evidence_conflicts.csv` | Conflicting claims and their evidence IDs |
+| `review_queue.csv` | Blocked and needs-review cases in handling order |
+| `status_summary.csv` | Counts by review state |
+
+The central pattern is to govern evidence as data before using it as model context. Retrieval can find relevant material, and an Agent can reason over approved context, but neither should silently decide whether a required source is absent or two records disagree.
+
+## Adapt the pattern
+
+For a real deployment, preserve the same four boundaries:
+
+- map internal review subjects to `cases` and declare mandatory evidence in `requirements`;
+- store case-to-object relationships and observation dates in `evidence_links` instead of duplicating payloads;
+- replace the lightweight Markdown, SVG, and WAV processors while keeping the shared asset feature schema;
+- version the SQL policy for gaps, conflicts, freshness, and review state, then expose only approved context to the downstream Agent.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/enterprise-agent-evidence) for the media processors, input Relations, freshness rollup, output schemas, and fixture data.

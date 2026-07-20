@@ -20,7 +20,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
       docs: 'Docs',
       quickstart: 'Quickstart',
       concepts: 'Concepts',
-      examples: 'Examples',
+      tutorials: 'Tutorials',
       contributing: 'Contributing',
       resources: 'Resources',
       blog: 'Blog',
@@ -40,7 +40,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
       docs: '文档',
       quickstart: '快速开始',
       concepts: '核心概念',
-      examples: '示例',
+      tutorials: '教程',
       contributing: '贡献',
       resources: '资源',
       blog: '博客',
@@ -89,7 +89,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
             <h4>{copy.docs}</h4>
             <Link to="/docs/data/quickstart/quickstart">{copy.quickstart}</Link>
             <Link to="/docs/data/concepts/sql-vs-python">{copy.concepts}</Link>
-            <Link to="/docs/data/examples">{copy.examples}</Link>
+            <Link to="/docs/data/tutorials">{copy.tutorials}</Link>
             <Link to="/docs/data/contributing/development">{copy.contributing}</Link>
           </div>
 

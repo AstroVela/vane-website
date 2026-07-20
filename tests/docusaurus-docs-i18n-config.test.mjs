@@ -7,6 +7,7 @@ const routesSource = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
 const docsPageSource = readFileSync('src/pages/Docs.tsx', 'utf8')
 const legacySlugsSource = readFileSync('src/docs/legacySlugs.ts', 'utf8')
 const sidebarsSource = readFileSync('sidebars.data.ts', 'utf8')
+const dataSidebar = JSON.parse(readFileSync('src/docs/sidebar.data.json', 'utf8'))
 const navSource = readFileSync('src/components/Nav.tsx', 'utf8')
 const cssSource = readFileSync('src/index.css', 'utf8')
 const readmeSource = readFileSync('README.md', 'utf8')
@@ -45,23 +46,39 @@ const deploymentSources = [
   ),
 ]
 const exampleRunnerSources = [
-  'docs/data/examples/index.mdx',
-  'docs/data/examples/training-data-pipeline.mdx',
-  'docs/data/examples/tender-compliance-check.mdx',
-  'docs/data/examples/multimodal-data-lake.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/index.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/training-data-pipeline.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/tender-compliance-check.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/multimodal-data-lake.mdx',
+  'docs/data/tutorials/index.mdx',
+  'docs/data/tutorials/examples/common-crawl.mdx',
+  'docs/data/tutorials/examples/minhash-dedupe.mdx',
+  'docs/data/tutorials/examples/llms-red-pajamas.mdx',
+  'docs/data/tutorials/examples/querying-images.mdx',
+  'docs/data/tutorials/examples/image-generation.mdx',
+  'docs/data/tutorials/examples/voice-ai-analytics.mdx',
+  'docs/data/tutorials/examples/multimodal-structured-outputs.mdx',
+  'docs/data/tutorials/use-cases/claims-disposition.mdx',
+  'docs/data/tutorials/use-cases/enterprise-agent-evidence.mdx',
+  'docs/data/tutorials/use-cases/multimodal-training-data.mdx',
+  'docs/data/tutorials/use-cases/procurement-compliance-audit.mdx',
+  'docs/data/tutorials/use-cases/web-text-deduplication.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/index.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/common-crawl.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/minhash-dedupe.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/llms-red-pajamas.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/querying-images.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/image-generation.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/voice-ai-analytics.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/multimodal-structured-outputs.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/claims-disposition.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/enterprise-agent-evidence.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/multimodal-training-data.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/procurement-compliance-audit.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/web-text-deduplication.mdx',
 ].map((file) => readFileSync(file, 'utf8'))
-const wheelExampleSources = [
-  'docs/data/examples/index.mdx',
-  'docs/data/examples/training-data-pipeline.mdx',
-  'docs/data/examples/multimodal-data-lake.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/index.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/training-data-pipeline.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/examples/multimodal-data-lake.mdx',
-].map((file) => readFileSync(file, 'utf8'))
+const tutorialOverviewSource = readFileSync('docs/data/tutorials/index.mdx', 'utf8')
+const chineseTutorialOverviewSource = readFileSync(
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/index.mdx',
+  'utf8',
+)
+const wheelExampleSources = [tutorialOverviewSource, chineseTutorialOverviewSource]
 const packageSource = readFileSync('package.json', 'utf8')
 const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
 const devScriptSource = readFileSync('scripts/dev.mjs', 'utf8')
@@ -125,12 +142,83 @@ test('removed deployment pages redirect to the consolidated deployment guide', (
   }
 })
 
+test('renamed tutorial routes preserve the previous examples URLs', () => {
+  const redirects = {
+    examples: 'tutorials',
+    'examples/training-data-pipeline': 'tutorials',
+    'examples/multimodal-data-lake': 'tutorials',
+    'examples/insurance-document-audit':
+      'tutorials/use-cases/claims-disposition',
+    'examples/tender-compliance-check':
+      'tutorials/use-cases/procurement-compliance-audit',
+    'examples/example-tutorials/common-crawl': 'tutorials/examples/common-crawl',
+    'examples/end-to-end-use-cases/enterprise-agent-evidence':
+      'tutorials/use-cases/enterprise-agent-evidence',
+  }
+
+  for (const [legacySlug, currentSlug] of Object.entries(redirects)) {
+    assert.match(
+      legacySlugsSource,
+      new RegExp(`'?(?:${legacySlug})'?:\\s*'${currentSlug}'`),
+    )
+  }
+})
+
+test('Chinese tutorial overview keeps links in the Chinese locale', () => {
+  assert.doesNotMatch(chineseTutorialOverviewSource, /\]\(\/docs\/data\/tutorials\//)
+  assert.match(
+    chineseTutorialOverviewSource,
+    /\]\(\/zh-CN\/docs\/data\/tutorials\/examples\/common-crawl\)/,
+  )
+  assert.match(
+    chineseTutorialOverviewSource,
+    /\]\(\/zh-CN\/docs\/data\/tutorials\/use-cases\/claims-disposition\)/,
+  )
+})
+
 test('Operations sidebar category is localized in Chinese Data docs', () => {
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.Operations']?.message,
     '运维',
   )
   assert.equal(dataDocsTranslations['sidebar.dataSidebar.category.Deploy'], undefined)
+})
+
+test('Tutorials sidebar separates examples and use cases', () => {
+  const tutorials = dataSidebar.find((entry) => entry.group === 'Tutorials')
+  assert.deepEqual(
+    tutorials.items.map((entry) => entry.group ?? entry.label),
+    ['Overview', 'Examples', 'Use cases'],
+  )
+  assert.ok(
+    tutorials.items[1].items.every((entry) =>
+      entry.slug.startsWith('tutorials/examples/'),
+    ),
+  )
+  assert.ok(
+    tutorials.items[2].items.every((entry) =>
+      entry.slug.startsWith('tutorials/use-cases/'),
+    ),
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Tutorials']?.message,
+    '教程',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Examples']?.message,
+    '示例',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Use cases']?.message,
+    '端到端用例',
+  )
+  assert.equal(existsSync('docs/data/tutorials/ray-worker.mdx'), false)
+  assert.equal(
+    existsSync(
+      'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/ray-worker.mdx',
+    ),
+    false,
+  )
 })
 
 test('Quickstart input can cross the default Ray runner boundary', () => {
@@ -201,7 +289,17 @@ test('quickstart describes Ray as the default runner and deployment documents th
   }
 })
 
-test('wheel-backed examples sparsely check out scripts without package sources', () => {
+test('wheel-backed examples document sparse checkout and bounded commands', () => {
+  const boundedCommands = [
+    'python examples/common_crawl.py --source sample --limit 5',
+    'python examples/minhash_dedupe.py --source sample --limit 10',
+    'python examples/llms_red_pajamas.py --source sample --limit 6',
+    'python examples/querying_images.py --source sample --limit 5',
+    'python examples/image_generation.py --source sample --limit 4',
+    'python examples/voice_ai_analytics.py --source sample --limit 3',
+    'python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge',
+  ]
+
   for (const source of wheelExampleSources) {
     assert.match(source, /git clone --depth 1 --filter=blob:none --sparse/)
     assert.match(source, /https:\/\/github\.com\/AstroVela\/vane\.git vane-examples/)
@@ -209,6 +307,10 @@ test('wheel-backed examples sparsely check out scripts without package sources',
     assert.match(source, /git sparse-checkout set examples/)
     assert.doesNotMatch(source, /^git clone https:\/\/github\.com\/AstroVela\/vane\.git$/m)
     assert.match(source, /`vane\/` and `duckdb\/`|`vane\/` 和 `duckdb\/`/)
+    assert.doesNotMatch(source, /^```(?:bash|sh|shell)\b/m)
+    for (const command of boundedCommands) {
+      assert.ok(source.includes(`\`${command}\``))
+    }
   }
 })
 
@@ -286,12 +388,12 @@ test('English and Chinese docs trees use matching English slugs', () => {
 })
 
 test('Docusaurus sidebar maps custom index slugs to document ids', () => {
-  assert.match(sidebarsSource, /slug === 'examples' \? 'examples\/index' : slug/)
+  assert.match(sidebarsSource, /slug === 'tutorials' \? 'tutorials\/index' : slug/)
 })
 
 test('Overview is a direct sidebar page instead of a Docs Home child item', () => {
   assert.match(sidebarsSource, /docsSidebar as DocsSidebarEntry\[\]/)
-  assert.match(sidebarsSource, /key:\s*entry\.label/)
+  assert.match(sidebarsSource, /key:\s*entry\.key \?\? entry\.label/)
   assert.match(sidebarsSource, /docs-data-overview-link/)
   assert.doesNotMatch(sidebarsSource, /label:\s*'Docs Home'/)
 })

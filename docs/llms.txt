@@ -8,10 +8,18 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/concepts/sql-vs-python: SQL vs Python.
 - /docs/data/concepts/udfs: UDFs.
 - /docs/data/concepts/ai-functions: AI Functions.
-- /docs/data/examples: Examples.
-- /docs/data/examples/training-data-pipeline: Training Data Pipeline.
-- /docs/data/examples/insurance-document-audit: Insurance Document Audit.
-- /docs/data/examples/tender-compliance-check: Tender Compliance Check.
-- /docs/data/examples/multimodal-data-lake: Multimodal Data Lake.
+- /docs/data/tutorials: Overview.
+- /docs/data/tutorials/examples/common-crawl: Working with Common Crawl.
+- /docs/data/tutorials/examples/minhash-dedupe: MinHash Text Deduplication.
+- /docs/data/tutorials/examples/llms-red-pajamas: Semantic Search on Red Pajamas.
+- /docs/data/tutorials/examples/querying-images: Querying Image Data.
+- /docs/data/tutorials/examples/image-generation: Generating Images from Text.
+- /docs/data/tutorials/examples/voice-ai-analytics: Voice AI Analytics.
+- /docs/data/tutorials/examples/multimodal-structured-outputs: Multimodal Structured Outputs.
+- /docs/data/tutorials/use-cases/claims-disposition: Claims Disposition from Multimodal Evidence.
+- /docs/data/tutorials/use-cases/enterprise-agent-evidence: Governing Evidence for Enterprise Agents.
+- /docs/data/tutorials/use-cases/multimodal-training-data: Building a Multimodal Training Release.
+- /docs/data/tutorials/use-cases/procurement-compliance-audit: Procurement Compliance Audit.
+- /docs/data/tutorials/use-cases/web-text-deduplication: Web Text Deduplication with Global LSH.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

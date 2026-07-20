@@ -78,14 +78,14 @@ maybeTest('docs sidebar keeps sibling categories open when another one expands',
 
   await execute(`
     const button = Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .find((el) => el.textContent.trim() === 'Examples')
+      .find((el) => el.textContent.trim() === 'Tutorials')
     button.click()
     return button.getAttribute('aria-expanded')
   `)
   await new Promise((resolve) => setTimeout(resolve, 50))
   const siblingStates = await execute(`
     return Array.from(document.querySelectorAll('.theme-doc-sidebar-container .menu__link--sublist[role="button"]'))
-      .filter((el) => ['Getting Started', 'Concepts', 'Examples'].includes(el.textContent.trim()))
+      .filter((el) => ['Getting Started', 'Concepts', 'Tutorials'].includes(el.textContent.trim()))
       .map((el) => ({
         text: el.textContent.trim(),
         expanded: el.getAttribute('aria-expanded'),
@@ -95,6 +95,6 @@ maybeTest('docs sidebar keeps sibling categories open when another one expands',
   assert.deepEqual(siblingStates, [
     { text: 'Getting Started', expanded: 'true' },
     { text: 'Concepts', expanded: 'true' },
-    { text: 'Examples', expanded: 'true' },
+    { text: 'Tutorials', expanded: 'true' },
   ])
 })

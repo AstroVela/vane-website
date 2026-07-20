@@ -1,0 +1,279 @@
+---
+title: 基于全局 LSH 的网页文本去重
+---
+
+近似重复网页很少逐字节完全相同。导航变化、时间戳、小幅编辑和跨域镜像使原始内容哈希过于严格，而随着语料增长，比较所有文档对又会过于昂贵。本教程沿着 `web-text-deduplication` 用例，构建一条包含 MinHash 指纹、全局 LSH 候选、精确 Jaccard 校验和图聚类的确定性处理流程。
+
+用例源码：[AstroVela/demo-scene/web-text-deduplication](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication)。
+
+默认示例数据包含 24 篇文档：六个三成员重复组和六篇单例。处理流程把 276 个可能的全局文档对缩减到 18 个 LSH 候选，确认 18 条重复边，最终保留 12 篇代表文档。
+
+Vane 的作用是把批量文本转换、全语料 SQL 自连接、精确文档对评分和递归图聚类保留在一条 Relation 流程中。每个中间 Relation 都可以发布出来调参或复核，而不是把判定封装在一个不透明的去重调用中。
+
+算法包含六个阶段：
+
+1. 规范化文本并创建有序的五 token `shingle`。
+2. 为每篇文档计算包含 64 个值的 MinHash 签名和八个 LSH band key。
+3. 使用全局 Relation 自连接找出共享 `band` 的文档。
+4. 为每个候选文档对计算精确 shingle Jaccard。
+5. 把通过校验的文档对转换成图边，并寻找连通分量。
+6. 从每个分量中选择一篇稳定的代表文档。
+
+## 默认语料与输入契约
+
+仓库内的 `documents.csv` 足够小，可以逐行检查，同时覆盖完全重复、近似重复、跨域匹配、单例簇和确定性代表选择。
+
+| 行数 | 构造方式 | 验证目标 |
+| ---: | --- | --- |
+| 6 | 六个主题各有一篇标准页面 | 每个重复组中优先保留的副本 |
+| 6 | 另一个域名上正文逐字节相同的镜像页面 | 跨域完全重复 |
+| 6 | 只改动一个词的修订版 | 原始内容哈希无法发现的近似重复 |
+| 6 | 互不相关的短文档 | 单例簇 |
+
+六个主题分别是账单核对、事件路由、模型发布、保留策略、检索索引和支持知识路由。每条输入记录包含六个基础列：
+
+| 列 | 作用 |
+| --- | --- |
+| `doc_id` | 唯一文档标识 |
+| `source` | 来源分类 |
+| `domain` | 用于跨站诊断的域名 |
+| `crawled_at` | 代表文档排名使用的日期 |
+| `title` | 便于阅读的页面标题 |
+| `body` | 生成指纹并参与比较的正文 |
+
+## 1. 把文本规范化成可比较的 `shingle`
+
+规范化会分解 Unicode、移除组合标记、转为小写、把标点映射为空格，并折叠空白。`shingle` 函数保留 token 顺序：至少包含五个 token 的文档使用五 token 窗口，更短的文档则成为一个全文 `shingle`。
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return " ".join(text.split())
+
+
+def token_shingles(tokens: list[str], *, size: int = SHINGLE_SIZE) -> set[str]:
+    if not tokens:
+        return set()
+    if len(tokens) < size:
+        return {" ".join(tokens)}
+    return {" ".join(tokens[idx : idx + size]) for idx in range(len(tokens) - size + 1)}
+```
+
+相较于 token 集合，`shingle` 会把局部词序纳入相似度。这对网页文本很重要，因为两个页面可能词汇相近，但并没有复制同一段内容。
+
+## 2. 构建 MinHash 签名和 LSH band
+
+每个 `shingle` 使用 64 个确定性种子计算哈希。为每个种子保留最小值后，会得到一个紧凑的 MinHash 签名，其坐标重合率可以估计集合相似度。随后，签名被分成八个 `band`，每个 `band` 包含八个值，并被哈希成连接键。
+
+```python
+def hash_int(value: str, *, seed: int) -> int:
+    digest = hashlib.blake2b(f"{seed}:{value}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "little")
+
+
+def minhash_signature(
+    values: set[str],
+    *,
+    hashes: int = MINHASH_VALUES,
+    seed: int = MINHASH_SEED,
+) -> list[int]:
+    if not values:
+        return [0] * hashes
+    return [
+        min(hash_int(value, seed=seed + hash_index) for value in values)
+        for hash_index in range(hashes)
+    ]
+
+
+def lsh_band_keys(
+    signature: list[int], *, rows_per_band: int = LSH_ROWS_PER_BAND
+) -> list[str]:
+    if rows_per_band <= 0 or len(signature) % rows_per_band != 0:
+        raise ValueError("signature length must be divisible by rows_per_band")
+
+    keys: list[str] = []
+    for offset in range(0, len(signature), rows_per_band):
+        band_index = offset // rows_per_band
+        band_values = signature[offset : offset + rows_per_band]
+        payload = f"{band_index}:" + ",".join(str(value) for value in band_values)
+        digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=8).hexdigest()
+        keys.append(f"{band_index:03d}:{digest}")
+    return keys
+```
+
+批量 UDF 为每篇文档生成规范化文本、token 与 `shingle` 统计、MinHash 签名和 band key。Vane 把这个函数应用到文档 Relation，并物化成可复用的 `fingerprinted` Relation：
+
+```python
+    fingerprinted_rel = conn.sql("select * from documents order by doc_id").map_batches(
+        importable_fingerprint_documents_batch(),
+        schema=FINGERPRINT_SCHEMA,
+        batch_size=args.batch_size,
+        **udf_options,
+    )
+```
+
+## 3. 使用全局 Relation 自连接生成候选
+
+`band` 数组会被展开成 `band_memberships`。在 band 序号和 band 哈希上执行自连接，就能生成候选文档对；`left_doc_id < right_doc_id` 会移除自身配对和顺序相反的重复文档对。聚合会统计每个候选共享了多少个 `band`。
+
+这个自连接是全局的，而不是限制在单一域名内，因此处理流程可以发现跨站转载或镜像文本。
+
+```python
+    candidate_pairs_rel = conn.sql(
+        """
+        with candidate_ids as (
+          select
+            l.doc_id as left_doc_id,
+            r.doc_id as right_doc_id,
+            l.domain as left_domain,
+            r.domain as right_domain,
+            count(*) as shared_bands
+          from band_memberships l
+          join band_memberships r
+            on l.band_index = r.band_index
+           and l.lsh_band = r.lsh_band
+           and l.doc_id < r.doc_id
+          group by l.doc_id, r.doc_id, l.domain, r.domain
+        )
+        select
+          c.left_doc_id,
+          c.right_doc_id,
+          c.left_domain,
+          c.right_domain,
+          c.shared_bands,
+          l.shingle_set as left_shingle_set,
+          r.shingle_set as right_shingle_set,
+          l.signature as left_signature,
+          r.signature as right_signature
+        from candidate_ids c
+        join fingerprinted l on l.doc_id = c.left_doc_id
+        join fingerprinted r on r.doc_id = c.right_doc_id
+        order by c.left_doc_id, c.right_doc_id
+        """
+    )
+```
+
+LSH 是候选生成器，而不是最终重复规则。共享 `band` 足以说明一个文档对值得检查，但不足以直接产生重复边。
+
+## 4. 使用精确 Jaccard 校验候选
+
+评分 UDF 同时计算精确 shingle Jaccard 和签名重合率。只有精确 Jaccard 达到或超过 `0.7` 才会设置 `is_duplicate`；MinHash 重合率保留为诊断值，因此近似碰撞不会在未经校验的情况下变成重复边。
+
+```python
+        exact_score = jaccard(
+            row["left_shingle_set"], row["right_shingle_set"]
+        )
+        minhash_score = signature_overlap(row["left_signature"], row["right_signature"])
+        exact_match = exact_score >= SHINGLE_JACCARD_THRESHOLD
+        signature_match = minhash_score >= SIGNATURE_OVERLAP_THRESHOLD
+        is_duplicate = exact_match
+        if exact_match and signature_match:
+            reason = "jaccard_and_minhash"
+        elif exact_match:
+            reason = "jaccard_match"
+        elif signature_match:
+            reason = "minhash_only_rejected"
+        else:
+            reason = "below_jaccard_threshold"
+```
+
+这个两阶段设计让权衡清晰可见：LSH 控制需要评分的文档对空间大小，精确 Jaccard 控制哪些文档对成为重复边。
+
+## 5. 把重复文档构建成连通分量
+
+两两重复关系构成一个无向图。递归 SQL 为每篇文档添加自环，为每个确认重复的文档对添加双向边，计算可达关系，再选择可达文档中最小的 ID 作为分量根节点。
+
+```python
+def cluster_relation_sql(conn: Any) -> Any:
+    return conn.sql(
+        """
+        with recursive
+        edges as (
+          select doc_id as src_doc_id, doc_id as dst_doc_id from documents
+          union
+          select left_doc_id as src_doc_id, right_doc_id as dst_doc_id from duplicate_pairs
+          union
+          select right_doc_id as src_doc_id, left_doc_id as dst_doc_id from duplicate_pairs
+        ),
+        reach(src_doc_id, dst_doc_id) as (
+          select src_doc_id, dst_doc_id from edges
+          union
+          select r.src_doc_id, e.dst_doc_id
+          from reach r
+          join edges e on e.src_doc_id = r.dst_doc_id
+        ),
+        components as (
+          select src_doc_id as doc_id, min(dst_doc_id) as root_doc_id
+          from reach
+          group by src_doc_id
+        ),
+        cluster_sizes as (
+          select root_doc_id, count(*) as cluster_size
+          from components
+          group by root_doc_id
+        )
+        select
+          'cluster-' || c.root_doc_id as cluster_id,
+          c.doc_id,
+          cs.cluster_size
+        from components c
+        join cluster_sizes cs using (root_doc_id)
+        order by cluster_id, c.doc_id
+        """
+    )
+```
+
+当重复具有传递性时，连通分量非常重要。如果 A 匹配 B、B 匹配 C，即使 A 和 C 从未成为直接 LSH 候选，三者仍然属于同一个去重簇。
+
+## 6. 为每个簇选择代表文档
+
+最终排名优先选择抓取时间最新的文档，其次选择 token 更多的文档，最后选择 ID 最小的文档。这样既保证代表选择具有确定性，又倾向于保留更新、信息量更大的副本。
+
+```sql
+            row_number() over (
+              partition by c.cluster_id
+              order by d.crawled_at desc, f.token_count desc, d.doc_id
+            ) as rank
+```
+
+## 运行默认语料
+
+在用例目录执行 `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`。离线输入不需要网页爬虫或模型端点。这里使用 `local-fast` 是有意的：项目启动检查要求 Vane 使用进程内 Relation 路径，因为命名表位于客户端连接中。它是这个离线 fixture 的实现要求，不是公共 `local` runner 的另一个名称。每一步缩减都有明确结果：
+
+| 指标 | 默认结果 | 含义 |
+| --- | ---: | --- |
+| 输入文档 | 24 | 18 篇分组文档加 6 篇单例 |
+| 全局文档对总数 | 276 | 完整的 `n(n-1)/2` 基线 |
+| LSH 候选 | 18 | 需要精确评分的文档对减少 93.48% |
+| 确认的重复边 | 18 | 6 条完全重复、12 条近似重复 |
+| 重复簇 | 6 | 每个包含标准页面、镜像和修订版 |
+| 单例簇 | 6 | 不相关文档保持独立 |
+| 代表文档 | 12 | 每个簇保留一篇 |
+
+默认示例数据的 18 个候选全部跨域。这正是候选生成必须全局执行的原因：如果先按域名分组，所有预期重复文档都会被漏掉。
+
+主要发布产物是 `deduped_documents.parquet`；辅助产物解释每篇代表文档是怎样被选中的：
+
+| 输出 | 用途 |
+| --- | --- |
+| `fingerprinted.parquet` | 规范化文本、`shingle`、MinHash 签名和 LSH band |
+| `candidate_summary.csv` | 全局文档对基线、候选数量和缩减率 |
+| `scored_pairs.parquet` | 每个候选的精确与近似分数 |
+| `duplicate_pairs.csv` | 确认的重复边和判定原因 |
+| `clusters.csv` | 每篇输入文档的簇归属 |
+| `cluster_inspection.csv` | 多成员簇的复核视图 |
+| `deduped_documents.parquet` | 选出的 12 篇代表文档 |
+| `manifest.json` | 来源分类、算法参数、计数和后端 |
+
+## 适配真实网页语料
+
+- 提供包含 `doc_id`、`source`、`domain`、`crawled_at`、`title` 和 `body` 的 CSV 或 Parquet；如果输入带有 WARC 来源追踪列，处理流程会保留它们。
+- 用真实语料中的已标注文档对评估 `shingle` 大小、LSH band 和 Jaccard 阈值。LSH 可能漏掉从未共享 `band` 的真实重复文档；精确评分则会在创建图边前过滤假阳性候选。
+- 镜像可能跨站时应保持全局候选生成；只有在域名确实是业务边界时才用它限制比较范围。
+- 可选 Common Crawl 输入读取固定的 WARC 字节范围，并把 HTML 块抽取成相同的基础列，因此后续指纹和聚类阶段无需改变。
+
+可选 Common Crawl 数据源、band 展开、全部诊断 Relation、产物写出逻辑和示例数据请查看[完整用例](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication)。

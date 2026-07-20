@@ -1,0 +1,232 @@
+---
+title: Working with Common Crawl
+---
+
+Common Crawl is useful for search, retrieval, and model-training pipelines, but its WET files still need to be decoded, filtered, and divided into model-sized units. This tutorial follows [`examples/common_crawl.py`](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) from raw WARC-shaped records to page, chunk, and embedding outputs.
+
+The default path is deliberately small and offline-friendly. It uses built-in records with the same columns as the real WET path, so the transformation stages stay identical when you later point the script at a local file or URL.
+
+The pipeline has five stages:
+
+1. Load sample records, a local WET/WARC file, or a WET URL.
+2. Keep conversion records and decode their content.
+3. Read the detected language from the WARC headers and keep the requested language.
+4. Split each page into bounded sentence chunks.
+5. Generate embeddings and write inspectable outputs.
+
+## 1. Choose a source
+
+Source selection is isolated in one function. The real-data branches validate their required argument, parse the WET bytes, and then construct the same Relation schema used by the sample branch.
+
+```python
+def load_source_relation(conn: Any, args: argparse.Namespace) -> Any:
+    if args.source == "sample":
+        return sample_relation(conn, args.limit)
+    if args.source == "wet-file":
+        if not args.wet_path:
+            raise SystemExit("--wet-path is required when --source wet-file.")
+        return wet_relation(conn, read_wet_file(args.wet_path, args.limit))
+    if args.source == "wet-url":
+        if not args.wet_url:
+            raise SystemExit("--wet-url is required when --source wet-url.")
+        return wet_relation(conn, read_wet_url(args.wet_url, args.limit))
+    raise ValueError(f"Unsupported source: {args.source}")
+```
+
+Both compressed and uncompressed WET inputs are supported. The parser separates the WARC header block from the content, captures the standard record metadata, and stops at the requested limit.
+
+## 2. Decode and filter pages
+
+`DecodeWarcBatch` is the boundary between binary WARC data and typed page rows. It decodes content as UTF-8, parses the JSON header representation, and returns an Arrow table with a narrow, explicit schema.
+
+```python
+class DecodeWarcBatch:
+    """Decode WARC content bytes and parse WARC headers."""
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        record_ids = batch["WARC-Record-ID"].to_pylist()
+        target_uris = batch["WARC-Target-URI"].to_pylist()
+        dates = batch["WARC-Date"].to_pylist()
+        lengths = batch["Content-Length"].to_pylist()
+        content_values = batch["warc_content"].to_pylist()
+        header_values = batch["warc_headers"].to_pylist()
+
+        texts = []
+        languages = []
+        for content, raw_headers in zip(content_values, header_values, strict=True):
+            try:
+                text = bytes(content or b"").decode("utf-8")
+            except UnicodeDecodeError:
+                text = None
+            try:
+                headers = json.loads(raw_headers or "{}")
+            except json.JSONDecodeError:
+                headers = {}
+            languages.append(str(headers.get("WARC-Identified-Content-Language") or ""))
+            texts.append(text)
+
+        return pa.table(
+            {
+                "record_id": pa.array(record_ids, type=pa.string()),
+                "target_uri": pa.array(target_uris, type=pa.string()),
+                "warc_date": pa.array(dates, type=pa.string()),
+                "content_length": pa.array(lengths, type=pa.int64()),
+                "language": pa.array(languages, type=pa.string()),
+                "text": pa.array(texts, type=pa.string()),
+            }
+        )
+```
+
+The orchestration first removes non-conversion records with SQL, then applies the UDF and performs the language filter. Keeping those filters outside the Python loop makes the data contract of each stage easy to inspect.
+
+```python
+    conn = vane.connect()
+    rel = load_source_relation(conn, args)
+    filtered = rel.query(
+        "cc",
+        """
+        select *
+        from cc
+        where "WARC-Type" = 'conversion'
+        """,
+    )
+
+    decoder = DecodeWarcBatch()
+    pages = filtered.map_batches(
+        decoder.__call__,
+        schema={
+            "record_id": duckdb.sqltypes.VARCHAR,
+            "target_uri": duckdb.sqltypes.VARCHAR,
+            "warc_date": duckdb.sqltypes.VARCHAR,
+            "content_length": duckdb.sqltypes.BIGINT,
+            "language": duckdb.sqltypes.VARCHAR,
+            "text": duckdb.sqltypes.VARCHAR,
+        },
+        batch_size=args.batch_size,
+    ).query(
+        "pages",
+        f"""
+        select *
+        from pages
+        where text is not null
+          and language = {sql_literal(args.language)}
+        """,
+    )
+```
+
+## 3. Create embedding-sized chunks
+
+Sentence splitting normalizes whitespace and prefers punctuation boundaries. A second helper divides any overlong sentence at a nearby space. The batch UDF preserves the source identity and assigns a monotonically increasing chunk ID within each page.
+
+```python
+def regex_sentences(text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return []
+    pieces = re.split(r"(?<=[.!?])\s+", normalized)
+    return [piece.strip() for piece in pieces if piece.strip()]
+
+
+def split_long_text(text: str, max_chars: int) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + max_chars)
+        if end < len(text):
+            split_at = text.rfind(" ", start, end)
+            if split_at > start + max_chars // 2:
+                end = split_at
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+    return chunks
+
+
+class ChunkTextBatch:
+    """Split decoded web page text into embedding-sized chunks."""
+
+    def __init__(self, *, max_doc_chars: int, max_chunk_chars: int):
+        self.max_doc_chars = max_doc_chars
+        self.max_chunk_chars = max_chunk_chars
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        output = {
+            "record_id": [],
+            "target_uri": [],
+            "warc_date": [],
+            "language": [],
+            "chunk_id": [],
+            "text": [],
+        }
+
+        rows = batch.to_pylist()
+        for row in rows:
+            text = str(row["text"] or "")
+            if self.max_doc_chars and len(text) > self.max_doc_chars:
+                text = text[: self.max_doc_chars]
+
+            sentence_id = 0
+            for sentence in regex_sentences(text):
+                for chunk in split_long_text(sentence, self.max_chunk_chars):
+                    output["record_id"].append(row["record_id"])
+                    output["target_uri"].append(row["target_uri"])
+                    output["warc_date"].append(row["warc_date"])
+                    output["language"].append(row["language"])
+                    output["chunk_id"].append(sentence_id)
+                    output["text"].append(chunk)
+                    sentence_id += 1
+
+        return pa.table(
+            {
+                "record_id": pa.array(output["record_id"], type=pa.string()),
+                "target_uri": pa.array(output["target_uri"], type=pa.string()),
+                "warc_date": pa.array(output["warc_date"], type=pa.string()),
+                "language": pa.array(output["language"], type=pa.string()),
+                "chunk_id": pa.array(output["chunk_id"], type=pa.int64()),
+                "text": pa.array(output["text"], type=pa.string()),
+            }
+        )
+```
+
+The default document cap is 1,000 characters and the default chunk cap is 1,024 characters. These are tutorial-sized values, not universal production settings; tune them for your source quality and embedding model.
+
+## 4. Generate embeddings
+
+The example uses Vane's Transformers provider. Because the AI function returns its output Relation separately, `append_embedding` validates row counts and the expected column before attaching embeddings to the original chunk rows.
+
+```python
+    embedded_table = None
+    if not args.skip_embeddings:
+        embedded_only = embed_text(
+            chunks,
+            "text",
+            provider="transformers",
+            model=args.embedding_model_id,
+            output_column="embedding",
+            max_chunk_chars=args.max_chunk_chars,
+            batch_size=args.embedding_batch_size,
+        )
+        embedded_table = append_embedding(chunks_table, embedded_only)
+```
+
+The model defaults to Sentence Transformers' `all-MiniLM-L6-v2`. Use the local-files-only option when the model is already cached and the worker must not contact Hugging Face. You can also skip this stage to inspect WARC decoding and chunking without model dependencies.
+
+## 5. Inspect the outputs
+
+The default output directory contains:
+
+- `filtered_pages.csv`, with page metadata and a text preview;
+- `chunks.csv`, with one row per text chunk;
+- `chunk_embeddings.parquet`, with the full embedding values when embedding is enabled;
+- `chunk_embeddings.csv`, with embedding dimensions instead of the full vectors for quick inspection.
+
+The script prints the number of source records, decoded pages, chunks, and embedding dimensions, then shows a bounded Relation preview. If no page matches the requested language or no chunk is produced, it raises an error before writing an empty result.
+
+## Scaling the same pipeline
+
+The script materializes each Relation through Vane's configured runner. Use `VANE_RUNNER=local` while validating schemas locally, or leave it unset and configure `RAY_ADDRESS` for Ray execution. The source-loading and output contracts do not change.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) for every argument and the WET parser implementation.

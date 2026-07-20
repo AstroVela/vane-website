@@ -1,0 +1,241 @@
+---
+title: 语音 AI 分析
+---
+
+音频被转换为带时间戳、类型明确的数据行后，会更容易搜索和分析。加载音频后，本教程沿着 [`examples/voice_ai_analytics.py`](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) 完成四个处理阶段：转写音频、总结每条转录文本、把片段展开为字幕行，再为片段文本生成检索嵌入。
+
+两条执行路径共享相同的数据契约：
+
+- 默认样例路径生成短 WAV 音调，并配上确定性的预设转录文本。
+- 真实路径读取本地音频文件，并用 Faster-Whisper 转写。
+
+摘要也可以选择本地或 OpenAI。本地选项会截断转录文本，并明确标记“未生成翻译”；OpenAI 选项则请求摘要与翻译后的摘要。
+
+## 1. 加载音频字节
+
+样例 Relation 包含行 ID、逻辑路径、WAV 字节和预设转录文本。对于真实输入，glob Relation 把匹配文件读成二进制值，并从各文件后缀推导音频格式。因此，两条路径会把相同的列送入转写 UDF。
+
+```python
+def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
+    paths = sorted(glob.glob(audio_glob))[:limit]
+    if not paths:
+        raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
+
+    rows = [
+        {
+            "id": i,
+            "path": path,
+            "audio_format": Path(path).suffix.lstrip(".").lower() or "audio",
+            "audio_bytes": Path(path).read_bytes(),
+            "fallback_transcript": f"Audio file {Path(path).name} is ready for transcription.",
+        }
+        for i, path in enumerate(paths)
+    ]
+    return relation_from_dicts(
+        conn,
+        rows,
+        {
+            "id": "BIGINT",
+            "path": "VARCHAR",
+            "audio_format": "VARCHAR",
+            "audio_bytes": "BLOB",
+            "fallback_transcript": "VARCHAR",
+        },
+    )
+```
+
+文件数量上限会在读取字节之前应用，使本地探索保持在可控范围内。
+
+## 2. 转写每个批次
+
+占位路径按近似句子边界切分预设转录文本，并均匀分配时间戳。它让你无需加载语音模型，就能稳定验证下游 schema。
+
+```python
+def split_segments(text: str, *, duration_seconds: float = 12.0) -> list[dict[str, Any]]:
+    pieces = [piece.strip() for piece in re.split(r"(?<=[.!?])\s+", text.strip()) if piece.strip()]
+    if not pieces and text.strip():
+        pieces = [text.strip()]
+    if not pieces:
+        pieces = ["No speech was detected."]
+
+    step = duration_seconds / max(1, len(pieces))
+    return [
+        {
+            "id": i,
+            "start": round(i * step, 2),
+            "end": round((i + 1) * step, 2),
+            "text": piece,
+        }
+        for i, piece in enumerate(pieces)
+    ]
+```
+
+真实路径把每个字节值写入临时文件，调用 Faster-Whisper 进行带语音活动检测和词级时间戳的批量推理，再把返回的迭代器转换为可 JSON 序列化的片段字典。
+
+```python
+    def _transcribe_with_whisper(
+        self,
+        audio_bytes: bytes,
+        audio_format: str,
+    ) -> dict[str, Any]:
+        pipe = self._load_pipe()
+        suffix = "." + re.sub(r"[^A-Za-z0-9]+", "", audio_format or "wav")
+        with tempfile.NamedTemporaryFile(suffix=suffix) as audio_file:
+            audio_file.write(audio_bytes)
+            audio_file.flush()
+            segments_iter, info = pipe.transcribe(
+                audio_file.name,
+                language=self.language,
+                vad_filter=self.vad_filter,
+                vad_parameters={
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 200,
+                },
+                word_timestamps=True,
+                without_timestamps=False,
+                temperature=0,
+                batch_size=self.whisper_batch_size,
+            )
+
+            segments = []
+            for i, segment in enumerate(segments_iter):
+                segments.append(
+                    {
+                        "id": int(getattr(segment, "id", i)),
+                        "start": float(getattr(segment, "start", 0.0)),
+                        "end": float(getattr(segment, "end", 0.0)),
+                        "text": str(getattr(segment, "text", "")).strip(),
+                    }
+                )
+            transcript = " ".join(segment["text"] for segment in segments).strip()
+            duration = float(getattr(info, "duration", 0.0) or 0.0)
+            language = str(getattr(info, "language", self.language or "") or "")
+
+        if not segments:
+            transcript = "No speech detected."
+            segments = [
+                {
+                    "id": 0,
+                    "start": 0.0,
+                    "end": round(duration, 2),
+                    "text": transcript,
+                }
+            ]
+
+        return {
+            "transcript": transcript,
+            "language": language,
+            "duration_seconds": duration,
+            "segments_json": json.dumps(segments, ensure_ascii=False),
+        }
+```
+
+Faster-Whisper 模型在首次使用后会缓存在 UDF 实例上。设备、计算类型、语言、VAD 行为、模型 ID、仅本地文件模式以及 Whisper 内部批大小，都可以与 Vane 的 Arrow 批大小独立配置。
+
+在调用处，UDF 输出被声明为每个输入音频一行。片段展开会在后续执行。
+
+```python
+    transcripts = rel.map_batches(transcriber.__call__, **map_kwargs)
+    transcript_table = collect_relation(transcripts)
+
+    summaries = summarize_rows(transcript_table, args)
+    subtitles = subtitle_rows(
+        transcript_table,
+        translated_language=args.translated_language,
+    )
+```
+
+## 3. 总结转录文本
+
+`summarize_rows` 会分派到选定的摘要后端，同时保持输出 schema 稳定。本地分支是有长度上限的文本预览。OpenAI 分支请求紧凑 JSON；如果服务端没有返回预期字段，则退回到缩短后的原始响应。
+
+```python
+def summarize_rows(table: pa.Table, args: argparse.Namespace) -> list[dict[str, Any]]:
+    rows = table.to_pylist()
+    output = []
+    for row in rows:
+        transcript = str(row["transcript"] or "")
+        if args.summary_backend == "local":
+            summary = local_summary(transcript, max_chars=args.summary_max_chars)
+            translated = f"[{args.translated_language} translation not generated] {summary}"
+        elif args.summary_backend == "openai":
+            summary, translated = openai_summary(
+                transcript,
+                model=args.openai_model,
+                translated_language=args.translated_language,
+            )
+        else:
+            raise ValueError(f"Unsupported summary backend: {args.summary_backend}")
+
+        output.append(
+            {
+                "id": row["id"],
+                "path": row["path"],
+                "language": row["language"],
+                "transcript": transcript,
+                "summary": summary,
+                "translated_summary": translated,
+            }
+        )
+    return output
+```
+
+摘要阶段在物化后运行并生成普通的 Python 字典，脚本稍后会再把它们转换为 Relation 以供预览。
+
+## 4. 展开字幕片段并生成嵌入
+
+片段 JSON 会展开成每个带时间戳片段一行。示例保留源 ID 与路径、片段 ID、起止时间、原文本，以及清晰标记的翻译占位文本。
+
+```python
+def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for parent in table.to_pylist():
+        segments = json.loads(parent["segments_json"] or "[]")
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            rows.append(
+                {
+                    "id": int(parent["id"]),
+                    "path": str(parent["path"]),
+                    "segment_id": int(segment.get("id", len(rows))),
+                    "start": float(segment.get("start", 0.0)),
+                    "end": float(segment.get("end", 0.0)),
+                    "text": text,
+                    "translated_text": (f"[{translated_language} translation not generated] {text}"),
+                }
+            )
+    if not rows:
+        raise RuntimeError("No subtitle segments were produced.")
+    return rows
+```
+
+随后，Vane 的 Transformers provider 为原始片段文本生成嵌入。与其他嵌入示例相同，辅助函数会在接回嵌入之前验证行数和输出列。
+
+```python
+    subtitle_rel = relation_from_dicts(conn, subtitles)
+    embedded_only = embed_text(
+        subtitle_rel,
+        "text",
+        provider="transformers",
+        model=args.embedding_model_id,
+        output_column="embedding",
+        batch_size=args.embedding_batch_size,
+    )
+    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
+```
+
+## 5. 检查输出
+
+默认输出目录包含：
+
+- `summaries.csv`：包含转录文本、摘要和翻译摘要字段；
+- `subtitles.csv`：每个带时间戳片段一行；
+- `segment_embeddings.csv`：包含源标识、时间戳、文本和嵌入维度。
+
+终端会报告音频行数与字幕行数，再分别预览摘要行和已嵌入的片段行。完整向量保留在内存结果中，但 CSV 刻意只记录维度。
+
+## 扩展与模型部署
+
+转写与嵌入仍有各自的批大小控制，而整条 Relation 工作流会通过 Vane 配置的 runner 物化。使用 GPU 语音识别时，需要传入 GPU 资源请求，并确保每个 worker 都能导入可选依赖、访问模型缓存或模型路径。
+
+样例 WAV 生成、OpenAI 摘要提示、模型加载错误信息以及全部参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py)。

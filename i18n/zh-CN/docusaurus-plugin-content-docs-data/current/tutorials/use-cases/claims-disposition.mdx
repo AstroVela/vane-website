@@ -1,0 +1,260 @@
+---
+title: 基于多模态证据的理赔处置
+---
+
+车辆理赔资料通常分布在多个系统中：结构化报案记录位于 PostgreSQL，车损照片和证明材料位于 MinIO。本教程沿着 `claims-disposition` 用例，把这些输入变成每个理赔案件一条可复核的工作流建议。
+
+用例源码：[AstroVela/demo-scene/claims-disposition](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition)。
+
+这个用例围绕理赔团队需要回答的问题展开：材料是否齐全，证明文件是否清晰可读，照片究竟显示了什么，以及现有证据适合进入赔付流程、补充材料，还是交给查勘员复核。流程刻意把“读取证据”和“给出处置建议”分开：OCR 与 AI 只报告事实，明确的 SQL 业务规则负责形成建议。
+
+| 业务环节 | 要回答的问题 | Vane 如何支持 |
+| --- | --- | --- |
+| 整理报案材料 | 哪些文件属于这个案件，必需材料是否齐全？ | SQL Relation 展开 `materials_json`，并持续保留案件与文件身份 |
+| 读取证明文件 | 案件编号、申请人姓名和出险日期能否可靠识别？ | 有状态 OCR UDF（`@vane.cls`）跨文件复用对象存储客户端和 OCR 引擎 |
+| 分析车损照片 | 车辆是否清晰可见，是否有损伤，哪些部位受到影响？ | Vane AI API 抽取范围明确的视觉事实，但不决定案件结果 |
+| 筛选可信证据 | 对象、文件、照片和模型回答是否达到使用要求？ | 无状态 UDF（`@vane.func`）对每行应用一致、可重复的检查 |
+| 建议下一步动作 | 应当补材料、人工复核、进入拒赔复核，还是进入赔付流程？ | SQL 汇总全部证据，并按固定业务优先级应用处置规则 |
+
+业务流程可以概括为 `汇集报案材料 → 读取证明文件 → 分析照片证据 → 核对全部事实 → 建议下一步动作`。小批量在本地运行、大批量在 Ray 上运行时，输入、证据标准和输出都保持一致；部署方式改变的是处理能力，而不是理赔政策。
+
+## 默认场景与输入
+
+示例数据规模很小，可以逐条检查，同时覆盖所有工作流结果。运行时流程只从 PostgreSQL 和 MinIO 读取；仓库内的示例数据文件只用于在流程开始前初始化这两个服务。
+
+| 来源 | 数据粒度 | 提供的内容 |
+| --- | --- | --- |
+| PostgreSQL `claims` 表 | 每个理赔案件一行 | 案件 ID、描述、提交时间和有序 `materials_json` |
+| MinIO 车损照片 | 每个理赔案件一张 JPEG | 用于质量分析和多模态事实抽取的车辆证据 |
+| MinIO 证明材料 | 每个理赔案件一张 PNG | 供 OCR 和完整性规则使用的案件编号、申请人姓名和出险日期 |
+
+在阅读实现以前，四个理赔案件已经把策略具体化：
+
+| 案件 | 证据情况 | 预期建议 |
+| --- | --- | --- |
+| `CLM-APPROVE` | 材料完整，并有清晰的轻微车损 | `approve_for_payment` |
+| `CLM-DENY` | 材料完整，但照片未显示明显损伤 | `deny_claim` |
+| `CLM-MISSING` | 证明表单存在，但申请人姓名为空 | `request_more_materials` |
+| `CLM-REVIEW` | 材料完整，但照片中的损伤情况仍不明确 | `manual_review` |
+
+## 1. 从证明材料中提取可核验的案件信息
+
+开始评估案件之前，理赔人员首先要确认申请表存在、内容可读，而且确实属于当前案件。处理流程会保留案件与材料标识，并对每份可用证明文件调用 `document_ocr_json(bucket, object_key)`。无论工作负载采用哪种部署方式，每份文件都会经过同一套 OCR 处理。
+
+有状态 `@vane.cls` 函数在遇到第一份可用文件时才创建 RapidOCR，之后继续复用同一个引擎和 MinIO 客户端。这样无需为每份文件重复初始化模型，也能高效处理更大的材料批次：
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="document_ocr_json",
+    gpus=0,
+)
+class DocumentOcrActor:
+    def __init__(self, minio_config: MinioConfig, engine_factory=None) -> None:
+        self.store = MinioStore(minio_config)
+        self._engine_factory = engine_factory or _build_rapidocr
+        self.engine = None
+```
+
+`int_claim_document_ocr_udf` SQL 只选择已存在的 PNG 证明材料，保留案件与材料键，并在 `select` 列表中调用 OCR 函数：
+
+```sql
+select
+  claim_id,
+  material_index,
+  document_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as document_ocr_json
+from int_claim_object_facts
+where object_exists
+  and role = 'supporting_document'
+  and media_type = 'image/png';
+```
+
+OCR 结果始终与可信的案件和材料标识保存在一起，随后再与对象哈希、照片质量、单证字段和单证质量结果关联。SQL 把这些逐文件事实汇总为每个案件一行，统计必需材料和可用材料，并且只把合格照片送入视觉分析。本地模式读取预先计算的 OCR 结果，Ray 模式直接调用有状态 Actor；两种模式为案件保留的证据完全一致。
+
+## 2. 判断车损照片实际提供了哪些证据
+
+只有照片本身可用、画面证据足够清晰时，它才应当影响案件处置。对每张经过验证的图像，流程会结合图像字节、案件描述和照片质量信息，只询问一组范围明确的问题。在 Ray 模式下，这个请求通过 `vane.ai.prompt` AI Function 发出：
+
+```python
+        result = vane.ai.prompt(
+            relation,
+            "prompt_text",
+            image_columns=["image_bytes"],
+            provider="openai",
+            model=config.ai.model,
+            provider_options=provider_options,
+            prompt_options=prompt_options,
+            system_message=DAMAGE_SYSTEM_MESSAGE,
+            output_column="raw_damage_response",
+            num_gpus=0,
+        )
+```
+
+模型需要抽取的内容包括画面中是否有车辆、目标车辆是否清晰、是否存在可见损伤、受损部位、损伤类型、严重程度提示、置信度以及证据局限。案件 ID、文件 ID、照片顺序和图像哈希来自可信的案件记录，不由模型生成。本地 provider 路径和 Ray AI Function 会产生相同的事实表。最重要的是，模型不会返回理赔处置结论：它只描述证据，下一步动作由理赔规则决定。
+
+## 3. 把模型回答转换成可信的案件事实
+
+AI 回答还不能直接作为理赔规则使用的证据。原始模型 JSON 不会进入处置规则；一个无状态 `@vane.func` 会把每条响应重新绑定到案件、文件和内容哈希，并按照严格的车损结果格式完成规范化：
+
+```python
+@vane.func(return_dtype="VARCHAR", name="photo_damage_result_json")
+def photo_damage_result_json(
+    raw_response: str,
+    claim_id: str,
+    file_id: str,
+    sha256: str,
+) -> str:
+    return parse_photo_damage_result(raw_response, claim_id, file_id, sha256)
+```
+
+`int_claim_damage_validation_inputs` 先把每条响应绑定到可信的案件、文件、顺序和 SHA-256。随后，SQL 直接调用这个无状态 UDF，保证每张照片都经过同样的校验：
+
+```sql
+create or replace table int_claim_damage_validation_udf as
+-- Normalize each untrusted model response through a direct Runner SQL UDF call.
+select
+  claim_id,
+  file_id,
+  file_order,
+  photo_sha256,
+  photo_quality_json,
+  raw_damage_response,
+  photo_damage_result_json(
+    coalesce(raw_damage_response, ''),
+    claim_id,
+    file_id,
+    photo_sha256
+  ) as damage_result_json
+from int_claim_damage_validation_inputs;
+```
+
+后续纯 SQL Relation 解析规范化 JSON，并导出处置策略使用的两个窄范围输入。支持存在损伤的结果要求结论确定、置信度充足、具有明确视觉依据，并且是轻度或中度损伤；支持没有损伤的结果要求相同的证据质量，并且明确不存在可见损伤：
+
+```sql
+classified_photo_results as (
+  -- Accept only determinate, high-confidence positive or negative findings.
+  select
+    *,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and coalesce(damage_visible, false)
+      and meaningful_damaged_parts
+      and meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('minor', 'moderate') as positive_damage_result,
+    model_status = 'success'
+      and coalesce(finding_determinate, false)
+      and damage_confidence >= 0.80
+      and coalesce(vehicle_visible, false)
+      and coalesce(target_vehicle_clear, false)
+      and not coalesce(damage_visible, false)
+      and not meaningful_damaged_parts
+      and not meaningful_damage_types
+      and blocking_uncertainty_reason_count = 0
+      and severity_hint in ('none', 'unknown') as negative_damage_result
+  from classified_photo_inputs
+),
+```
+
+无状态 UDF 让每条模型回答符合统一的证据格式，可检查的 SQL 再判断置信度和视觉依据是否达到业务阈值。对一个案件的全部可用照片综合判断，还能发现“存在损伤”和“没有损伤”的证据冲突，避免某一张照片悄悄覆盖其他照片。
+
+## 4. 按理赔业务优先级形成处置建议
+
+证明文件和照片事实通过质量检查后，流程会从整个案件出发，而不是根据某一个文件下结论。`int_claim_damage_facts` 汇总全部可用照片，并标出处理失败、不确定性、高严重度风险和相互矛盾的证据。决策 SQL 再评估四种可能建议：材料缺失或不可用时进入 `request_more_materials`；存在不确定性、冲突或较高风险时进入 `manual_review`；只有材料完整、照片结论内部一致的案件，才可能进入拒赔或通过建议。
+
+```sql
+candidate_rules as (
+  -- Group signals into the four possible disposition candidates.
+  select
+    *,
+    (
+      unsupported_or_invalid_material
+      or missing_required_photo
+      or missing_required_document
+      or photo_unreadable
+      or photo_quality_too_low
+      or document_field_unreadable
+      or model_input_unusable
+    ) as request_materials_candidate,
+    (
+      model_output_failed
+      or damage_model_uncertain
+      or vehicle_not_visible
+      or target_vehicle_unclear
+      or damage_has_uncertainty
+      or high_severity_risk
+      or conflicting_damage_results
+    ) as manual_review_signal,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and negative_damage_result_count = usable_photo_count
+      and positive_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as deny_candidate,
+    (
+      required_materials_present
+      and model_input_usable
+      and model_was_run
+      and all_model_results_successful
+      and model_result_count = usable_photo_count
+      and successful_model_result_count = usable_photo_count
+      and positive_damage_result_count >= 1
+      and positive_damage_result_count = successful_model_result_count
+      and negative_damage_result_count = 0
+      and not conflicting_damage_results
+    ) as approve_candidate
+  from rule_signals
+),
+
+priority_rules as (
+  -- Apply precedence: request materials, then manual review, then deny or approve.
+  select
+    *,
+    request_materials_candidate as matches_request_more_materials,
+    not request_materials_candidate
+      and (
+        manual_review_signal
+        or (not deny_candidate and not approve_candidate)
+      ) as matches_manual_review
+  from candidate_rules
+)
+```
+
+这个明确的顺序非常重要。缺少单证但照片看起来有损伤的案件仍然需要补材料；照片互相冲突的案件仍然需要人工复核。两者都不会继续落入自动建议结果。
+
+## 5. 发布一条可供理赔人员复核的建议
+
+最终 `claim_disposition` 表中每个案件一行。它把互斥匹配标记映射成建议结果，并把解释保存在同一行：
+
+| 输出字段 | 用途 |
+| --- | --- |
+| `disposition` 和 `disposition_confidence` | 选中的工作流结果和规则分配的置信度 |
+| `primary_reason_code` 和 `reason_summary` | 按业务优先级选出的第一条可执行原因 |
+| `next_action` | 补材料、查勘员复核、拒赔复核或结算流程 |
+| `supporting_facts_json` | SQL 使用的材料计数、OCR 字段、照片质量、模型事实、冲突和风险 |
+| `created_by` 和 `decided_at` | 规则标识符或版本，以及运行时间戳 |
+
+当前项目从公共 PyPI 安装 Vane，并默认使用 `runner: local`。PostgreSQL、MinIO 和本地 Qwen 端点启动以后，在用例目录运行 `python scripts/run_demo.py e2e`。该命令会初始化四个案件和八个对象，执行真实 OCR 与多模态推理，向 PostgreSQL 发布四行结果，并验证上表中的四种预期建议。如需执行分布式 OCR Actor 和 `vane.ai.prompt` 路径，可在 `runtime.yml` 中改为 `runner: ray`；示例数据与 SQL DAG 保持不变。
+
+这些是工作流建议，不是责任认定、赔付金额计算或受监管的最终决定。这个用例可复用的业务模式，是把职责清楚地分开：OCR 与 AI 把文件转换成客观事实，无状态 UDF 拒绝格式错误或不可信的结果，SQL 综合全部证据并应用理赔政策。本地与 Ray 只是同一审核流程的两种部署方式，扩大处理规模不会产生另一套决策规则。
+
+## 适配真实理赔数据
+
+- 用真实来源替换 PostgreSQL 示例数据，同时继续保持每个案件一行和有序材料定位信息。
+- 即使替换 MinIO，也让照片和单证继续遵循相同的 S3 兼容字节契约。
+- 可以替换 OCR 引擎或多模态端点，但应保留它们的类型化事实边界。
+- 用显式、可测试的业务规则扩展决策 SQL，不要让模型提示词直接给出赔付或拒赔结论。
+
+暂存 Relation、OCR actor、提示词契约、车损聚合和发布路径的完整实现请查看[完整用例](https://github.com/AstroVela/demo-scene/tree/main/claims-disposition)。

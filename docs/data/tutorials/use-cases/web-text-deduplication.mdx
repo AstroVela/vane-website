@@ -1,0 +1,279 @@
+---
+title: Web Text Deduplication with Global LSH
+---
+
+Near-duplicate web pages are rarely byte-for-byte identical. Navigation changes, timestamps, small edits, and mirrored domains make raw hashes too strict, while comparing every pair is too expensive as a corpus grows. This tutorial follows the `web-text-deduplication` use case to build a deterministic pipeline with MinHash fingerprints, global LSH candidates, exact Jaccard verification, and graph-based clusters.
+
+Use case source: [AstroVela/demo-scene/web-text-deduplication](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication).
+
+The default fixture contains 24 documents: six three-member duplicate groups and six singletons. The pipeline reduces the 276 possible global pairs to 18 LSH candidates, accepts 18 duplicate edges, and retains 12 representative documents.
+
+Vane is useful here because batch text transforms, a corpus-wide SQL self-join, exact pair scoring, and recursive graph clustering stay in one Relation pipeline. Each intermediate Relation can also be published for tuning or review instead of hiding the decision inside a single opaque deduplication call.
+
+The algorithm has six stages:
+
+1. Normalize text and create ordered five-token shingles.
+2. Compute a 64-value MinHash signature and eight LSH band keys per document.
+3. Use a global Relation self-join to find documents sharing a band.
+4. Calculate exact shingle Jaccard for every candidate pair.
+5. Turn accepted pairs into graph edges and find connected components.
+6. Select one stable representative from each component.
+
+## Default corpus and input contract
+
+The checked-in `documents.csv` is deliberately small enough to inspect while still exercising exact duplicates, near duplicates, cross-domain matching, singleton clusters, and deterministic representative selection.
+
+| Rows | Construction | What it tests |
+| ---: | --- | --- |
+| 6 | One canonical page for each of six topics | The preferred copy in each duplicate group |
+| 6 | Mirrors with byte-identical body text on another domain | Exact cross-domain duplicates |
+| 6 | Revisions with one changed word | Near duplicates that raw hashes miss |
+| 6 | Unrelated short documents | Singleton clusters |
+
+The six topics cover billing reconciliation, incident routing, model promotion, retention policy, retrieval indexing, and support routing. Every input row has six base columns:
+
+| Column | Role |
+| --- | --- |
+| `doc_id` | Unique document identity |
+| `source` | Source classification |
+| `domain` | Domain used for cross-site diagnostics |
+| `crawled_at` | Date used by representative ranking |
+| `title` | Human-readable page title |
+| `body` | Text that is fingerprinted and compared |
+
+## 1. Normalize text into comparable shingles
+
+Normalization decomposes Unicode, removes combining marks, lowercases, maps punctuation to spaces, and collapses whitespace. The shingle function preserves token order: documents with at least five tokens use five-token windows, while a shorter document becomes one whole-document shingle.
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return " ".join(text.split())
+
+
+def token_shingles(tokens: list[str], *, size: int = SHINGLE_SIZE) -> set[str]:
+    if not tokens:
+        return set()
+    if len(tokens) < size:
+        return {" ".join(tokens)}
+    return {" ".join(tokens[idx : idx + size]) for idx in range(len(tokens) - size + 1)}
+```
+
+Using shingles instead of a token set makes local word order part of similarity. That is important for web text where two pages may share a vocabulary without actually copying the same passage.
+
+## 2. Build MinHash signatures and LSH bands
+
+Each shingle is hashed under 64 deterministic seeds. Taking the minimum value for every seed produces a compact signature whose coordinate overlap estimates set similarity. The signature is then divided into eight bands of eight values and each band is hashed into a join key.
+
+```python
+def hash_int(value: str, *, seed: int) -> int:
+    digest = hashlib.blake2b(f"{seed}:{value}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "little")
+
+
+def minhash_signature(
+    values: set[str],
+    *,
+    hashes: int = MINHASH_VALUES,
+    seed: int = MINHASH_SEED,
+) -> list[int]:
+    if not values:
+        return [0] * hashes
+    return [
+        min(hash_int(value, seed=seed + hash_index) for value in values)
+        for hash_index in range(hashes)
+    ]
+
+
+def lsh_band_keys(
+    signature: list[int], *, rows_per_band: int = LSH_ROWS_PER_BAND
+) -> list[str]:
+    if rows_per_band <= 0 or len(signature) % rows_per_band != 0:
+        raise ValueError("signature length must be divisible by rows_per_band")
+
+    keys: list[str] = []
+    for offset in range(0, len(signature), rows_per_band):
+        band_index = offset // rows_per_band
+        band_values = signature[offset : offset + rows_per_band]
+        payload = f"{band_index}:" + ",".join(str(value) for value in band_values)
+        digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=8).hexdigest()
+        keys.append(f"{band_index:03d}:{digest}")
+    return keys
+```
+
+The batch UDF produces normalized text, token and shingle statistics, a signature, and band keys for each document. Vane applies that function to the document Relation and materializes a reusable `fingerprinted` Relation:
+
+```python
+    fingerprinted_rel = conn.sql("select * from documents order by doc_id").map_batches(
+        importable_fingerprint_documents_batch(),
+        schema=FINGERPRINT_SCHEMA,
+        batch_size=args.batch_size,
+        **udf_options,
+    )
+```
+
+## 3. Generate candidates with a global Relation join
+
+The band arrays are expanded into `band_memberships`. A self-join on band number and band hash produces candidate document pairs; `left_doc_id < right_doc_id` removes self-pairs and reverse-order pair duplicates. Grouping counts how many bands each candidate shares.
+
+The join is global rather than restricted to a domain. That lets the pipeline catch syndicated or mirrored text across sites.
+
+```python
+    candidate_pairs_rel = conn.sql(
+        """
+        with candidate_ids as (
+          select
+            l.doc_id as left_doc_id,
+            r.doc_id as right_doc_id,
+            l.domain as left_domain,
+            r.domain as right_domain,
+            count(*) as shared_bands
+          from band_memberships l
+          join band_memberships r
+            on l.band_index = r.band_index
+           and l.lsh_band = r.lsh_band
+           and l.doc_id < r.doc_id
+          group by l.doc_id, r.doc_id, l.domain, r.domain
+        )
+        select
+          c.left_doc_id,
+          c.right_doc_id,
+          c.left_domain,
+          c.right_domain,
+          c.shared_bands,
+          l.shingle_set as left_shingle_set,
+          r.shingle_set as right_shingle_set,
+          l.signature as left_signature,
+          r.signature as right_signature
+        from candidate_ids c
+        join fingerprinted l on l.doc_id = c.left_doc_id
+        join fingerprinted r on r.doc_id = c.right_doc_id
+        order by c.left_doc_id, c.right_doc_id
+        """
+    )
+```
+
+LSH is a candidate generator, not the final duplicate rule. Sharing a band is enough to make a pair worth inspecting, but not enough to create a duplicate edge.
+
+## 4. Verify candidates with exact Jaccard
+
+The scoring UDF computes both exact shingle Jaccard and signature overlap. Only exact Jaccard at or above `0.7` sets `is_duplicate`; MinHash overlap remains diagnostic so approximate collisions cannot silently become accepted duplicate edges.
+
+```python
+        exact_score = jaccard(
+            row["left_shingle_set"], row["right_shingle_set"]
+        )
+        minhash_score = signature_overlap(row["left_signature"], row["right_signature"])
+        exact_match = exact_score >= SHINGLE_JACCARD_THRESHOLD
+        signature_match = minhash_score >= SIGNATURE_OVERLAP_THRESHOLD
+        is_duplicate = exact_match
+        if exact_match and signature_match:
+            reason = "jaccard_and_minhash"
+        elif exact_match:
+            reason = "jaccard_match"
+        elif signature_match:
+            reason = "minhash_only_rejected"
+        else:
+            reason = "below_jaccard_threshold"
+```
+
+This two-stage design makes the tradeoff legible: LSH controls how much of the pair space is scored, while exact Jaccard controls which pairs become duplicate edges.
+
+## 5. Build duplicate clusters as connected components
+
+Pairwise duplicates form an undirected graph. The recursive SQL adds a self-edge for every document, adds both directions for every accepted pair, computes reachability, and chooses the smallest reachable document ID as the component root.
+
+```python
+def cluster_relation_sql(conn: Any) -> Any:
+    return conn.sql(
+        """
+        with recursive
+        edges as (
+          select doc_id as src_doc_id, doc_id as dst_doc_id from documents
+          union
+          select left_doc_id as src_doc_id, right_doc_id as dst_doc_id from duplicate_pairs
+          union
+          select right_doc_id as src_doc_id, left_doc_id as dst_doc_id from duplicate_pairs
+        ),
+        reach(src_doc_id, dst_doc_id) as (
+          select src_doc_id, dst_doc_id from edges
+          union
+          select r.src_doc_id, e.dst_doc_id
+          from reach r
+          join edges e on e.src_doc_id = r.dst_doc_id
+        ),
+        components as (
+          select src_doc_id as doc_id, min(dst_doc_id) as root_doc_id
+          from reach
+          group by src_doc_id
+        ),
+        cluster_sizes as (
+          select root_doc_id, count(*) as cluster_size
+          from components
+          group by root_doc_id
+        )
+        select
+          'cluster-' || c.root_doc_id as cluster_id,
+          c.doc_id,
+          cs.cluster_size
+        from components c
+        join cluster_sizes cs using (root_doc_id)
+        order by cluster_id, c.doc_id
+        """
+    )
+```
+
+Connected components matter when duplicates are transitive. If A matches B and B matches C, all three belong to one duplicate cluster even when A and C were never direct LSH candidates.
+
+## 6. Select one representative per cluster
+
+The final ranking prefers the most recently crawled document, then the one with more tokens, then the smallest document ID. This makes representative selection deterministic while favoring a recent, information-rich copy.
+
+```sql
+            row_number() over (
+              partition by c.cluster_id
+              order by d.crawled_at desc, f.token_count desc, d.doc_id
+            ) as rank
+```
+
+## Run the default corpus
+
+From the use-case directory, run `VANE_RUNNER=local-fast .venv/bin/python src/web_text_deduplication.py`. The offline path needs no crawler or model endpoint. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner. The results make every reduction step concrete:
+
+| Metric | Default result | Interpretation |
+| --- | ---: | --- |
+| Input documents | 24 | 18 grouped documents plus 6 singletons |
+| Possible global pairs | 276 | The full `n(n-1)/2` baseline |
+| LSH candidates | 18 | 93.48% fewer pairs require exact scoring |
+| Accepted edges | 18 | 6 exact and 12 near-duplicate pairs |
+| Duplicate clusters | 6 | Each contains a canonical page, mirror, and revision |
+| Singleton clusters | 6 | Unrelated documents remain independent |
+| Representatives | 12 | One retained document per cluster |
+
+All 18 candidate pairs cross domains in the default fixture. That is why candidate generation is global: grouping by domain first would miss every intended duplicate.
+
+The primary release is `deduped_documents.parquet`; the supporting outputs explain how each representative was chosen:
+
+| Output | Purpose |
+| --- | --- |
+| `fingerprinted.parquet` | Normalized text, shingles, signatures, and LSH bands |
+| `candidate_summary.csv` | Global pair baseline, candidate count, and reduction |
+| `scored_pairs.parquet` | Exact and approximate scores for each candidate |
+| `duplicate_pairs.csv` | Accepted graph edges and decision reasons |
+| `clusters.csv` | Cluster membership for every input document |
+| `cluster_inspection.csv` | Review view for multi-member clusters |
+| `deduped_documents.parquet` | The 12 selected representatives |
+| `manifest.json` | Source classification, algorithm settings, counts, and backends |
+
+## Adapt the pattern
+
+- Supply a CSV or Parquet file with `doc_id`, `source`, `domain`, `crawled_at`, `title`, and `body`; optional WARC lineage columns are preserved when present.
+- Evaluate shingle size, LSH bands, and the Jaccard threshold against labeled pairs from your corpus. LSH can miss a true duplicate that never shares a band, while exact scoring filters false-positive candidates before graph-edge creation.
+- Keep candidate generation global when mirrors can cross sites. Use domain only as a diagnostic or an intentional business boundary.
+- The optional Common Crawl path reads pinned WARC byte ranges and extracts HTML blocks into the same base columns, so the fingerprinting and clustering stages remain unchanged.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication) for the optional Common Crawl source, band expansion, all diagnostic Relations, artifact writers, and fixture data.

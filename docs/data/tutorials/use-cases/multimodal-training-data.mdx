@@ -1,0 +1,225 @@
+---
+title: Building a Multimodal Training Release
+---
+
+A training-data release needs one consistent, queryable schema even when its source assets are documents, images, audio clips, and plain text. This tutorial follows the `multimodal-training-data` use case to turn those four modalities into a typed feature table, a release dataset, and a reviewable rejection set.
+
+Use case source: [AstroVela/demo-scene/multimodal-training-data](https://github.com/AstroVela/demo-scene/tree/main/multimodal-training-data).
+
+The default catalog contains five version-pinned, publicly sourced assets. Four pass the release policy; one low-resolution SVG is rejected. The example is intentionally about the data pipeline rather than model training. Vane lets each modality use the right Python batch processor, then brings all branches back into one typed Relation for release policy, summaries, and writers.
+
+The pipeline:
+
+1. Reads the asset catalog into one source Relation.
+2. Filters that Relation into one branch per modality.
+3. Parses every branch with a typed batch UDF.
+4. Unions compatible feature rows into one table.
+5. Uses Relation filters and aggregations to produce accepted, rejected, and summary artifacts.
+
+## Default assets and input contract
+
+`training_assets.csv` has one row per source asset. Each row identifies the modality, source URI, license, dataset split, MIME type, local payload path, expected content hash, optional text, and modality metadata.
+
+| Record | Modality and source | Purpose | Default result |
+| --- | --- | --- | --- |
+| `arrow-project-readme` | Apache Arrow Markdown document | Document decoding and line counting | Accepted |
+| `arrow-python-readme` | Apache Arrow Markdown text | Whitespace normalization and token counting | Accepted |
+| `wikimedia-generic-file` | Wikimedia 512×512 SVG | Image that passes the resolution policy | Accepted |
+| `wikimedia-download-icon` | Wikimedia 136×168 SVG | Low-resolution gate | Rejected |
+| `wikimedia-audio` | Wikimedia 2.4-second WAV | Duration and sample-rate extraction | Accepted |
+
+The files are checked into the use case with their source and license metadata, so the normal pipeline run is offline. This checked-in asset snapshot is a concrete release fixture, not a claim that these five files form a useful training dataset.
+
+## 1. Define one feature contract for every modality
+
+Each processor can produce different media metrics and feature JSON, but `build_feature_row` owns the columns shared by the release. It records content identity, size, text, token count, quality, decision, risk flags, metrics, and modality-specific features.
+
+The release policy is visible at this boundary: a missing license becomes a risk flag, and a record is accepted only when there are no flags and its quality score is at least `0.8`.
+
+```python
+def build_feature_row(
+    row: dict[str, Any],
+    *,
+    payload: bytes,
+    content_text: str,
+    flags: list[str],
+    quality_score: float,
+    metrics: dict[str, int | float | None],
+    features: dict[str, Any],
+) -> dict[str, Any]:
+    if not str(row.get("license_id") or "").strip():
+        flags.append("missing_license")
+    quality_score = round(max(0.0, quality_score - 0.25 * ("missing_license" in flags)), 3)
+    decision = "accepted" if not flags and quality_score >= 0.8 else "rejected"
+    return {
+        "record_id": row["record_id"],
+        "modality": row["modality"],
+        "source_uri": row["source_uri"],
+        "license_id": row.get("license_id") or "",
+        "split": row["split"],
+        "mime_type": row["mime_type"],
+        "content_text": content_text,
+        "content_sha256": hashlib.sha256(payload).hexdigest(),
+        "byte_size": len(payload),
+        "token_count": len(tokenize(content_text)),
+        "quality_score": quality_score,
+        "decision": decision,
+        "risk_flags": flags,
+        "media_metrics": metrics,
+        "feature_json": json.dumps(features, sort_keys=True),
+    }
+```
+
+Keeping the decision on every feature row is useful: the full feature table can explain the release, while the release itself remains a simple filtered Relation.
+
+## 2. Extract modality-specific features
+
+Every function returns through the same builder, so media-specific logic cannot accidentally change the tabular contract.
+
+| Modality | Current parser | Main rejection signals |
+| --- | --- | --- |
+| `document` | Decode UTF-8 and count lines | Invalid UTF-8 or empty content |
+| `text` | Decode UTF-8, collapse whitespace, and count tokens | Invalid UTF-8 or fewer than four tokens |
+| `image` | Parse SVG XML and read dimensions or `viewBox` | Invalid image, missing dimensions, or below 512×512 |
+| `audio` | Read PCM WAV sample rate and frames | Invalid audio or shorter than 0.005 seconds |
+
+The image branch shows the modality boundary in full. It derives media metrics and flags locally, then returns through the shared release contract.
+
+```python
+def process_image(row: dict[str, Any]) -> dict[str, Any]:
+    payload = decode_payload(row)
+    flags: list[str] = []
+    metrics = empty_metrics()
+    image_format = "unknown"
+    if row["mime_type"] == "image/svg+xml":
+        try:
+            width, height = svg_dimensions(payload)
+            image_format = "svg"
+            metrics["width"] = width
+            metrics["height"] = height
+            if not width or not height:
+                flags.append("missing_dimensions")
+            elif width < 512 or height < 512:
+                flags.append("low_resolution")
+        except ET.ParseError:
+            flags.append("invalid_image")
+    else:
+        flags.append("invalid_image")
+
+    return build_feature_row(
+        row,
+        payload=payload,
+        content_text=str(row.get("text") or ""),
+        flags=flags,
+        quality_score=1.0 - 0.5 * len(flags),
+        metrics=metrics,
+        features={
+            "metadata": json.loads(row["metadata_json"] or "{}"),
+            "format": image_format,
+        },
+    )
+```
+
+These are deliberately lightweight processors. The extensible part of the example is the boundary: a richer PDF parser, image decoder, speech model, or language detector can replace a branch while continuing to return the same feature schema.
+
+## 3. Run one typed branch per modality
+
+The orchestrator filters the source Relation by modality and assigns the matching importable batch function. `map_batches` applies the shared schema to every branch, and `union` reconstructs one multimodal feature Relation.
+
+```python
+def build_feature_relations(
+    conn: Any,
+    raw_assets: Any,
+    args: argparse.Namespace,
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    udf_options = batch_udf_options(args.execution_backend)
+    stage_functions = {
+        "document": "process_document_batch",
+        "image": "process_image_batch",
+        "audio": "process_audio_batch",
+        "text": "process_text_batch",
+    }
+    relations: list[Any] = []
+    backend_metadata: dict[str, dict[str, Any]] = {}
+    for modality in SUPPORTED_MODALITIES:
+        source = raw_assets.filter(f"modality = '{modality}'").order("record_id")
+        relations.append(
+            source.map_batches(
+                importable_batch_function(stage_functions[modality]),
+                schema=TRAINING_FEATURE_SCHEMA,
+                batch_size=args.batch_size,
+                **udf_options,
+            )
+        )
+        backend_metadata[f"process_{modality}"] = backend_metadata_entry(args.execution_backend)
+
+    features = relations[0]
+    for relation in relations[1:]:
+        features = features.union(relation)
+    return features, backend_metadata
+```
+
+The execution backend changes how the batch functions run, not how the four branches are filtered, unioned, or queried afterward.
+
+## 4. Split the release from the review set
+
+Once all modalities share a schema, publication becomes ordinary relational work. Released records are ordered by split and modality; rejected records are ordered for review; the summary groups quality and decision counts by modality.
+
+```python
+    training_release_rel = feature_records.filter("decision = 'accepted'").order(
+        "split, modality, record_id"
+    )
+    conn.sql("drop table if exists training_release")
+    training_release_rel.to_table("training_release")
+    training_release = conn.sql("select * from training_release")
+
+    rejected_records_rel = feature_records.filter("decision = 'rejected'").order(
+        "quality_score, modality, record_id"
+    )
+    conn.sql("drop table if exists rejected_records")
+    rejected_records_rel.to_table("rejected_records")
+    rejected_records = conn.sql("select * from rejected_records")
+
+    modality_summary_rel = feature_records.aggregate(
+        """
+        modality,
+        count(*) as records,
+        sum(byte_size) as total_bytes,
+        round(avg(quality_score), 3) as avg_quality_score,
+        sum(case when decision = 'accepted' then 1 else 0 end) as accepted,
+        sum(case when decision = 'rejected' then 1 else 0 end) as rejected
+        """
+    ).order("modality")
+```
+
+The default summary gives immediate feedback for every branch:
+
+| Modality | Input | Average quality | Released | Rejected |
+| --- | ---: | ---: | ---: | ---: |
+| `audio` | 1 | 1.000 | 1 | 0 |
+| `document` | 1 | 1.000 | 1 | 0 |
+| `image` | 2 | 0.750 | 1 | 1 |
+| `text` | 1 | 1.000 | 1 | 0 |
+
+The rejected row is `wikimedia-download-icon`: its actual 136×168 dimensions produce `low_resolution` and a quality score of `0.500`.
+
+Run the offline pipeline with `VANE_RUNNER=local-fast .venv/bin/python src/multimodal_training_data.py`. It reports five raw assets, four released records, and one rejected record. `local-fast` is deliberate here: the project startup guard requires Vane's in-process Relation path because its named tables live in the client connection. It is an implementation requirement of this offline fixture, not another name for the public `local` runner.
+
+| Output | Purpose |
+| --- | --- |
+| `feature_records.parquet` | Every accepted and rejected feature row, including flags and media metrics |
+| `training_release.parquet` | The four records that pass the example release policy |
+| `rejected_records.csv` | Rejected records and their specific reasons |
+| `modality_summary.csv` | Counts, bytes, average quality, and decisions by modality |
+| `manifest.json` | Source mode, release policy, schemas, counts, and execution backends |
+
+The full feature table is as important as the release table: it makes the release decision reproducible and gives rejected data a path back into curation instead of discarding it invisibly.
+
+## Adapt the pattern
+
+- Point `--input` at another asset manifest that preserves the catalog columns and per-asset license metadata.
+- Replace a modality processor with PDF parsing, raster decoding, ASR, or richer quality analysis while returning `TRAINING_FEATURE_SCHEMA`.
+- Keep release policy over shared columns so new media types do not require a different publication path.
+- Treat the example thresholds as versioned policy inputs; they are illustrative gates, not calibrated quality benchmarks.
+
+See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/multimodal-training-data) for the input projection, catalog of publicly sourced assets, Arrow schemas, writers, and snapshot metadata.

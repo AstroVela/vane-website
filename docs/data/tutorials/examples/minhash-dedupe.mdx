@@ -1,0 +1,276 @@
+---
+title: MinHash Text Deduplication
+---
+
+Duplicate and near-duplicate text can distort training corpora, retrieval indexes, and analytics. This tutorial follows [`examples/minhash_dedupe.py`](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py) through a complete, dependency-light deduplication pipeline: normalize text, compute MinHash signatures, use locality-sensitive hashing to generate candidate pairs, verify those pairs, and keep one representative per connected component.
+
+The script accepts built-in text blocks, a CSV file, or text extracted from local HTML files. Its default sample includes exact duplicates, punctuation and case variants, unrelated text, and short boilerplate, so you can inspect the behavior without downloading a web corpus.
+
+## How the pipeline fits together
+
+The algorithm deliberately separates two different jobs:
+
+- MinHash and LSH cheaply reduce the number of pairs that need comparison.
+- By default, exact shingle Jaccard similarity verifies candidates before they become graph edges.
+
+Connected components then make the decision transitive: if one row matches a second and the second matches a third, all three belong to the same duplicate cluster even when the first and third were never emitted as a direct pair.
+
+## 1. Normalize, shingle, and hash text
+
+Normalization decomposes Unicode characters, removes combining marks, lowercases text, replaces punctuation and underscores with spaces, and collapses whitespace. The normalized tokens become word n-grams, or shingles.
+
+```python
+def normalize_text(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def word_shingles(normalized: str, ngram_size: int) -> list[str]:
+    tokens = normalized.split()
+    if not tokens:
+        return []
+    if len(tokens) <= ngram_size:
+        return [" ".join(tokens)]
+    return [" ".join(tokens[i : i + ngram_size]) for i in range(len(tokens) - ngram_size + 1)]
+
+
+def stable_hash_u64(value: str) -> int:
+    digest = hashlib.blake2b(value.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="little") % HASH_PRIME
+
+
+def permutation_coefficients(num_hashes: int, seed: int) -> list[tuple[int, int]]:
+    rng = random.Random(seed)
+    return [
+        (
+            rng.randrange(1, HASH_PRIME - 1),
+            rng.randrange(0, HASH_PRIME - 1),
+        )
+        for _ in range(num_hashes)
+    ]
+
+
+def minhash_signature(
+    shingles: list[str],
+    coefficients: list[tuple[int, int]],
+) -> list[int]:
+    if not shingles:
+        return [0] * len(coefficients)
+
+    values = [stable_hash_u64(shingle) for shingle in set(shingles)]
+    signature = [HASH_PRIME] * len(coefficients)
+    for hashed in values:
+        for i, (a, b) in enumerate(coefficients):
+            candidate = (a * hashed + b) % HASH_PRIME
+            if candidate < signature[i]:
+                signature[i] = candidate
+    return signature
+```
+
+The random coefficients are seeded, and each shingle uses a stable BLAKE2b hash. Repeated runs with the same inputs and settings therefore produce the same signatures.
+
+## 2. Apply MinHash in a batch UDF
+
+`NormalizeMinHashBatch` computes all preprocessing fields in one pass over each Arrow batch. Signatures and shingles are JSON-encoded so the UDF can return a simple, explicit relational schema that later Python stages can consume.
+
+```python
+class NormalizeMinHashBatch:
+    """Batch UDF that normalizes text and computes MinHash signatures."""
+
+    def __init__(self, *, num_hashes: int, ngram_size: int, seed: int):
+        self.num_hashes = num_hashes
+        self.ngram_size = ngram_size
+        self.coefficients = permutation_coefficients(num_hashes, seed)
+
+    def __call__(self, batch: pa.Table) -> pa.Table:
+        node_ids = batch["node_id"].to_pylist()
+        block_ids = batch["block_id"].to_pylist()
+        blocks = [str(value or "") for value in batch["block"].to_pylist()]
+
+        normalized_values = []
+        minhash_values = []
+        shingle_values = []
+        for block in blocks:
+            normalized = normalize_text(block)
+            shingles = word_shingles(normalized, self.ngram_size)
+            normalized_values.append(normalized)
+            shingle_values.append(json.dumps(shingles, ensure_ascii=False))
+            minhash_values.append(
+                json.dumps(
+                    minhash_signature(shingles, self.coefficients),
+                    separators=(",", ":"),
+                )
+            )
+
+        return pa.table(
+            {
+                "node_id": pa.array(node_ids, type=pa.int64()),
+                "block_id": pa.array(block_ids, type=pa.string()),
+                "block": pa.array(blocks, type=pa.string()),
+                "content_normalized": pa.array(
+                    normalized_values,
+                    type=pa.string(),
+                ),
+                "minhashes_json": pa.array(minhash_values, type=pa.string()),
+                "shingles_json": pa.array(shingle_values, type=pa.string()),
+            }
+        )
+```
+
+The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF remains part of the Relation plan, which is materialized through Vane's configured runner without changing this output schema.
+
+## 3. Choose an LSH shape
+
+An LSH configuration divides each signature into bands. More bands make it easier for a pair to collide; more rows per band require a stronger match inside each band. If the caller does not provide both values, the script searches factor pairs of the signature length and minimizes the integrated false-positive and false-negative error around the requested threshold.
+
+```python
+def optimal_lsh_params(
+    threshold: float,
+    num_hashes: int,
+    *,
+    false_positive_weight: float = 0.5,
+    false_negative_weight: float = 0.5,
+) -> tuple[int, int]:
+    best_error = float("inf")
+    best = (1, num_hashes)
+    for bands in range(1, num_hashes + 1):
+        if num_hashes % bands != 0:
+            continue
+        rows_per_band = num_hashes // bands
+        fp = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=True,
+        )
+        fn = integrate_probability(
+            threshold=threshold,
+            bands=bands,
+            rows_per_band=rows_per_band,
+            false_positive=False,
+        )
+        error = fp * false_positive_weight + fn * false_negative_weight
+        if error < best_error:
+            best_error = error
+            best = (bands, rows_per_band)
+    return best
+```
+
+When supplying the shape manually, the product of bands and rows per band must equal the number of hashes.
+
+## 4. Generate and verify candidate pairs
+
+Each band slice is hashed into a bucket key. Rows that share a bucket become candidate pairs. When a bucket exceeds `max_bucket_size`, candidate expansion switches from all possible pairs to a star centered on the first node. The threshold therefore keeps pair growth linear for large boilerplate buckets instead of capping the bucket itself.
+
+```python
+def lsh_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    bands: int,
+    rows_per_band: int,
+    threshold: float,
+    exact_jaccard: bool,
+    max_bucket_size: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    buckets: dict[tuple[int, str], set[int]] = defaultdict(set)
+    minhash_by_node: dict[int, list[int]] = {}
+    shingles_by_node: dict[int, set[str]] = {}
+    block_by_node: dict[int, str] = {}
+
+    for row in rows:
+        node_id = int(row["node_id"])
+        signature = [int(value) for value in json.loads(row["minhashes_json"])]
+        minhash_by_node[node_id] = signature
+        shingles_by_node[node_id] = set(json.loads(row["shingles_json"]))
+        block_by_node[node_id] = str(row["block_id"])
+
+        for band in range(bands):
+            start = band * rows_per_band
+            end = start + rows_per_band
+            buckets[(band, band_key(signature[start:end]))].add(node_id)
+
+    raw_pairs: set[tuple[int, int]] = set()
+    bucket_rows = []
+    for (band, digest), members in buckets.items():
+        if len(members) < 2:
+            continue
+        nodes = sorted(members)
+        bucket_rows.append(
+            {
+                "band": band,
+                "bucket_hash": digest,
+                "member_count": len(nodes),
+                "members": "|".join(str(node) for node in nodes),
+            }
+        )
+        if len(nodes) > max_bucket_size:
+            rep = nodes[0]
+            raw_pairs.update((rep, node) for node in nodes[1:])
+        else:
+            raw_pairs.update(combinations(nodes, 2))
+
+    candidate_rows = []
+    for u, v in sorted(raw_pairs):
+        score = jaccard(shingles_by_node[u], shingles_by_node[v])
+        if exact_jaccard and score < threshold:
+            continue
+        candidate_rows.append(
+            {
+                "u": u,
+                "v": v,
+                "u_block_id": block_by_node[u],
+                "v_block_id": block_by_node[v],
+                "jaccard": score,
+            }
+        )
+    return candidate_rows, bucket_rows
+```
+
+Exact Jaccard verification is enabled by default. Skipping it makes bucket collisions become edges directly, which is faster but less selective.
+
+## 5. Turn matches into duplicate clusters
+
+The accepted candidate pairs form an undirected graph. A small union-find implementation assigns each connected component its lowest node ID as the stable representative.
+
+```python
+class UnionFind:
+    def __init__(self, nodes: list[int]):
+        self.parent = {node: node for node in nodes}
+
+    def find(self, node: int) -> int:
+        parent = self.parent[node]
+        if parent != node:
+            self.parent[node] = self.find(parent)
+        return self.parent[node]
+
+    def union(self, left: int, right: int) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
+        if left_root == right_root:
+            return
+        if left_root < right_root:
+            self.parent[right_root] = left_root
+        else:
+            self.parent[left_root] = right_root
+```
+
+Rows are then annotated with the component identity and split into kept and duplicate collections. Cluster rows are emitted only for components with at least two members.
+
+## 6. Inspect the outputs
+
+The output directory contains six complementary views:
+
+- `annotated.csv` contains every input row and its component assignment;
+- `deduped.csv` contains one representative per component;
+- `duplicates.csv` contains the removed rows;
+- `clusters.csv` summarizes duplicate groups and their representatives;
+- `candidate_pairs.csv` records accepted candidate edges and Jaccard scores; when exact verification is skipped, every LSH candidate is accepted;
+- `lsh_buckets.csv` records the band buckets that produced collisions.
+
+The terminal summary reports input rows, the chosen LSH shape, collision buckets, candidate pairs, removed duplicates, and the percentage kept. Use the candidate and cluster files together when tuning the threshold: one explains why an edge exists, while the other shows the transitive effect of those edges.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/minhash_dedupe.py) for CSV and HTML loading, probability integration, and output serialization.

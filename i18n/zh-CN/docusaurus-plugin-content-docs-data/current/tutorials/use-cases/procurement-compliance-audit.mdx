@@ -1,0 +1,219 @@
+---
+title: 采购合规审计
+---
+
+采购审查经常需要联合检查两类证据：结构化专家评分和非结构化评审记录。本教程沿着 `procurement-compliance-audit` 用例，把两类证据关联起来，通过确定性规则生成有证据支持的审查发现。
+
+用例源码：[AstroVela/demo-scene/procurement-compliance-audit](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit)。
+
+合成场景从一个明确的异常开始。专家 `EXP-001` 在招标前推荐了经纬自动化，随后参与评审且没有回避，并且对该供应商的评分显著高于其他专家。剔除这名专家的评分后，中标方会从 `SUP-JW-001` 变为 `SUP-ZJ-002`。
+
+这个用例沿着采购审查人员真正关心的问题展开：专家是否曾在招标前推荐某家供应商，之后是否参加评审却没有回避，评分是否明显偏离其他专家，以及去掉这份评分后中标结果是否会改变。流程把“读取材料”和“判断合规风险”分开，使每条审查发现都能追溯到原始证据和明确规则。
+
+| 审查环节 | 要回答的问题 | Vane 如何支持 |
+| --- | --- | --- |
+| 汇集招标记录 | 每行描述哪个项目、供应商、专家、评分和证据文件？ | SQL Relation 保留可信身份，并规范化供应商名称与别名 |
+| 读取评审材料 | 专家推荐记录与评审纪要中可以可靠识别出哪些文字？ | 有状态 OCR UDF（`@vane.cls`）跨文件复用对象存储客户端和 OCR 引擎 |
+| 识别推荐与回避事实 | 谁推荐了哪家供应商，谁参加了评审，谁履行了回避？ | Vane AI API 只抽取审查所需的有限事实 |
+| 筛选可信证据 | 模型回答是否符合预期的文件角色和事实格式？ | 无状态 UDF（`@vane.func`）对每条响应应用相同的确定性校验 |
+| 衡量影响并生成发现 | 评分是否异常，是否改变了中标方？ | SQL 比较其他专家评分、重新计算排名，并用可见阈值应用审查规则 |
+
+业务流程可以概括为 `汇集招标记录 → 读取评审证据 → 识别推荐与回避事实 → 检验评分和中标影响 → 发布审查发现与建议动作`。小规模审查在本地运行、大规模材料在 Ray 上运行时，证据与审查结果保持一致。模型只报告材料中包含什么，不负责判断是否违规。
+
+## 默认招标场景与输入
+
+示例数据表示智能产线升级项目 `PRJ-2026-001`。运行时流程从 PostgreSQL 读取业务记录，从 MinIO 读取两张证据图像。
+
+| 输入 | 粒度 | 默认数据 |
+| --- | --- | --- |
+| 项目 | 每个招标项目一行 | 声明中标方 `SUP-JW-001`、评分偏差阈值 `15.0`、AI 置信度下限 `0.75` |
+| 供应商 | 每个供应商一行 | 三家标准供应商及其别名 |
+| 专家评分 | 每个专家与供应商组合一行 | 完整 4×3 矩阵，共 12 行评分 |
+| 证据元数据 | 每个文件一行 | 推荐记录 `EVD-REC-001` 与评审纪要 `EVD-MIN-001` |
+| MinIO 对象 | 每条证据一张 PNG | 供 OCR 和 Qwen 使用的两张图像 |
+
+异常评分非常具体：`EXP-001` 给 `SUP-JW-001` 打了 `98` 分，其他三位专家给出的分数分别为 `80`、`81` 和 `79`。
+
+## 1. 把评审材料转换成可追溯的证据
+
+合规审查必须能够说明每项事实来自哪里。在抽取任何事实以前，流程会让每张图像始终关联可信的项目 ID、文件 ID 和材料角色，再调用 `evidence_ocr_json(bucket, object_key)` 把内容转成可检索文本。专家推荐记录和评审委员会纪要因此会一直作为不同的证据类型处理。
+
+有状态 `@vane.cls` 函数在遇到第一张可用图像时才创建 RapidOCR，之后继续复用同一个引擎和 MinIO 客户端。这样可以避免重复启动模型，并高效处理更大的评审材料集合：
+
+```python
+@vane.cls(
+    actor_number=1,
+    return_dtype="VARCHAR",
+    name="evidence_ocr_json",
+    gpus=0,
+)
+class EvidenceOcrActor:
+    """Stateful MinIO image OCR function that initializes one reusable engine."""
+
+    def __init__(
+        self,
+        minio_config: MinioConfig,
+        engine_factory=None,
+        store_factory=MinioStore,
+    ) -> None:
+        self.store = store_factory(minio_config)
+        self._engine_factory = engine_factory or build_rapidocr
+        self.engine = None
+```
+
+`int_evidence_ocr_udf` SQL 会保留可信的证据身份，并把 OCR 结果放在同一行：
+
+```sql
+select
+  project_id,
+  file_id,
+  role,
+  bucket,
+  object_key,
+  media_type,
+  evidence_ocr_json(
+    cast(bucket as varchar),
+    cast(object_key as varchar)
+  ) as ocr_json
+from stg_evidence_images;
+```
+
+下一步 SQL 会把 OCR 结果整理成状态、文本、置信度和文本行数，同时继续保留原始证据键。审查人员因此既能检索材料内容，也能追溯到源文件。本地模式读取预先计算的 OCR 结果，Ray 模式直接调用有状态 Actor；两种模式为后续审查提供相同的证据记录。
+
+## 2. 识别推荐、参评和回避事实
+
+审查人员只需要从材料中确认一组范围明确的事实：文件类型、专家、供应商、是否推荐、是否参评，以及是否回避。对于每张通过 OCR 质量阈值的图像，流程会把图像字节和 OCR 文本与可信的材料角色、标准供应商信息组合起来。在 Ray 模式下，这个请求通过 `vane.ai.prompt` AI Function 发出：
+
+```python
+            result = vane.ai.prompt(
+                relation,
+                "prompt_text",
+                image_columns=["image_bytes"],
+                provider=config.ai.provider,
+                model=config.ai.model,
+                provider_options=provider_options,
+                prompt_options=prompt_options,
+                system_message=AUDIT_FACT_SYSTEM_MESSAGE,
+                output_column="raw_response",
+                num_gpus=0,
+            )
+```
+
+本地 provider 路径和 Ray AI Function 会产生相同的事实表，并执行相同的一次格式重试。项目 ID、文件 ID 和材料角色始终来自可信来源，而不是模型回答。响应只包含文档类型、专家 ID、供应商名称、是否推荐、是否参与、是否回避、证据原文和置信度，刻意不包含风险级别、评分偏差、中标影响或合规结论。
+
+原始响应随后进入一个独立的确定性边界。`@vane.func` 注册无状态校验函数：响应符合契约时返回规范化事实 JSON，否则直接拒绝该响应：
+
+```python
+@vane.func(return_dtype="VARCHAR", name="validate_audit_fact_json")
+def validate_audit_fact_json_udf(raw_response: str) -> str:
+    return validate_audit_fact_json(raw_response)
+```
+
+`int_conflict_validation_inputs` 先把每条不可信响应绑定到 PostgreSQL 中的项目、文件和可信证据角色。随后，SQL 直接调用无状态校验函数，确保每条抽取事实都通过相同的接纳规则：
+
+```sql
+create or replace table int_conflict_validation_udf as
+-- Normalize each untrusted AI response through a direct Runner SQL UDF call.
+select
+  project_id,
+  file_id,
+  role,
+  validate_audit_fact_json(raw_response) as fact_json
+from int_conflict_validation_inputs;
+```
+
+下一步 SQL 只有在模型给出的文档类型与可信来源角色一致时，才会开放类型明确的事实。评审纪要不会仅仅因为原始 JSON 如此声称，就被当成推荐记录。无状态 UDF 统一回答格式，SQL 则保护证据身份并决定每类材料可以如何解释。
+
+## 3. 检验异常评分是否改变中标结果
+
+推荐事实和纪要事实先按专家身份关联，再把抽取的供应商名称解析为标准名称或别名。此后，常规 SQL 就能把被标记专家与其他专家比较，并在去掉该专家后重新执行中标排名。
+
+核心业务检验会比较两个版本的招标结果：实际定标时的供应商平均分，以及排除被标记专家后的平均分。SQL 重新计算第二套排名，并使用供应商 ID 作为确定性的同分排序条件：
+
+```sql
+without_flagged_averages as (
+  -- Recompute supplier rankings after excluding the flagged expert.
+  select
+    scores.project_id,
+    scores.supplier_id,
+    avg(scores.score) as average_score
+  from stg_scores as scores
+  inner join matched_signal as signal
+    on signal.project_id = scores.project_id
+   and scores.expert_id <> signal.flagged_expert_id
+  group by scores.project_id, scores.supplier_id
+),
+without_flagged_ranks as (
+  select
+    *,
+    row_number() over (
+      partition by project_id
+      order by average_score desc, supplier_id
+    ) as supplier_rank
+  from without_flagged_averages
+)
+```
+
+最终审查记录会组合专家评分、其他专家均值、分差、配置阈值、原中标方、重算中标方和 `award_changed` 标记。在默认示例中，其他专家均值为 `80.0`，因此专家的 `98` 分形成了 `18.0` 分差，超过 `15.0` 的阈值。完整矩阵中 `SUP-JW-001` 以 `84.5` 位列第一；去掉 `EXP-001` 后，`SUP-ZJ-002` 以 `90.0` 位列第一。是否命中审查规则取决于这些透明的计算结果，而不是模型回答。
+
+## 4. 把合规政策写成可审计的审查规则
+
+只有证据强度达到要求、并且与声明的原中标方一致的事实，才会形成审查发现。每条政策条件都被写成一条可复核规则，包含稳定规则 ID、涉及主体、实际指标、判断阈值、源证据引用、建议动作和置信度。第一个分支展示了这种模式：
+
+```sql
+  -- EXP-001: the related expert participated without recusing.
+  select
+    project_id || ':EXP-001-conflict-not-recused' as finding_id,
+    project_id,
+    'EXP-001-conflict-not-recused' as rule_id,
+    'high' as severity,
+    'expert' as subject_type,
+    flagged_expert_id as subject_id,
+    related_supplier_id as supplier_id,
+    'recused' as metric_name,
+    0.0::double as metric_value,
+    1.0::double as threshold_value,
+    '专家曾推荐相关供应商，参加评审且未回避。' as finding_summary,
+    cast(to_json(list_value(recommendation_file_id, minutes_file_id)) as varchar)
+      as evidence_file_ids_json,
+    '暂停定标并复核专家回避义务。' as recommended_action,
+    round(least(recommendation_confidence, minutes_confidence), 4) as confidence
+  from eligible
+  where recommended is true
+    and participated is true
+    and recused is false
+```
+
+在默认示例中，三个规则分支会产生：
+
+| 规则 | 严重级别 | 确定性条件 | 示例结果 |
+| --- | --- | --- | --- |
+| `EXP-001-conflict-not-recused` | 高 | 推荐该供应商、参与评审且未回避 | 命中 |
+| `EXP-002-score-bias` | 中 | 同样的冲突事实，且分差至少为 15 | 以 18 分命中 |
+| `EXP-003-award-impact` | 高 | 同样的冲突事实，且移除专家后中标方变化 | 命中，`SUP-JW-001` → `SUP-ZJ-002` |
+
+各个分支可以独立测试和修改，而不需要重新训练模型或重新设计提示词。
+
+## 5. 汇总风险并建议下一步动作
+
+默认场景生成三条审查发现——两条高严重级别、一条中严重级别——以及一条状态为 `review_required` 的项目汇总。如果任一文档事实低于置信度下限，汇总状态会变为 `insufficient_evidence`；证据充分且没有审查发现的项目则为 `passed`。
+
+当前项目从公共 PyPI 安装 Vane，并默认使用 `runner: local`。在 PostgreSQL、MinIO 和本地 Qwen 已运行时，执行 `python scripts/run_demo.py e2e`。命令会载入合成招标数据，执行真实 OCR 与多模态推理，并写出：
+
+| 输出 | 行数 | 用途 |
+| --- | ---: | --- |
+| `audit_findings.jsonl` | 3 | 规则、严重度、主体、指标、阈值、证据 ID 和建议动作 |
+| `audit_summary.jsonl` | 1 | 项目状态、审查发现数量、被标记专家和中标方重算结果 |
+
+如需执行分布式 OCR Actor 和 `vane.ai.prompt` 路径，可在 `runtime.yml` 中改为 `runner: ray`；示例数据、SQL DAG 和输出保持不变。
+
+`review_required` 是由证据支持的工作流信号，不是法律、纪律或最终合规结论。这个用例可复用的业务模式，是把职责清楚地分开：OCR 与 AI 让非结构化材料可检索并抽取有限事实，无状态 UDF 拒绝不符合证据标准的回答，SQL 再根据明确的政策阈值衡量评分和中标影响。本地与 Ray 只是同一审查流程的两种部署方式，扩大处理规模不会改变审查发现的判定依据。
+
+## 适配真实采购数据
+
+- 替换四张 PostgreSQL 源表，同时保留项目、供应商、评分和证据的粒度。
+- 把证据行指向你的 S3 兼容对象存储，并让可信角色留在模型输出之外。
+- 可以替换 OCR 或 OpenAI 兼容模型，但要保留带类型的事实契约。
+- 把新的审查发现写成包含可复核指标与阈值的显式 SQL 分支，不要让模型直接给出最终风险结论。
+
+源 Relation、提示词、供应商别名解析、完整评分查询和 JSONL 发布请查看[完整用例](https://github.com/AstroVela/demo-scene/tree/main/procurement-compliance-audit)。
