@@ -121,7 +121,7 @@ class NormalizeMinHashBatch:
         )
 ```
 
-The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF runs locally by default, but the same schema can be scheduled with a Ray task or actor backend.
+The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF remains part of the Relation plan, which is materialized through Vane's configured runner without changing this output schema.
 
 ## 3. Choose an LSH shape
 

@@ -91,8 +91,9 @@ class DecodeWarcBatch:
         """,
     )
 
+    decoder = DecodeWarcBatch()
     pages = filtered.map_batches(
-        DecodeWarcBatch(),
+        decoder.__call__,
         schema={
             "record_id": duckdb.sqltypes.VARCHAR,
             "target_uri": duckdb.sqltypes.VARCHAR,
@@ -102,7 +103,6 @@ class DecodeWarcBatch:
             "text": duckdb.sqltypes.VARCHAR,
         },
         batch_size=args.batch_size,
-        execution_backend=args.execution_backend,
     ).query(
         "pages",
         f"""
@@ -206,12 +206,10 @@ class ChunkTextBatch:
             provider="transformers",
             model=args.embedding_model_id,
             output_column="embedding",
-            execution_backend=args.embedding_execution_backend,
             max_chunk_chars=args.max_chunk_chars,
             batch_size=args.embedding_batch_size,
         )
-        embedded = append_embedding(conn, chunks, embedded_only)
-        embedded_table = embedded.to_arrow_table()
+        embedded_table = append_embedding(chunks_table, embedded_only)
 ```
 
 模型默认为 Sentence Transformers 的 `all-MiniLM-L6-v2`。如果模型已经缓存，并且执行节点不应访问 Hugging Face，可以启用仅本地文件选项。也可以跳过此阶段，在不安装模型依赖的情况下检查 WARC 解码和切分结果。
@@ -229,6 +227,6 @@ class ChunkTextBatch:
 
 ## 扩展同一条处理流程
 
-解码、切分和嵌入阶段都可以配置执行后端。先用本地样例验证 schema，再为计算密集阶段选择 `ray_task` 或 `ray_actor`，并配置 Ray runner。数据加载与输出契约保持不变。
+脚本通过 Vane 配置的 runner 物化每个 Relation。可以设置 `VANE_RUNNER=local` 在本地验证 schema；使用 Ray 时则保持 runner 未设置并配置 `RAY_ADDRESS`。数据加载与输出契约保持不变。
 
 所有参数与 WET 解析实现请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py)。

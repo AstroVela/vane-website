@@ -96,8 +96,9 @@ class AnalyzeRedRegionsBatch:
 The UDF returns a new table rather than mutating input rows. That makes every output type explicit at the `map_batches` call site.
 
 ```python
+    analyzer = AnalyzeRedRegionsBatch()
     analyzed = rel.map_batches(
-        AnalyzeRedRegionsBatch(),
+        analyzer.__call__,
         schema={
             "id": duckdb.sqltypes.BIGINT,
             "path": duckdb.sqltypes.VARCHAR,
@@ -110,11 +111,10 @@ The UDF returns a new table rather than mutating input rows. That makes every ou
             "red_mask_png": duckdb.sqltypes.BLOB,
         },
         batch_size=args.batch_size,
-        execution_backend=args.execution_backend,
     )
 ```
 
-The default backend is local. The same UDF can run as a Ray task or actor after every worker has NumPy and Pillow available.
+The UDF is part of the Relation plan and runs through Vane's configured runner. Every execution environment needs NumPy and Pillow available.
 
 ## 4. Rank and save visual results
 

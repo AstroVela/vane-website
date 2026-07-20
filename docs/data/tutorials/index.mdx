@@ -40,7 +40,7 @@ Run these commands from the sparse checkout root. They use built-in or generated
 | Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
 | Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `HF_TOKEN` before using the default endpoint |
 
-The scripts leave the Vane runner unset, so the installed package default applies. Set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. Individual processing stages expose local, Ray task, or Ray actor execution options; those options change placement, not the sample contract.
+The scripts leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. The configured runner materializes the Relation workflow without changing the sample contract.
 
 ## Examples
 

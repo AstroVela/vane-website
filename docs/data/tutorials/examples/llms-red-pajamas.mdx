@@ -71,12 +71,10 @@ Before embedding, the script can truncate long question text with SQL. The Vane 
         provider="transformers",
         model=args.model_id,
         output_column="embedding",
-        execution_backend=args.execution_backend,
         max_chunk_chars=args.max_chunk_chars,
         batch_size=args.batch_size,
     )
-    embedded = append_embedding(conn, rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(rel), embedded_only)
 ```
 
 The example validates that the embedding Relation has exactly as many rows as the input and contains the requested output column before attaching it. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
@@ -148,12 +146,12 @@ The default thresholds treat scores up to 2 as queries and scores of at least 10
 
 ## 4. Inspect or persist matches
 
-Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to an Arrow Relation and uses SQL to order and shorten the terminal preview.
+Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to a Vane Relation and uses SQL to order and shorten the terminal preview.
 
 When an output path is supplied, the same full match rows are written to CSV. The terminal summary reports how many input rows were embedded and how many matches were produced.
 
 ## Scaling notes
 
-The dataset load and similarity loop are intentionally straightforward for a tutorial. The embedding stage exposes local, Ray task, and Ray actor execution backends, so it is the first stage to move when model inference dominates runtime. For a much larger candidate set, replace the in-process all-pairs ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
+The dataset load and similarity loop are intentionally straightforward for a tutorial. The configured Vane runner materializes the embedding workflow, while the all-pairs ranking stays in process after collection. For a much larger candidate set, replace that ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) for sample rows, output serialization, and every argument.

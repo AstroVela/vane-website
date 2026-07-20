@@ -71,12 +71,10 @@ def load_redpajama_relation(conn: Any, path: str, limit: int) -> Any:
         provider="transformers",
         model=args.model_id,
         output_column="embedding",
-        execution_backend=args.execution_backend,
         max_chunk_chars=args.max_chunk_chars,
         batch_size=args.batch_size,
     )
-    embedded = append_embedding(conn, rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(rel), embedded_only)
 ```
 
 示例在接回嵌入之前，会验证嵌入 Relation 与输入行数完全一致，并且包含请求的输出列。默认模型是 `sentence-transformers/all-MiniLM-L6-v2`；缓存已经准备好时，仅本地文件模式可以阻止模型下载。
@@ -148,12 +146,12 @@ def semantic_matches(
 
 ## 4. 检查或持久化匹配结果
 
-每条结果都会保留两个问题、两个分数、匹配名次、余弦相似度和匹配问题的 URL。脚本把这些字典转换回 Arrow Relation，并用 SQL 排序、缩短终端预览。
+每条结果都会保留两个问题、两个分数、匹配名次、余弦相似度和匹配问题的 URL。脚本把这些字典转换回 Vane Relation，并用 SQL 排序、缩短终端预览。
 
 提供输出路径后，相同的完整匹配行会写入 CSV。终端摘要会报告生成嵌入的输入行数以及产生的匹配数。
 
 ## 扩展说明
 
-为了便于教学，数据加载与相似度循环采用直接实现。嵌入阶段可配置为本地、Ray task 或 Ray actor 执行，因此当模型推理占据主要耗时时，应优先扩展这一阶段。面对大得多的候选集，可以用向量索引或分区相似度策略替换进程内全量配对，同时保留这里展示的数据结构。
+为了便于教学，数据加载与相似度循环采用直接实现。配置的 Vane runner 会物化嵌入工作流，而全量配对会在收集结果后留在进程内执行。面对大得多的候选集，可以用向量索引或分区相似度策略替换该配对过程，同时保留这里展示的数据结构。
 
 样例行、输出序列化以及全部参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py)。

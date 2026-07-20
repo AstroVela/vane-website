@@ -89,7 +89,7 @@ This backend is not a text-to-image model. It is a deterministic contract-test b
 
 ## 3. Load Stable Diffusion once per UDF instance
 
-For real generation, the stateful UDF delays model loading until its first use and caches the pipeline on the instance. That is particularly important for an actor backend, where subsequent batches can reuse model state.
+For real generation, the stateful UDF delays model loading until its first use and caches the pipeline on the instance, avoiding another model load for later batches handled by that instance.
 
 ```python
     def _load_pipe(self) -> Any:
@@ -178,15 +178,31 @@ The UDF returns all input metadata plus `generated_image` bytes. The call site d
             "generated_image": duckdb.sqltypes.BLOB,
         },
         "batch_size": args.batch_size,
-        "execution_backend": args.execution_backend,
     }
     if args.gpus is not None:
         map_kwargs["gpus"] = args.gpus
 
-    generated = rel.map_batches(generator, **map_kwargs)
-    generated_table = generated.to_arrow_table()
+    generated = rel.map_batches(generator.__call__, **map_kwargs)
+    generated_table = collect_relation(generated)
     written_table = save_generated_images(generated_table, Path(args.output_dir))
-    written = conn.from_arrow(written_table)
+    written = relation_from_rows(
+        conn,
+        [
+            {
+                "id": row["id"],
+                "prompt": row["prompt"],
+                "aesthetic_score": row["aesthetic_score"],
+                "generated_path": row["generated_path"],
+            }
+            for row in written_table.to_pylist()
+        ],
+        {
+            "id": "BIGINT",
+            "prompt": "VARCHAR",
+            "aesthetic_score": "DOUBLE",
+            "generated_path": "VARCHAR",
+        },
+    )
 ```
 
 The default batch size is one, which is a safe starting point for GPU memory. Increase it only after checking the chosen model, resolution, precision, and worker resources together.
@@ -195,6 +211,6 @@ The default batch size is one, which is a safe starting point for GPU memory. In
 
 Each output row becomes a numbered PNG file. `metadata.csv` records the row ID, original prompt, and generated path, while the terminal Relation preview also shows the source aesthetic score when one exists.
 
-The CLI defaults to 512×512 output, 20 diffusion inference steps, and local execution. The placeholder backend ignores the diffusion-only settings. For real inference, select the Diffusers backend, make the model available on every worker, choose an appropriate precision, and request GPU resources explicitly.
+The CLI defaults to 512×512 output and 20 diffusion inference steps; execution follows Vane's configured runner. The placeholder backend ignores the diffusion-only settings. For real inference, select the Diffusers backend, make the model available on every worker, choose an appropriate precision, and request GPU resources explicitly.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/image_generation.py) for the full UDF constructor, sample prompt generation, file naming, and all runtime arguments.

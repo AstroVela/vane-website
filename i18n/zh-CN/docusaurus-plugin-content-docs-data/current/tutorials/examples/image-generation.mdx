@@ -89,7 +89,7 @@ def placeholder_png(width: int, height: int, prompt: str) -> bytes:
 
 ## 3. 每个 UDF 实例只加载一次 Stable Diffusion
 
-真实生成路径中的有状态 UDF 会推迟到首次使用时才加载模型，并在实例上缓存模型管线。对于 actor 后端，这一点尤其重要，因为后续批次可以复用模型状态。
+真实生成路径中的有状态 UDF 会推迟到首次使用时才加载模型，并在实例上缓存模型管线，从而避免该实例处理后续批次时再次加载模型。
 
 ```python
     def _load_pipe(self) -> Any:
@@ -178,15 +178,31 @@ UDF 返回全部输入元数据以及 `generated_image` 字节。调用处声明
             "generated_image": duckdb.sqltypes.BLOB,
         },
         "batch_size": args.batch_size,
-        "execution_backend": args.execution_backend,
     }
     if args.gpus is not None:
         map_kwargs["gpus"] = args.gpus
 
-    generated = rel.map_batches(generator, **map_kwargs)
-    generated_table = generated.to_arrow_table()
+    generated = rel.map_batches(generator.__call__, **map_kwargs)
+    generated_table = collect_relation(generated)
     written_table = save_generated_images(generated_table, Path(args.output_dir))
-    written = conn.from_arrow(written_table)
+    written = relation_from_rows(
+        conn,
+        [
+            {
+                "id": row["id"],
+                "prompt": row["prompt"],
+                "aesthetic_score": row["aesthetic_score"],
+                "generated_path": row["generated_path"],
+            }
+            for row in written_table.to_pylist()
+        ],
+        {
+            "id": "BIGINT",
+            "prompt": "VARCHAR",
+            "aesthetic_score": "DOUBLE",
+            "generated_path": "VARCHAR",
+        },
+    )
 ```
 
 默认批大小为一，是 GPU 显存方面的安全起点。只有在综合检查所选模型、分辨率、精度和执行节点资源后，才应增大它。
@@ -195,6 +211,6 @@ UDF 返回全部输入元数据以及 `generated_image` 字节。调用处声明
 
 每个输出行会变成一个带序号的 PNG 文件。`metadata.csv` 记录行 ID、原始提示词和生成路径；如果源数据存在美学分数，终端 Relation 预览也会显示它。
 
-命令行默认使用 512×512 输出、20 个扩散推理步骤和本地执行。占位后端会忽略仅与扩散模型有关的设置。进行真实推理时，请选择 Diffusers 后端，确保每个执行节点都能访问模型，选择合适精度，并显式请求 GPU 资源。
+命令行默认使用 512×512 输出和 20 个扩散推理步骤；执行方式由 Vane 配置的 runner 决定。占位后端会忽略仅与扩散模型有关的设置。进行真实推理时，请选择 Diffusers 后端，确保每个执行节点都能访问模型，选择合适精度，并显式请求 GPU 资源。
 
 完整 UDF 构造器、样例提示词生成、文件命名与全部运行参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/image_generation.py)。

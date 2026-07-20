@@ -71,11 +71,11 @@ def synthetic_rows(limit: int) -> list[dict[str, Any]]:
     return rows
 ```
 
-The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become an Arrow Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
+The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become a Vane Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
 
 ## 3. Run inference with the image
 
-Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, sampling settings, and execution backend.
+Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, and sampling settings.
 
 ```python
     common_prompt_options = {
@@ -85,7 +85,6 @@ Common provider options are assembled once so the vision, text-only, and judge c
         "use_chat_completions": True,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
-        "execution_backend": args.execution_backend,
     }
     if base_url:
         common_prompt_options["base_url"] = base_url
@@ -207,6 +206,6 @@ The final preview extracts attribution, hypothesis, and reasoning from the judge
 
 ## Provider and execution choices
 
-The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, structured-output mode, and execution backend are configurable. When using a Ray backend, workers need network access to the endpoint and the same Vane AI dependencies.
+The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, and structured-output mode are configurable. Execution follows Vane's configured runner; with Ray, workers need network access to the endpoint and the same Vane AI dependencies.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) for image normalization, AI2D loading, answer parsing, metric queries, and every argument.

@@ -21,25 +21,27 @@ def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
     if not paths:
         raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
 
-    table = pa.table(
+    rows = [
         {
-            "id": pa.array(list(range(len(paths))), type=pa.int64()),
-            "path": pa.array(paths, type=pa.string()),
-            "audio_format": pa.array(
-                [Path(path).suffix.lstrip(".").lower() or "audio" for path in paths],
-                type=pa.string(),
-            ),
-            "audio_bytes": pa.array(
-                [Path(path).read_bytes() for path in paths],
-                type=pa.binary(),
-            ),
-            "fallback_transcript": pa.array(
-                [f"Audio file {Path(path).name} is ready for transcription." for path in paths],
-                type=pa.string(),
-            ),
+            "id": i,
+            "path": path,
+            "audio_format": Path(path).suffix.lstrip(".").lower() or "audio",
+            "audio_bytes": Path(path).read_bytes(),
+            "fallback_transcript": f"Audio file {Path(path).name} is ready for transcription.",
         }
+        for i, path in enumerate(paths)
+    ]
+    return relation_from_dicts(
+        conn,
+        rows,
+        {
+            "id": "BIGINT",
+            "path": "VARCHAR",
+            "audio_format": "VARCHAR",
+            "audio_bytes": "BLOB",
+            "fallback_transcript": "VARCHAR",
+        },
     )
-    return conn.from_arrow(table)
 ```
 
 文件数量上限会在读取字节之前应用，使本地探索保持在可控范围内。
@@ -133,8 +135,8 @@ Faster-Whisper 模型在首次使用后会缓存在 UDF 实例上。设备、计
 在调用处，UDF 输出被声明为每个输入音频一行。片段展开会在后续执行。
 
 ```python
-    transcripts = rel.map_batches(transcriber, **map_kwargs)
-    transcript_table = transcripts.to_arrow_table()
+    transcripts = rel.map_batches(transcriber.__call__, **map_kwargs)
+    transcript_table = collect_relation(transcripts)
 
     summaries = summarize_rows(transcript_table, args)
     subtitles = subtitle_rows(
@@ -217,11 +219,9 @@ def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str
         provider="transformers",
         model=args.embedding_model_id,
         output_column="embedding",
-        execution_backend=args.embedding_execution_backend,
         batch_size=args.embedding_batch_size,
     )
-    embedded = append_embedding(conn, subtitle_rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
 ```
 
 ## 5. 检查输出
@@ -232,10 +232,10 @@ def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str
 - `subtitles.csv`：每个带时间戳片段一行；
 - `segment_embeddings.csv`：包含源标识、时间戳、文本和嵌入维度。
 
-终端会报告音频行数与字幕行数，再分别预览摘要行和已嵌入的片段行。完整向量用于内存中的 Relation，但 CSV 刻意只记录维度。
+终端会报告音频行数与字幕行数，再分别预览摘要行和已嵌入的片段行。完整向量保留在内存结果中，但 CSV 刻意只记录维度。
 
 ## 扩展与模型部署
 
-转写与嵌入拥有独立的执行后端和批大小。对于 GPU 语音识别，actor 后端可以复用缓存的 Faster-Whisper 模型；嵌入阶段则可以使用另一组 actor 和资源配置。每个执行节点都必须能够导入可选依赖，并访问模型缓存或模型路径。
+转写与嵌入仍有各自的批大小控制，而整条 Relation 工作流会通过 Vane 配置的 runner 物化。使用 GPU 语音识别时，需要传入 GPU 资源请求，并确保每个 worker 都能导入可选依赖、访问模型缓存或模型路径。
 
 样例 WAV 生成、OpenAI 摘要提示、模型加载错误信息以及全部参数请查看[完整源码](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py)。

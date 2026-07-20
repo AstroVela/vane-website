@@ -121,7 +121,7 @@ class NormalizeMinHashBatch:
         )
 ```
 
-默认配置使用 64 个哈希值、五词 `shingle` 和随机种子 42。UDF 默认在本地运行，也可以用相同 schema 调度到 Ray task 或 actor 后端。
+默认配置使用 64 个哈希值、五词 `shingle` 和随机种子 42。UDF 会保留在 Relation 计划中，并通过 Vane 配置的 runner 进行物化，同时保持这里的输出 schema 不变。
 
 ## 3. 选择 LSH 形状
 

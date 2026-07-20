@@ -972,7 +972,7 @@ Run these commands from the sparse checkout root. They use built-in or generated
 | Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
 | Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `HF_TOKEN` before using the default endpoint |
 
-The scripts leave the Vane runner unset, so the installed package default applies. Set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. Individual processing stages expose local, Ray task, or Ray actor execution options; those options change placement, not the sample contract.
+The scripts leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. The configured runner materializes the Relation workflow without changing the sample contract.
 
 ## Examples
 
@@ -1100,8 +1100,9 @@ The orchestration first removes non-conversion records with SQL, then applies th
         """,
     )
 
+    decoder = DecodeWarcBatch()
     pages = filtered.map_batches(
-        DecodeWarcBatch(),
+        decoder.__call__,
         schema={
             "record_id": duckdb.sqltypes.VARCHAR,
             "target_uri": duckdb.sqltypes.VARCHAR,
@@ -1111,7 +1112,6 @@ The orchestration first removes non-conversion records with SQL, then applies th
             "text": duckdb.sqltypes.VARCHAR,
         },
         batch_size=args.batch_size,
-        execution_backend=args.execution_backend,
     ).query(
         "pages",
         f"""
@@ -1215,12 +1215,10 @@ The example uses Vane's Transformers provider. Because the AI function returns i
             provider="transformers",
             model=args.embedding_model_id,
             output_column="embedding",
-            execution_backend=args.embedding_execution_backend,
             max_chunk_chars=args.max_chunk_chars,
             batch_size=args.embedding_batch_size,
         )
-        embedded = append_embedding(conn, chunks, embedded_only)
-        embedded_table = embedded.to_arrow_table()
+        embedded_table = append_embedding(chunks_table, embedded_only)
 ```
 
 The model defaults to Sentence Transformers' `all-MiniLM-L6-v2`. Use the local-files-only option when the model is already cached and the worker must not contact Hugging Face. You can also skip this stage to inspect WARC decoding and chunking without model dependencies.
@@ -1238,7 +1236,7 @@ The script prints the number of source records, decoded pages, chunks, and embed
 
 ## Scaling the same pipeline
 
-The decoding, chunking, and embedding stages each expose an execution-backend option. Keep the sample path local while validating schemas, then select `ray_task` or `ray_actor` for expensive stages and configure the Ray runner. The source-loading and output contracts do not change.
+The script materializes each Relation through Vane's configured runner. Use `VANE_RUNNER=local` while validating schemas locally, or leave it unset and configure `RAY_ADDRESS` for Ray execution. The source-loading and output contracts do not change.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) for every argument and the WET parser implementation.
 
@@ -1366,7 +1364,7 @@ class NormalizeMinHashBatch:
         )
 ```
 
-The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF runs locally by default, but the same schema can be scheduled with a Ray task or actor backend.
+The default configuration uses 64 hash values, five-word shingles, and seed 42. The UDF remains part of the Relation plan, which is materialized through Vane's configured runner without changing this output schema.
 
 ## 3. Choose an LSH shape
 
@@ -1594,12 +1592,10 @@ Before embedding, the script can truncate long question text with SQL. The Vane 
         provider="transformers",
         model=args.model_id,
         output_column="embedding",
-        execution_backend=args.execution_backend,
         max_chunk_chars=args.max_chunk_chars,
         batch_size=args.batch_size,
     )
-    embedded = append_embedding(conn, rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(rel), embedded_only)
 ```
 
 The example validates that the embedding Relation has exactly as many rows as the input and contains the requested output column before attaching it. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
@@ -1671,13 +1667,13 @@ The default thresholds treat scores up to 2 as queries and scores of at least 10
 
 ## 4. Inspect or persist matches
 
-Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to an Arrow Relation and uses SQL to order and shorten the terminal preview.
+Each result retains both questions, both scores, the match rank, the cosine similarity, and the matched question URL. The script converts those dictionaries back to a Vane Relation and uses SQL to order and shorten the terminal preview.
 
 When an output path is supplied, the same full match rows are written to CSV. The terminal summary reports how many input rows were embedded and how many matches were produced.
 
 ## Scaling notes
 
-The dataset load and similarity loop are intentionally straightforward for a tutorial. The embedding stage exposes local, Ray task, and Ray actor execution backends, so it is the first stage to move when model inference dominates runtime. For a much larger candidate set, replace the in-process all-pairs ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
+The dataset load and similarity loop are intentionally straightforward for a tutorial. The configured Vane runner materializes the embedding workflow, while the all-pairs ranking stays in process after collection. For a much larger candidate set, replace that ranking with a vector index or a partitioned similarity strategy while preserving the row schema shown here.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/llms_red_pajamas.py) for sample rows, output serialization, and every argument.
 
@@ -1780,8 +1776,9 @@ class AnalyzeRedRegionsBatch:
 The UDF returns a new table rather than mutating input rows. That makes every output type explicit at the `map_batches` call site.
 
 ```python
+    analyzer = AnalyzeRedRegionsBatch()
     analyzed = rel.map_batches(
-        AnalyzeRedRegionsBatch(),
+        analyzer.__call__,
         schema={
             "id": duckdb.sqltypes.BIGINT,
             "path": duckdb.sqltypes.VARCHAR,
@@ -1794,11 +1791,10 @@ The UDF returns a new table rather than mutating input rows. That makes every ou
             "red_mask_png": duckdb.sqltypes.BLOB,
         },
         batch_size=args.batch_size,
-        execution_backend=args.execution_backend,
     )
 ```
 
-The default backend is local. The same UDF can run as a Ray task or actor after every worker has NumPy and Pillow available.
+The UDF is part of the Relation plan and runs through Vane's configured runner. Every execution environment needs NumPy and Pillow available.
 
 ## 4. Rank and save visual results
 
@@ -1948,7 +1944,7 @@ This backend is not a text-to-image model. It is a deterministic contract-test b
 
 ## 3. Load Stable Diffusion once per UDF instance
 
-For real generation, the stateful UDF delays model loading until its first use and caches the pipeline on the instance. That is particularly important for an actor backend, where subsequent batches can reuse model state.
+For real generation, the stateful UDF delays model loading until its first use and caches the pipeline on the instance, avoiding another model load for later batches handled by that instance.
 
 ```python
     def _load_pipe(self) -> Any:
@@ -2037,15 +2033,31 @@ The UDF returns all input metadata plus `generated_image` bytes. The call site d
             "generated_image": duckdb.sqltypes.BLOB,
         },
         "batch_size": args.batch_size,
-        "execution_backend": args.execution_backend,
     }
     if args.gpus is not None:
         map_kwargs["gpus"] = args.gpus
 
-    generated = rel.map_batches(generator, **map_kwargs)
-    generated_table = generated.to_arrow_table()
+    generated = rel.map_batches(generator.__call__, **map_kwargs)
+    generated_table = collect_relation(generated)
     written_table = save_generated_images(generated_table, Path(args.output_dir))
-    written = conn.from_arrow(written_table)
+    written = relation_from_rows(
+        conn,
+        [
+            {
+                "id": row["id"],
+                "prompt": row["prompt"],
+                "aesthetic_score": row["aesthetic_score"],
+                "generated_path": row["generated_path"],
+            }
+            for row in written_table.to_pylist()
+        ],
+        {
+            "id": "BIGINT",
+            "prompt": "VARCHAR",
+            "aesthetic_score": "DOUBLE",
+            "generated_path": "VARCHAR",
+        },
+    )
 ```
 
 The default batch size is one, which is a safe starting point for GPU memory. Increase it only after checking the chosen model, resolution, precision, and worker resources together.
@@ -2054,7 +2066,7 @@ The default batch size is one, which is a safe starting point for GPU memory. In
 
 Each output row becomes a numbered PNG file. `metadata.csv` records the row ID, original prompt, and generated path, while the terminal Relation preview also shows the source aesthetic score when one exists.
 
-The CLI defaults to 512×512 output, 20 diffusion inference steps, and local execution. The placeholder backend ignores the diffusion-only settings. For real inference, select the Diffusers backend, make the model available on every worker, choose an appropriate precision, and request GPU resources explicitly.
+The CLI defaults to 512×512 output and 20 diffusion inference steps; execution follows Vane's configured runner. The placeholder backend ignores the diffusion-only settings. For real inference, select the Diffusers backend, make the model available on every worker, choose an appropriate precision, and request GPU resources explicitly.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/image_generation.py) for the full UDF constructor, sample prompt generation, file naming, and all runtime arguments.
 
@@ -2082,25 +2094,27 @@ def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
     if not paths:
         raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
 
-    table = pa.table(
+    rows = [
         {
-            "id": pa.array(list(range(len(paths))), type=pa.int64()),
-            "path": pa.array(paths, type=pa.string()),
-            "audio_format": pa.array(
-                [Path(path).suffix.lstrip(".").lower() or "audio" for path in paths],
-                type=pa.string(),
-            ),
-            "audio_bytes": pa.array(
-                [Path(path).read_bytes() for path in paths],
-                type=pa.binary(),
-            ),
-            "fallback_transcript": pa.array(
-                [f"Audio file {Path(path).name} is ready for transcription." for path in paths],
-                type=pa.string(),
-            ),
+            "id": i,
+            "path": path,
+            "audio_format": Path(path).suffix.lstrip(".").lower() or "audio",
+            "audio_bytes": Path(path).read_bytes(),
+            "fallback_transcript": f"Audio file {Path(path).name} is ready for transcription.",
         }
+        for i, path in enumerate(paths)
+    ]
+    return relation_from_dicts(
+        conn,
+        rows,
+        {
+            "id": "BIGINT",
+            "path": "VARCHAR",
+            "audio_format": "VARCHAR",
+            "audio_bytes": "BLOB",
+            "fallback_transcript": "VARCHAR",
+        },
     )
-    return conn.from_arrow(table)
 ```
 
 The file limit is applied before bytes are read, which keeps local exploration bounded.
@@ -2194,8 +2208,8 @@ The Faster-Whisper model is cached on the UDF instance after first use. Device, 
 At the call site, the UDF output is declared as one row per input audio item. Segment expansion happens later.
 
 ```python
-    transcripts = rel.map_batches(transcriber, **map_kwargs)
-    transcript_table = transcripts.to_arrow_table()
+    transcripts = rel.map_batches(transcriber.__call__, **map_kwargs)
+    transcript_table = collect_relation(transcripts)
 
     summaries = summarize_rows(transcript_table, args)
     subtitles = subtitle_rows(
@@ -2278,11 +2292,9 @@ Vane's Transformers provider then embeds the original segment text. As in the ot
         provider="transformers",
         model=args.embedding_model_id,
         output_column="embedding",
-        execution_backend=args.embedding_execution_backend,
         batch_size=args.embedding_batch_size,
     )
-    embedded = append_embedding(conn, subtitle_rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
 ```
 
 ## 5. Inspect the outputs
@@ -2293,11 +2305,11 @@ The default output directory contains:
 - `subtitles.csv`, with one row per timestamped segment;
 - `segment_embeddings.csv`, with source identity, timestamps, text, and embedding dimension.
 
-The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors are used in the in-memory Relation but the CSV intentionally records only their dimensions.
+The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors remain in the in-memory result, but the CSV intentionally records only their dimensions.
 
 ## Scaling and model deployment
 
-Transcription and embedding have separate execution backends and batch sizes. For GPU speech recognition, an actor backend can reuse the cached Faster-Whisper model, while the embedding stage can use a different actor pool and resource shape. Every worker must be able to import the optional dependencies and access the model cache or model path.
+Transcription and embedding retain separate batch-size controls, while the full Relation workflow is materialized through Vane's configured runner. For GPU speech recognition, pass the requested GPU resource and make sure every worker can import the optional dependencies and access the model cache or model path.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) for sample WAV generation, OpenAI summary prompting, model-loading errors, and all arguments.
 
@@ -2375,11 +2387,11 @@ def synthetic_rows(limit: int) -> list[dict[str, Any]]:
     return rows
 ```
 
-The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become an Arrow Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
+The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become a Vane Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
 
 ## 3. Run inference with the image
 
-Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, sampling settings, and execution backend.
+Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, and sampling settings.
 
 ```python
     common_prompt_options = {
@@ -2389,7 +2401,6 @@ Common provider options are assembled once so the vision, text-only, and judge c
         "use_chat_completions": True,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
-        "execution_backend": args.execution_backend,
     }
     if base_url:
         common_prompt_options["base_url"] = base_url
@@ -2511,7 +2522,7 @@ The final preview extracts attribution, hypothesis, and reasoning from the judge
 
 ## Provider and execution choices
 
-The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, structured-output mode, and execution backend are configurable. When using a Ray backend, workers need network access to the endpoint and the same Vane AI dependencies.
+The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, API-key environment variable, model, temperature, token limits, and structured-output mode are configurable. Execution follows Vane's configured runner; with Ray, workers need network access to the endpoint and the same Vane AI dependencies.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) for image normalization, AI2D loading, answer parsing, metric queries, and every argument.
 

@@ -21,25 +21,27 @@ def glob_relation(conn: Any, audio_glob: str, limit: int) -> Any:
     if not paths:
         raise RuntimeError(f"No audio files matched --audio-glob={audio_glob!r}.")
 
-    table = pa.table(
+    rows = [
         {
-            "id": pa.array(list(range(len(paths))), type=pa.int64()),
-            "path": pa.array(paths, type=pa.string()),
-            "audio_format": pa.array(
-                [Path(path).suffix.lstrip(".").lower() or "audio" for path in paths],
-                type=pa.string(),
-            ),
-            "audio_bytes": pa.array(
-                [Path(path).read_bytes() for path in paths],
-                type=pa.binary(),
-            ),
-            "fallback_transcript": pa.array(
-                [f"Audio file {Path(path).name} is ready for transcription." for path in paths],
-                type=pa.string(),
-            ),
+            "id": i,
+            "path": path,
+            "audio_format": Path(path).suffix.lstrip(".").lower() or "audio",
+            "audio_bytes": Path(path).read_bytes(),
+            "fallback_transcript": f"Audio file {Path(path).name} is ready for transcription.",
         }
+        for i, path in enumerate(paths)
+    ]
+    return relation_from_dicts(
+        conn,
+        rows,
+        {
+            "id": "BIGINT",
+            "path": "VARCHAR",
+            "audio_format": "VARCHAR",
+            "audio_bytes": "BLOB",
+            "fallback_transcript": "VARCHAR",
+        },
     )
-    return conn.from_arrow(table)
 ```
 
 The file limit is applied before bytes are read, which keeps local exploration bounded.
@@ -133,8 +135,8 @@ The Faster-Whisper model is cached on the UDF instance after first use. Device, 
 At the call site, the UDF output is declared as one row per input audio item. Segment expansion happens later.
 
 ```python
-    transcripts = rel.map_batches(transcriber, **map_kwargs)
-    transcript_table = transcripts.to_arrow_table()
+    transcripts = rel.map_batches(transcriber.__call__, **map_kwargs)
+    transcript_table = collect_relation(transcripts)
 
     summaries = summarize_rows(transcript_table, args)
     subtitles = subtitle_rows(
@@ -217,11 +219,9 @@ Vane's Transformers provider then embeds the original segment text. As in the ot
         provider="transformers",
         model=args.embedding_model_id,
         output_column="embedding",
-        execution_backend=args.embedding_execution_backend,
         batch_size=args.embedding_batch_size,
     )
-    embedded = append_embedding(conn, subtitle_rel, embedded_only)
-    embedded_table = embedded.to_arrow_table()
+    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
 ```
 
 ## 5. Inspect the outputs
@@ -232,10 +232,10 @@ The default output directory contains:
 - `subtitles.csv`, with one row per timestamped segment;
 - `segment_embeddings.csv`, with source identity, timestamps, text, and embedding dimension.
 
-The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors are used in the in-memory Relation but the CSV intentionally records only their dimensions.
+The terminal output reports audio and subtitle row counts, then previews both summary rows and embedded segment rows. Full vectors remain in the in-memory result, but the CSV intentionally records only their dimensions.
 
 ## Scaling and model deployment
 
-Transcription and embedding have separate execution backends and batch sizes. For GPU speech recognition, an actor backend can reuse the cached Faster-Whisper model, while the embedding stage can use a different actor pool and resource shape. Every worker must be able to import the optional dependencies and access the model cache or model path.
+Transcription and embedding retain separate batch-size controls, while the full Relation workflow is materialized through Vane's configured runner. For GPU speech recognition, pass the requested GPU resource and make sure every worker can import the optional dependencies and access the model cache or model path.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) for sample WAV generation, OpenAI summary prompting, model-loading errors, and all arguments.

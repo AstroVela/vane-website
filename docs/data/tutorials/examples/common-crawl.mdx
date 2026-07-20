@@ -91,8 +91,9 @@ The orchestration first removes non-conversion records with SQL, then applies th
         """,
     )
 
+    decoder = DecodeWarcBatch()
     pages = filtered.map_batches(
-        DecodeWarcBatch(),
+        decoder.__call__,
         schema={
             "record_id": duckdb.sqltypes.VARCHAR,
             "target_uri": duckdb.sqltypes.VARCHAR,
@@ -102,7 +103,6 @@ The orchestration first removes non-conversion records with SQL, then applies th
             "text": duckdb.sqltypes.VARCHAR,
         },
         batch_size=args.batch_size,
-        execution_backend=args.execution_backend,
     ).query(
         "pages",
         f"""
@@ -206,12 +206,10 @@ The example uses Vane's Transformers provider. Because the AI function returns i
             provider="transformers",
             model=args.embedding_model_id,
             output_column="embedding",
-            execution_backend=args.embedding_execution_backend,
             max_chunk_chars=args.max_chunk_chars,
             batch_size=args.embedding_batch_size,
         )
-        embedded = append_embedding(conn, chunks, embedded_only)
-        embedded_table = embedded.to_arrow_table()
+        embedded_table = append_embedding(chunks_table, embedded_only)
 ```
 
 The model defaults to Sentence Transformers' `all-MiniLM-L6-v2`. Use the local-files-only option when the model is already cached and the worker must not contact Hugging Face. You can also skip this stage to inspect WARC decoding and chunking without model dependencies.
@@ -229,6 +227,6 @@ The script prints the number of source records, decoded pages, chunks, and embed
 
 ## Scaling the same pipeline
 
-The decoding, chunking, and embedding stages each expose an execution-backend option. Keep the sample path local while validating schemas, then select `ray_task` or `ray_actor` for expensive stages and configure the Ray runner. The source-loading and output contracts do not change.
+The script materializes each Relation through Vane's configured runner. Use `VANE_RUNNER=local` while validating schemas locally, or leave it unset and configure `RAY_ADDRESS` for Ray execution. The source-loading and output contracts do not change.
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/common_crawl.py) for every argument and the WET parser implementation.
