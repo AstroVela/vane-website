@@ -20,11 +20,13 @@
 ### Task 1: Lock and fix CTA responsive and hover behavior
 
 **Files:**
+
 - Create: `tests/cta-styles.test.mjs`
 - Modify: `src/index.css:119-122`
 - Modify: `src/index.css:2822-2823`
 
 **Interfaces:**
+
 - Consumes: Docusaurus's `a:hover` link color and the existing `.cta`, `.h2`, `.btn`, and `.btn-solid` class contracts.
 - Produces: A Chinese CTA width override plus explicit outlined and solid button hover colors, guarded by Node.js source-level regression tests.
 
