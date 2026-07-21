@@ -18,6 +18,7 @@ dist-ssr
 
 # Local agent configuration
 .claude/
+.worktrees/
 
 # Editor directories and files
 .vscode/*
