@@ -29,7 +29,7 @@ Vane Data uses `vane-ai` as the distribution package and `vane` as the Python im
 
 ## Requirements
 
-- Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended and is the primary development version.
+- Vane supports Python 3.10 through 3.14. Python 3.12 is recommended and is the primary development version.
 - Published wheels currently target Linux x86_64 systems compatible with manylinux 2.28. Other platforms require a local C++ build environment.
 
 ## Install a released package
@@ -3882,7 +3882,7 @@ This page covers the tested local development flow. The commands below create a 
 
 ## Build from source
 
-Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10, 3.11, and 3.12. Python 3.12 is recommended and is used by the primary Ubuntu 24.04 x86-64 development path. The tested path requires Git with `git subtree` support, a C++20 compiler, CMake 3.29+, Ninja, ccache, and the vcpkg baseline pinned by the repository. Other native toolchains and distributions may require additional setup.
+Build from source when you are developing Vane Data, testing unreleased changes, or using a platform without a matching wheel. Vane supports Python 3.10 through 3.14. Python 3.12 is recommended and is used by the primary Ubuntu 24.04 x86-64 development path. The tested path requires Git with `git subtree` support, a C++20 compiler, CMake 3.29+, Ninja, ccache, and the vcpkg baseline pinned by the repository. Other native toolchains and distributions may require additional setup.
 
 Clone the repository normally. The DuckDB engine fork is included directly under `external/duckdb`, so no separate submodule initialization is required:
 
