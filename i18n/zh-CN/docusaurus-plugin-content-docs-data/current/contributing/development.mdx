@@ -6,7 +6,7 @@ title: 开发
 
 ## 从源码构建
 
-当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。Vane 支持 Python 3.10、3.11 和 3.12。推荐使用 Python 3.12，主要的 Ubuntu 24.04 x86-64 开发流程使用该版本。经过测试的流程要求 Git 支持 `git subtree`，并提供 C++20 compiler、CMake 3.29+、Ninja、ccache，以及代码库锁定的 vcpkg baseline。其他 native toolchain 和 Linux 发行版可能需要额外配置。
+当你正在开发 Vane Data、测试尚未发布的改动，或使用的平台没有匹配的 wheel 时，可以从源码构建。Vane 支持 Python 3.10 至 3.14。推荐使用 Python 3.12，主要的 Ubuntu 24.04 x86-64 开发流程使用该版本。经过测试的流程要求 Git 支持 `git subtree`，并提供 C++20 compiler、CMake 3.29+、Ninja、ccache，以及代码库锁定的 vcpkg baseline。其他 native toolchain 和 Linux 发行版可能需要额外配置。
 
 按常规方式克隆代码库。DuckDB 引擎 fork 已直接包含在 `external/duckdb` 中，无需单独初始化 submodule：
 
