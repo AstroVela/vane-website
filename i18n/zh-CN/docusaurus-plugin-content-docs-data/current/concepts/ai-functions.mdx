@@ -22,9 +22,10 @@ Vane 目前提供两种 AI Expression 操作：
 `AS` 或 Python `.alias()` 命名生成列，并携带稳定 ID，让每个 provider 结果
 都能追溯到输入。
 
-SQL options 是规划配置，而不是逐行数据。公共设置使用 named argument，
-provider 和执行设置通过 `options := struct_pack(...)` 传入。这些值必须由常量
-组成；同一个 Expression 中的 provider、model 和执行设置不能随输入行变化。
+SQL options 是规划配置，而不是逐行数据。`provider`、`model` 等选择项及公共
+操作设置使用 named argument；provider 请求参数和执行设置通过
+`options := struct_pack(...)` 传入。这些值必须由常量组成；同一个 Expression
+中的 provider、model 和执行设置不能随输入行变化。
 
 Expression 没有分类函数。上面的 provider 能力表有意只列出返回 Expression
 的操作。
@@ -84,9 +85,9 @@ notebook 输出或已提交文件；SQL binding 会拒绝疑似凭据的 option 
 ## 4. SQL Expression
 
 当周围的转换本来就是 query 时，SQL 是简洁的默认选择。Vane connection 会
-注册 `ai_prompt` 和 `ai_embed`；公共设置使用 named argument，`options` struct
-包含 provider 与执行设置。Ray 是 Vane 的默认 runner，示例中的 `show()` 会
-通过 RayRunner 物化 relation。只有
+注册 `ai_prompt` 和 `ai_embed`；`provider`、`model` 等选择项及公共操作设置使用
+named argument，`options` struct 包含 provider 请求参数和执行设置。Ray 是 Vane
+的默认 runner，示例中的 `show()` 会通过 RayRunner 物化 relation。只有
 需要覆盖已有的 local runner 设置时，才在创建 connection 前调用
 `vane.configure(runner="ray")`。
 

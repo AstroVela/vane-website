@@ -721,10 +721,11 @@ Both operations preserve row count. Keep any source columns needed later in
 the projection, name the generated column with SQL `AS` or Python `.alias()`,
 and carry a stable ID so every provider result can be traced to its input.
 
-SQL options are planning configuration, not row data. Pass common settings as
-named arguments and provider or execution settings through
-`options := struct_pack(...)`. Those values must be constants; provider names,
-models, and execution settings cannot vary by input row in one Expression.
+SQL options are planning configuration, not row data. Pass provider and model
+selection plus common operation settings as named arguments, and pass provider
+request and execution settings through `options := struct_pack(...)`. Those
+values must be constants; provider names, models, and execution settings cannot
+vary by input row in one Expression.
 
 There is no Expression classification function. The provider capability table
 above is intentionally limited to operations that return an Expression.
@@ -787,10 +788,11 @@ credential-like option fields.
 ## 4. SQL Expression
 
 SQL is a compact default when the surrounding transformation is already a
-query. A Vane connection registers `ai_prompt` and `ai_embed`; common settings
-are named arguments and the `options` struct contains provider and execution
-settings. Ray is Vane's default runner, and the examples' `show()` calls
-materialize the relation through RayRunner. Call
+query. A Vane connection registers `ai_prompt` and `ai_embed`; provider and
+model selection plus common operation settings are named arguments, while the
+`options` struct contains provider request and execution settings. Ray is Vane's
+default runner, and the examples' `show()` calls materialize the relation through
+RayRunner. Call
 `vane.configure(runner="ray")` before creating the connection only when you
 need to override an existing local runner setting.
 
