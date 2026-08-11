@@ -2334,6 +2334,9 @@ The default dataset is synthetic, but inference still uses an OpenAI-compatible 
 The choice response contains one answer letter. The judge response separates detailed reasoning, a concise hypothesis, and a coarse attribution. Pydantic models provide the structured-output contract when the selected endpoint supports SDK parsing. Import `BaseModel`, `ConfigDict`, and `Field` from `pydantic`; forbidding extra fields closes every object for OpenAI structured output.
 
 ```python
+from pydantic import BaseModel, ConfigDict, Field
+
+
 class ChoiceResponse(BaseModel):
     """Structured answer for a multiple-choice question."""
 
