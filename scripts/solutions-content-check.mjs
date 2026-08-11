@@ -35,14 +35,14 @@ function extractUseCase(id) {
 
 const mustIncludeInPage = [
   'AI pipeline use cases — Vane',
-  'Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, Prompt output, and voice analytics.',
+  'Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, structured multimodal output, and voice analytics.',
   'AI pipelines Vane is built for',
   'Web Text to Embeddings',
   'Semantic Search',
   'Text Deduplication',
   'Image Pipelines',
   'Image Generation',
-  'Prompt and Structured Output',
+  'Multimodal Structured Output',
   'Voice AI Analytics',
   'Vane AI 工作流用例',
   'Vane 适合哪些 AI 工作流',
@@ -70,7 +70,7 @@ const canonicalExamples = {
   dedupe: 'minhash_dedupe.py',
   images: 'querying_images.py',
   imagegen: 'image_generation.py',
-  prompt: 'basic_prompt.py',
+  multimodal: 'multimodal_structured_outputs.py',
   voice: 'voice_ai_analytics.py',
 }
 
@@ -83,12 +83,7 @@ for (const [id, filename] of Object.entries(canonicalExamples)) {
   assert.match(block, new RegExp(`filename: '${escapeRegExp(filename)}'`), `${id} should name its canonical script`)
   assert.match(block, new RegExp(`example: '${escapeRegExp(examplePath)}'`), `${id} should name its canonical script path`)
   assert.match(code, new RegExp(`python ${escapeRegExp(examplePath)}`), `${id} should show a copyable canonical command`)
-  assert.doesNotMatch(code, /execution_backend|actor_number|vane\.configure|--runner|--execution-backend/, `${id} should not expose internal execution overrides`)
-}
-
-assert.match(extractUseCase('prompt').code, /VANE_RUNNER=local python examples\/basic_prompt\.py/, 'Prompt should keep its read_blob input on the local runner')
-for (const id of ['embeddings', 'search', 'dedupe', 'images', 'imagegen', 'voice']) {
-  assert.doesNotMatch(extractUseCase(id).code, /VANE_RUNNER/, `${id} should rely on the default runner`)
+  assert.doesNotMatch(code, /execution_backend|actor_number|vane\.configure|VANE_RUNNER|--runner|--execution-backend/, `${id} should rely on the default Ray runner and backend`)
 }
 
 for (const id of ['embeddings', 'search', 'dedupe', 'images', 'imagegen', 'voice']) {
@@ -100,7 +95,7 @@ for (const flowName of [
   'LSH candidates',
   'AnalyzeRedRegionsBatch',
   'GenerateImageFromTextBatch',
-  'vane.ai.prompt',
+  'VLM with image',
   'subtitle rows',
 ]) {
   assert.match(data, new RegExp(escapeRegExp(flowName)), `UseCases data should describe the canonical ${flowName} flow`)
@@ -108,7 +103,7 @@ for (const flowName of [
 
 assert.doesNotMatch(
   data,
-  /ai_embed\(|DetectFeatures|\bDiffusion\b|flat_map|execution_backend|actor_number|vane\.configure\(/,
+  /ai_embed\(|DetectFeatures|\bDiffusion\b|flat_map|execution_backend|actor_number|vane\.configure\(|VANE_RUNNER/,
   'UseCases data should not reintroduce APIs or execution overrides that are absent from the canonical scripts',
 )
 

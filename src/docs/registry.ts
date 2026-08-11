@@ -73,10 +73,10 @@ export const DOCS_PAGES = {
     title: 'Voice AI Analytics',
     titleZh: '语音 AI 分析',
   },
-  'tutorials/examples/basic-prompt': {
-    source: 'docs/data/tutorials/examples/basic-prompt.mdx',
-    title: 'Prompt and Structured Output',
-    titleZh: 'Prompt 与结构化输出',
+  'tutorials/examples/multimodal-structured-outputs': {
+    source: 'docs/data/tutorials/examples/multimodal-structured-outputs.mdx',
+    title: 'Multimodal Structured Outputs',
+    titleZh: '多模态结构化输出',
   },
   'tutorials/use-cases/claims-disposition': {
     source: 'docs/data/tutorials/use-cases/claims-disposition.mdx',

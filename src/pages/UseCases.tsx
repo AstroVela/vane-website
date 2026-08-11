@@ -43,8 +43,8 @@ export default function UseCases() {
     locale,
     {
       title: 'AI pipeline use cases — Vane',
-      description: 'Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, Prompt output, and voice analytics.',
-      ogDescription: 'Real AI pipeline examples for embeddings, search, deduplication, images, generation, Prompt output, and voice analytics.',
+      description: 'Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, structured multimodal output, and voice analytics.',
+      ogDescription: 'Real AI pipeline examples for embeddings, search, deduplication, images, generation, multimodal structured output, and voice analytics.',
       eyebrow: 'Use Cases',
       heading: 'AI pipelines Vane is built for',
       lead: 'Real user scenarios, not just examples. Each one is the same shape: the problem, the pipeline, the code, what goes in and out, and when to reach for it.',
@@ -60,8 +60,8 @@ export default function UseCases() {
     },
     {
       title: 'Vane AI 工作流用例',
-      description: '查看 Vane 支撑的多模态 AI 工作流用例：embeddings、语义检索、去重、图像处理、批量生成、Prompt 输出和语音分析。',
-      ogDescription: '覆盖 embeddings、搜索、去重、图像、生成、Prompt 输出和语音分析的真实 AI 流水线示例。',
+      description: '查看 Vane 支撑的多模态 AI 工作流用例：embeddings、语义检索、去重、图像处理、批量生成、结构化抽取和语音分析。',
+      ogDescription: '覆盖 embeddings、搜索、去重、图像、生成、多模态结构化输出和语音分析的真实 AI 流水线示例。',
       eyebrow: '用例',
       heading: 'Vane 适合哪些 AI 工作流',
       lead: '常见生产场景示例，每个用例都说明问题、流水线、代码、输入输出和适用时机。',

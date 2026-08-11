@@ -953,13 +953,13 @@ The base environment above is enough for MinHash deduplication and placeholder i
 | Querying images | `uv pip install Pillow` | The OpenImages source also needs network access |
 | Image generation | None for the placeholder backend | Stable Diffusion needs `uv pip install diffusers transformers accelerate torch Pillow` |
 | Voice AI analytics | `uv pip install torch sentence-transformers transformers` | Faster-Whisper needs `uv pip install faster-whisper av`; OpenAI summaries need `uv pip install 'vane-ai[openai]'` |
-| Prompt and structured output | `uv pip install 'vane-ai[openai]'` and an OpenAI API key | OpenAI-compatible endpoints can be selected with provider options |
+| Multimodal structured outputs | `uv pip install 'vane-ai[openai]' pydantic` and a provider token | AI2D input additionally needs `uv pip install datasets Pillow` |
 
 For a CUDA-enabled workflow, install the PyTorch build that matches the operating system, GPU, and driver. The default PyPI build is not always the correct CUDA build.
 
 ### Run bounded samples
 
-Run these commands from the sparse checkout root. They use built-in or generated inputs; only the Prompt example requires a hosted model by default.
+Run these commands from the sparse checkout root. They use built-in or generated inputs; only the structured-output example requires a hosted model by default.
 
 | Example | Bounded command | Default result |
 | --- | --- | --- |
@@ -969,9 +969,9 @@ Run these commands from the sparse checkout root. They use built-in or generated
 | Querying images | `python examples/querying_images.py --source sample --limit 5` | Image previews, masks, and `top_red_images.csv` under `examples/output/querying_images/` |
 | Image generation | `python examples/image_generation.py --source sample --limit 4` | Placeholder PNG files and `metadata.csv` under `examples/output/image_generation/` |
 | Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
-| Prompt and structured output | `VANE_RUNNER=local python examples/basic_prompt.py` | Plain-text, typed `STRUCT`, raw-response, and SQL results in the terminal; set `OPENAI_API_KEY` first |
+| Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `OPENAI_API_KEY` before using the default endpoint |
 
-The other six commands leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. The Basic Prompt command explicitly uses `local` because its checked-in single-image input comes from an in-process `read_blob` table function; stage binary input in a distributed source before adapting it to Ray. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials.
+The scripts leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. The configured runner materializes the Relation workflow without changing the sample contract.
 
 ## Examples
 
@@ -983,7 +983,7 @@ The other six commands leave the Vane runner unset, so the installed package def
 | [Querying image data](/docs/data/tutorials/examples/querying-images) | Load image bytes, detect red regions in a batch UDF, and rank image-mask pairs | Generated sample images |
 | [Generating images from text](/docs/data/tutorials/examples/image-generation) | Turn prompt rows into PNG bytes with a placeholder or Stable Diffusion backend | Deterministic placeholder images |
 | [Voice AI analytics](/docs/data/tutorials/examples/voice-ai-analytics) | Transcribe audio, summarize transcripts, create subtitle rows, and embed segments | Generated audio with placeholder transcripts |
-| [Prompt and structured output](/docs/data/tutorials/examples/basic-prompt) | Generate plain text, a native typed `STRUCT`, and raw provider response JSON from prompt and image columns | Checked-in prompt and image plus a hosted model |
+| [Multimodal structured outputs](/docs/data/tutorials/examples/multimodal-structured-outputs) | Compare vision and text-only answers, classify evaluation quadrants, and diagnose failures | Synthetic visual questions plus a hosted VLM |
 
 ## Use cases
 
@@ -999,7 +999,7 @@ These use cases combine multiple source systems, modality branches, or SQL-deriv
 
 ## Choosing an example
 
-Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and Prompt examples show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
+Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and structured outputs show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
 
 ## Code provenance
 
@@ -2312,134 +2312,201 @@ Transcription and embedding retain separate batch-size controls, while the full 
 
 See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/voice_ai_analytics.py) for sample WAV generation, OpenAI summary prompting, model-loading errors, and all arguments.
 
-## Prompt and Structured Output
+## Multimodal Structured Outputs
 
-Route: /docs/data/tutorials/examples/basic-prompt
-Source: docs/data/tutorials/examples/basic-prompt.mdx
+Route: /docs/data/tutorials/examples/multimodal-structured-outputs
+Source: docs/data/tutorials/examples/multimodal-structured-outputs.mdx
 
-Vane Prompt expressions can return plain text, a native typed `STRUCT`, or the serialized raw provider response while preserving one result per input row. This tutorial follows [`examples/basic_prompt.py`](https://github.com/AstroVela/vane/blob/main/examples/basic_prompt.py), which sends a prompt and image through the Python and SQL APIs.
+A model can answer a visual question correctly for the wrong reason—for example, by exploiting clues in the text instead of reading the image. This tutorial follows [`examples/multimodal_structured_outputs.py`](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) to compare vision-language answers with text-only answers and classify whether the image helped or hurt.
 
-The example has five stages:
+The evaluation pipeline:
 
-1. Load one image as a `BLOB` beside its prompt.
-2. Generate a short plain-text response.
-3. Constrain generation with a portable JSON Schema and return a native `STRUCT`.
-4. Request the raw provider response as JSON text.
-5. Express the same structured prompt in SQL.
+1. Loads synthetic color questions or a small AI2D sample from The Cauldron.
+2. Asks the model each multiple-choice question with its image.
+3. Asks the same question without the image.
+4. Parses both answers, measures accuracy, and assigns a diagnostic quadrant.
+5. Optionally asks the vision-language model to diagnose failure rows.
 
-Install the OpenAI provider extra with `uv pip install 'vane-ai[openai]'` and set `OPENAI_API_KEY` in the worker environment before running the hosted calls. The checked-in script uses the official OpenAI endpoint and `gpt-4o-mini` by default.
+The default dataset is synthetic, but inference still uses an OpenAI-compatible model endpoint. By default that endpoint is the Hugging Face router and the API key is read from `OPENAI_API_KEY` in the worker environment.
 
-## 1. Keep the prompt and image in one Relation
+## 1. Define structured result contracts
 
-`read_blob` supplies the image bytes, while SQL adds the prompt text. Both fields remain ordinary typed columns that can be projected with the model result.
-
-```python
-connection = vane.connect()
-relation = connection.sql(
-    """
-    SELECT 'Summarize this image.' AS prompt, content AS image
-    FROM read_blob('examples/example.png')
-    """
-)
-```
-
-The sparse checkout includes `examples/example.png`, so this input step does not require another dataset download.
-
-## 2. Generate plain text
-
-Prompt messages are ordered expressions. A `VARCHAR` contributes text, a `BLOB` contributes one image, and a null item is omitted for that row.
+The choice response contains one answer letter. The judge response separates detailed reasoning, a concise hypothesis, and a coarse attribution. Pydantic models provide the structured-output contract when the selected endpoint supports SDK parsing. Import `BaseModel`, `ConfigDict`, and `Field` from `pydantic`; forbidding extra fields closes every object for OpenAI structured output.
 
 ```python
-responses = vane.ai.prompt(
-    relation,
-    [vane.col("prompt"), vane.col("image")],
-    system_message="Answer briefly.",
-    model="gpt-4o-mini",
-    output_column="response",
-    max_output_tokens=128,
-)
-responses.show()
+class ChoiceResponse(BaseModel):
+    """Structured answer for a multiple-choice question."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    choice: str = Field(
+        ...,
+        description="The selected answer letter, such as A, B, C, or D.",
+    )
+
+
+class JudgeResponse(BaseModel):
+    """Structured diagnostic feedback for a failed example."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reasoning: str = Field(..., description="Why the model likely answered that way.")
+    hypothesis: str = Field(..., description="A concise cause of the error.")
+    attribution: str = Field(
+        ...,
+        description="One of: question, image, model, or other.",
+    )
 ```
 
-The relation form preserves the input cardinality and returns the source columns plus `response`. Credentials stay in the environment and are not serialized into the plan.
+Prompt-only mode omits those Python return types and relies on the same system messages to request JSON directly. That path supports OpenAI-compatible servers that do not implement structured parsing.
 
-## 3. Return a native structured value
+## 2. Start with a visual dataset you can audit
 
-The portable schema subset maps JSON object properties to a DuckDB `STRUCT`. The example makes both properties required while allowing `confidence` itself to be null.
+The synthetic source creates solid-color PNG files and a four-choice question. Because every answer truly requires the image, it is a useful smoke test for the ablation logic.
 
 ```python
-answer_schema = {
-    "type": "object",
-    "properties": {
-        "summary": {"type": "string"},
-        "confidence": {"type": ["number", "null"]},
-    },
-    "required": ["summary", "confidence"],
-    "additionalProperties": False,
-}
-structured = vane.ai.prompt(
-    relation,
-    [vane.col("prompt"), vane.col("image")],
-    return_format=answer_schema,
-    model="gpt-4o-mini",
-    output_column="answer",
-)
-structured.show()
+def synthetic_rows(limit: int) -> list[dict[str, Any]]:
+    """Return a tiny local vision QA set that needs the image to answer."""
+    color_rows = [
+        ("red", "A", (220, 32, 32)),
+        ("blue", "B", (32, 96, 220)),
+        ("green", "C", (32, 160, 80)),
+        ("yellow", "D", (230, 200, 32)),
+    ]
+    rows: list[dict[str, Any]] = []
+    choices = "A. red\nB. blue\nC. green\nD. yellow"
+    for color, answer, rgb in color_rows:
+        rows.append(
+            {
+                "id": f"synthetic-{color}",
+                "source": "synthetic",
+                "question": (f"Which color fills the attached square?\n{choices}\nReturn the answer letter."),
+                "answer": answer,
+                "image": solid_png(96, 96, rgb),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
 ```
 
-The schema constrains generation and defines the result type before execution. Unsupported schema features fail during planning instead of becoming an untyped runtime convention.
+The AI2D path streams rows from Hugging Face, takes the first user and assistant turns, normalizes the assistant answer to A–D, converts the first image to bytes, and keeps only complete examples. Both sources become a Vane Relation with `id`, `source`, `question`, `answer`, and binary `image` columns.
 
-## 4. Preserve the raw provider response when needed
+## 3. Run inference with the image
 
-Setting `return_raw_response=True` still uses the schema to constrain the request, but exposes the provider response body as JSON text for diagnostics or audit storage.
+Common provider options are assembled once so the vision, text-only, and judge calls use the same model, endpoint, and sampling settings.
 
 ```python
-raw = vane.ai.prompt(
-    relation,
-    vane.col("prompt"),
-    return_format=answer_schema,
-    return_raw_response=True,
-    model="gpt-4o-mini",
-    output_column="raw_response",
-)
-raw.show()
+    common_prompt_options = {
+        "provider": "openai",
+        "model": args.model,
+        "use_chat_completions": True,
+        "temperature": args.temperature,
+        "max_output_tokens": args.max_tokens,
+    }
+    if base_url:
+        common_prompt_options["base_url"] = base_url
+
+    choice_return_format = ChoiceResponse if args.structured_output_mode == "parse" else None
+    judge_return_format = JudgeResponse if args.structured_output_mode == "parse" else None
+
+    with_image = prompt(
+        rel,
+        [vane.col("question"), vane.col("image")],
+        system_message=VISION_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_with_image",
+        **common_prompt_options,
+    )
+    eval_with_image = add_choice_eval(
+        with_image,
+        "response_with_image",
+        "predicted_with_image",
+        "is_correct_with_image",
+    )
 ```
 
-Raw responses are provider-specific. Prefer the plain or structured result for downstream logic, and retain raw data only when its extra metadata has a defined purpose.
+The relation form of `prompt` preserves every source column and appends `response_with_image`, so the evaluation step can consume the structured response without reattaching rows by position.
 
-## 5. Use the equivalent typed SQL overload
+## 4. Repeat the question without the image
 
-SQL accepts the prompt, one `BLOB` image, named planning arguments, and an `options` struct for provider or execution settings.
+The ablation uses the already enriched Relation but passes only the question Expression. It writes to a separate response column and applies the same answer-normalization logic.
 
 ```python
-connection.sql(
-    """
-    SELECT AI_PROMPT(
-        prompt,
-        image,
-        return_format := json '{
-            "type": "object",
-            "properties": {
-                "summary": {"type": "string"},
-                "confidence": {"type": ["number", "null"]}
-            },
-            "required": ["summary", "confidence"],
-            "additionalProperties": false
-        }',
-        system_message := 'Answer briefly.',
-        model := 'gpt-4o-mini',
-        options := struct_pack(max_output_tokens := 128)
-    ) AS response
-    FROM relation
-    """
-).show()
+    without_image = prompt(
+        eval_with_image,
+        vane.col("question"),
+        system_message=TEXT_ONLY_SYSTEM_PROMPT,
+        return_format=choice_return_format,
+        output_column="response_without_image",
+        **common_prompt_options,
+    )
+    evaluated = add_choice_eval(
+        without_image,
+        "response_without_image",
+        "predicted_without_image",
+        "is_correct_without_image",
+    )
+    classified = classify_quadrants(evaluated)
 ```
 
-Run `VANE_RUNNER=local python examples/basic_prompt.py` from the sparse checkout root after setting the provider credential. The explicit local runner keeps this single-image `read_blob` input in its connection; stage binary inputs in a distributed source before adapting the workflow to Ray. Calls can incur cost and send the prompt and image to the configured service, so keep the first validation input small.
+Answer normalization first tries the structured `choice` field, then a JSON-looking pattern, and finally any standalone A–D token. It records both the normalized choice and a Boolean correctness column.
 
-For an OpenAI-compatible service, use its API root as `base_url`, select a vision-capable model for this image input, and set `use_chat_completions=True` when the service implements Chat Completions instead of the Responses API. Those are deployment choices; the checked-in source remains configured for official OpenAI.
+## 5. Classify diagnostic quadrants
 
-See [AI Functions](/docs/data/concepts/ai-functions) for provider extras, fixed-size embeddings, execution options, and credential handling.
+The two correctness values produce four mutually exclusive outcomes:
+
+- Both Correct: the answer succeeds with or without visual evidence.
+- Image Helped: only the vision run succeeds.
+- Image Hurt: only the text-only run succeeds.
+- Both Incorrect: neither run succeeds.
+
+The classification itself stays in SQL over the Relation.
+
+```python
+def classify_quadrants(rel: Any) -> Any:
+    alias = relation_alias("quadrant", rel)
+    return rel.query(
+        alias,
+        f"""
+        select
+        {alias}.*,
+        case
+            when is_correct_with_image and is_correct_without_image then 'Both Correct'
+            when is_correct_with_image and not is_correct_without_image then 'Image Helped'
+            when not is_correct_with_image and is_correct_without_image then 'Image Hurt'
+            else 'Both Incorrect'
+        end as quadrant
+        from {alias}
+        """,
+    )
+```
+
+The script prints accuracy with the image, accuracy without it, and the delta, followed by row-level predictions and aggregated quadrant counts. On the synthetic dataset, Image Helped is the expected result for an image-aware model because the question has no textual clue about the generated square.
+
+## 6. Ask a VLM to diagnose failures
+
+Unless the judge stage is skipped, only Image Hurt and Both Incorrect rows proceed. The script constructs a diagnostic prompt containing the question, correct answer, and both model choices, then includes the image again for the judge.
+
+```python
+    judged = prompt(
+        judge_input,
+        [vane.col("judge_prompt"), vane.col("image")],
+        system_message=JUDGE_SYSTEM_PROMPT,
+        return_format=judge_return_format,
+        output_column="judge_response",
+        max_output_tokens=args.judge_max_tokens,
+        **{key: value for key, value in common_prompt_options.items() if key != "max_output_tokens"},
+    )
+```
+
+The final preview extracts attribution, hypothesis, and reasoning from the judge JSON. This stage is diagnostic model output, not ground truth; use it to organize review rather than to replace human inspection.
+
+## Provider and execution choices
+
+The default model is `Qwen/Qwen3-VL-8B-Instruct` through the Hugging Face OpenAI-compatible router. The base URL, model, temperature, token limits, and structured-output mode are configurable; credentials stay in `OPENAI_API_KEY` instead of being serialized into the plan. Parse mode requires a vision model and endpoint that support OpenAI-style JSON Schema structured outputs. Execution follows Vane's configured runner; with Ray, workers need network access to the endpoint and the same Vane AI dependencies.
+
+See the [complete source](https://github.com/AstroVela/vane/blob/main/examples/multimodal_structured_outputs.py) for image normalization, AI2D loading, answer parsing, metric queries, and every argument.
 
 ## Claims Disposition from Multimodal Evidence
 
