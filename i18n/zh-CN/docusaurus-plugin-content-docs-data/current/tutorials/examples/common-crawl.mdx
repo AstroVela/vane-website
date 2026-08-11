@@ -95,12 +95,12 @@ class DecodeWarcBatch:
     pages = filtered.map_batches(
         decoder.__call__,
         schema={
-            "record_id": duckdb.sqltypes.VARCHAR,
-            "target_uri": duckdb.sqltypes.VARCHAR,
-            "warc_date": duckdb.sqltypes.VARCHAR,
-            "content_length": duckdb.sqltypes.BIGINT,
-            "language": duckdb.sqltypes.VARCHAR,
-            "text": duckdb.sqltypes.VARCHAR,
+            "record_id": vane.sqltypes.VARCHAR,
+            "target_uri": vane.sqltypes.VARCHAR,
+            "warc_date": vane.sqltypes.VARCHAR,
+            "content_length": vane.sqltypes.BIGINT,
+            "language": vane.sqltypes.VARCHAR,
+            "text": vane.sqltypes.VARCHAR,
         },
         batch_size=args.batch_size,
     ).query(
@@ -195,21 +195,21 @@ class ChunkTextBatch:
 
 ## 4. 生成嵌入
 
-示例使用 Vane 的 Transformers provider。由于 AI 函数会单独返回输出 Relation，`append_embedding` 会在把嵌入接回原文本块之前，检查行数以及预期列是否存在。
+示例使用 Vane 的 Transformers provider。Relation 形式的 `embed` 会保留源列并新增指定的 embedding 列，因此物化后的 Relation 可以直接写出。
 
 ```python
     embedded_table = None
     if not args.skip_embeddings:
-        embedded_only = embed_text(
+        embedded = embed(
             chunks,
-            "text",
+            vane.col("text"),
             provider="transformers",
             model=args.embedding_model_id,
             output_column="embedding",
             max_chunk_chars=args.max_chunk_chars,
             batch_size=args.embedding_batch_size,
         )
-        embedded_table = append_embedding(chunks_table, embedded_only)
+        embedded_table = collect_relation(embedded)
 ```
 
 模型默认为 Sentence Transformers 的 `all-MiniLM-L6-v2`。如果模型已经缓存，并且执行节点不应访问 Hugging Face，可以启用仅本地文件选项。也可以跳过此阶段，在不安装模型依赖的情况下检查 WARC 解码和切分结果。

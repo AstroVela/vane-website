@@ -1,0 +1,127 @@
+---
+title: Prompt 与结构化输出
+---
+
+Vane Prompt Expression 可以返回纯文本、原生类型化 `STRUCT`，或序列化后的 provider 原始响应，同时为每个输入行保留一个结果。本教程沿着 [`examples/basic_prompt.py`](https://github.com/AstroVela/vane/blob/main/examples/basic_prompt.py)，通过 Python 和 SQL API 发送提示词与图像。
+
+示例包含五个阶段：
+
+1. 把一张图像作为 `BLOB` 与提示词放在同一个 Relation 中。
+2. 生成简短的纯文本响应。
+3. 使用可移植 JSON Schema 约束生成，并返回原生 `STRUCT`。
+4. 以 JSON 文本形式取得 provider 原始响应。
+5. 用 SQL 表达相同的结构化 prompt。
+
+运行托管调用前，先执行 `uv pip install 'vane-ai[openai]'` 安装 OpenAI provider extra，并在 worker 环境中设置 `OPENAI_API_KEY`。仓库中的脚本默认使用 OpenAI 官方 endpoint 和 `gpt-4o-mini`。
+
+## 1. 在一个 Relation 中保留提示词与图像
+
+`read_blob` 提供图像字节，SQL 同时增加提示词文本。两个字段都是普通的类型化列，可以与模型结果一起投影。
+
+```python
+connection = vane.connect()
+relation = connection.sql(
+    """
+    SELECT 'Summarize this image.' AS prompt, content AS image
+    FROM read_blob('examples/example.png')
+    """
+)
+```
+
+稀疏 checkout 已包含 `examples/example.png`，因此输入阶段不需要再下载数据集。
+
+## 2. 生成纯文本
+
+Prompt message 是有顺序的 Expression。`VARCHAR` 提供文本，`BLOB` 提供一张图像，空值项会在对应输入行中被省略。
+
+```python
+responses = vane.ai.prompt(
+    relation,
+    [vane.col("prompt"), vane.col("image")],
+    system_message="Answer briefly.",
+    model="gpt-4o-mini",
+    output_column="response",
+    max_output_tokens=128,
+)
+responses.show()
+```
+
+Relation 形式会保持输入基数，并返回源列与新增的 `response`。凭据保留在环境中，不会被序列化到 plan。
+
+## 3. 返回原生结构化值
+
+可移植 schema 子集会把 JSON object property 映射为 DuckDB `STRUCT`。示例要求两个 property 都存在，同时允许 `confidence` 的值为空。
+
+```python
+answer_schema = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "confidence": {"type": ["number", "null"]},
+    },
+    "required": ["summary", "confidence"],
+    "additionalProperties": False,
+}
+structured = vane.ai.prompt(
+    relation,
+    [vane.col("prompt"), vane.col("image")],
+    return_format=answer_schema,
+    model="gpt-4o-mini",
+    output_column="answer",
+)
+structured.show()
+```
+
+Schema 既约束生成，也会在执行前定义结果类型。不受支持的 schema feature 会在规划阶段失败，而不会变成无类型的运行时约定。
+
+## 4. 按需保留 provider 原始响应
+
+设置 `return_raw_response=True` 后，请求仍受 schema 约束，但会把 provider response body 暴露为 JSON 文本，供诊断或审计存储使用。
+
+```python
+raw = vane.ai.prompt(
+    relation,
+    vane.col("prompt"),
+    return_format=answer_schema,
+    return_raw_response=True,
+    model="gpt-4o-mini",
+    output_column="raw_response",
+)
+raw.show()
+```
+
+原始响应与 provider 绑定。下游逻辑应优先使用纯文本或结构化结果，只在附加元数据有明确用途时保留 raw data。
+
+## 5. 使用等价的类型化 SQL overload
+
+SQL 接收提示词、一个 `BLOB` 图像、named planning argument，以及包含 provider 或执行设置的 `options` struct。
+
+```python
+connection.sql(
+    """
+    SELECT AI_PROMPT(
+        prompt,
+        image,
+        return_format := json '{
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "confidence": {"type": ["number", "null"]}
+            },
+            "required": ["summary", "confidence"],
+            "additionalProperties": false
+        }',
+        system_message := 'Answer briefly.',
+        model := 'gpt-4o-mini',
+        options := struct_pack(max_output_tokens := 128)
+    ) AS response
+    FROM relation
+    """
+).show()
+```
+
+设置 provider 凭据后，从稀疏 checkout 根目录运行 `VANE_RUNNER=local python examples/basic_prompt.py`。显式使用 local runner 可以让这条单图 `read_blob` 输入保留在当前 connection 中；迁移到 Ray 前，应先把二进制输入放入分布式数据源。调用可能产生费用，并把提示词与图像发送给所配置的服务，因此第一次验证应保持输入很小。
+
+使用 OpenAI-compatible service 时，应把它的 API 根地址作为 `base_url`，并为这里的图像输入选择支持视觉能力的模型；如果服务实现 Chat Completions 而不是 Responses API，还要设置 `use_chat_completions=True`。这些属于部署选择，仓库源码仍保持 OpenAI 官方配置。
+
+Provider extra、定长 embedding、执行 options 和凭据处理请参阅 [AI 函数](/zh-CN/docs/data/concepts/ai-functions)。

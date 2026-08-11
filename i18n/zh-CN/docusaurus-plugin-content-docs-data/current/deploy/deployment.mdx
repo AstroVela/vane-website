@@ -41,8 +41,9 @@ VANE_RUNNER=local python job.py
 如果还没有集群，先启动 head 节点：
 
 ```bash
+HEAD_IP="10.0.0.10" # 替换为 head 节点可访问的 IP。
 ray start --head \
-  --node-ip-address=<HEAD_IP> \
+  --node-ip-address="${HEAD_IP}" \
   --port=6379 \
   --dashboard-host=0.0.0
 ```
@@ -50,9 +51,11 @@ ray start --head \
 然后让每个 worker 节点加入集群：
 
 ```bash
+HEAD_IP="10.0.0.10" # 使用上面的 head 节点 IP。
+WORKER_IP="10.0.0.11" # 在每个 worker 上替换。
 ray start \
-  --address=<HEAD_IP>:6379 \
-  --node-ip-address=<WORKER_IP>
+  --address="${HEAD_IP}:6379" \
+  --node-ip-address="${WORKER_IP}"
 ```
 
 Ray 已经是默认 runner，因此 Vane 作业不需要显式设置 runner：

@@ -171,11 +171,11 @@ The UDF returns all input metadata plus `generated_image` bytes. The call site d
 ```python
     map_kwargs: dict[str, Any] = {
         "schema": {
-            "id": duckdb.sqltypes.BIGINT,
-            "prompt": duckdb.sqltypes.VARCHAR,
-            "source_url": duckdb.sqltypes.VARCHAR,
-            "aesthetic_score": duckdb.sqltypes.DOUBLE,
-            "generated_image": duckdb.sqltypes.BLOB,
+            "id": vane.sqltypes.BIGINT,
+            "prompt": vane.sqltypes.VARCHAR,
+            "source_url": vane.sqltypes.VARCHAR,
+            "aesthetic_score": vane.sqltypes.DOUBLE,
+            "generated_image": vane.sqltypes.BLOB,
         },
         "batch_size": args.batch_size,
     }

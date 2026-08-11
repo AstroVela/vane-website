@@ -28,11 +28,9 @@ findings = con.sql("""
            policy_check(text) AS rule_hit,
            ai_prompt(
                text,
-               struct_pack(
-                   provider := 'openai',
-                   model := 'gpt-4o-mini',
-                   system_message := 'Find missing claim evidence.'
-               )
+               system_message := 'Find missing claim evidence.',
+               provider := 'openai',
+               model := 'gpt-4o-mini'
            ) AS ai_finding,
            source_uri
     FROM read_parquet('claims/*.parquet')

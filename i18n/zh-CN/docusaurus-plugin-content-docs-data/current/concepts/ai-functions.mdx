@@ -15,16 +15,16 @@ Vane 目前提供两种 AI Expression 操作：
 
 | 操作 | SQL Expression | Python Expression | 结果 | 支持的 provider |
 | --- | --- | --- | --- | --- |
-| 生成文本 | `ai_prompt(messages [, options])` | `vane.ai.prompt(expression, ...)` | 每个输入行得到一个 `VARCHAR` | `openai`、`google`、`anthropic`、`vllm` |
-| 生成 embedding | `ai_embed(text [, options])` | `vane.ai.embed(expression, ...)` | 每个输入行得到一个 `FLOAT[]`；设置 `dimensions=n` 时为 `FLOAT[n]` | `openai`、`google`、`transformers` |
+| 生成文本或结构化输出 | `ai_prompt(messages, ...)` | `vane.ai.prompt(expression, ...)` | 每个输入行得到一个 `VARCHAR` 或原生 `STRUCT` | `openai`、`google`、`anthropic`、`vllm` |
+| 生成 embedding | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | 每个输入行得到一个定长 `FLOAT[n]` | `openai`、`google`、`transformers` |
 
 两个操作都会保持行数。请把后续需要的源列保留在 projection 中，使用 SQL
 `AS` 或 Python `.alias()` 命名生成列，并携带稳定 ID，让每个 provider 结果
 都能追溯到输入。
 
-SQL options 是规划配置，而不是逐行数据。因此，可选的 `struct_pack(...)`
-参数必须由常量组成；同一个 Expression 中的 provider、model 和执行设置不能
-随输入行变化。
+SQL options 是规划配置，而不是逐行数据。公共设置使用 named argument，
+provider 和执行设置通过 `options := struct_pack(...)` 传入。这些值必须由常量
+组成；同一个 Expression 中的 provider、model 和执行设置不能随输入行变化。
 
 Expression 没有分类函数。上面的 provider 能力表有意只列出返回 Expression
 的操作。
@@ -41,11 +41,11 @@ uv pip install vane-ai
 
 | Provider | Prompt | Embed | Runtime 与配置 |
 | --- | :---: | :---: | --- |
-| `openai` | 支持 | 支持 | OpenAI API 或 OpenAI-compatible endpoint；安装 `openai`，并在 worker 环境设置 `OPENAI_API_KEY` |
-| `google` | 支持 | 支持 | Google Generative AI；安装 `google-genai`，并在 worker 环境设置 `GOOGLE_API_KEY` |
-| `anthropic` | 支持 | 不支持 | Anthropic Messages API；安装 `anthropic`，并在 worker 环境设置 `ANTHROPIC_API_KEY` |
-| `vllm` | 支持 | 不支持 | 本地或远程 vLLM engine；安装 `vllm`，提供模型访问能力；需要 GPU actor 时使用 Ray |
-| `transformers` | 不支持 | 支持 | 本地 SentenceTransformers 模型；安装 `sentence-transformers`、`transformers` 和 `torch` |
+| `openai` | 支持 | 支持 | OpenAI API 或 OpenAI-compatible endpoint；安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY` |
+| `google` | 支持 | 支持 | Google Generative AI；安装 `vane-ai[google]`，并在 worker 环境设置 `GOOGLE_API_KEY` |
+| `anthropic` | 支持 | 不支持 | Anthropic Messages API；安装 `vane-ai[anthropic]`，并在 worker 环境设置 `ANTHROPIC_API_KEY` |
+| `vllm` | 支持 | 不支持 | 本地或远程 vLLM engine；安装 `vane-ai[vllm]`，提供模型访问能力；需要 GPU actor 时使用 Ray |
+| `transformers` | 不支持 | 支持 | 本地 SentenceTransformers 模型；安装 `vane-ai[transformers]` |
 
 需要可复现结果时，请显式设置 `provider` 和 `model`。模型 ID、限制和可用性
 由所配置的 endpoint 决定，因此应选择该 endpoint 支持的模型。
@@ -56,7 +56,7 @@ uv pip install vane-ai
 的进程：
 
 ```bash
-uv pip install vane-ai openai
+uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-token>"
 
 # 可选：仅在使用 OpenAI-compatible endpoint 时设置。
@@ -69,11 +69,14 @@ OpenAI client 会在 worker 上创建，并在创建时读取这两个环境变�
 使用官方 API 根地址。对于 Ray 作业，每个可能执行 Expression 的 worker 都
 必须安装 client 并配置这些环境变量。
 
-下面的示例同时展示另一种支持的方式：在 `struct_pack(...)` 或
-`OpenAIProviderOptions` 中显式传入非敏感的 `base_url`。使用 compatible
-service 时请替换该值。显式 option 的优先级高于 `OPENAI_BASE_URL`；如果依赖
-环境变量，请从 Expression 中省略这个 option。两种方式都应使用通常以 `/v1`
-结尾的 API 根地址，而不是 `/chat/completions` 这样的具体 operation path。
+下面的示例同时展示另一种支持的方式：在 `struct_pack(...)` 或 Python keyword
+中显式传入非敏感的 `base_url`。使用 compatible service 时请替换该值。显式
+option 的优先级高于 `OPENAI_BASE_URL`；如果依赖环境变量，请从 Expression
+中省略这个 option。两种方式都应使用通常以 `/v1` 结尾的 API 根地址，而不是
+`/chat/completions` 这样的具体 operation path。如果 compatible endpoint
+实现了 Chat Completions、但没有实现 OpenAI Responses API，还要在 SQL 中设置
+`use_chat_completions := true`，或在 Python 中设置
+`use_chat_completions=True`。
 
 Token 应始终保存在 `OPENAI_API_KEY` 中。不要把它放入 SQL、Python options、
 notebook 输出或已提交文件；SQL binding 会拒绝疑似凭据的 option 字段。
@@ -81,8 +84,9 @@ notebook 输出或已提交文件；SQL binding 会拒绝疑似凭据的 option 
 ## 4. SQL Expression
 
 当周围的转换本来就是 query 时，SQL 是简洁的默认选择。Vane connection 会
-注册 `ai_prompt` 和 `ai_embed`；第二个参数是常量 options struct。Ray 是
-Vane 的默认 runner，示例中的 `show()` 会通过 RayRunner 物化 relation。只有
+注册 `ai_prompt` 和 `ai_embed`；公共设置使用 named argument，`options` struct
+包含 provider 与执行设置。Ray 是 Vane 的默认 runner，示例中的 `show()` 会
+通过 RayRunner 物化 relation。只有
 需要覆盖已有的 local runner 设置时，才在创建 connection 前调用
 `vane.configure(runner="ray")`。
 
@@ -106,14 +110,14 @@ prompted = con.sql("""
         text,
         ai_prompt(
             text,
-            struct_pack(
-                provider := 'openai',
-                model := 'gpt-4o-mini',
+            system_message := 'Write one short support summary. Return plain text only.',
+            provider := 'openai',
+            model := 'gpt-4o-mini',
+            options := struct_pack(
                 base_url := 'https://api.openai.com/v1',
-                system_message := 'Write one short support summary. Return plain text only.',
                 timeout := 60.0,
-                concurrency := 1,
-                max_api_concurrency := 4,
+                actor_number := 1,
+                max_concurrency_per_actor := 4,
                 max_output_tokens := 64,
                 temperature := 0.0
             )
@@ -125,8 +129,8 @@ prompted = con.sql("""
 prompted.show()
 ```
 
-`concurrency` 选择 provider actor 数量。对于 prompt 调用，
-`max_api_concurrency` 限制每个 actor 内同时进行的 API request 数。请从保守
+`actor_number` 选择 provider actor 数量。对于 prompt 调用，
+`max_concurrency_per_actor` 限制每个 actor 内同时进行的 API request 数。请从保守
 值开始，只在 endpoint 的速率与容量限制内提高任一参数。
 
 ### 使用 `ai_embed` 生成向量
@@ -138,13 +142,13 @@ embedded = con.sql("""
         text,
         ai_embed(
             text,
-            struct_pack(
-                provider := 'openai',
-                model := 'text-embedding-3-small',
+            provider := 'openai',
+            model := 'text-embedding-3-small',
+            options := struct_pack(
                 base_url := 'https://api.openai.com/v1',
                 encoding_format := 'float',
                 normalize := true,
-                concurrency := 1
+                actor_number := 1
             )
         ) AS embedding
     FROM documents
@@ -154,14 +158,15 @@ embedded = con.sql("""
 embedded.show()
 ```
 
-不设置 `dimensions` 时，SQL 结果类型是 `FLOAT[]`。只有所选 embedding
-模型支持指定大小时，才设置一个正的 `dimensions`；结果类型随后会变成定长
-`FLOAT[n]`。`normalize := true` 会对每个非空向量执行 L2 normalization。
+每个 embedding Expression 的结果都是定长 `FLOAT[n]`。Vane 已知受支持官方
+模型的默认维度。使用 OpenAI-compatible endpoint，或请求模型支持的缩短
+embedding 时，应显式传入正的 named argument `dimensions := n`。
+`normalize := true` 会对每个非空向量执行 L2 normalization。
 
 ## 5. Python Expression
 
-Python Expression 具有相同的输出和执行契约。它使用类型化对象，将 provider
-配置与操作专属的 request options 分开。
+Python Expression 具有相同的输出和执行契约。它使用封闭的 keyword surface
+集中传递 provider、request 和执行 options，并拒绝未知名称。
 
 ```python
 import vane
@@ -182,16 +187,12 @@ prompted = documents.select(
         vane.col("text"),
         provider="openai",
         model="gpt-4o-mini",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            base_url="https://api.openai.com/v1",
-            timeout=60.0,
-            concurrency=1,
-            max_api_concurrency=4,
-        ),
-        prompt_options=vane.ai.OpenAIPromptOptions(
-            max_output_tokens=64,
-            temperature=0.0,
-        ),
+        base_url="https://api.openai.com/v1",
+        timeout=60.0,
+        actor_number=1,
+        max_concurrency_per_actor=4,
+        max_output_tokens=64,
+        temperature=0.0,
         system_message="Write one short support summary. Return plain text only.",
     ).alias("summary"),
 ).order("document_id")
@@ -203,14 +204,10 @@ embedded = documents.select(
         vane.col("text"),
         provider="openai",
         model="text-embedding-3-small",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            base_url="https://api.openai.com/v1",
-            timeout=60.0,
-            concurrency=1,
-        ),
-        embedding_options=vane.ai.OpenAIEmbeddingOptions(
-            encoding_format="float",
-        ),
+        base_url="https://api.openai.com/v1",
+        timeout=60.0,
+        actor_number=1,
+        encoding_format="float",
         normalize=True,
     ).alias("embedding"),
 ).order("document_id")
@@ -219,7 +216,6 @@ prompted.show()
 embedded.show()
 ```
 
-使用 `OpenAIProviderOptions` 配置 client 与 actor，使用
-`OpenAIPromptOptions` 配置生成请求，使用 `OpenAIEmbeddingOptions` 配置
-embedding 请求。也可以传入普通 dictionary，但类型化对象能更清楚地表达
-provider-specific 配置，并更早发现拼错的字段。
+同一组 keyword 也适用于返回 relation 的调用，例如
+`vane.ai.prompt(documents, vane.col("text"), ...)`。凭据应保留在 worker 环境
+中；疑似凭据的 option 名称会被拒绝，不会序列化到 plan 中。

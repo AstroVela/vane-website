@@ -38,10 +38,8 @@ release = con.sql("""
     SELECT id, uri, caption, quality_score,
            ai_embed(
                caption,
-               struct_pack(
-                   provider := 'transformers',
-                   model := 'sentence-transformers/all-MiniLM-L6-v2'
-               )
+               provider := 'transformers',
+               model := 'sentence-transformers/all-MiniLM-L6-v2'
            ) AS caption_embedding
     FROM labeled
     WHERE quality_score >= 0.8

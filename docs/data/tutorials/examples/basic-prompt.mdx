@@ -1,0 +1,127 @@
+---
+title: Prompt and Structured Output
+---
+
+Vane Prompt expressions can return plain text, a native typed `STRUCT`, or the serialized raw provider response while preserving one result per input row. This tutorial follows [`examples/basic_prompt.py`](https://github.com/AstroVela/vane/blob/main/examples/basic_prompt.py), which sends a prompt and image through the Python and SQL APIs.
+
+The example has five stages:
+
+1. Load one image as a `BLOB` beside its prompt.
+2. Generate a short plain-text response.
+3. Constrain generation with a portable JSON Schema and return a native `STRUCT`.
+4. Request the raw provider response as JSON text.
+5. Express the same structured prompt in SQL.
+
+Install the OpenAI provider extra with `uv pip install 'vane-ai[openai]'` and set `OPENAI_API_KEY` in the worker environment before running the hosted calls. The checked-in script uses the official OpenAI endpoint and `gpt-4o-mini` by default.
+
+## 1. Keep the prompt and image in one Relation
+
+`read_blob` supplies the image bytes, while SQL adds the prompt text. Both fields remain ordinary typed columns that can be projected with the model result.
+
+```python
+connection = vane.connect()
+relation = connection.sql(
+    """
+    SELECT 'Summarize this image.' AS prompt, content AS image
+    FROM read_blob('examples/example.png')
+    """
+)
+```
+
+The sparse checkout includes `examples/example.png`, so this input step does not require another dataset download.
+
+## 2. Generate plain text
+
+Prompt messages are ordered expressions. A `VARCHAR` contributes text, a `BLOB` contributes one image, and a null item is omitted for that row.
+
+```python
+responses = vane.ai.prompt(
+    relation,
+    [vane.col("prompt"), vane.col("image")],
+    system_message="Answer briefly.",
+    model="gpt-4o-mini",
+    output_column="response",
+    max_output_tokens=128,
+)
+responses.show()
+```
+
+The relation form preserves the input cardinality and returns the source columns plus `response`. Credentials stay in the environment and are not serialized into the plan.
+
+## 3. Return a native structured value
+
+The portable schema subset maps JSON object properties to a DuckDB `STRUCT`. The example makes both properties required while allowing `confidence` itself to be null.
+
+```python
+answer_schema = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "confidence": {"type": ["number", "null"]},
+    },
+    "required": ["summary", "confidence"],
+    "additionalProperties": False,
+}
+structured = vane.ai.prompt(
+    relation,
+    [vane.col("prompt"), vane.col("image")],
+    return_format=answer_schema,
+    model="gpt-4o-mini",
+    output_column="answer",
+)
+structured.show()
+```
+
+The schema constrains generation and defines the result type before execution. Unsupported schema features fail during planning instead of becoming an untyped runtime convention.
+
+## 4. Preserve the raw provider response when needed
+
+Setting `return_raw_response=True` still uses the schema to constrain the request, but exposes the provider response body as JSON text for diagnostics or audit storage.
+
+```python
+raw = vane.ai.prompt(
+    relation,
+    vane.col("prompt"),
+    return_format=answer_schema,
+    return_raw_response=True,
+    model="gpt-4o-mini",
+    output_column="raw_response",
+)
+raw.show()
+```
+
+Raw responses are provider-specific. Prefer the plain or structured result for downstream logic, and retain raw data only when its extra metadata has a defined purpose.
+
+## 5. Use the equivalent typed SQL overload
+
+SQL accepts the prompt, one `BLOB` image, named planning arguments, and an `options` struct for provider or execution settings.
+
+```python
+connection.sql(
+    """
+    SELECT AI_PROMPT(
+        prompt,
+        image,
+        return_format := json '{
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "confidence": {"type": ["number", "null"]}
+            },
+            "required": ["summary", "confidence"],
+            "additionalProperties": false
+        }',
+        system_message := 'Answer briefly.',
+        model := 'gpt-4o-mini',
+        options := struct_pack(max_output_tokens := 128)
+    ) AS response
+    FROM relation
+    """
+).show()
+```
+
+Run `VANE_RUNNER=local python examples/basic_prompt.py` from the sparse checkout root after setting the provider credential. The explicit local runner keeps this single-image `read_blob` input in its connection; stage binary inputs in a distributed source before adapting the workflow to Ray. Calls can incur cost and send the prompt and image to the configured service, so keep the first validation input small.
+
+For an OpenAI-compatible service, use its API root as `base_url`, select a vision-capable model for this image input, and set `use_chat_completions=True` when the service implements Chat Completions instead of the Responses API. Those are deployment choices; the checked-in source remains configured for official OpenAI.
+
+See [AI Functions](/docs/data/concepts/ai-functions) for provider extras, fixed-size embeddings, execution options, and credential handling.

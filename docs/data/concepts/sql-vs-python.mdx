@@ -114,7 +114,7 @@ selected = priced.filter(
 
 # SQL stage.
 summary = con.sql("""
-    SELECT category, sum(total) AS revenue
+    SELECT category, CAST(sum(total) AS BIGINT) AS revenue
     FROM selected
     GROUP BY category
     ORDER BY category

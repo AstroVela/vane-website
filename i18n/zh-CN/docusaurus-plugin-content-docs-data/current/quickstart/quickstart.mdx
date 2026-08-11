@@ -78,7 +78,7 @@ Callable 生命周期、batch 与基数行为以及 Relation 转换请继续阅�
 这不是 Quickstart 的必需步骤。如果要试用 OpenAI，请在同一个环境中安装它的可选依赖，然后把凭据设置到 worker 环境中：
 
 ```bash
-uv pip install openai
+uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-key>"
 ```
 
@@ -90,11 +90,14 @@ with_ai = con.sql("""
         document_id,
         ai_prompt(
             source_text,
-            struct_pack(
-                provider := 'openai',
+            system_message := 'Write one short review note.',
+            provider := 'openai',
+            model := 'gpt-4o-mini',
+            options := struct_pack(
                 -- OpenAI-compatible provider 可按需配置：
                 -- base_url := 'https://api.example.com/v1',
-                model := 'gpt-4o-mini'
+                -- use_chat_completions := true,
+                max_output_tokens := 64
             )
         ) AS review_note
     FROM documents

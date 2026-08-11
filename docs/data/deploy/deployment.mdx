@@ -41,8 +41,9 @@ If a Ray cluster already exists, skip the startup commands and use its address w
 If no cluster exists, start the head node first:
 
 ```bash
+HEAD_IP="10.0.0.10" # Replace with the head node's reachable IP.
 ray start --head \
-  --node-ip-address=<HEAD_IP> \
+  --node-ip-address="${HEAD_IP}" \
   --port=6379 \
   --dashboard-host=0.0.0
 ```
@@ -50,9 +51,11 @@ ray start --head \
 Then join each worker node to it:
 
 ```bash
+HEAD_IP="10.0.0.10" # Use the same head-node IP as above.
+WORKER_IP="10.0.0.11" # Replace on each worker.
 ray start \
-  --address=<HEAD_IP>:6379 \
-  --node-ip-address=<WORKER_IP>
+  --address="${HEAD_IP}:6379" \
+  --node-ip-address="${WORKER_IP}"
 ```
 
 Create the Vane job without an explicit runner setting because Ray is already the default:

@@ -78,7 +78,7 @@ For callable lifecycle, batch and cardinality behavior, and Relation transformat
 This is not required for the Quickstart. To try OpenAI, install its optional dependency in the same environment, then set credentials in the worker environment:
 
 ```bash
-uv pip install openai
+uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-key>"
 ```
 
@@ -90,11 +90,14 @@ with_ai = con.sql("""
         document_id,
         ai_prompt(
             source_text,
-            struct_pack(
-                provider := 'openai',
+            system_message := 'Write one short review note.',
+            provider := 'openai',
+            model := 'gpt-4o-mini',
+            options := struct_pack(
                 -- Optional for OpenAI-compatible providers:
                 -- base_url := 'https://api.example.com/v1',
-                model := 'gpt-4o-mini'
+                -- use_chat_completions := true,
+                max_output_tokens := 64
             )
         ) AS review_note
     FROM documents

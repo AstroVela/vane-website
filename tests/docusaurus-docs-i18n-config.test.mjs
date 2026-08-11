@@ -53,7 +53,7 @@ const exampleRunnerSources = [
   'docs/data/tutorials/examples/querying-images.mdx',
   'docs/data/tutorials/examples/image-generation.mdx',
   'docs/data/tutorials/examples/voice-ai-analytics.mdx',
-  'docs/data/tutorials/examples/multimodal-structured-outputs.mdx',
+  'docs/data/tutorials/examples/basic-prompt.mdx',
   'docs/data/tutorials/use-cases/claims-disposition.mdx',
   'docs/data/tutorials/use-cases/enterprise-agent-evidence.mdx',
   'docs/data/tutorials/use-cases/multimodal-training-data.mdx',
@@ -66,7 +66,7 @@ const exampleRunnerSources = [
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/querying-images.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/image-generation.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/voice-ai-analytics.mdx',
-  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/multimodal-structured-outputs.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/examples/basic-prompt.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/claims-disposition.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/enterprise-agent-evidence.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/multimodal-training-data.mdx',
@@ -86,6 +86,7 @@ const codeWindowSource = readFileSync('src/components/CodeWindow.tsx', 'utf8')
 const homeSource = readFileSync('src/pages/Home.tsx', 'utf8')
 const footerSource = readFileSync('src/components/Footer.tsx', 'utf8')
 const trainingUseCaseSource = readFileSync('src/pages/TrainingUseCase.tsx', 'utf8')
+const enterpriseAgentUseCaseSource = readFileSync('src/pages/EnterpriseAgentUseCase.tsx', 'utf8')
 const docPaginatorSource = readFileSync('src/theme/DocPaginator/index.tsx', 'utf8')
 
 test('Docusaurus config enables zh-CN locale and the Data docs plugin', () => {
@@ -232,9 +233,29 @@ test('OpenAI examples use a valid API root', () => {
   for (const source of [aiFunctionsSource, chineseAiFunctionsSource]) {
     assert.equal(source.match(/https:\/\/api\.openai\.com\/v1/g)?.length, 4)
     assert.doesNotMatch(source, /api\.example\.com/)
-    assert.match(source, /uv pip install vane-ai openai/)
+    assert.match(source, /uv pip install 'vane-ai\[openai\]'/)
     assert.match(source, /OPENAI_API_KEY="<your-token>"/)
     assert.match(source, /OPENAI_BASE_URL="https:\/\/provider\.example\/v1"/)
+    assert.match(source, /actor_number := 1/)
+    assert.match(source, /max_concurrency_per_actor := 4/)
+    assert.doesNotMatch(source, /OpenAI(?:Provider|Prompt|Embedding)Options/)
+    assert.doesNotMatch(source, /(?:provider|prompt|embedding)_options=/)
+    assert.doesNotMatch(source, /max_api_concurrency|\bconcurrency :=/)
+  }
+})
+
+test('AI snippets use the v0.1 named-argument SQL surface', () => {
+  for (const source of [
+    quickstartSource,
+    chineseQuickstartSource,
+    trainingUseCaseSource,
+    enterpriseAgentUseCaseSource,
+  ]) {
+    assert.doesNotMatch(source, /ai_(?:prompt|embed)\(\s*[^,]+,\s*struct_pack\(/s)
+  }
+  for (const source of [quickstartSource, chineseQuickstartSource]) {
+    assert.match(source, /uv pip install 'vane-ai\[openai\]'/)
+    assert.match(source, /options := struct_pack\(/)
   }
 })
 
@@ -297,7 +318,7 @@ test('wheel-backed examples document sparse checkout and bounded commands', () =
     'python examples/querying_images.py --source sample --limit 5',
     'python examples/image_generation.py --source sample --limit 4',
     'python examples/voice_ai_analytics.py --source sample --limit 3',
-    'python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge',
+    'VANE_RUNNER=local python examples/basic_prompt.py',
   ]
 
   for (const source of wheelExampleSources) {

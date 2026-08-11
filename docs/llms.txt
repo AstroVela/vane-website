@@ -15,7 +15,7 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/tutorials/examples/querying-images: Querying Image Data.
 - /docs/data/tutorials/examples/image-generation: Generating Images from Text.
 - /docs/data/tutorials/examples/voice-ai-analytics: Voice AI Analytics.
-- /docs/data/tutorials/examples/multimodal-structured-outputs: Multimodal Structured Outputs.
+- /docs/data/tutorials/examples/basic-prompt: Prompt and Structured Output.
 - /docs/data/tutorials/use-cases/claims-disposition: Claims Disposition from Multimodal Evidence.
 - /docs/data/tutorials/use-cases/enterprise-agent-evidence: Governing Evidence for Enterprise Agents.
 - /docs/data/tutorials/use-cases/multimodal-training-data: Building a Multimodal Training Release.

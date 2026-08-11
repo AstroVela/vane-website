@@ -65,19 +65,19 @@ def load_redpajama_relation(conn: Any, path: str, limit: int) -> Any:
 生成嵌入前，脚本可以用 SQL 截断过长的问题文本。随后，Vane AI 函数使用 Transformers 模型为 `text` 列生成嵌入，并返回 `embedding` 列。
 
 ```python
-    embedded_only = embed_text(
+    embedded = embed(
         rel,
-        "text",
+        vane.col("text"),
         provider="transformers",
         model=args.model_id,
         output_column="embedding",
         max_chunk_chars=args.max_chunk_chars,
         batch_size=args.batch_size,
     )
-    embedded_table = append_embedding(collect_relation(rel), embedded_only)
+    embedded_table = collect_relation(embedded)
 ```
 
-示例在接回嵌入之前，会验证嵌入 Relation 与输入行数完全一致，并且包含请求的输出列。默认模型是 `sentence-transformers/all-MiniLM-L6-v2`；缓存已经准备好时，仅本地文件模式可以阻止模型下载。
+Relation 形式会保留每条问题记录，并新增请求的 embedding 列。默认模型是 `sentence-transformers/all-MiniLM-L6-v2`；缓存已经准备好时，仅本地文件模式可以阻止模型下载。
 
 ## 3. 匹配低分与高分问题
 

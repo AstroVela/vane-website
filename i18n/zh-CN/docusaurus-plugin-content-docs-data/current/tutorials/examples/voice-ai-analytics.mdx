@@ -209,19 +209,19 @@ def subtitle_rows(table: pa.Table, *, translated_language: str) -> list[dict[str
     return rows
 ```
 
-随后，Vane 的 Transformers provider 为原始片段文本生成嵌入。与其他嵌入示例相同，辅助函数会在接回嵌入之前验证行数和输出列。
+随后，Vane 的 Transformers provider 为原始片段文本生成嵌入。Relation 形式会保留字幕列并新增 embedding 列。
 
 ```python
     subtitle_rel = relation_from_dicts(conn, subtitles)
-    embedded_only = embed_text(
+    embedded = embed(
         subtitle_rel,
-        "text",
+        vane.col("text"),
         provider="transformers",
         model=args.embedding_model_id,
         output_column="embedding",
         batch_size=args.embedding_batch_size,
     )
-    embedded_table = append_embedding(collect_relation(subtitle_rel), embedded_only)
+    embedded_table = collect_relation(embedded)
 ```
 
 ## 5. 检查输出

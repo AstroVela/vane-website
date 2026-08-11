@@ -16,15 +16,16 @@ Vane currently exposes two AI operations as Expressions:
 
 | Operation | SQL Expression | Python Expression | Result | Supported providers |
 | --- | --- | --- | --- | --- |
-| Generate text | `ai_prompt(messages [, options])` | `vane.ai.prompt(expression, ...)` | One `VARCHAR` value per input row | `openai`, `google`, `anthropic`, `vllm` |
-| Create an embedding | `ai_embed(text [, options])` | `vane.ai.embed(expression, ...)` | One `FLOAT[]` value per input row, or `FLOAT[n]` when `dimensions=n` | `openai`, `google`, `transformers` |
+| Generate text or structured output | `ai_prompt(messages, ...)` | `vane.ai.prompt(expression, ...)` | One `VARCHAR` or native `STRUCT` value per input row | `openai`, `google`, `anthropic`, `vllm` |
+| Create an embedding | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | One fixed-size `FLOAT[n]` value per input row | `openai`, `google`, `transformers` |
 
 Both operations preserve row count. Keep any source columns needed later in
 the projection, name the generated column with SQL `AS` or Python `.alias()`,
 and carry a stable ID so every provider result can be traced to its input.
 
-SQL options are planning configuration, not row data. The optional
-`struct_pack(...)` argument must therefore contain constants; provider names,
+SQL options are planning configuration, not row data. Pass common settings as
+named arguments and provider or execution settings through
+`options := struct_pack(...)`. Those values must be constants; provider names,
 models, and execution settings cannot vary by input row in one Expression.
 
 There is no Expression classification function. The provider capability table
@@ -42,11 +43,11 @@ uv pip install vane-ai
 
 | Provider | Prompt | Embed | Runtime and setup |
 | --- | :---: | :---: | --- |
-| `openai` | Yes | Yes | OpenAI API or an OpenAI-compatible endpoint; install `openai` and set `OPENAI_API_KEY` in the worker environment |
-| `google` | Yes | Yes | Google Generative AI; install `google-genai` and set `GOOGLE_API_KEY` in the worker environment |
-| `anthropic` | Yes | No | Anthropic Messages API; install `anthropic` and set `ANTHROPIC_API_KEY` in the worker environment |
-| `vllm` | Yes | No | Local or remote vLLM engine; install `vllm`, provide model access, and use Ray when GPU actors are required |
-| `transformers` | No | Yes | Local SentenceTransformers model; install `sentence-transformers`, `transformers`, and `torch` |
+| `openai` | Yes | Yes | OpenAI API or an OpenAI-compatible endpoint; install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment |
+| `google` | Yes | Yes | Google Generative AI; install `vane-ai[google]` and set `GOOGLE_API_KEY` in the worker environment |
+| `anthropic` | Yes | No | Anthropic Messages API; install `vane-ai[anthropic]` and set `ANTHROPIC_API_KEY` in the worker environment |
+| `vllm` | Yes | No | Local or remote vLLM engine; install `vane-ai[vllm]`, provide model access, and use Ray when GPU actors are required |
+| `transformers` | No | Yes | Local SentenceTransformers model; install `vane-ai[transformers]` |
 
 Set `provider` and `model` explicitly when reproducibility matters. Model IDs,
 limits, and availability belong to the configured endpoint, so choose a model
@@ -58,7 +59,7 @@ The examples below use the OpenAI provider. Install its client and expose the
 credential to the process that executes the query:
 
 ```bash
-uv pip install vane-ai openai
+uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-token>"
 
 # Optional: set this only for an OpenAI-compatible endpoint.
@@ -72,12 +73,14 @@ uses the official API root. For Ray jobs, set the variables and install the
 client on every worker that can execute the Expression.
 
 The examples below demonstrate the other supported form: passing the
-non-secret `base_url` explicitly in `struct_pack(...)` or
-`OpenAIProviderOptions`. Replace that value for a compatible service. An
-explicit option takes precedence over `OPENAI_BASE_URL`; when relying on the
-environment variable, omit the option from the Expression. In both forms, use
-the API root, typically ending in `/v1`, rather than an operation path such as
-`/chat/completions`.
+non-secret `base_url` explicitly in `struct_pack(...)` or as a Python keyword.
+Replace that value for a compatible service. An explicit option takes
+precedence over `OPENAI_BASE_URL`; when relying on the environment variable,
+omit the option from the Expression. In both forms, use the API root, typically
+ending in `/v1`, rather than an operation path such as `/chat/completions`.
+For a compatible endpoint that implements Chat Completions but not the OpenAI
+Responses API, also set `use_chat_completions := true` in SQL or
+`use_chat_completions=True` in Python.
 
 Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options
 object, notebook output, or a committed file. SQL binding rejects
@@ -86,9 +89,10 @@ credential-like option fields.
 ## 4. SQL Expression
 
 SQL is a compact default when the surrounding transformation is already a
-query. A Vane connection registers `ai_prompt` and `ai_embed`; the second
-argument is a constant options struct. Ray is Vane's default runner, and the
-examples' `show()` calls materialize the relation through RayRunner. Call
+query. A Vane connection registers `ai_prompt` and `ai_embed`; common settings
+are named arguments and the `options` struct contains provider and execution
+settings. Ray is Vane's default runner, and the examples' `show()` calls
+materialize the relation through RayRunner. Call
 `vane.configure(runner="ray")` before creating the connection only when you
 need to override an existing local runner setting.
 
@@ -112,14 +116,14 @@ prompted = con.sql("""
         text,
         ai_prompt(
             text,
-            struct_pack(
-                provider := 'openai',
-                model := 'gpt-4o-mini',
+            system_message := 'Write one short support summary. Return plain text only.',
+            provider := 'openai',
+            model := 'gpt-4o-mini',
+            options := struct_pack(
                 base_url := 'https://api.openai.com/v1',
-                system_message := 'Write one short support summary. Return plain text only.',
                 timeout := 60.0,
-                concurrency := 1,
-                max_api_concurrency := 4,
+                actor_number := 1,
+                max_concurrency_per_actor := 4,
                 max_output_tokens := 64,
                 temperature := 0.0
             )
@@ -131,8 +135,8 @@ prompted = con.sql("""
 prompted.show()
 ```
 
-`concurrency` selects the number of provider actors. For prompt calls,
-`max_api_concurrency` bounds simultaneous API requests inside each actor.
+`actor_number` selects the number of provider actors. For prompt calls,
+`max_concurrency_per_actor` bounds simultaneous API requests inside each actor.
 Start conservatively and raise either value only within the endpoint's rate
 and capacity limits.
 
@@ -145,13 +149,13 @@ embedded = con.sql("""
         text,
         ai_embed(
             text,
-            struct_pack(
-                provider := 'openai',
-                model := 'text-embedding-3-small',
+            provider := 'openai',
+            model := 'text-embedding-3-small',
+            options := struct_pack(
                 base_url := 'https://api.openai.com/v1',
                 encoding_format := 'float',
                 normalize := true,
-                concurrency := 1
+                actor_number := 1
             )
         ) AS embedding
     FROM documents
@@ -161,16 +165,17 @@ embedded = con.sql("""
 embedded.show()
 ```
 
-Without `dimensions`, the SQL result type is `FLOAT[]`. Set a positive
-`dimensions` value only when the selected embedding model supports that size;
-the result type then becomes fixed-size `FLOAT[n]`. `normalize := true`
-L2-normalizes each non-null vector.
+Every embedding Expression has a fixed-size `FLOAT[n]` result. Vane knows the
+default dimensions of supported official models. For an OpenAI-compatible
+endpoint, or when requesting a supported shortened embedding, pass a positive
+`dimensions := n` named argument explicitly. `normalize := true` L2-normalizes
+each non-null vector.
 
 ## 5. Python Expression
 
-Python Expression has the same output and execution contract. It separates
-provider configuration from operation-specific request options with typed
-objects.
+Python Expression has the same output and execution contract. Its closed
+keyword surface keeps provider, request, and execution options together and
+rejects unknown names.
 
 ```python
 import vane
@@ -191,16 +196,12 @@ prompted = documents.select(
         vane.col("text"),
         provider="openai",
         model="gpt-4o-mini",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            base_url="https://api.openai.com/v1",
-            timeout=60.0,
-            concurrency=1,
-            max_api_concurrency=4,
-        ),
-        prompt_options=vane.ai.OpenAIPromptOptions(
-            max_output_tokens=64,
-            temperature=0.0,
-        ),
+        base_url="https://api.openai.com/v1",
+        timeout=60.0,
+        actor_number=1,
+        max_concurrency_per_actor=4,
+        max_output_tokens=64,
+        temperature=0.0,
         system_message="Write one short support summary. Return plain text only.",
     ).alias("summary"),
 ).order("document_id")
@@ -212,14 +213,10 @@ embedded = documents.select(
         vane.col("text"),
         provider="openai",
         model="text-embedding-3-small",
-        provider_options=vane.ai.OpenAIProviderOptions(
-            base_url="https://api.openai.com/v1",
-            timeout=60.0,
-            concurrency=1,
-        ),
-        embedding_options=vane.ai.OpenAIEmbeddingOptions(
-            encoding_format="float",
-        ),
+        base_url="https://api.openai.com/v1",
+        timeout=60.0,
+        actor_number=1,
+        encoding_format="float",
         normalize=True,
     ).alias("embedding"),
 ).order("document_id")
@@ -228,8 +225,7 @@ prompted.show()
 embedded.show()
 ```
 
-Use `OpenAIProviderOptions` for client and actor settings,
-`OpenAIPromptOptions` for generation settings, and
-`OpenAIEmbeddingOptions` for embedding request settings. Plain dictionaries
-are accepted too, but typed objects make provider-specific configuration
-clearer and catch misspelled fields earlier.
+The same keywords work in relation-returning calls such as
+`vane.ai.prompt(documents, vane.col("text"), ...)`. Keep credentials in the
+worker environment: credential-like option names are rejected rather than
+serialized into a plan.

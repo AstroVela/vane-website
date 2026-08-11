@@ -65,19 +65,19 @@ Both source branches produce the same four columns: a generated row ID, question
 Before embedding, the script can truncate long question text with SQL. The Vane AI function then embeds the `text` column with a Transformers model and returns an `embedding` column.
 
 ```python
-    embedded_only = embed_text(
+    embedded = embed(
         rel,
-        "text",
+        vane.col("text"),
         provider="transformers",
         model=args.model_id,
         output_column="embedding",
         max_chunk_chars=args.max_chunk_chars,
         batch_size=args.batch_size,
     )
-    embedded_table = append_embedding(collect_relation(rel), embedded_only)
+    embedded_table = collect_relation(embedded)
 ```
 
-The example validates that the embedding Relation has exactly as many rows as the input and contains the requested output column before attaching it. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
+The relation form preserves each question row and appends the requested embedding column. The default model is `sentence-transformers/all-MiniLM-L6-v2`; local-files-only mode prevents model downloads when the cache is already populated.
 
 ## 3. Match low-score and high-score questions
 

@@ -21,14 +21,14 @@ The base environment above is enough for MinHash deduplication and placeholder i
 | Common Crawl and Red Pajamas | `uv pip install torch sentence-transformers transformers` | Use the local-files-only option after `sentence-transformers/all-MiniLM-L6-v2` is cached; Common Crawl can skip embeddings |
 | Querying images | `uv pip install Pillow` | The OpenImages source also needs network access |
 | Image generation | None for the placeholder backend | Stable Diffusion needs `uv pip install diffusers transformers accelerate torch Pillow` |
-| Voice AI analytics | `uv pip install torch sentence-transformers transformers` | Faster-Whisper needs `uv pip install faster-whisper av`; OpenAI summaries need `uv pip install openai` |
-| Multimodal structured outputs | `uv pip install openai pydantic` and a provider token | AI2D input additionally needs `uv pip install datasets Pillow` |
+| Voice AI analytics | `uv pip install torch sentence-transformers transformers` | Faster-Whisper needs `uv pip install faster-whisper av`; OpenAI summaries need `uv pip install 'vane-ai[openai]'` |
+| Prompt and structured output | `uv pip install 'vane-ai[openai]'` and an OpenAI API key | OpenAI-compatible endpoints can be selected with provider options |
 
 For a CUDA-enabled workflow, install the PyTorch build that matches the operating system, GPU, and driver. The default PyPI build is not always the correct CUDA build.
 
 ### Run bounded samples
 
-Run these commands from the sparse checkout root. They use built-in or generated inputs; only the structured-output example requires a hosted model by default.
+Run these commands from the sparse checkout root. They use built-in or generated inputs; only the Prompt example requires a hosted model by default.
 
 | Example | Bounded command | Default result |
 | --- | --- | --- |
@@ -38,9 +38,9 @@ Run these commands from the sparse checkout root. They use built-in or generated
 | Querying images | `python examples/querying_images.py --source sample --limit 5` | Image previews, masks, and `top_red_images.csv` under `examples/output/querying_images/` |
 | Image generation | `python examples/image_generation.py --source sample --limit 4` | Placeholder PNG files and `metadata.csv` under `examples/output/image_generation/` |
 | Voice AI analytics | `python examples/voice_ai_analytics.py --source sample --limit 3` | Summaries, subtitles, and segment embeddings under `examples/output/voice_ai_analytics/` |
-| Multimodal structured outputs | `python examples/multimodal_structured_outputs.py --source synthetic --limit 1 --skip-judge` | Evaluation rows in the terminal; set `HF_TOKEN` before using the default endpoint |
+| Prompt and structured output | `VANE_RUNNER=local python examples/basic_prompt.py` | Plain-text, typed `STRUCT`, raw-response, and SQL results in the terminal; set `OPENAI_API_KEY` first |
 
-The scripts leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials. The configured runner materializes the Relation workflow without changing the sample contract.
+The other six commands leave the Vane runner unset, so the installed package default applies. Set `VANE_RUNNER=local` for the local runner, or leave it unset and set `RAY_ADDRESS` before launch to use an existing Ray cluster. The Basic Prompt command explicitly uses `local` because its checked-in single-image input comes from an in-process `read_blob` table function; stage binary input in a distributed source before adapting it to Ray. Every worker needs the same example-specific packages and access to the same data, model cache, and credentials.
 
 ## Examples
 
@@ -52,11 +52,11 @@ The scripts leave the Vane runner unset, so the installed package default applie
 | [Querying image data](/docs/data/tutorials/examples/querying-images) | Load image bytes, detect red regions in a batch UDF, and rank image-mask pairs | Generated sample images |
 | [Generating images from text](/docs/data/tutorials/examples/image-generation) | Turn prompt rows into PNG bytes with a placeholder or Stable Diffusion backend | Deterministic placeholder images |
 | [Voice AI analytics](/docs/data/tutorials/examples/voice-ai-analytics) | Transcribe audio, summarize transcripts, create subtitle rows, and embed segments | Generated audio with placeholder transcripts |
-| [Multimodal structured outputs](/docs/data/tutorials/examples/multimodal-structured-outputs) | Compare vision and text-only answers, classify evaluation quadrants, and diagnose failures | Synthetic visual questions plus a hosted VLM |
+| [Prompt and structured output](/docs/data/tutorials/examples/basic-prompt) | Generate plain text, a native typed `STRUCT`, and raw provider response JSON from prompt and image columns | Checked-in prompt and image plus a hosted model |
 
 ## Use cases
 
-These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding.
+These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding. Each one is a standalone project with its own pinned requirements; follow that project's setup instead of reusing the wheel-example environment above.
 
 | Use case | What you will build | Default scenario |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ These use cases combine multiple source systems, modality branches, or SQL-deriv
 
 ## Choosing an example
 
-Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and structured outputs show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
+Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and Prompt examples show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
 
 ## Code provenance
 

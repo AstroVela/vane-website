@@ -31,8 +31,8 @@ export const USE_CASES = [
     titleZh: '网页文本转嵌入',
     tag: 'embeddings',
     tagZh: 'embedding',
-    pipeline: ['WARC rows', 'decode English pages', 'chunk text', 'embed_text', 'write files'],
-    pipelineZh: ['WARC 行', '解码英文页面', '文本分块', 'embed_text', '写出文件'],
+    pipeline: ['WARC rows', 'decode English pages', 'chunk text', 'vane.ai.embed', 'write files'],
+    pipelineZh: ['WARC 行', '解码英文页面', '文本分块', 'vane.ai.embed', '写出文件'],
     problem:
       'Web crawl records need to be decoded, language-filtered, chunked, embedded, and written without losing their source IDs.',
     problemZh:
@@ -55,8 +55,8 @@ export const USE_CASES = [
     titleZh: '语义搜索',
     tag: 'retrieval',
     tagZh: '检索',
-    pipeline: ['question rows', 'embed_text', 'split by score', 'cosine match', 'show'],
-    pipelineZh: ['问题数据', 'embed_text', '按分数分组', '余弦匹配', '展示'],
+    pipeline: ['question rows', 'vane.ai.embed', 'split by score', 'cosine match', 'show'],
+    pipelineZh: ['问题数据', 'vane.ai.embed', '按分数分组', '余弦匹配', '展示'],
     problem:
       'A bounded Q&A corpus needs an offline semantic-matching pass before you commit to a separate vector database.',
     problemZh:
@@ -145,28 +145,28 @@ export const USE_CASES = [
 <span class="f">python</span> examples/image_generation.py`,
   },
   {
-    id: 'multimodal',
+    id: 'prompt',
     icon: 'multimodal',
-    title: 'Multimodal Structured Output',
-    titleZh: '多模态结构化输出',
-    tag: 'multimodal',
-    tagZh: '多模态',
-    pipeline: ['synthetic image+question', 'VLM with image', 'VLM text-only', 'compare', 'optional judge'],
-    pipelineZh: ['合成图像+问题', '带图 VLM', '纯文本 VLM', '对比', '可选评审'],
+    title: 'Prompt and Structured Output',
+    titleZh: 'Prompt 与结构化输出',
+    tag: 'AI functions',
+    tagZh: 'AI 函数',
+    pipeline: ['prompt+image row', 'vane.ai.prompt', 'typed STRUCT', 'raw response'],
+    pipelineZh: ['提示词+图像行', 'vane.ai.prompt', '类型化 STRUCT', '原始响应'],
     problem:
-      'Vision-language answers need typed parsing and a controlled comparison with the same question asked without its image.',
+      'Model responses need a row-preserving path for plain text, typed structured output, and optional raw provider data.',
     problemZh:
-      '视觉语言模型的回答需要类型化解析，并与去掉图片后的同一问题进行受控对比。',
-    input: '1 synthetic multiple-choice image + provider key',
-    inputZh: '1 张合成选择题图片 + 服务商密钥',
-    output: 'typed answers + evaluation quadrant',
-    outputZh: '类型化答案 + 评估象限',
-    when: 'Evaluating whether a VLM actually uses visual evidence and diagnosing failures.',
-    whenZh: '评估 VLM 是否真正使用视觉证据并诊断失败时使用。',
-    filename: 'multimodal_structured_outputs.py',
-    example: 'examples/multimodal_structured_outputs.py',
-    code: `<span class="k">export</span> HF_TOKEN<span class="p">=</span>your_hugging_face_token
-<span class="f">python</span> examples/multimodal_structured_outputs.py <span class="p">--</span>limit <span class="n">1</span> <span class="p">--</span>skip-judge`,
+      '模型响应需要一条保持行数的路径，同时支持纯文本、类型化结构输出和可选的 provider 原始数据。',
+    input: '1 prompt + image row + provider key',
+    inputZh: '1 条提示词与图像记录 + provider 密钥',
+    output: 'plain text · typed STRUCT · raw response JSON',
+    outputZh: '纯文本 · 类型化 STRUCT · 原始响应 JSON',
+    when: 'Adding reviewable model output to an existing Relation workflow.',
+    whenZh: '在现有 Relation 工作流中增加可审查的模型输出时使用。',
+    filename: 'basic_prompt.py',
+    example: 'examples/basic_prompt.py',
+    code: `<span class="k">export</span> OPENAI_API_KEY<span class="p">=</span>your_openai_key
+VANE_RUNNER<span class="p">=</span>local <span class="f">python</span> examples/basic_prompt.py`,
   },
   {
     id: 'voice',
@@ -175,8 +175,8 @@ export const USE_CASES = [
     titleZh: '语音 AI 分析',
     tag: 'audio',
     tagZh: '音频',
-    pipeline: ['audio rows', 'transcribe', 'summarize', 'subtitle rows', 'embed_text'],
-    pipelineZh: ['音频数据', '转写', '摘要', '字幕分段', 'embed_text'],
+    pipeline: ['audio rows', 'transcribe', 'summarize', 'subtitle rows', 'vane.ai.embed'],
+    pipelineZh: ['音频数据', '转写', '摘要', '字幕分段', 'vane.ai.embed'],
     problem:
       'Audio analytics combines transcription-level metadata with searchable embeddings for each subtitle segment.',
     problemZh:

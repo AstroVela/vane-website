@@ -19,7 +19,7 @@ export const LEGACY_DOC_SLUGS = {
   'examples/image-generation': 'tutorials/examples/image-generation',
   'examples/voice-ai-analytics': 'tutorials/examples/voice-ai-analytics',
   'examples/multimodal-structured-outputs':
-    'tutorials/examples/multimodal-structured-outputs',
+    'tutorials/examples/basic-prompt',
   'examples/example-tutorials/common-crawl': 'tutorials/examples/common-crawl',
   'examples/example-tutorials/minhash-dedupe': 'tutorials/examples/minhash-dedupe',
   'examples/example-tutorials/llms-red-pajamas':
@@ -29,7 +29,9 @@ export const LEGACY_DOC_SLUGS = {
   'examples/example-tutorials/voice-ai-analytics':
     'tutorials/examples/voice-ai-analytics',
   'examples/example-tutorials/multimodal-structured-outputs':
-    'tutorials/examples/multimodal-structured-outputs',
+    'tutorials/examples/basic-prompt',
+  'tutorials/examples/multimodal-structured-outputs':
+    'tutorials/examples/basic-prompt',
   'examples/claims-disposition': 'tutorials/use-cases/claims-disposition',
   'examples/enterprise-agent-evidence': 'tutorials/use-cases/enterprise-agent-evidence',
   'examples/multimodal-training-data': 'tutorials/use-cases/multimodal-training-data',

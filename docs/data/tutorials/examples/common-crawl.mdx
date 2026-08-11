@@ -95,12 +95,12 @@ The orchestration first removes non-conversion records with SQL, then applies th
     pages = filtered.map_batches(
         decoder.__call__,
         schema={
-            "record_id": duckdb.sqltypes.VARCHAR,
-            "target_uri": duckdb.sqltypes.VARCHAR,
-            "warc_date": duckdb.sqltypes.VARCHAR,
-            "content_length": duckdb.sqltypes.BIGINT,
-            "language": duckdb.sqltypes.VARCHAR,
-            "text": duckdb.sqltypes.VARCHAR,
+            "record_id": vane.sqltypes.VARCHAR,
+            "target_uri": vane.sqltypes.VARCHAR,
+            "warc_date": vane.sqltypes.VARCHAR,
+            "content_length": vane.sqltypes.BIGINT,
+            "language": vane.sqltypes.VARCHAR,
+            "text": vane.sqltypes.VARCHAR,
         },
         batch_size=args.batch_size,
     ).query(
@@ -195,21 +195,21 @@ The default document cap is 1,000 characters and the default chunk cap is 1,024 
 
 ## 4. Generate embeddings
 
-The example uses Vane's Transformers provider. Because the AI function returns its output Relation separately, `append_embedding` validates row counts and the expected column before attaching embeddings to the original chunk rows.
+The example uses Vane's Transformers provider. The relation form of `embed` preserves the source columns and adds the requested embedding column, so materializing that Relation produces a table ready to write.
 
 ```python
     embedded_table = None
     if not args.skip_embeddings:
-        embedded_only = embed_text(
+        embedded = embed(
             chunks,
-            "text",
+            vane.col("text"),
             provider="transformers",
             model=args.embedding_model_id,
             output_column="embedding",
             max_chunk_chars=args.max_chunk_chars,
             batch_size=args.embedding_batch_size,
         )
-        embedded_table = append_embedding(chunks_table, embedded_only)
+        embedded_table = collect_relation(embedded)
 ```
 
 The model defaults to Sentence Transformers' `all-MiniLM-L6-v2`. Use the local-files-only option when the model is already cached and the worker must not contact Hugging Face. You can also skip this stage to inspect WARC decoding and chunking without model dependencies.
