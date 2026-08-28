@@ -20,13 +20,12 @@ stage requires.
 | API surface | How it is called | Output contract | Use when |
 | --- | --- | --- | --- |
 | SQL Expression UDF | Attach a callable with `vane.attach_function`, then call its alias in `SELECT` | One typed projection column; row-preserving in v1 | One result belongs beside each input row and the surrounding pipeline is SQL |
-| Python Expression UDF | Build an Expression with `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` | One typed projection column; normally row-preserving | The same projection is easier to construct with Python objects |
-| Relation UDF | Call `rel.map`, `rel.flat_map`, or `rel.map_batches` | A Relation; `map` appends `value`, while `flat_map` and `map_batches` define the complete output schema | The callable owns table shape or row count, or the stage needs Relation-only controls such as an explicit backend, actor pool, or `side_effects` |
+| Python Expression UDF | Build an Expression with `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` | One typed, row-preserving projection column | The same projection is easier to construct with Python objects |
+| Relation UDF | Call `rel.map`, `rel.flat_map`, or `rel.map_batches` | A Relation; `map` appends `value`, while `flat_map` and `map_batches` define the complete output schema | The callable owns table shape or row count, or the stage needs Relation-only controls such as an explicit backend or actor pool |
 
-Python batch Expression has one narrow exception: with
-`row_preserving=False`, it may change row count only when it is the sole
-top-level projection. Relation UDFs are currently Python methods; Vane does
-not expose them as SQL table functions.
+Expression UDFs preserve row count. Use Relation `flat_map` or `map_batches`
+when a callable needs to change cardinality. Relation UDFs are currently Python
+methods; Vane does not expose them as SQL table functions.
 
 ### Case: SQL Expression, Python Expression, and Relation
 
@@ -122,7 +121,7 @@ similar callable shapes but retain the one-column Expression contract.
 | Operation | Invocation shape | Cardinality | Relation output | Expression counterpart |
 | --- | --- | --- | --- | --- |
 | `map` | Scalar column values in, one typed value out | Preserves row count | Preserves input columns and appends `value` | `vane.func` in Python or an attached scalar alias in SQL |
-| `flat_map` | One row dict in, zero or more row dicts out | May change row count | Returns exactly the declared `schema` | Python `vane.func.batch(..., row_preserving=False)` is a restricted one-column alternative; SQL has no counterpart in v1 |
+| `flat_map` | One row dict in, zero or more row dicts out | May change row count | Returns exactly the declared `schema` | No Expression counterpart in v1; SQL has no Relation table-function counterpart |
 | `map_batches` | `pyarrow.Table` in, `pyarrow.Table` out | May preserve or change row count | Returns exactly the declared `schema` | `vane.func.batch` in Python or an attached batch alias in SQL; the Expression schema has exactly one column |
 
 ### Case: Compose All Three Relation Operations
@@ -202,16 +201,11 @@ columns needed later.
 
 ## 3. Cardinality
 
-Cardinality is separate from invocation shape. Scalar Expression UDFs,
-registered SQL aliases, and Relation `map` preserve one output row per input
-row. Relation `flat_map` explicitly emits zero or more rows for each input row.
-Relation `map_batches` may return the same or a different number of rows.
-
-Python batch Expressions declare this contract with `row_preserving`. With
-`row_preserving=True`, the result can be projected beside ordinary columns.
-With `row_preserving=False`, it may change row count but must be the sole
-top-level projection. SQL registration accepts only row-preserving batch
-wrappers in v1.
+Cardinality is separate from invocation shape. All Expression UDFs and Relation
+`map` preserve one output row per input row. Relation `flat_map` explicitly
+emits zero or more rows for each input row, while Relation `map_batches` may
+return the same or a different number of rows. Use those Relation APIs whenever
+a callable needs to change cardinality.
 
 ## 4. Stateless and Stateful
 
@@ -225,8 +219,9 @@ Relation UDFs can be stateless or stateful.
 
 Use stateless functions for deterministic work that needs no reusable setup.
 Use stateful classes to reuse a model, tokenizer, client, lookup table, or
-cache. In v1 a stateful Expression uses one actor per query. A Relation actor
-pool may contain several independent instances.
+cache. Each stateful Expression execution uses `actor_number` independent Actor
+instances. Relation actor backends use the same configured value as their pool
+size.
 
 ### Case: Stateless Function and Stateful Actors
 

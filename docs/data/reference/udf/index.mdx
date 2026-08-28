@@ -1,0 +1,36 @@
+---
+title: UDF reference
+---
+
+Vane UDFs run Python code on data in a Relation. Use this reference to choose an API and check its signature, parameters, return value, errors, and examples.
+
+## Choose an API
+
+"Output and cardinality" describes the row-count relationship for a call. `1 → 1` returns one row per input row, while `1 → 0..N` may return zero or more. `N → N` preserves a batch's row count, while `N → M` may change it.
+
+| API | Python receives | Output and cardinality | Use it when |
+| --- | --- | --- | --- |
+| [`vane.func`](expression/vane-func.mdx) | Scalar arguments | One projected value, `1 → 1` | A synchronous function computes one value per row |
+| [`vane.cls`](expression/vane-cls.mdx) | Scalar arguments | One projected value, `1 → 1` | The scalar callable needs a reusable instance |
+| [`vane.func.batch`](expression/vane-func-batch.mdx) | Arrow columns | One equal-length logical result; `Struct` fields can expand into columns, `N → N` | A function operates on Arrow columns |
+| [`vane.cls.batch`](expression/vane-cls-batch.mdx) | Arrow columns | One equal-length logical result; `Struct` fields can expand into columns, `N → N` | Batched work needs a reusable instance |
+| [`Relation.map`](relation/relation-map.mdx) | One scalar per current column | Keeps input and appends `value`, `1 → 1` | Every input row produces one additional value |
+| [`Relation.flat_map`](relation/relation-flat-map.mdx) | One row dict | Complete declared schema, `1 → 0..N` | One row may produce zero, one, or many rows |
+| [`Relation.map_batches`](relation/relation-map-batches.mdx) | One `pyarrow.Table` | Complete declared schema, `N → M` | A table batch may change shape or row count |
+
+See the [Expression UDF overview](expression/index.mdx) for Expression-specific call and placement rules.
+
+## Register an Expression UDF for SQL
+
+| API | Purpose |
+| --- | --- |
+| [`vane.attach_function`](expression/vane-attach-function.mdx) | Register a decorated or raw Python callable as a SQL function on a connection |
+| [`vane.detach_function`](expression/vane-detach-function.mdx) | Remove a registered SQL function from a connection |
+
+Registration provides a SQL name for an Expression UDF. It does not change the projection-only placement rule.
+
+## Execution guarantees
+
+Task and Actor backends may retry a call after a failure. Vane does not provide exactly-once UDF execution, so code with external effects must be idempotent.
+
+Callable classes run in independent, ephemeral Actor instances. Work has no Actor affinity or global ordering, and Actor reconstruction resets local state. Use instance state only for reconstructible resources such as models, clients, and caches, not as shared or durable query state.

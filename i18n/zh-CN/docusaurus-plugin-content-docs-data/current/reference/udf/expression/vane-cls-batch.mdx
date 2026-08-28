@@ -1,0 +1,78 @@
+---
+title: vane.cls.batch
+---
+
+`vane.cls.batch` 把可调用类转换成由 Actor 承载的批量 Expression UDF。每个 Actor 复用一个实例，并以 Arrow 列为单位处理等长投影。
+
+## 签名
+
+```text
+vane.cls.batch(
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any,
+    name: str | None = None,
+    batch_size: int | None = None,
+    unnest: bool = False,
+    gpus: float | None = 0,
+) -> Callable[[type], VaneClassBatch]
+```
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `actor_number` | 正整数 | 独立 Actor 实例数量。布尔值、浮点数和数字字符串无效 | 必填 |
+| `return_dtype` | SQL 类型字符串、Vane `DuckDBPyType` 或受支持的 `pyarrow.DataType` | 唯一逻辑返回列的类型 | 必填 |
+| `name` | 非空 `str` 或 `None` | UDF 在计划中的名称；省略时使用类的 `__qualname__` | `None` |
+| `batch_size` | 正整数或 `None` | 一次 `__call__` 最多接收的行数 | `None` |
+| `unnest` | `bool` | 将 Struct 返回值展开成多个投影列；非 Struct 类型不能启用 | `False` |
+| `gpus` | 非负有限数或 `None` | 每个 Actor 使用的 GPU 资源；正值需要 Ray | `0` |
+
+## 返回值与错误
+
+装饰后的类需要先实例化，再把实例用在 `select()` 中批量处理列。输出行数与输入保持一致。`unnest=False` 时，查询产生一个 `return_dtype` 类型的结果列；`unnest=True` 时，Struct 返回类型的各个字段会展开成独立列。
+
+直接调用只接受等长的 `pyarrow.Array` 和 `pyarrow.ChunkedArray`。查询中的 Actor 相互独立，批次不保证固定分配给某个 Actor，也没有全局执行顺序；Actor 重建会清空本地状态。实例状态只适合保存可重新生成的资源或缓存。
+
+类定义或调用参数不符合要求时，会在实际处理数据前报错。构造函数或 `__call__` 运行失败，或输入、返回值不是受支持的 Arrow 列，行数与输入不一致，类型不符合 `return_dtype` 时，会在直接调用或取结果时报错。分布式后端可能重试整个批次，因此外部副作用必须具备幂等性。
+
+## 示例
+
+```python
+import vane
+
+
+@vane.cls.batch(actor_number=2, return_dtype="BIGINT")
+class Scale:
+    def __init__(self, factor):
+        self.factor = factor
+
+    def __call__(self, values):
+        import pyarrow.compute as pc
+
+        return pc.multiply(values, self.factor)
+
+
+scale = Scale(10)
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(scale(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+输出：
+
+```text
+[(10,), (20,), (30,)]
+```
+
+每个 Actor 都会创建自己的 `Scale(10)` 实例。`__call__` 接收 Arrow 列，返回列的长度必须与对应输入批次一致。
+
+## 源码与相关页面
+
+- [装饰器与包装对象：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

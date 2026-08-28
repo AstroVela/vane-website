@@ -1,0 +1,91 @@
+---
+title: vane.attach_function
+---
+
+`vane.attach_function` registers an Expression UDF callable as a SQL function on a Vane connection. The SQL alias uses the same distributed runtime and projection-only placement rule as the Python Expression wrapper.
+
+## Signature
+
+```text
+vane.attach_function(
+    fn_or_function: Any,
+    alias: str | None = None,
+    *,
+    connection: Any | None = None,
+    replace: bool = False,
+    parameters: Any = None,
+    return_dtype: Any | None = None,
+    input_names: Any = None,
+    schema: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    gpus: float | None = None,
+    actor_number: int | None = None,
+) -> None
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `fn_or_function` | Decorated UDF, instantiated `vane.cls` object, or synchronous raw callable | Callable to register | Required |
+| `alias` | Non-empty `str` or `None` | SQL function name; defaults to the configured UDF or callable name | `None` |
+| `connection` | Vane connection or `None` | Connection that owns the registration; defaults to `vane.default_connection()` | `None` |
+| `replace` | `bool` | Atomically replace an existing Vane alias owned by the same connection | `False` |
+| `parameters` | List or tuple of SQL types | SQL input types; required for every registration form | `None` |
+| `return_dtype` | SQL type or `None` | Required for a raw scalar callable or a `vane.func` without a configured return type | `None` |
+| `input_names` | Sequence of non-empty strings or `None` | Required with `schema` for a raw batch callable; accepted by `vane.func.batch` and instantiated `vane.cls` or `vane.cls.batch` as an explicit alternative to inferred names; invalid for `vane.func` and raw scalar callables | `None` |
+| `schema` | One-entry output mapping or `None` | Required with `input_names` for a raw batch callable; invalid for decorated UDFs | `None` |
+| `batch_size` | Positive integer or `None` | Batch size for a raw batch callable or row-oriented `vane.cls`; decorated batch settings cannot be overridden | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource for a raw batch callable; decorated settings cannot be overridden | `None` |
+| `actor_number` | Positive integer or `None` | Runs a zero-argument raw callable class as Actors; decorated class settings cannot be overridden | `None` |
+
+## Accepted callables
+
+| Callable | Required configuration |
+| --- | --- |
+| `vane.func` | `parameters`; `return_dtype` may come from the decorator or this call |
+| `vane.func.batch` | `parameters`; return type and execution settings come from the decorator |
+| Instantiated `vane.cls` or `vane.cls.batch` | `parameters`; class return type, Actor count, and GPU settings come from the decorator |
+| Raw scalar callable | `parameters` and `return_dtype` |
+| Raw batch callable | `parameters`, `input_names`, and `schema` |
+
+Pass an instantiated decorated class such as `Scorer()`, not the decorated class object `Scorer`.
+
+## Returns and errors
+
+The function returns `None`. Registration validates the complete configuration before replacing an existing alias. Built-in functions, aliases owned by another connection, and aliases with incompatible SQL signatures are not overwritten. DuckDB may cancel an active transaction while registering the function.
+
+The alias is `VOLATILE`, but this does not provide exactly-once execution. Retrying backends may replay calls, so external effects must be idempotent. Actor-local state has the same independence, ordering, and reconstruction limits described in [Execution guarantees](../index.mdx#execution-guarantees).
+
+The registered function remains projection-only: it can appear in a SQL `SELECT` list but not in `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, or aggregate arguments.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="BIGINT")
+def add_one(value):
+    return value + 1
+
+
+vane.attach_function(add_one, parameters=["BIGINT"])
+result = vane.sql("SELECT add_one(value) AS value FROM (VALUES (0), (1), (2)) AS t(value)")
+
+print(result.order("value").fetchall())
+vane.detach_function("add_one")
+vane.close()
+```
+
+Output:
+
+```text
+[(1,), (2,), (3,)]
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.detach_function`](vane-detach-function.mdx)
+- [Expression UDF overview](index.mdx)

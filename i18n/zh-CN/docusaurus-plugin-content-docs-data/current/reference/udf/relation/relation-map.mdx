@@ -1,0 +1,72 @@
+---
+title: Relation.map
+---
+
+`Relation.map` 逐行调用同步 Python 可调用对象，保留全部输入列，并把返回值追加为固定名称的 `value` 列。
+
+## 签名
+
+```text
+Relation.map(
+    map_function: Callable[..., typing.Any],
+    *,
+    return_type: sqltypes.DuckDBPyType,
+    batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `map_function` | 同步函数、绑定方法或可零参数构造的可调用类 | 按 Relation 列顺序接收当前行各列的标量值 | 必填 |
+| `return_type` | Vane `DuckDBPyType` | 追加列 `value` 的类型 | 必填 |
+| `batch_size` | 正整数或 `None` | 运行时组织逐行计算的批次大小 | `None` |
+| `cpus` | 非负有限数或 `None` | 每个 Task 或 Actor 的 CPU 资源 | `None` |
+| `gpus` | 非负有限数或 `None` | 每个 Task 或 Actor 的 GPU 资源；正值只支持 Ray | `None` |
+| `execution_backend` | `subprocess_task`、`subprocess_actor`、`ray_task`、`ray_actor` 或 `None` | 执行后端；省略时根据 runner 和可调用对象形态选择 | `None` |
+| `actor_number` | 正整数或 `None` | Actor 实例数量；Actor 后端必填，Task 后端不能设置 | `None` |
+
+## 返回值与错误
+
+`map()` 返回一个新的 Relation，原 Relation 不会改变。新 Relation 保留输入列，并追加名为 `value` 的结果列。
+
+函数、`return_type` 或执行参数不正确时，调用 `map()` 就会报错。函数运行失败或返回值类型不符时，会在 `fetchall()` 等取结果操作中报错。
+
+Task 和 Actor 后端可能重试调用，因此外部副作用必须具备幂等性。可调用类会在相互独立、随时可能重建的 Actor 中运行；任务不保证固定分配给某个 Actor，也没有全局执行顺序，Actor 重建会清空本地状态。
+
+## 示例
+
+```python
+import vane
+
+
+def total(price, quantity):
+    return price * quantity
+
+
+source = vane.sql("SELECT * FROM (VALUES (10, 2), (5, 4)) AS t(price, quantity)")
+result = source.map(total, return_type=vane.sqltypes.BIGINT)
+
+print(result.order("price DESC").fetchall())
+vane.close()
+```
+
+输出：
+
+```text
+[(10, 2, 20), (5, 4, 20)]
+```
+
+结果保留 `price` 和 `quantity` 两个输入列，并把计算结果作为第三列 `value` 追加到末尾。
+
+## 源码与相关页面
+
+- [Python binding：`src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [实现：`src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.flat_map`](relation-flat-map.mdx)
+- [`Relation.map_batches`](relation-map-batches.mdx)

@@ -1,0 +1,63 @@
+---
+title: vane.func
+---
+
+`vane.func` converts a synchronous Python function or bound method into a scalar Expression UDF. Passing a `vane.Expression` positionally returns a lazy Expression; Expression keyword arguments are not supported. A call with ordinary Python values executes the original function immediately.
+
+## Signature
+
+```text
+vane.func(
+    fn: _PythonFunction | None = None,
+    *,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+) -> VaneFunction | Callable[[_PythonFunction], VaneFunction]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `fn` | Synchronous Python function, bound method, or `None` | Callable to wrap. Omitting it returns a decorator | `None` |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, supported `pyarrow.DataType`, or `None` | Expression result type. It is not inferred from the Python return annotation and is required when building an Expression | `None` |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the function `__qualname__` | `None` |
+
+## Returns and errors
+
+After decoration, the function can be used like any other Expression in `select()`. Each input row produces one result of type `return_dtype`. It can also be called directly with ordinary Python values.
+
+In a query, an input SQL `NULL` propagates to the result without calling the function. A direct call keeps normal Python semantics and passes `None` to the function.
+
+Invalid callable definitions or `name` values are rejected when the wrapper is created. Direct calls retain Python's normal argument validation and error timing. When building an Expression, Expression keyword arguments and a missing or invalid `return_dtype` raise immediately. The wrapped function is not invoked until query execution, so Python call errors—including an argument-count mismatch—raise when results are fetched, as do a `None` result for non-NULL input and values that do not match `return_dtype`. Distributed backends may retry calls, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="VARCHAR")
+def normalize(value):
+    return value.strip().lower()
+
+
+source = vane.sql("SELECT '  Vane  ' AS text")
+result = source.select(normalize(vane.col("text")).alias("text"))
+
+print(result.fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[('vane',)]
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

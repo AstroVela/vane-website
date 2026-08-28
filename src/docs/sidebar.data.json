@@ -44,6 +44,40 @@
     ]
   },
   {
+    "group": "Reference",
+    "items": [
+      {
+        "slug": "reference/udf",
+        "label": "Overview",
+        "key": "UDF reference overview"
+      },
+      {
+        "group": "Expression UDFs",
+        "items": [
+          {
+            "slug": "reference/udf/expression",
+            "label": "Overview",
+            "key": "Expression UDF overview"
+          },
+          { "slug": "reference/udf/expression/vane-func" },
+          { "slug": "reference/udf/expression/vane-func-batch" },
+          { "slug": "reference/udf/expression/vane-cls" },
+          { "slug": "reference/udf/expression/vane-cls-batch" },
+          { "slug": "reference/udf/expression/vane-attach-function" },
+          { "slug": "reference/udf/expression/vane-detach-function" }
+        ]
+      },
+      {
+        "group": "Relation UDFs",
+        "items": [
+          { "slug": "reference/udf/relation/relation-map" },
+          { "slug": "reference/udf/relation/relation-flat-map" },
+          { "slug": "reference/udf/relation/relation-map-batches" }
+        ]
+      }
+    ]
+  },
+  {
     "group": "Operations",
     "items": [
       { "slug": "deploy/deployment" }

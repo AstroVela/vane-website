@@ -180,6 +180,105 @@
       }
     },
     {
+      "slug": "reference/udf",
+      "title": "UDF reference",
+      "source": "docs/data/reference/udf/index.mdx",
+      "route": "/docs/data/reference/udf",
+      "frontmatter": {
+        "title": "UDF reference"
+      }
+    },
+    {
+      "slug": "reference/udf/expression",
+      "title": "Expression UDFs",
+      "source": "docs/data/reference/udf/expression/index.mdx",
+      "route": "/docs/data/reference/udf/expression",
+      "frontmatter": {
+        "title": "Expression UDFs"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-func",
+      "title": "vane.func",
+      "source": "docs/data/reference/udf/expression/vane-func.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-func",
+      "frontmatter": {
+        "title": "vane.func"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-func-batch",
+      "title": "vane.func.batch",
+      "source": "docs/data/reference/udf/expression/vane-func-batch.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-func-batch",
+      "frontmatter": {
+        "title": "vane.func.batch"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-cls",
+      "title": "vane.cls",
+      "source": "docs/data/reference/udf/expression/vane-cls.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-cls",
+      "frontmatter": {
+        "title": "vane.cls"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-cls-batch",
+      "title": "vane.cls.batch",
+      "source": "docs/data/reference/udf/expression/vane-cls-batch.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-cls-batch",
+      "frontmatter": {
+        "title": "vane.cls.batch"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-attach-function",
+      "title": "vane.attach_function",
+      "source": "docs/data/reference/udf/expression/vane-attach-function.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-attach-function",
+      "frontmatter": {
+        "title": "vane.attach_function"
+      }
+    },
+    {
+      "slug": "reference/udf/expression/vane-detach-function",
+      "title": "vane.detach_function",
+      "source": "docs/data/reference/udf/expression/vane-detach-function.mdx",
+      "route": "/docs/data/reference/udf/expression/vane-detach-function",
+      "frontmatter": {
+        "title": "vane.detach_function"
+      }
+    },
+    {
+      "slug": "reference/udf/relation/relation-map",
+      "title": "Relation.map",
+      "source": "docs/data/reference/udf/relation/relation-map.mdx",
+      "route": "/docs/data/reference/udf/relation/relation-map",
+      "frontmatter": {
+        "title": "Relation.map"
+      }
+    },
+    {
+      "slug": "reference/udf/relation/relation-flat-map",
+      "title": "Relation.flat_map",
+      "source": "docs/data/reference/udf/relation/relation-flat-map.mdx",
+      "route": "/docs/data/reference/udf/relation/relation-flat-map",
+      "frontmatter": {
+        "title": "Relation.flat_map"
+      }
+    },
+    {
+      "slug": "reference/udf/relation/relation-map-batches",
+      "title": "Relation.map_batches",
+      "source": "docs/data/reference/udf/relation/relation-map-batches.mdx",
+      "route": "/docs/data/reference/udf/relation/relation-map-batches",
+      "frontmatter": {
+        "title": "Relation.map_batches"
+      }
+    },
+    {
       "slug": "deploy/deployment",
       "title": "Deployment",
       "source": "docs/data/deploy/deployment.mdx",
@@ -314,6 +413,76 @@
               "slug": "tutorials/use-cases/web-text-deduplication",
               "label": "Web Text Deduplication with Global LSH",
               "route": "/docs/data/tutorials/use-cases/web-text-deduplication"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
+      "items": [
+        {
+          "slug": "reference/udf",
+          "label": "Overview",
+          "route": "/docs/data/reference/udf"
+        },
+        {
+          "group": "Expression UDFs",
+          "items": [
+            {
+              "slug": "reference/udf/expression",
+              "label": "Overview",
+              "route": "/docs/data/reference/udf/expression"
+            },
+            {
+              "slug": "reference/udf/expression/vane-func",
+              "label": "vane.func",
+              "route": "/docs/data/reference/udf/expression/vane-func"
+            },
+            {
+              "slug": "reference/udf/expression/vane-func-batch",
+              "label": "vane.func.batch",
+              "route": "/docs/data/reference/udf/expression/vane-func-batch"
+            },
+            {
+              "slug": "reference/udf/expression/vane-cls",
+              "label": "vane.cls",
+              "route": "/docs/data/reference/udf/expression/vane-cls"
+            },
+            {
+              "slug": "reference/udf/expression/vane-cls-batch",
+              "label": "vane.cls.batch",
+              "route": "/docs/data/reference/udf/expression/vane-cls-batch"
+            },
+            {
+              "slug": "reference/udf/expression/vane-attach-function",
+              "label": "vane.attach_function",
+              "route": "/docs/data/reference/udf/expression/vane-attach-function"
+            },
+            {
+              "slug": "reference/udf/expression/vane-detach-function",
+              "label": "vane.detach_function",
+              "route": "/docs/data/reference/udf/expression/vane-detach-function"
+            }
+          ]
+        },
+        {
+          "group": "Relation UDFs",
+          "items": [
+            {
+              "slug": "reference/udf/relation/relation-map",
+              "label": "Relation.map",
+              "route": "/docs/data/reference/udf/relation/relation-map"
+            },
+            {
+              "slug": "reference/udf/relation/relation-flat-map",
+              "label": "Relation.flat_map",
+              "route": "/docs/data/reference/udf/relation/relation-flat-map"
+            },
+            {
+              "slug": "reference/udf/relation/relation-map-batches",
+              "label": "Relation.map_batches",
+              "route": "/docs/data/reference/udf/relation/relation-map-batches"
             }
           ]
         }

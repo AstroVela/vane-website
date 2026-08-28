@@ -1,0 +1,95 @@
+---
+title: Relation.map_batches
+---
+
+`Relation.map_batches` passes a batch of input rows to a synchronous Python callable as a `pyarrow.Table`. The function may change columns and row count, and `schema` declares the complete output.
+
+## Signature
+
+```text
+Relation.map_batches(
+    function: Callable[..., typing.Any],
+    schema: dict[str, sqltypes.DuckDBPyType] | None = None,
+    *,
+    batch_size: int | None = None,
+    output_batch_size: int | None = None,
+    min_task_batch_size: int | None = None,
+    preserve_compute_batch_boundaries: bool | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    memory_bytes: int | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+    ray_actor_thread_policy: typing.Literal["managed", "ray_native"] | None = None,
+    target_max_batch_bytes: int | None = None,
+    task_input_max_bytes: int | None = None,
+    output_target_max_bytes: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `function` | Synchronous function, bound method, or zero-argument callable class | Receives a `pyarrow.Table` and returns a materialized `pyarrow.Table`, `pyarrow.RecordBatch`, column `dict`, a synchronous iterable yielding those types, or `None` | Required |
+| `schema` | Non-empty `dict[str, DuckDBPyType]` | Complete output names, order, and types. The current runtime requires an explicit value | Required |
+| `batch_size` | Positive integer or `None` | Maximum rows passed to one callable invocation | `None` |
+| `output_batch_size` | Positive integer or `None` | Target rows per output Arrow block | `None` |
+| `min_task_batch_size` | Positive integer or `None` | Soft Task-input floor; requires `batch_size` and cannot be smaller | `None` |
+| `preserve_compute_batch_boundaries` | `bool` or `None` | Flushes output after each compute batch when `True` | `None` |
+| `cpus` | Finite non-negative number or `None` | CPU resource per Task or Actor | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task or Actor; positive values require Ray | `None` |
+| `memory_bytes` | Positive integer or `None` | Memory resource per Task or Actor; available only with Ray backends | `None` |
+| `execution_backend` | `subprocess_task`, `subprocess_actor`, `ray_task`, `ray_actor`, or `None` | Execution backend; defaults from the runner and callable shape | `None` |
+| `actor_number` | Positive integer or `None` | Actor instance count; required for Actor backends and invalid for Task backends | `None` |
+| `ray_actor_thread_policy` | `ray_native`, `managed`, or `None` | Ray Actor thread policy; valid only for `ray_actor` and currently resolves to `ray_native` by default | `None` |
+| `target_max_batch_bytes` | Positive integer or `None` | Common byte target for Task input and output blocks | `None` |
+| `task_input_max_bytes` | Positive integer or `None` | Input-byte target for one Task or Actor call | `None` |
+| `output_target_max_bytes` | Positive integer or `None` | Output-block byte target | `None` |
+
+## Returns and errors
+
+`map_batches()` returns a new Relation and leaves the input unchanged. The result contains only the columns declared in `schema`.
+
+The callable must return materialized output. `pyarrow.RecordBatchReader` is not supported.
+
+Invalid functions, schemas, or execution options raise when `map_batches()` is called. Function errors, unsupported return values, and columns that do not match `schema` raise when results are fetched.
+
+Task and Actor backends may retry calls, so external effects must be idempotent. A callable class runs in independent, ephemeral Actors with no work affinity or global ordering; Actor reconstruction resets local state.
+
+## Example
+
+```python
+import vane
+
+
+def keep_large_values(table):
+    import pyarrow.compute as pc
+
+    return table.filter(pc.greater(table["value"], 1))
+
+
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.map_batches(
+    keep_large_values,
+    schema={"value": vane.sqltypes.BIGINT},
+)
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(2,), (3,)]
+```
+
+The callable filters three input rows down to two, demonstrating `N → M` cardinality. The result contains the complete output declared by `schema`.
+
+## Source and related pages
+
+- [Python binding: `src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.map`](relation-map.mdx)
+- [`Relation.flat_map`](relation-flat-map.mdx)

@@ -18,12 +18,12 @@ title: UDF
 | API 入口 | 调用方式 | 输出契约 | 适用场景 |
 | --- | --- | --- | --- |
 | SQL Expression UDF | 使用 `vane.attach_function` 挂载 callable，再在 `SELECT` 中调用其 alias | 一个有类型的 projection 列；v1 中保持行数 | 每个输入行旁需要一个结果，并且周围的 pipeline 使用 SQL |
-| Python Expression UDF | 使用 `vane.func`、`vane.func.batch`、`vane.cls` 或 `vane.cls.batch` 构建 Expression | 一个有类型的 projection 列；通常保持行数 | 相同的 projection 更适合用 Python 对象构建 |
-| Relation UDF | 调用 `rel.map`、`rel.flat_map` 或 `rel.map_batches` | 返回 Relation；`map` 追加 `value`，`flat_map` 和 `map_batches` 定义完整输出 schema | callable 需要控制表形或行数，或者该阶段需要显式 backend、actor pool、`side_effects` 等 Relation 专属控制项 |
+| Python Expression UDF | 使用 `vane.func`、`vane.func.batch`、`vane.cls` 或 `vane.cls.batch` 构建 Expression | 一个有类型、保持行数的 projection 列 | 相同的 projection 更适合用 Python 对象构建 |
+| Relation UDF | 调用 `rel.map`、`rel.flat_map` 或 `rel.map_batches` | 返回 Relation；`map` 追加 `value`，`flat_map` 和 `map_batches` 定义完整输出 schema | callable 需要控制表形或行数，或者该阶段需要显式 backend 或 actor pool 等 Relation 专属控制项 |
 
-Python batch Expression 有一个范围很窄的例外：设置
-`row_preserving=False` 时可以改变行数，但它必须是唯一的顶层 projection。
-Relation UDF 目前是 Python 方法；Vane 不会把它们暴露成 SQL table function。
+Expression UDF 都会保持行数。callable 需要改变行数时，应使用 Relation
+`flat_map` 或 `map_batches`。Relation UDF 目前是 Python 方法；Vane 不会把
+它们暴露成 SQL table function。
 
 ### 案例：SQL Expression、Python Expression 与 Relation
 
@@ -118,7 +118,7 @@ callable 必须返回该阶段之后仍需保留的每一列。
 | 操作 | 调用形态 | 基数 | Relation 输出 | Expression 对应形式 |
 | --- | --- | --- | --- | --- |
 | `map` | 输入 scalar 列值，输出一个有类型的值 | 保持行数 | 保留输入列并追加 `value` | Python 中使用 `vane.func`，SQL 中使用挂载的 scalar alias |
-| `flat_map` | 输入一个 row dict，输出零个或多个 row dict | 可以改变行数 | 仅返回声明的 `schema` | Python `vane.func.batch(..., row_preserving=False)` 是受限的单列替代形式；v1 中 SQL 没有对应形式 |
+| `flat_map` | 输入一个 row dict，输出零个或多个 row dict | 可以改变行数 | 仅返回声明的 `schema` | v1 中没有 Expression 对应形式；SQL 也没有 Relation table-function 对应形式 |
 | `map_batches` | 输入 `pyarrow.Table`，输出 `pyarrow.Table` | 可以保持或改变行数 | 仅返回声明的 `schema` | Python 中使用 `vane.func.batch`，SQL 中使用挂载的 batch alias；Expression schema 必须恰好包含一列 |
 
 ### 案例：组合三种 Relation 操作
@@ -197,15 +197,10 @@ result.show()
 
 ## 3. 基数
 
-基数与调用形态是两个不同的问题。Scalar Expression UDF、注册的 SQL alias
-和 Relation `map` 都会为每个输入行保留一个输出行。Relation `flat_map`
-明确为每个输入行生成零个或多个输出行。Relation `map_batches` 可以返回相同
-或不同数量的行。
-
-Python batch Expression 通过 `row_preserving` 声明这个契约。设置
-`row_preserving=True` 后，结果可以和普通列并列 projection。设置
-`row_preserving=False` 后，它可以改变行数，但必须是唯一的顶层 projection。
-v1 中的 SQL 注册只接受保持行数的 batch wrapper。
+基数与调用形态是两个不同的问题。所有 Expression UDF 和 Relation `map`
+都会为每个输入行保留一个输出行。Relation `flat_map` 明确为每个输入行生成
+零个或多个输出行，Relation `map_batches` 则可以返回相同或不同数量的行。
+callable 需要改变行数时，应使用这两个 Relation API。
 
 ## 4. 无状态与有状态
 
@@ -218,9 +213,9 @@ v1 中的 SQL 注册只接受保持行数的 batch wrapper。
 | 有状态 | 实例化 `vane.cls` 或 `vane.cls.batch`；在 Python 中调用，或把实例挂载为 SQL alias | 将 callable class 传给 `subprocess_actor` 或 `ray_actor` | 每个 actor 有一个 instance；各 actor 拥有独立、仅在本次执行中有效的状态 |
 
 对于不需要复用初始化结果的确定性工作，使用无状态函数。需要复用模型、
-tokenizer、client、lookup table 或 cache 时，使用有状态 class。v1 中一个
-有状态 Expression 在每次 query 中使用一个 actor；Relation actor pool 可以
-包含多个相互独立的 instance。
+tokenizer、client、lookup table 或 cache 时，使用有状态 class。每次执行
+有状态 Expression 时，都会按 `actor_number` 创建相互独立的 Actor 实例；
+Relation 的 Actor 后端也使用这个配置值作为池大小。
 
 ### 案例：无状态函数与有状态 Actor
 

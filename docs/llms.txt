@@ -21,5 +21,16 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/tutorials/use-cases/multimodal-training-data: Building a Multimodal Training Release.
 - /docs/data/tutorials/use-cases/procurement-compliance-audit: Procurement Compliance Audit.
 - /docs/data/tutorials/use-cases/web-text-deduplication: Web Text Deduplication with Global LSH.
+- /docs/data/reference/udf: UDF reference.
+- /docs/data/reference/udf/expression: Expression UDFs.
+- /docs/data/reference/udf/expression/vane-func: vane.func.
+- /docs/data/reference/udf/expression/vane-func-batch: vane.func.batch.
+- /docs/data/reference/udf/expression/vane-cls: vane.cls.
+- /docs/data/reference/udf/expression/vane-cls-batch: vane.cls.batch.
+- /docs/data/reference/udf/expression/vane-attach-function: vane.attach_function.
+- /docs/data/reference/udf/expression/vane-detach-function: vane.detach_function.
+- /docs/data/reference/udf/relation/relation-map: Relation.map.
+- /docs/data/reference/udf/relation/relation-flat-map: Relation.flat_map.
+- /docs/data/reference/udf/relation/relation-map-batches: Relation.map_batches.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

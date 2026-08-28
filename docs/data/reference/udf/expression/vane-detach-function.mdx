@@ -1,0 +1,47 @@
+---
+title: vane.detach_function
+---
+
+`vane.detach_function` removes a registered SQL function from a Vane connection.
+
+## Signature
+
+```text
+vane.detach_function(
+    alias: str,
+    *,
+    connection: Any | None = None,
+) -> None
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `alias` | `str` | Name of the SQL function to remove | Required |
+| `connection` | Vane connection or `None` | Connection that owns the function; defaults to `vane.default_connection()` | `None` |
+
+## Returns and errors
+
+The function returns `None`. The underlying connection error is propagated if the named function cannot be removed.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="BIGINT")
+def identity(value):
+    return value
+
+
+vane.attach_function(identity, parameters=["BIGINT"])
+vane.detach_function("identity")
+vane.close()
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.attach_function`](vane-attach-function.mdx)

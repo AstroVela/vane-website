@@ -1,0 +1,78 @@
+---
+title: vane.cls.batch
+---
+
+`vane.cls.batch` converts a callable class into an Actor-backed batch Expression UDF. Each Actor reuses one instance and processes row-preserving projections as Arrow columns.
+
+## Signature
+
+```text
+vane.cls.batch(
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any,
+    name: str | None = None,
+    batch_size: int | None = None,
+    unnest: bool = False,
+    gpus: float | None = 0,
+) -> Callable[[type], VaneClassBatch]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `actor_number` | Positive integer | Number of independent Actor instances. Booleans, floats, and numeric strings are invalid | Required |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, or supported `pyarrow.DataType` | Type of the single logical output column | Required |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the class `__qualname__` | `None` |
+| `batch_size` | Positive integer or `None` | Maximum rows per `__call__` | `None` |
+| `unnest` | `bool` | Expands a Struct result into projected columns; invalid for a non-Struct type | `False` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Actor; positive values require Ray | `0` |
+
+## Returns and errors
+
+Instantiate the decorated class, then use the instance to process columns in `select()`. The output has the same number of rows as the input. With `unnest=False`, the query produces one `return_dtype` column. With `unnest=True`, it expands the fields of a Struct return type into separate columns.
+
+A direct call accepts only `pyarrow.Array` and `pyarrow.ChunkedArray` inputs of equal length. Query Actors are independent, batches have no Actor affinity or global ordering, and Actor reconstruction resets local state. Use instance state only for reconstructible resources or caches.
+
+Invalid class definitions or arguments raise before data is processed. Constructor or `__call__` errors, non-Arrow inputs or results, row-count mismatches, and values that do not match `return_dtype` raise during a direct call or when query results are fetched. Distributed backends may retry batches, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.cls.batch(actor_number=2, return_dtype="BIGINT")
+class Scale:
+    def __init__(self, factor):
+        self.factor = factor
+
+    def __call__(self, values):
+        import pyarrow.compute as pc
+
+        return pc.multiply(values, self.factor)
+
+
+scale = Scale(10)
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(scale(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(10,), (20,), (30,)]
+```
+
+Each Actor constructs its own `Scale(10)` instance. Calls receive Arrow columns, and every returned column remains the same length as its input batch.
+
+## Source and related pages
+
+- [Decorator and wrapper: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

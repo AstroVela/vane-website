@@ -1,0 +1,72 @@
+---
+title: Relation.map
+---
+
+`Relation.map` calls a synchronous Python callable for each row, retains every input column, and appends the returned value as a column named `value`.
+
+## Signature
+
+```text
+Relation.map(
+    map_function: Callable[..., typing.Any],
+    *,
+    return_type: sqltypes.DuckDBPyType,
+    batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `map_function` | Synchronous function, bound method, or zero-argument callable class | Receives the current row as one scalar per Relation column, in column order | Required |
+| `return_type` | Vane `DuckDBPyType` | Type of the appended `value` column | Required |
+| `batch_size` | Positive integer or `None` | Runtime batch size used to organize row-wise calls | `None` |
+| `cpus` | Finite non-negative number or `None` | CPU resource per Task or Actor | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task or Actor; positive values require Ray | `None` |
+| `execution_backend` | `subprocess_task`, `subprocess_actor`, `ray_task`, `ray_actor`, or `None` | Execution backend; defaults from the runner and callable shape | `None` |
+| `actor_number` | Positive integer or `None` | Actor instance count; required for Actor backends and invalid for Task backends | `None` |
+
+## Returns and errors
+
+`map()` returns a new Relation and leaves the input unchanged. The new Relation keeps the input columns and appends the result as a column named `value`.
+
+Invalid functions, `return_type` values, or execution options raise when `map()` is called. Function errors and values that do not match `return_type` raise when results are fetched.
+
+Task and Actor backends may retry calls, so external effects must be idempotent. A callable class runs in independent, ephemeral Actors with no work affinity or global ordering; Actor reconstruction resets local state.
+
+## Example
+
+```python
+import vane
+
+
+def total(price, quantity):
+    return price * quantity
+
+
+source = vane.sql("SELECT * FROM (VALUES (10, 2), (5, 4)) AS t(price, quantity)")
+result = source.map(total, return_type=vane.sqltypes.BIGINT)
+
+print(result.order("price DESC").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(10, 2, 20), (5, 4, 20)]
+```
+
+Both input columns remain in the result, and the computed total is appended as the third column named `value`.
+
+## Source and related pages
+
+- [Python binding: `src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.flat_map`](relation-flat-map.mdx)
+- [`Relation.map_batches`](relation-map-batches.mdx)

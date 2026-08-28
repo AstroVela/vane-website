@@ -103,6 +103,61 @@ export const DOCS_PAGES = {
     title: 'Web Text Deduplication with Global LSH',
     titleZh: '基于全局 LSH 的网页文本去重',
   },
+  'reference/udf': {
+    source: 'docs/data/reference/udf/index.mdx',
+    title: 'UDF reference',
+    titleZh: 'UDF API 参考',
+  },
+  'reference/udf/expression': {
+    source: 'docs/data/reference/udf/expression/index.mdx',
+    title: 'Expression UDFs',
+    titleZh: 'Expression UDF',
+  },
+  'reference/udf/expression/vane-func': {
+    source: 'docs/data/reference/udf/expression/vane-func.mdx',
+    title: 'vane.func',
+    titleZh: 'vane.func',
+  },
+  'reference/udf/expression/vane-func-batch': {
+    source: 'docs/data/reference/udf/expression/vane-func-batch.mdx',
+    title: 'vane.func.batch',
+    titleZh: 'vane.func.batch',
+  },
+  'reference/udf/expression/vane-cls': {
+    source: 'docs/data/reference/udf/expression/vane-cls.mdx',
+    title: 'vane.cls',
+    titleZh: 'vane.cls',
+  },
+  'reference/udf/expression/vane-cls-batch': {
+    source: 'docs/data/reference/udf/expression/vane-cls-batch.mdx',
+    title: 'vane.cls.batch',
+    titleZh: 'vane.cls.batch',
+  },
+  'reference/udf/expression/vane-attach-function': {
+    source: 'docs/data/reference/udf/expression/vane-attach-function.mdx',
+    title: 'vane.attach_function',
+    titleZh: 'vane.attach_function',
+  },
+  'reference/udf/expression/vane-detach-function': {
+    source: 'docs/data/reference/udf/expression/vane-detach-function.mdx',
+    title: 'vane.detach_function',
+    titleZh: 'vane.detach_function',
+  },
+  'reference/udf/relation/relation-map': {
+    source: 'docs/data/reference/udf/relation/relation-map.mdx',
+    title: 'Relation.map',
+    titleZh: 'Relation.map',
+  },
+  'reference/udf/relation/relation-flat-map': {
+    source: 'docs/data/reference/udf/relation/relation-flat-map.mdx',
+    title: 'Relation.flat_map',
+    titleZh: 'Relation.flat_map',
+  },
+  'reference/udf/relation/relation-map-batches': {
+    source: 'docs/data/reference/udf/relation/relation-map-batches.mdx',
+    title: 'Relation.map_batches',
+    titleZh: 'Relation.map_batches',
+  },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',
     title: 'Deployment',
@@ -174,6 +229,9 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Tutorials: '教程',
   Examples: '示例',
   'Use cases': '端到端用例',
+  Reference: 'API 参考',
+  'Expression UDFs': 'Expression UDF',
+  'Relation UDFs': 'Relation UDF',
   Operations: '运维',
   Contributing: '贡献',
 }

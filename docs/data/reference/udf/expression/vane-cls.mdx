@@ -1,0 +1,76 @@
+---
+title: vane.cls
+---
+
+`vane.cls` converts a callable class into an Actor-backed scalar Expression UDF. Each Actor owns an independent instance, allowing a model, client, or reconstructible cache to be reused.
+
+## Signature
+
+```text
+vane.cls(
+    class_: type | None = None,
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+    gpus: float | None = 0,
+) -> VaneClass | Callable[[type], VaneClass]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `class_` | Callable class or `None` | Class to wrap. Omitting it returns a decorator | `None` |
+| `actor_number` | Positive integer | Number of independent Actor instances. Booleans, floats, and numeric strings are invalid | Required |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, or supported `pyarrow.DataType` | Scalar Expression result type; it is not inferred | Required |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the class `__qualname__` | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Actor; positive values require Ray | `0` |
+
+## Returns and errors
+
+Instantiate the decorated class, then use the instance in `select()`. Each input row produces one result of type `return_dtype`.
+
+In a query, an input SQL `NULL` propagates to the result without calling `__call__`. A direct call keeps normal Python semantics and passes `None` to the local eager instance.
+
+Query Actors are independent and work has no Actor affinity or global ordering. Actor reconstruction resets local state, so instance state must be a reconstructible resource or cache rather than shared or durable query state.
+
+`vane.cls` validates the decorated class and its decorator options when the decorator is applied. The user constructor runs when the eager instance or a query Actor is created, and `__call__` errors raise when the callable runs. In a query, values that do not match the declared return type raise when results are fetched. Distributed backends may retry calls, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.cls(actor_number=2, return_dtype="VARCHAR")
+class Prefix:
+    def __init__(self, prefix):
+        self.prefix = prefix
+
+    def __call__(self, value):
+        return f"{self.prefix}{value}"
+
+
+prefix = Prefix("item-")
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(prefix(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[('item-1',), ('item-2',), ('item-3',)]
+```
+
+`Prefix("item-")` captures the constructor argument without creating query Actors. At execution time, each Actor constructs an independent `Prefix` instance with that argument.
+
+## Source and related pages
+
+- [Decorator and wrapper: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.cls.batch`](vane-cls-batch.mdx)
+- [`vane.func`](vane-func.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

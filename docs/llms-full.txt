@@ -357,13 +357,12 @@ stage requires.
 | API surface | How it is called | Output contract | Use when |
 | --- | --- | --- | --- |
 | SQL Expression UDF | Attach a callable with `vane.attach_function`, then call its alias in `SELECT` | One typed projection column; row-preserving in v1 | One result belongs beside each input row and the surrounding pipeline is SQL |
-| Python Expression UDF | Build an Expression with `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` | One typed projection column; normally row-preserving | The same projection is easier to construct with Python objects |
-| Relation UDF | Call `rel.map`, `rel.flat_map`, or `rel.map_batches` | A Relation; `map` appends `value`, while `flat_map` and `map_batches` define the complete output schema | The callable owns table shape or row count, or the stage needs Relation-only controls such as an explicit backend, actor pool, or `side_effects` |
+| Python Expression UDF | Build an Expression with `vane.func`, `vane.func.batch`, `vane.cls`, or `vane.cls.batch` | One typed, row-preserving projection column | The same projection is easier to construct with Python objects |
+| Relation UDF | Call `rel.map`, `rel.flat_map`, or `rel.map_batches` | A Relation; `map` appends `value`, while `flat_map` and `map_batches` define the complete output schema | The callable owns table shape or row count, or the stage needs Relation-only controls such as an explicit backend or actor pool |
 
-Python batch Expression has one narrow exception: with
-`row_preserving=False`, it may change row count only when it is the sole
-top-level projection. Relation UDFs are currently Python methods; Vane does
-not expose them as SQL table functions.
+Expression UDFs preserve row count. Use Relation `flat_map` or `map_batches`
+when a callable needs to change cardinality. Relation UDFs are currently Python
+methods; Vane does not expose them as SQL table functions.
 
 ### Case: SQL Expression, Python Expression, and Relation
 
@@ -459,7 +458,7 @@ similar callable shapes but retain the one-column Expression contract.
 | Operation | Invocation shape | Cardinality | Relation output | Expression counterpart |
 | --- | --- | --- | --- | --- |
 | `map` | Scalar column values in, one typed value out | Preserves row count | Preserves input columns and appends `value` | `vane.func` in Python or an attached scalar alias in SQL |
-| `flat_map` | One row dict in, zero or more row dicts out | May change row count | Returns exactly the declared `schema` | Python `vane.func.batch(..., row_preserving=False)` is a restricted one-column alternative; SQL has no counterpart in v1 |
+| `flat_map` | One row dict in, zero or more row dicts out | May change row count | Returns exactly the declared `schema` | No Expression counterpart in v1; SQL has no Relation table-function counterpart |
 | `map_batches` | `pyarrow.Table` in, `pyarrow.Table` out | May preserve or change row count | Returns exactly the declared `schema` | `vane.func.batch` in Python or an attached batch alias in SQL; the Expression schema has exactly one column |
 
 ### Case: Compose All Three Relation Operations
@@ -539,16 +538,11 @@ columns needed later.
 
 ## 3. Cardinality
 
-Cardinality is separate from invocation shape. Scalar Expression UDFs,
-registered SQL aliases, and Relation `map` preserve one output row per input
-row. Relation `flat_map` explicitly emits zero or more rows for each input row.
-Relation `map_batches` may return the same or a different number of rows.
-
-Python batch Expressions declare this contract with `row_preserving`. With
-`row_preserving=True`, the result can be projected beside ordinary columns.
-With `row_preserving=False`, it may change row count but must be the sole
-top-level projection. SQL registration accepts only row-preserving batch
-wrappers in v1.
+Cardinality is separate from invocation shape. All Expression UDFs and Relation
+`map` preserve one output row per input row. Relation `flat_map` explicitly
+emits zero or more rows for each input row, while Relation `map_batches` may
+return the same or a different number of rows. Use those Relation APIs whenever
+a callable needs to change cardinality.
 
 ## 4. Stateless and Stateful
 
@@ -562,8 +556,9 @@ Relation UDFs can be stateless or stateful.
 
 Use stateless functions for deterministic work that needs no reusable setup.
 Use stateful classes to reuse a model, tokenizer, client, lookup table, or
-cache. In v1 a stateful Expression uses one actor per query. A Relation actor
-pool may contain several independent instances.
+cache. Each stateful Expression execution uses `actor_number` independent Actor
+instances. Relation actor backends use the same configured value as their pool
+size.
 
 ### Case: Stateless Function and Stateful Actors
 
@@ -3746,6 +3741,784 @@ The primary release is `deduped_documents.parquet`; the supporting outputs expla
 - The optional Common Crawl path reads pinned WARC byte ranges and extracts HTML blocks into the same base columns, so the fingerprinting and clustering stages remain unchanged.
 
 See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication) for the optional Common Crawl source, band expansion, all diagnostic Relations, artifact writers, and fixture data.
+
+## UDF reference
+
+Route: /docs/data/reference/udf
+Source: docs/data/reference/udf/index.mdx
+
+Vane UDFs run Python code on data in a Relation. Use this reference to choose an API and check its signature, parameters, return value, errors, and examples.
+
+## Choose an API
+
+"Output and cardinality" describes the row-count relationship for a call. `1 → 1` returns one row per input row, while `1 → 0..N` may return zero or more. `N → N` preserves a batch's row count, while `N → M` may change it.
+
+| API | Python receives | Output and cardinality | Use it when |
+| --- | --- | --- | --- |
+| [`vane.func`](expression/vane-func.mdx) | Scalar arguments | One projected value, `1 → 1` | A synchronous function computes one value per row |
+| [`vane.cls`](expression/vane-cls.mdx) | Scalar arguments | One projected value, `1 → 1` | The scalar callable needs a reusable instance |
+| [`vane.func.batch`](expression/vane-func-batch.mdx) | Arrow columns | One equal-length logical result; `Struct` fields can expand into columns, `N → N` | A function operates on Arrow columns |
+| [`vane.cls.batch`](expression/vane-cls-batch.mdx) | Arrow columns | One equal-length logical result; `Struct` fields can expand into columns, `N → N` | Batched work needs a reusable instance |
+| [`Relation.map`](relation/relation-map.mdx) | One scalar per current column | Keeps input and appends `value`, `1 → 1` | Every input row produces one additional value |
+| [`Relation.flat_map`](relation/relation-flat-map.mdx) | One row dict | Complete declared schema, `1 → 0..N` | One row may produce zero, one, or many rows |
+| [`Relation.map_batches`](relation/relation-map-batches.mdx) | One `pyarrow.Table` | Complete declared schema, `N → M` | A table batch may change shape or row count |
+
+See the [Expression UDF overview](expression/index.mdx) for Expression-specific call and placement rules.
+
+## Register an Expression UDF for SQL
+
+| API | Purpose |
+| --- | --- |
+| [`vane.attach_function`](expression/vane-attach-function.mdx) | Register a decorated or raw Python callable as a SQL function on a connection |
+| [`vane.detach_function`](expression/vane-detach-function.mdx) | Remove a registered SQL function from a connection |
+
+Registration provides a SQL name for an Expression UDF. It does not change the projection-only placement rule.
+
+## Execution guarantees
+
+Task and Actor backends may retry a call after a failure. Vane does not provide exactly-once UDF execution, so code with external effects must be idempotent.
+
+Callable classes run in independent, ephemeral Actor instances. Work has no Actor affinity or global ordering, and Actor reconstruction resets local state. Use instance state only for reconstructible resources such as models, clients, and caches, not as shared or durable query state.
+
+## Expression UDFs
+
+Route: /docs/data/reference/udf/expression
+Source: docs/data/reference/udf/expression/index.mdx
+
+An Expression UDF computes one projected value for each input row. Vane provides function and callable-class APIs in scalar and Arrow-batch forms.
+
+## Choose an API
+
+| API | Python receives | Lifetime | Use it when |
+| --- | --- | --- | --- |
+| [`vane.func`](vane-func.mdx) | Scalar arguments for one row | Task | A synchronous function computes one value per row |
+| [`vane.func.batch`](vane-func-batch.mdx) | One or more Arrow columns | Task | A function operates on columns in batches |
+| [`vane.cls`](vane-cls.mdx) | Scalar arguments for one row | Actor | Scalar calls need a reusable instance |
+| [`vane.cls.batch`](vane-cls-batch.mdx) | One or more Arrow columns | Actor | Batched work reuses a model, client, or read-only cache |
+
+Use a function when no reusable instance is needed. Use a class when calls need to reuse a model, client, or cache.
+
+## Calls
+
+With no Vane Expression argument, the wrapper calls the Python function or class instance immediately. When an Expression is supplied in a supported position, the wrapper returns a lazy Expression. Scalar APIs accept Expression inputs only as positional arguments; batch APIs accept them positionally or by keyword.
+
+For scalar APIs, ordinary Python values and keyword arguments keep their normal Python semantics during an immediate call. Literal keyword arguments also keep those semantics when a scalar UDF builds an Expression. For batch APIs, every immediate-call input must be a `pyarrow.Array` or `pyarrow.ChunkedArray`, and all inputs must have equal lengths. In a batch Expression call, Python literals are materialized as Arrow columns alongside Expression inputs.
+
+For scalar APIs in a query, an input SQL `NULL` propagates to the result without calling user code. An immediate call instead passes Python `None` to the callable.
+
+## SQL registration
+
+Use [`vane.attach_function`](vane-attach-function.mdx) to register an Expression UDF as a SQL function on a connection. Use [`vane.detach_function`](vane-detach-function.mdx) to remove it.
+
+## Supported placement
+
+Expression UDFs are supported only in a Relation `select()` projection or a SQL `SELECT` list. This restriction applies to both Python wrappers and SQL aliases registered with `vane.attach_function`; neither can be used in `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, or aggregate arguments.
+
+All four APIs preserve row count. Scalar calls produce one value per row, while batch calls must return an Arrow Array or ChunkedArray with the input-batch length. Use [`Relation.flat_map`](../relation/relation-flat-map.mdx) or [`Relation.map_batches`](../relation/relation-map-batches.mdx) when the result may have a different number of rows.
+
+Distributed execution may retry calls and does not provide exactly-once semantics. See [Execution guarantees](../index.mdx#execution-guarantees) before using external effects or Actor-local state.
+
+## See also
+
+- [UDF reference overview](../index.mdx)
+
+## vane.func
+
+Route: /docs/data/reference/udf/expression/vane-func
+Source: docs/data/reference/udf/expression/vane-func.mdx
+
+`vane.func` converts a synchronous Python function or bound method into a scalar Expression UDF. Passing a `vane.Expression` positionally returns a lazy Expression; Expression keyword arguments are not supported. A call with ordinary Python values executes the original function immediately.
+
+## Signature
+
+```text
+vane.func(
+    fn: _PythonFunction | None = None,
+    *,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+) -> VaneFunction | Callable[[_PythonFunction], VaneFunction]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `fn` | Synchronous Python function, bound method, or `None` | Callable to wrap. Omitting it returns a decorator | `None` |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, supported `pyarrow.DataType`, or `None` | Expression result type. It is not inferred from the Python return annotation and is required when building an Expression | `None` |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the function `__qualname__` | `None` |
+
+## Returns and errors
+
+After decoration, the function can be used like any other Expression in `select()`. Each input row produces one result of type `return_dtype`. It can also be called directly with ordinary Python values.
+
+In a query, an input SQL `NULL` propagates to the result without calling the function. A direct call keeps normal Python semantics and passes `None` to the function.
+
+Invalid callable definitions or `name` values are rejected when the wrapper is created. Direct calls retain Python's normal argument validation and error timing. When building an Expression, Expression keyword arguments and a missing or invalid `return_dtype` raise immediately. The wrapped function is not invoked until query execution, so Python call errors—including an argument-count mismatch—raise when results are fetched, as do a `None` result for non-NULL input and values that do not match `return_dtype`. Distributed backends may retry calls, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="VARCHAR")
+def normalize(value):
+    return value.strip().lower()
+
+
+source = vane.sql("SELECT '  Vane  ' AS text")
+result = source.select(normalize(vane.col("text")).alias("text"))
+
+print(result.fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[('vane',)]
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)
+
+## vane.func.batch
+
+Route: /docs/data/reference/udf/expression/vane-func-batch
+Source: docs/data/reference/udf/expression/vane-func-batch.mdx
+
+Use `vane.func.batch` to process data in batches inside `select()`. Expression inputs and Python literals are materialized as Arrow columns, and the function must return one Arrow column of the same length.
+
+## Signature
+
+```text
+vane.func.batch(
+    *,
+    return_dtype: Any,
+    name: str | None = None,
+    batch_size: int | None = None,
+    unnest: bool = False,
+    gpus: float | None = None,
+) -> Callable[[_PythonFunction], VaneBatchFunction]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, or supported `pyarrow.DataType` | Output column type | Required |
+| `name` | Non-empty `str` or `None` | UDF name; defaults to the function `__qualname__` | `None` |
+| `batch_size` | Positive integer or `None` | Maximum rows processed by each call | `None` |
+| `unnest` | `bool` | Expands the fields of a Struct result into columns | `False` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task; positive values require Ray | `None` |
+
+## Returns and errors
+
+When called in `select()`, the output has the same number of rows as the input. With `unnest=False`, the query produces one `return_dtype` column. With `unnest=True`, it expands the fields of a Struct return type into separate columns.
+
+A direct call accepts only `pyarrow.Array` and `pyarrow.ChunkedArray` inputs. Every input must have the same length. It returns an Array when the normalized result has one chunk and a ChunkedArray otherwise.
+
+Function errors, non-Arrow inputs or results, row-count mismatches, and values that cannot be converted to `return_dtype` raise during a direct call or when query results are fetched. Distributed backends may retry batches, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func.batch(return_dtype="BIGINT")
+def add(a, b):
+    import pyarrow.compute as pc
+
+    return pc.add(a, b)
+
+
+source = vane.sql("SELECT * FROM (VALUES (1, 4), (2, 5), (3, 6)) AS t(a, b)")
+result = source.select(add(vane.col("a"), vane.col("b")).alias("total"))
+
+print(result.order("total").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(5,), (7,), (9,)]
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func`](vane-func.mdx)
+- [`vane.cls.batch`](vane-cls-batch.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)
+- [Expression UDF overview](index.mdx)
+
+## vane.cls
+
+Route: /docs/data/reference/udf/expression/vane-cls
+Source: docs/data/reference/udf/expression/vane-cls.mdx
+
+`vane.cls` converts a callable class into an Actor-backed scalar Expression UDF. Each Actor owns an independent instance, allowing a model, client, or reconstructible cache to be reused.
+
+## Signature
+
+```text
+vane.cls(
+    class_: type | None = None,
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+    gpus: float | None = 0,
+) -> VaneClass | Callable[[type], VaneClass]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `class_` | Callable class or `None` | Class to wrap. Omitting it returns a decorator | `None` |
+| `actor_number` | Positive integer | Number of independent Actor instances. Booleans, floats, and numeric strings are invalid | Required |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, or supported `pyarrow.DataType` | Scalar Expression result type; it is not inferred | Required |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the class `__qualname__` | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Actor; positive values require Ray | `0` |
+
+## Returns and errors
+
+Instantiate the decorated class, then use the instance in `select()`. Each input row produces one result of type `return_dtype`.
+
+In a query, an input SQL `NULL` propagates to the result without calling `__call__`. A direct call keeps normal Python semantics and passes `None` to the local eager instance.
+
+Query Actors are independent and work has no Actor affinity or global ordering. Actor reconstruction resets local state, so instance state must be a reconstructible resource or cache rather than shared or durable query state.
+
+`vane.cls` validates the decorated class and its decorator options when the decorator is applied. The user constructor runs when the eager instance or a query Actor is created, and `__call__` errors raise when the callable runs. In a query, values that do not match the declared return type raise when results are fetched. Distributed backends may retry calls, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.cls(actor_number=2, return_dtype="VARCHAR")
+class Prefix:
+    def __init__(self, prefix):
+        self.prefix = prefix
+
+    def __call__(self, value):
+        return f"{self.prefix}{value}"
+
+
+prefix = Prefix("item-")
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(prefix(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[('item-1',), ('item-2',), ('item-3',)]
+```
+
+`Prefix("item-")` captures the constructor argument without creating query Actors. At execution time, each Actor constructs an independent `Prefix` instance with that argument.
+
+## Source and related pages
+
+- [Decorator and wrapper: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.cls.batch`](vane-cls-batch.mdx)
+- [`vane.func`](vane-func.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)
+
+## vane.cls.batch
+
+Route: /docs/data/reference/udf/expression/vane-cls-batch
+Source: docs/data/reference/udf/expression/vane-cls-batch.mdx
+
+`vane.cls.batch` converts a callable class into an Actor-backed batch Expression UDF. Each Actor reuses one instance and processes row-preserving projections as Arrow columns.
+
+## Signature
+
+```text
+vane.cls.batch(
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any,
+    name: str | None = None,
+    batch_size: int | None = None,
+    unnest: bool = False,
+    gpus: float | None = 0,
+) -> Callable[[type], VaneClassBatch]
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `actor_number` | Positive integer | Number of independent Actor instances. Booleans, floats, and numeric strings are invalid | Required |
+| `return_dtype` | SQL type string, Vane `DuckDBPyType`, or supported `pyarrow.DataType` | Type of the single logical output column | Required |
+| `name` | Non-empty `str` or `None` | UDF name in the plan; defaults to the class `__qualname__` | `None` |
+| `batch_size` | Positive integer or `None` | Maximum rows per `__call__` | `None` |
+| `unnest` | `bool` | Expands a Struct result into projected columns; invalid for a non-Struct type | `False` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Actor; positive values require Ray | `0` |
+
+## Returns and errors
+
+Instantiate the decorated class, then use the instance to process columns in `select()`. The output has the same number of rows as the input. With `unnest=False`, the query produces one `return_dtype` column. With `unnest=True`, it expands the fields of a Struct return type into separate columns.
+
+A direct call accepts only `pyarrow.Array` and `pyarrow.ChunkedArray` inputs of equal length. Query Actors are independent, batches have no Actor affinity or global ordering, and Actor reconstruction resets local state. Use instance state only for reconstructible resources or caches.
+
+Invalid class definitions or arguments raise before data is processed. Constructor or `__call__` errors, non-Arrow inputs or results, row-count mismatches, and values that do not match `return_dtype` raise during a direct call or when query results are fetched. Distributed backends may retry batches, so external effects must be idempotent.
+
+## Example
+
+```python
+import vane
+
+
+@vane.cls.batch(actor_number=2, return_dtype="BIGINT")
+class Scale:
+    def __init__(self, factor):
+        self.factor = factor
+
+    def __call__(self, values):
+        import pyarrow.compute as pc
+
+        return pc.multiply(values, self.factor)
+
+
+scale = Scale(10)
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(scale(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(10,), (20,), (30,)]
+```
+
+Each Actor constructs its own `Scale(10)` instance. Calls receive Arrow columns, and every returned column remains the same length as its input batch.
+
+## Source and related pages
+
+- [Decorator and wrapper: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)
+
+## vane.attach_function
+
+Route: /docs/data/reference/udf/expression/vane-attach-function
+Source: docs/data/reference/udf/expression/vane-attach-function.mdx
+
+`vane.attach_function` registers an Expression UDF callable as a SQL function on a Vane connection. The SQL alias uses the same distributed runtime and projection-only placement rule as the Python Expression wrapper.
+
+## Signature
+
+```text
+vane.attach_function(
+    fn_or_function: Any,
+    alias: str | None = None,
+    *,
+    connection: Any | None = None,
+    replace: bool = False,
+    parameters: Any = None,
+    return_dtype: Any | None = None,
+    input_names: Any = None,
+    schema: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    gpus: float | None = None,
+    actor_number: int | None = None,
+) -> None
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `fn_or_function` | Decorated UDF, instantiated `vane.cls` object, or synchronous raw callable | Callable to register | Required |
+| `alias` | Non-empty `str` or `None` | SQL function name; defaults to the configured UDF or callable name | `None` |
+| `connection` | Vane connection or `None` | Connection that owns the registration; defaults to `vane.default_connection()` | `None` |
+| `replace` | `bool` | Atomically replace an existing Vane alias owned by the same connection | `False` |
+| `parameters` | List or tuple of SQL types | SQL input types; required for every registration form | `None` |
+| `return_dtype` | SQL type or `None` | Required for a raw scalar callable or a `vane.func` without a configured return type | `None` |
+| `input_names` | Sequence of non-empty strings or `None` | Required with `schema` for a raw batch callable; accepted by `vane.func.batch` and instantiated `vane.cls` or `vane.cls.batch` as an explicit alternative to inferred names; invalid for `vane.func` and raw scalar callables | `None` |
+| `schema` | One-entry output mapping or `None` | Required with `input_names` for a raw batch callable; invalid for decorated UDFs | `None` |
+| `batch_size` | Positive integer or `None` | Batch size for a raw batch callable or row-oriented `vane.cls`; decorated batch settings cannot be overridden | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource for a raw batch callable; decorated settings cannot be overridden | `None` |
+| `actor_number` | Positive integer or `None` | Runs a zero-argument raw callable class as Actors; decorated class settings cannot be overridden | `None` |
+
+## Accepted callables
+
+| Callable | Required configuration |
+| --- | --- |
+| `vane.func` | `parameters`; `return_dtype` may come from the decorator or this call |
+| `vane.func.batch` | `parameters`; return type and execution settings come from the decorator |
+| Instantiated `vane.cls` or `vane.cls.batch` | `parameters`; class return type, Actor count, and GPU settings come from the decorator |
+| Raw scalar callable | `parameters` and `return_dtype` |
+| Raw batch callable | `parameters`, `input_names`, and `schema` |
+
+Pass an instantiated decorated class such as `Scorer()`, not the decorated class object `Scorer`.
+
+## Returns and errors
+
+The function returns `None`. Registration validates the complete configuration before replacing an existing alias. Built-in functions, aliases owned by another connection, and aliases with incompatible SQL signatures are not overwritten. DuckDB may cancel an active transaction while registering the function.
+
+The alias is `VOLATILE`, but this does not provide exactly-once execution. Retrying backends may replay calls, so external effects must be idempotent. Actor-local state has the same independence, ordering, and reconstruction limits described in [Execution guarantees](../index.mdx#execution-guarantees).
+
+The registered function remains projection-only: it can appear in a SQL `SELECT` list but not in `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, or aggregate arguments.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="BIGINT")
+def add_one(value):
+    return value + 1
+
+
+vane.attach_function(add_one, parameters=["BIGINT"])
+result = vane.sql("SELECT add_one(value) AS value FROM (VALUES (0), (1), (2)) AS t(value)")
+
+print(result.order("value").fetchall())
+vane.detach_function("add_one")
+vane.close()
+```
+
+Output:
+
+```text
+[(1,), (2,), (3,)]
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.detach_function`](vane-detach-function.mdx)
+- [Expression UDF overview](index.mdx)
+
+## vane.detach_function
+
+Route: /docs/data/reference/udf/expression/vane-detach-function
+Source: docs/data/reference/udf/expression/vane-detach-function.mdx
+
+`vane.detach_function` removes a registered SQL function from a Vane connection.
+
+## Signature
+
+```text
+vane.detach_function(
+    alias: str,
+    *,
+    connection: Any | None = None,
+) -> None
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `alias` | `str` | Name of the SQL function to remove | Required |
+| `connection` | Vane connection or `None` | Connection that owns the function; defaults to `vane.default_connection()` | `None` |
+
+## Returns and errors
+
+The function returns `None`. The underlying connection error is propagated if the named function cannot be removed.
+
+## Example
+
+```python
+import vane
+
+
+@vane.func(return_dtype="BIGINT")
+def identity(value):
+    return value
+
+
+vane.attach_function(identity, parameters=["BIGINT"])
+vane.detach_function("identity")
+vane.close()
+```
+
+## Source and related pages
+
+- [Implementation: `vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.attach_function`](vane-attach-function.mdx)
+
+## Relation.map
+
+Route: /docs/data/reference/udf/relation/relation-map
+Source: docs/data/reference/udf/relation/relation-map.mdx
+
+`Relation.map` calls a synchronous Python callable for each row, retains every input column, and appends the returned value as a column named `value`.
+
+## Signature
+
+```text
+Relation.map(
+    map_function: Callable[..., typing.Any],
+    *,
+    return_type: sqltypes.DuckDBPyType,
+    batch_size: int | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `map_function` | Synchronous function, bound method, or zero-argument callable class | Receives the current row as one scalar per Relation column, in column order | Required |
+| `return_type` | Vane `DuckDBPyType` | Type of the appended `value` column | Required |
+| `batch_size` | Positive integer or `None` | Runtime batch size used to organize row-wise calls | `None` |
+| `cpus` | Finite non-negative number or `None` | CPU resource per Task or Actor | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task or Actor; positive values require Ray | `None` |
+| `execution_backend` | `subprocess_task`, `subprocess_actor`, `ray_task`, `ray_actor`, or `None` | Execution backend; defaults from the runner and callable shape | `None` |
+| `actor_number` | Positive integer or `None` | Actor instance count; required for Actor backends and invalid for Task backends | `None` |
+
+## Returns and errors
+
+`map()` returns a new Relation and leaves the input unchanged. The new Relation keeps the input columns and appends the result as a column named `value`.
+
+Invalid functions, `return_type` values, or execution options raise when `map()` is called. Function errors and values that do not match `return_type` raise when results are fetched.
+
+Task and Actor backends may retry calls, so external effects must be idempotent. A callable class runs in independent, ephemeral Actors with no work affinity or global ordering; Actor reconstruction resets local state.
+
+## Example
+
+```python
+import vane
+
+
+def total(price, quantity):
+    return price * quantity
+
+
+source = vane.sql("SELECT * FROM (VALUES (10, 2), (5, 4)) AS t(price, quantity)")
+result = source.map(total, return_type=vane.sqltypes.BIGINT)
+
+print(result.order("price DESC").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(10, 2, 20), (5, 4, 20)]
+```
+
+Both input columns remain in the result, and the computed total is appended as the third column named `value`.
+
+## Source and related pages
+
+- [Python binding: `src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.flat_map`](relation-flat-map.mdx)
+- [`Relation.map_batches`](relation-map-batches.mdx)
+
+## Relation.flat_map
+
+Route: /docs/data/reference/udf/relation/relation-flat-map
+Source: docs/data/reference/udf/relation/relation-flat-map.mdx
+
+`Relation.flat_map` calls a synchronous Python callable for each input row. One row may produce zero, one, or many rows, and `schema` declares the complete output layout.
+
+## Signature
+
+```text
+Relation.flat_map(
+    function: Callable[..., typing.Any],
+    schema: dict[str, sqltypes.DuckDBPyType] | None = None,
+    *,
+    batch_size: int | None = None,
+    output_batch_size: int | None = None,
+    min_task_batch_size: int | None = None,
+    preserve_compute_batch_boundaries: bool | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    memory_bytes: int | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+    target_max_batch_bytes: int | None = None,
+    task_input_max_bytes: int | None = None,
+    output_target_max_bytes: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `function` | Synchronous function, bound method, or zero-argument callable class | Receives a row dict and returns a row dict, synchronous iterable, or `None` | Required |
+| `schema` | Non-empty `dict[str, DuckDBPyType]` | Complete output names, order, and types. The current runtime requires an explicit value | Required |
+| `batch_size` | Positive integer or `None` | Maximum rows per compute batch; the callable still receives one dict at a time | `None` |
+| `output_batch_size` | Positive integer or `None` | Target rows per output Arrow block | `None` |
+| `min_task_batch_size` | Positive integer or `None` | Soft Task-input floor; requires `batch_size` and cannot be smaller | `None` |
+| `preserve_compute_batch_boundaries` | `bool` or `None` | Accepted, but the row-output path has no distinct boundary-flush behavior | `None` |
+| `cpus` | Finite non-negative number or `None` | CPU resource per Task or Actor | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task or Actor; positive values require Ray | `None` |
+| `memory_bytes` | Positive integer or `None` | Memory resource per Task or Actor; available only with Ray backends | `None` |
+| `execution_backend` | `subprocess_task`, `subprocess_actor`, `ray_task`, `ray_actor`, or `None` | Execution backend; defaults from the runner and callable shape | `None` |
+| `actor_number` | Positive integer or `None` | Actor instance count; required for Actor backends and invalid for Task backends | `None` |
+| `target_max_batch_bytes` | Positive integer or `None` | Common byte target for Task input and output blocks | `None` |
+| `task_input_max_bytes` | Positive integer or `None` | Input-byte target for one Task or Actor call | `None` |
+| `output_target_max_bytes` | Positive integer or `None` | Output-block byte target | `None` |
+
+## Returns and errors
+
+`flat_map()` returns a new Relation and leaves the input unchanged. The result contains only the columns declared in `schema`.
+
+Invalid functions, schemas, or execution options raise when `flat_map()` is called. Function errors, unsupported return values, and values that do not match `schema` raise when results are fetched.
+
+Task and Actor backends may retry calls, so external effects must be idempotent. A callable class runs in independent, ephemeral Actors with no work affinity or global ordering; Actor reconstruction resets local state.
+
+## Example
+
+```python
+import vane
+
+
+def split_words(row):
+    for word in row["text"].split():
+        yield {"word": word.lower()}
+
+
+source = vane.sql("SELECT 'Vane Data' AS text")
+result = source.flat_map(
+    split_words,
+    schema={"word": vane.sqltypes.VARCHAR},
+)
+
+print(result.fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[('vane',), ('data',)]
+```
+
+## Source and related pages
+
+- [Python binding: `src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.map`](relation-map.mdx)
+- [`Relation.map_batches`](relation-map-batches.mdx)
+
+## Relation.map_batches
+
+Route: /docs/data/reference/udf/relation/relation-map-batches
+Source: docs/data/reference/udf/relation/relation-map-batches.mdx
+
+`Relation.map_batches` passes a batch of input rows to a synchronous Python callable as a `pyarrow.Table`. The function may change columns and row count, and `schema` declares the complete output.
+
+## Signature
+
+```text
+Relation.map_batches(
+    function: Callable[..., typing.Any],
+    schema: dict[str, sqltypes.DuckDBPyType] | None = None,
+    *,
+    batch_size: int | None = None,
+    output_batch_size: int | None = None,
+    min_task_batch_size: int | None = None,
+    preserve_compute_batch_boundaries: bool | None = None,
+    cpus: float | None = None,
+    gpus: float | None = None,
+    memory_bytes: int | None = None,
+    execution_backend: typing.Literal["subprocess_task", "subprocess_actor", "ray_task", "ray_actor"] | None = None,
+    actor_number: int | None = None,
+    ray_actor_thread_policy: typing.Literal["managed", "ray_native"] | None = None,
+    target_max_batch_bytes: int | None = None,
+    task_input_max_bytes: int | None = None,
+    output_target_max_bytes: int | None = None,
+) -> DuckDBPyRelation
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `function` | Synchronous function, bound method, or zero-argument callable class | Receives a `pyarrow.Table` and returns a materialized `pyarrow.Table`, `pyarrow.RecordBatch`, column `dict`, a synchronous iterable yielding those types, or `None` | Required |
+| `schema` | Non-empty `dict[str, DuckDBPyType]` | Complete output names, order, and types. The current runtime requires an explicit value | Required |
+| `batch_size` | Positive integer or `None` | Maximum rows passed to one callable invocation | `None` |
+| `output_batch_size` | Positive integer or `None` | Target rows per output Arrow block | `None` |
+| `min_task_batch_size` | Positive integer or `None` | Soft Task-input floor; requires `batch_size` and cannot be smaller | `None` |
+| `preserve_compute_batch_boundaries` | `bool` or `None` | Flushes output after each compute batch when `True` | `None` |
+| `cpus` | Finite non-negative number or `None` | CPU resource per Task or Actor | `None` |
+| `gpus` | Finite non-negative number or `None` | GPU resource per Task or Actor; positive values require Ray | `None` |
+| `memory_bytes` | Positive integer or `None` | Memory resource per Task or Actor; available only with Ray backends | `None` |
+| `execution_backend` | `subprocess_task`, `subprocess_actor`, `ray_task`, `ray_actor`, or `None` | Execution backend; defaults from the runner and callable shape | `None` |
+| `actor_number` | Positive integer or `None` | Actor instance count; required for Actor backends and invalid for Task backends | `None` |
+| `ray_actor_thread_policy` | `ray_native`, `managed`, or `None` | Ray Actor thread policy; valid only for `ray_actor` and currently resolves to `ray_native` by default | `None` |
+| `target_max_batch_bytes` | Positive integer or `None` | Common byte target for Task input and output blocks | `None` |
+| `task_input_max_bytes` | Positive integer or `None` | Input-byte target for one Task or Actor call | `None` |
+| `output_target_max_bytes` | Positive integer or `None` | Output-block byte target | `None` |
+
+## Returns and errors
+
+`map_batches()` returns a new Relation and leaves the input unchanged. The result contains only the columns declared in `schema`.
+
+The callable must return materialized output. `pyarrow.RecordBatchReader` is not supported.
+
+Invalid functions, schemas, or execution options raise when `map_batches()` is called. Function errors, unsupported return values, and columns that do not match `schema` raise when results are fetched.
+
+Task and Actor backends may retry calls, so external effects must be idempotent. A callable class runs in independent, ephemeral Actors with no work affinity or global ordering; Actor reconstruction resets local state.
+
+## Example
+
+```python
+import vane
+
+
+def keep_large_values(table):
+    import pyarrow.compute as pc
+
+    return table.filter(pc.greater(table["value"], 1))
+
+
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.map_batches(
+    keep_large_values,
+    schema={"value": vane.sqltypes.BIGINT},
+)
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(2,), (3,)]
+```
+
+The callable filters three input rows down to two, demonstrating `N → M` cardinality. The result contains the complete output declared by `schema`.
+
+## Source and related pages
+
+- [Python binding: `src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
+- [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
+- [`Relation.map`](relation-map.mdx)
+- [`Relation.flat_map`](relation-flat-map.mdx)
 
 ## Deployment
 

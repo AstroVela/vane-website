@@ -1,0 +1,36 @@
+---
+title: UDF API 参考
+---
+
+Vane UDF 用于在 Relation 数据上运行 Python 代码。本参考手册帮助你选择合适的 API，并查询签名、参数、返回值、错误和示例。
+
+## 选择入口
+
+“输出与行数关系”表示一次调用前后的行数变化。`1 → 1` 表示每个输入行产生一个输出行，`1 → 0..N` 表示可以产生零行或多行。`N → N` 表示批处理前后行数相同，`N → M` 表示输出行数可以变化。
+
+| API | Python 收到的对象 | 输出与行数关系 | 适用场景 |
+| --- | --- | --- | --- |
+| [`vane.func`](expression/vane-func.mdx) | 标量参数 | 一个投影值，`1 → 1` | 同步函数为每行计算一个值 |
+| [`vane.cls`](expression/vane-cls.mdx) | 标量参数 | 一个投影值，`1 → 1` | 标量计算需要复用实例 |
+| [`vane.func.batch`](expression/vane-func-batch.mdx) | Arrow 列 | 一个等长逻辑结果；`Struct` 字段可展开为多列，`N → N` | 函数直接处理 Arrow 列 |
+| [`vane.cls.batch`](expression/vane-cls-batch.mdx) | Arrow 列 | 一个等长逻辑结果；`Struct` 字段可展开为多列，`N → N` | 批处理需要复用实例 |
+| [`Relation.map`](relation/relation-map.mdx) | 当前 Relation 每列的一个标量值 | 保留输入并追加 `value`，`1 → 1` | 每行只增加一个值 |
+| [`Relation.flat_map`](relation/relation-flat-map.mdx) | 一行组成的 `dict` | 完整声明的 schema，`1 → 0..N` | 一行可能产生零行、一行或多行 |
+| [`Relation.map_batches`](relation/relation-map-batches.mdx) | 一张 `pyarrow.Table` | 完整声明的 schema，`N → M` | 一批数据可能改变结构或行数 |
+
+Expression 接口的调用方式和使用位置见 [Expression UDF 概览](expression/index.mdx)。
+
+## 注册为 SQL 函数
+
+| API | 用途 |
+| --- | --- |
+| [`vane.attach_function`](expression/vane-attach-function.mdx) | 在指定连接中，把装饰后的 UDF 或原始 Python 可调用对象注册成 SQL 函数 |
+| [`vane.detach_function`](expression/vane-detach-function.mdx) | 从连接中移除已注册的 SQL 函数 |
+
+注册操作只是为 Expression UDF 提供 SQL 名称，不会改变它只能用于投影的限制。
+
+## 执行保证
+
+Task 和 Actor 后端可能在失败后重试调用。Vane 不保证 UDF 只执行一次，因此涉及外部副作用的代码必须具备幂等性。
+
+可调用类会在相互独立、随时可能重建的 Actor 实例中运行。任务不保证固定分配给某个 Actor，也没有全局执行顺序；Actor 重建还会清空本地状态。因此，实例状态只适合保存可重新生成的模型、客户端或缓存，不能作为共享或持久的查询状态。

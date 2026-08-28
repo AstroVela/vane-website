@@ -1,0 +1,76 @@
+---
+title: vane.cls
+---
+
+`vane.cls` 把可调用类转换成由 Actor 承载的标量 Expression UDF。每个 Actor 持有一个独立实例，适合复用模型、客户端或可重新生成的缓存。
+
+## 签名
+
+```text
+vane.cls(
+    class_: type | None = None,
+    *,
+    actor_number: int | None = None,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+    gpus: float | None = 0,
+) -> VaneClass | Callable[[type], VaneClass]
+```
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `class_` | 可调用类或 `None` | 要包装的类。省略时返回装饰器 | `None` |
+| `actor_number` | 正整数 | 独立 Actor 实例数量。布尔值、浮点数和数字字符串无效 | 必填 |
+| `return_dtype` | SQL 类型字符串、Vane `DuckDBPyType` 或受支持的 `pyarrow.DataType` | 标量 Expression 的返回类型；不会自动推断 | 必填 |
+| `name` | 非空 `str` 或 `None` | UDF 在计划中的名称；省略时使用类的 `__qualname__` | `None` |
+| `gpus` | 非负有限数或 `None` | 每个 Actor 使用的 GPU 资源；正值需要 Ray | `0` |
+
+## 返回值与错误
+
+装饰后的类需要先实例化，再把实例用在 `select()` 中。每行输入都会得到一个 `return_dtype` 类型的结果。
+
+用于查询时，只要有输入是 SQL `NULL`，就会直接产生 `NULL`，不会调用 `__call__`。直接调用保留普通 Python 语义，会把 `None` 传给本地立即调用实例。
+
+查询中的 Actor 相互独立，任务不保证固定分配给某个 Actor，也没有全局执行顺序。Actor 重建会清空本地状态，因此实例状态只能保存可重新生成的资源或缓存，不能作为共享或持久的查询状态。
+
+应用装饰器时，`vane.cls` 会检查被装饰的类和装饰器参数。只有在创建立即调用实例或查询 Actor 时才会运行用户构造函数；`__call__` 中的错误会在实际调用时出现。用于查询时，返回值类型不符会在取结果时报错。分布式后端可能重试调用，因此外部副作用必须具备幂等性。
+
+## 示例
+
+```python
+import vane
+
+
+@vane.cls(actor_number=2, return_dtype="VARCHAR")
+class Prefix:
+    def __init__(self, prefix):
+        self.prefix = prefix
+
+    def __call__(self, value):
+        return f"{self.prefix}{value}"
+
+
+prefix = Prefix("item-")
+source = vane.sql("SELECT * FROM (VALUES (1), (2), (3)) AS t(value)")
+result = source.select(prefix(vane.col("value")).alias("value"))
+
+print(result.order("value").fetchall())
+vane.close()
+```
+
+输出：
+
+```text
+[('item-1',), ('item-2',), ('item-3',)]
+```
+
+`Prefix("item-")` 只会捕获构造参数，不会立刻创建查询 Actor。执行查询时，每个 Actor 都用该参数创建各自独立的 `Prefix` 实例。
+
+## 源码与相关页面
+
+- [装饰器与包装对象：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.cls.batch`](vane-cls-batch.mdx)
+- [`vane.func`](vane-func.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

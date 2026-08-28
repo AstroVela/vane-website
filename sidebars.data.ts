@@ -47,7 +47,13 @@ function isGroup(entry: DocsSidebarEntry): entry is DocsSidebarGroup {
 }
 
 function docIdForSlug(slug: string): string {
-  return slug === 'tutorials' ? 'tutorials/index' : slug
+  const indexDocIds: Record<string, string> = {
+    'tutorials': 'tutorials/index',
+    'reference/udf': 'reference/udf/index',
+    'reference/udf/expression': 'reference/udf/expression/index',
+  }
+
+  return indexDocIds[slug] ?? slug
 }
 
 function toSidebarItem(entry: DocsSidebarEntry): DataSidebarItem {

@@ -1,0 +1,40 @@
+---
+title: Expression UDF
+---
+
+Expression UDF 为 Relation 的每一行计算一个投影值。Vane 提供函数和可调用类两种形式，均支持标量和 Arrow 批量计算。
+
+## 选择入口
+
+| API | Python 收到的对象 | 生命周期 | 适用场景 |
+| --- | --- | --- | --- |
+| [`vane.func`](vane-func.mdx) | 一行的标量参数 | Task | 同步函数逐行计算一个值 |
+| [`vane.func.batch`](vane-func-batch.mdx) | 一个或多个 Arrow 列 | Task | 函数按列批量计算 |
+| [`vane.cls`](vane-cls.mdx) | 一行的标量参数 | Actor | 标量计算需要复用实例 |
+| [`vane.cls.batch`](vane-cls-batch.mdx) | 一个或多个 Arrow 列 | Actor | 批处理需要复用模型、客户端或只读缓存 |
+
+不需要复用实例时使用函数接口；需要复用模型、客户端或缓存时使用类接口。
+
+## 调用方式
+
+参数中没有 Vane Expression 时，包装对象会立即调用 Python 函数或类实例。当接口支持的位置出现 Expression 时，包装对象返回惰性 Expression。标量接口只接受位置形式的 Expression 输入；批量接口同时支持位置和关键字形式。
+
+标量接口在立即调用时保留普通 Python 值和关键字参数的语义；构建标量 Expression 时，普通关键字参数也保留这一语义。批量接口的立即调用只接受 `pyarrow.Array` 或 `pyarrow.ChunkedArray`，并要求所有输入等长。在批量 Expression 调用中，Python 字面量会和 Expression 输入一起转换成 Arrow 列。
+
+标量接口用于查询时，只要有输入是 SQL `NULL`，就会直接产生 `NULL`，不会调用用户代码；立即调用则会把 Python `None` 传给可调用对象。
+
+## 注册为 SQL 函数
+
+使用 [`vane.attach_function`](vane-attach-function.mdx) 可以在连接中把 Expression UDF 注册成 SQL 函数；使用 [`vane.detach_function`](vane-detach-function.mdx) 可以将其移除。
+
+## 可以放在哪里
+
+Expression UDF 只能放在 Relation 的 `select()` 投影或 SQL `SELECT` 列表中。无论使用 Python 包装对象，还是通过 `vane.attach_function` 注册的 SQL 名称，都不能用于 `WHERE`、`JOIN`、`GROUP BY`、`HAVING` 或聚合函数参数。
+
+四个接口都不会改变行数。标量接口每行返回一个值；批量接口必须返回与输入批次等长的 Arrow Array 或 ChunkedArray。需要改变行数时，请使用 [`Relation.flat_map`](../relation/relation-flat-map.mdx) 或 [`Relation.map_batches`](../relation/relation-map-batches.mdx)。
+
+分布式执行可能重试调用，也不提供 exactly-once 语义。使用外部副作用或 Actor 本地状态前，请先阅读[执行保证](../index.mdx#执行保证)。
+
+## 相关内容
+
+- [UDF 参考首页](../index.mdx)：比较 Expression 与 Relation 入口。

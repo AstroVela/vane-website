@@ -57,6 +57,7 @@ docs/
     quickstart/        product intro, installation, SQL and Python quickstarts
     concepts/          architecture and mental models
     tutorials/         tutorial overview, examples, use cases, and reusable template
+    reference/         API reference pages
     deploy/            runner configuration and Ray deployment material
     contributing/      development and contribution workflow
   manifest.json        generated docs metadata manifest
@@ -108,7 +109,7 @@ slugs, so `tutorials/examples/my-example.mdx` becomes
    ```
 
    Choose an existing section folder when possible: `quickstart`, `concepts`,
-   `tutorials`, `deploy`, or `contributing`.
+   `tutorials`, `reference`, `deploy`, or `contributing`.
 
 2. Register the MDX file in `src/docs/registry.ts` by adding it to `DOCS_PAGES`
    with the desired public slug, source path, and the same title.

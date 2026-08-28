@@ -1,0 +1,63 @@
+---
+title: vane.func
+---
+
+`vane.func` 把同步 Python 函数或绑定方法转换成标量 Expression UDF。以位置参数传入 `vane.Expression` 时返回惰性 Expression；关键字参数不支持 Expression。只传普通 Python 值时立即执行原函数。
+
+## 签名
+
+```text
+vane.func(
+    fn: _PythonFunction | None = None,
+    *,
+    return_dtype: Any | None = None,
+    name: str | None = None,
+) -> VaneFunction | Callable[[_PythonFunction], VaneFunction]
+```
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `fn` | 同步 Python 函数、绑定方法或 `None` | 要包装的可调用对象。省略时返回装饰器 | `None` |
+| `return_dtype` | SQL 类型字符串、Vane `DuckDBPyType`、受支持的 `pyarrow.DataType` 或 `None` | Expression 的返回类型。不会从 Python 返回注解推断；构建 Expression 时必填 | `None` |
+| `name` | 非空 `str` 或 `None` | UDF 在计划中的名称；省略时使用函数的 `__qualname__` | `None` |
+
+## 返回值与错误
+
+装饰后，可以在 `select()` 中像普通 Expression 一样使用这个函数。每行输入都会得到一个 `return_dtype` 类型的结果；传入普通 Python 值时，也可以直接调用。
+
+用于查询时，只要有输入是 SQL `NULL`，就会直接产生 `NULL`，不会调用函数。直接调用保留普通 Python 语义，会把 `None` 传给函数。
+
+callable 定义或 `name` 不符合要求时，会在创建 wrapper 时被拒绝。直接调用保留 Python 原本的参数校验和报错时机。构建 Expression 时，如果以关键字参数传入 Expression，或者 `return_dtype` 缺失或无效，会立即报错。被包装的函数直到查询执行时才会调用，因此 Python 调用错误（包括参数数量不匹配）、非 NULL 输入返回 `None` 或返回值与 `return_dtype` 不符，都会在 `fetchall()` 等取结果操作中报错。分布式后端可能重试调用，因此外部副作用必须具备幂等性。
+
+## 示例
+
+```python
+import vane
+
+
+@vane.func(return_dtype="VARCHAR")
+def normalize(value):
+    return value.strip().lower()
+
+
+source = vane.sql("SELECT '  Vane  ' AS text")
+result = source.select(normalize(vane.col("text")).alias("text"))
+
+print(result.fetchall())
+vane.close()
+```
+
+输出：
+
+```text
+[('vane',)]
+```
+
+## 源码与相关页面
+
+- [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.func.batch`](vane-func-batch.mdx)
+- [`vane.cls`](vane-cls.mdx)
+- [`vane.attach_function`](vane-attach-function.mdx)

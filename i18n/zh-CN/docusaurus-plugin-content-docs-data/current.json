@@ -11,6 +11,14 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.doc.UDF reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.doc.Expression UDF overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.category.Getting Started": {
     "message": "快速开始",
     "description": "The label for category Getting Started in sidebar dataSidebar"
@@ -30,6 +38,18 @@
   "sidebar.dataSidebar.category.Use cases": {
     "message": "端到端用例",
     "description": "The label for category Use cases in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Reference": {
+    "message": "API 参考",
+    "description": "The label for category Reference in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Expression UDFs": {
+    "message": "Expression UDF",
+    "description": "The label for category Expression UDFs in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Relation UDFs": {
+    "message": "Relation UDF",
+    "description": "The label for category Relation UDFs in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Operations": {
     "message": "运维",

@@ -1,0 +1,40 @@
+---
+title: Expression UDFs
+---
+
+An Expression UDF computes one projected value for each input row. Vane provides function and callable-class APIs in scalar and Arrow-batch forms.
+
+## Choose an API
+
+| API | Python receives | Lifetime | Use it when |
+| --- | --- | --- | --- |
+| [`vane.func`](vane-func.mdx) | Scalar arguments for one row | Task | A synchronous function computes one value per row |
+| [`vane.func.batch`](vane-func-batch.mdx) | One or more Arrow columns | Task | A function operates on columns in batches |
+| [`vane.cls`](vane-cls.mdx) | Scalar arguments for one row | Actor | Scalar calls need a reusable instance |
+| [`vane.cls.batch`](vane-cls-batch.mdx) | One or more Arrow columns | Actor | Batched work reuses a model, client, or read-only cache |
+
+Use a function when no reusable instance is needed. Use a class when calls need to reuse a model, client, or cache.
+
+## Calls
+
+With no Vane Expression argument, the wrapper calls the Python function or class instance immediately. When an Expression is supplied in a supported position, the wrapper returns a lazy Expression. Scalar APIs accept Expression inputs only as positional arguments; batch APIs accept them positionally or by keyword.
+
+For scalar APIs, ordinary Python values and keyword arguments keep their normal Python semantics during an immediate call. Literal keyword arguments also keep those semantics when a scalar UDF builds an Expression. For batch APIs, every immediate-call input must be a `pyarrow.Array` or `pyarrow.ChunkedArray`, and all inputs must have equal lengths. In a batch Expression call, Python literals are materialized as Arrow columns alongside Expression inputs.
+
+For scalar APIs in a query, an input SQL `NULL` propagates to the result without calling user code. An immediate call instead passes Python `None` to the callable.
+
+## SQL registration
+
+Use [`vane.attach_function`](vane-attach-function.mdx) to register an Expression UDF as a SQL function on a connection. Use [`vane.detach_function`](vane-detach-function.mdx) to remove it.
+
+## Supported placement
+
+Expression UDFs are supported only in a Relation `select()` projection or a SQL `SELECT` list. This restriction applies to both Python wrappers and SQL aliases registered with `vane.attach_function`; neither can be used in `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, or aggregate arguments.
+
+All four APIs preserve row count. Scalar calls produce one value per row, while batch calls must return an Arrow Array or ChunkedArray with the input-batch length. Use [`Relation.flat_map`](../relation/relation-flat-map.mdx) or [`Relation.map_batches`](../relation/relation-map-batches.mdx) when the result may have a different number of rows.
+
+Distributed execution may retry calls and does not provide exactly-once semantics. See [Execution guarantees](../index.mdx#execution-guarantees) before using external effects or Actor-local state.
+
+## See also
+
+- [UDF reference overview](../index.mdx)

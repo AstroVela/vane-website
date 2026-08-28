@@ -1,0 +1,91 @@
+---
+title: vane.attach_function
+---
+
+`vane.attach_function` 在 Vane 连接中把 Expression UDF 可调用对象注册成 SQL 函数。注册后的 SQL 名称仍使用相同的分布式运行时，也仍然只能用于投影。
+
+## 签名
+
+```text
+vane.attach_function(
+    fn_or_function: Any,
+    alias: str | None = None,
+    *,
+    connection: Any | None = None,
+    replace: bool = False,
+    parameters: Any = None,
+    return_dtype: Any | None = None,
+    input_names: Any = None,
+    schema: Mapping[str, Any] | None = None,
+    batch_size: int | None = None,
+    gpus: float | None = None,
+    actor_number: int | None = None,
+) -> None
+```
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `fn_or_function` | 装饰后的 UDF、已经实例化的 `vane.cls` 对象或同步原始可调用对象 | 要注册的可调用对象 | 必填 |
+| `alias` | 非空 `str` 或 `None` | SQL 函数名；省略时使用 UDF 配置名称或可调用对象名称 | `None` |
+| `connection` | Vane 连接或 `None` | 持有该注册项的连接；省略时使用 `vane.default_connection()` | `None` |
+| `replace` | `bool` | 原子替换同一连接持有的现有 Vane 名称 | `False` |
+| `parameters` | SQL 类型组成的 list 或 tuple | SQL 输入类型；所有注册形式都必须提供 | `None` |
+| `return_dtype` | SQL 类型或 `None` | 原始标量函数必须提供；`vane.func` 未配置返回类型时也必须提供 | `None` |
+| `input_names` | 非空字符串序列或 `None` | 原始批量可调用对象需要和 `schema` 一起提供；`vane.func.batch` 及实例化后的 `vane.cls`、`vane.cls.batch` 可用它显式指定名称，不依赖名称推断；`vane.func` 和原始标量可调用对象不能设置 | `None` |
+| `schema` | 只含一个输出项的映射或 `None` | 原始批量函数需要和 `input_names` 一起提供；装饰后的 UDF 不能设置 | `None` |
+| `batch_size` | 正整数或 `None` | 原始批量函数或逐行 `vane.cls` 的批次大小；不能覆盖装饰器上的批量设置 | `None` |
+| `gpus` | 非负有限数或 `None` | 原始批量函数使用的 GPU 资源；不能覆盖装饰器设置 | `None` |
+| `actor_number` | 正整数或 `None` | 让可零参数构造的原始可调用类使用 Actor；不能覆盖装饰后的类设置 | `None` |
+
+## 支持的可调用对象
+
+| 可调用对象 | 必要配置 |
+| --- | --- |
+| `vane.func` | `parameters`；`return_dtype` 可以来自装饰器或本次调用 |
+| `vane.func.batch` | `parameters`；返回类型和执行设置来自装饰器 |
+| 已实例化的 `vane.cls` 或 `vane.cls.batch` | `parameters`；返回类型、Actor 数量和 GPU 设置来自装饰器 |
+| 原始标量可调用对象 | `parameters` 和 `return_dtype` |
+| 原始批量可调用对象 | `parameters`、`input_names` 和 `schema` |
+
+装饰后的类必须先实例化。例如传入 `Scorer()`，而不是装饰后的类对象 `Scorer`。
+
+## 返回值与错误
+
+函数返回 `None`。替换现有名称前，注册过程会先检查完整配置。内置函数、其他连接持有的名称以及 SQL 签名不兼容的名称都不会被覆盖。注册函数时，DuckDB 可能会取消连接中正在进行的事务。
+
+注册项会标记为 `VOLATILE`，但这不代表只执行一次。后端可能在失败后重试调用，因此外部副作用必须具备幂等性。Actor 本地状态同样受[执行保证](../index.mdx#执行保证)中独立性、顺序和重建规则的限制。
+
+注册后的函数仍然只能用于投影：可以出现在 SQL `SELECT` 列表中，不能用于 `WHERE`、`JOIN`、`GROUP BY`、`HAVING` 或聚合函数参数。
+
+## 示例
+
+```python
+import vane
+
+
+@vane.func(return_dtype="BIGINT")
+def add_one(value):
+    return value + 1
+
+
+vane.attach_function(add_one, parameters=["BIGINT"])
+result = vane.sql("SELECT add_one(value) AS value FROM (VALUES (0), (1), (2)) AS t(value)")
+
+print(result.order("value").fetchall())
+vane.detach_function("add_one")
+vane.close()
+```
+
+输出：
+
+```text
+[(1,), (2,), (3,)]
+```
+
+## 源码与相关页面
+
+- [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
+- [`vane.detach_function`](vane-detach-function.mdx)
+- [Expression UDF 概览](index.mdx)

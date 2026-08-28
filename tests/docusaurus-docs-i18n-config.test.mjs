@@ -24,6 +24,13 @@ const chineseAiFunctionsSource = readFileSync(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
   'utf8',
 )
+const udfConceptSources = [
+  readFileSync('docs/data/concepts/udfs.mdx', 'utf8'),
+  readFileSync(
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/udfs.mdx',
+    'utf8',
+  ),
+]
 const multimodalStructuredOutputSources = [
   readFileSync('docs/data/tutorials/examples/multimodal-structured-outputs.mdx', 'utf8'),
   readFileSync(
@@ -433,7 +440,21 @@ test('English and Chinese docs trees use matching English slugs', () => {
 })
 
 test('Docusaurus sidebar maps custom index slugs to document ids', () => {
-  assert.match(sidebarsSource, /slug === 'tutorials' \? 'tutorials\/index' : slug/)
+  for (const [slug, docId] of [
+    ['tutorials', 'tutorials/index'],
+    ['reference/udf', 'reference/udf/index'],
+    ['reference/udf/expression', 'reference/udf/expression/index'],
+  ]) {
+    assert.match(sidebarsSource, new RegExp(`'${slug}': '${docId}'`))
+  }
+})
+
+test('UDF concepts do not advertise non-public contract flags', () => {
+  for (const source of udfConceptSources) {
+    assert.doesNotMatch(source, /\b(?:row_preserving|side_effects)\b/)
+  }
+  assert.match(udfConceptSources[0], /All Expression UDFs and Relation/)
+  assert.match(udfConceptSources[1], /所有 Expression UDF 和 Relation/)
 })
 
 test('Overview is a direct sidebar page instead of a Docs Home child item', () => {
