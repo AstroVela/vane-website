@@ -279,6 +279,51 @@
       }
     },
     {
+      "slug": "reference/ai",
+      "title": "AI Functions API reference",
+      "source": "docs/data/reference/ai/index.mdx",
+      "route": "/docs/data/reference/ai",
+      "frontmatter": {
+        "title": "AI Functions API reference"
+      }
+    },
+    {
+      "slug": "reference/ai/prompt",
+      "title": "vane.ai.prompt",
+      "source": "docs/data/reference/ai/prompt.mdx",
+      "route": "/docs/data/reference/ai/prompt",
+      "frontmatter": {
+        "title": "vane.ai.prompt"
+      }
+    },
+    {
+      "slug": "reference/ai/embed",
+      "title": "vane.ai.embed",
+      "source": "docs/data/reference/ai/embed.mdx",
+      "route": "/docs/data/reference/ai/embed",
+      "frontmatter": {
+        "title": "vane.ai.embed"
+      }
+    },
+    {
+      "slug": "reference/ai/sql/ai-prompt",
+      "title": "SQL ai_prompt",
+      "source": "docs/data/reference/ai/sql/ai-prompt.mdx",
+      "route": "/docs/data/reference/ai/sql/ai-prompt",
+      "frontmatter": {
+        "title": "SQL ai_prompt"
+      }
+    },
+    {
+      "slug": "reference/ai/sql/ai-embed",
+      "title": "SQL ai_embed",
+      "source": "docs/data/reference/ai/sql/ai-embed.mdx",
+      "route": "/docs/data/reference/ai/sql/ai-embed",
+      "frontmatter": {
+        "title": "SQL ai_embed"
+      }
+    },
+    {
       "slug": "deploy/deployment",
       "title": "Deployment",
       "source": "docs/data/deploy/deployment.mdx",
@@ -422,67 +467,102 @@
       "group": "Reference",
       "items": [
         {
-          "slug": "reference/udf",
-          "label": "Overview",
-          "route": "/docs/data/reference/udf"
-        },
-        {
-          "group": "Expression UDFs",
+          "group": "UDFs",
           "items": [
             {
-              "slug": "reference/udf/expression",
+              "slug": "reference/udf",
               "label": "Overview",
-              "route": "/docs/data/reference/udf/expression"
+              "route": "/docs/data/reference/udf"
             },
             {
-              "slug": "reference/udf/expression/vane-func",
-              "label": "vane.func",
-              "route": "/docs/data/reference/udf/expression/vane-func"
+              "group": "Expression UDFs",
+              "items": [
+                {
+                  "slug": "reference/udf/expression",
+                  "label": "Overview",
+                  "route": "/docs/data/reference/udf/expression"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-func",
+                  "label": "vane.func",
+                  "route": "/docs/data/reference/udf/expression/vane-func"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-func-batch",
+                  "label": "vane.func.batch",
+                  "route": "/docs/data/reference/udf/expression/vane-func-batch"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-cls",
+                  "label": "vane.cls",
+                  "route": "/docs/data/reference/udf/expression/vane-cls"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-cls-batch",
+                  "label": "vane.cls.batch",
+                  "route": "/docs/data/reference/udf/expression/vane-cls-batch"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-attach-function",
+                  "label": "vane.attach_function",
+                  "route": "/docs/data/reference/udf/expression/vane-attach-function"
+                },
+                {
+                  "slug": "reference/udf/expression/vane-detach-function",
+                  "label": "vane.detach_function",
+                  "route": "/docs/data/reference/udf/expression/vane-detach-function"
+                }
+              ]
             },
             {
-              "slug": "reference/udf/expression/vane-func-batch",
-              "label": "vane.func.batch",
-              "route": "/docs/data/reference/udf/expression/vane-func-batch"
-            },
-            {
-              "slug": "reference/udf/expression/vane-cls",
-              "label": "vane.cls",
-              "route": "/docs/data/reference/udf/expression/vane-cls"
-            },
-            {
-              "slug": "reference/udf/expression/vane-cls-batch",
-              "label": "vane.cls.batch",
-              "route": "/docs/data/reference/udf/expression/vane-cls-batch"
-            },
-            {
-              "slug": "reference/udf/expression/vane-attach-function",
-              "label": "vane.attach_function",
-              "route": "/docs/data/reference/udf/expression/vane-attach-function"
-            },
-            {
-              "slug": "reference/udf/expression/vane-detach-function",
-              "label": "vane.detach_function",
-              "route": "/docs/data/reference/udf/expression/vane-detach-function"
+              "group": "Relation UDFs",
+              "items": [
+                {
+                  "slug": "reference/udf/relation/relation-map",
+                  "label": "Relation.map",
+                  "route": "/docs/data/reference/udf/relation/relation-map"
+                },
+                {
+                  "slug": "reference/udf/relation/relation-flat-map",
+                  "label": "Relation.flat_map",
+                  "route": "/docs/data/reference/udf/relation/relation-flat-map"
+                },
+                {
+                  "slug": "reference/udf/relation/relation-map-batches",
+                  "label": "Relation.map_batches",
+                  "route": "/docs/data/reference/udf/relation/relation-map-batches"
+                }
+              ]
             }
           ]
         },
         {
-          "group": "Relation UDFs",
+          "group": "AI Functions",
           "items": [
             {
-              "slug": "reference/udf/relation/relation-map",
-              "label": "Relation.map",
-              "route": "/docs/data/reference/udf/relation/relation-map"
+              "slug": "reference/ai",
+              "label": "Overview",
+              "route": "/docs/data/reference/ai"
             },
             {
-              "slug": "reference/udf/relation/relation-flat-map",
-              "label": "Relation.flat_map",
-              "route": "/docs/data/reference/udf/relation/relation-flat-map"
+              "slug": "reference/ai/prompt",
+              "label": "vane.ai.prompt",
+              "route": "/docs/data/reference/ai/prompt"
             },
             {
-              "slug": "reference/udf/relation/relation-map-batches",
-              "label": "Relation.map_batches",
-              "route": "/docs/data/reference/udf/relation/relation-map-batches"
+              "slug": "reference/ai/embed",
+              "label": "vane.ai.embed",
+              "route": "/docs/data/reference/ai/embed"
+            },
+            {
+              "slug": "reference/ai/sql/ai-prompt",
+              "label": "SQL ai_prompt",
+              "route": "/docs/data/reference/ai/sql/ai-prompt"
+            },
+            {
+              "slug": "reference/ai/sql/ai-embed",
+              "label": "SQL ai_embed",
+              "route": "/docs/data/reference/ai/sql/ai-embed"
             }
           ]
         }

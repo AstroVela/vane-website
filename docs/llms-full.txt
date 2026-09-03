@@ -695,41 +695,28 @@ valid combinations above:
 Route: /docs/data/concepts/ai-functions
 Source: docs/data/concepts/ai-functions.mdx
 
-Vane AI Functions are provider-backed, stateful batch UDFs that return an
-Expression. They place one model result beside each input row, so identifiers,
-source text, and other review fields can remain in the same projection.
+Vane AI Functions let you generate text or structured output and create embeddings from SQL or Python. Each input row produces one result on the same row.
 
-This page covers only the Expression UDF surface. SQL and Python are two ways
-to build the same row-preserving operation; choosing one does not change its
-execution semantics.
+This page introduces the Expression UDF APIs. SQL and Python are two ways to build the same row-preserving operation; choosing one does not change its execution semantics.
 
-## 1. Expression Contract
+For exact Python and SQL signatures, Relation overloads, provider options, and failure behavior, see the [AI Functions API reference](../reference/ai/index.mdx).
 
-Vane currently exposes two AI operations as Expressions:
+## 1. Choose an Operation
+
+Vane currently provides two AI operations as Expressions:
 
 | Operation | SQL Expression | Python Expression | Result | Supported providers |
 | --- | --- | --- | --- | --- |
 | Generate text or structured output | `ai_prompt(messages, ...)` | `vane.ai.prompt(expression, ...)` | One `VARCHAR` or native `STRUCT` value per input row | `openai`, `google`, `anthropic`, `vllm` |
 | Create an embedding | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | One fixed-size `FLOAT[n]` value per input row | `openai`, `google`, `transformers` |
 
-Both operations preserve row count. Keep any source columns needed later in
-the projection, name the generated column with SQL `AS` or Python `.alias()`,
-and carry a stable ID so every provider result can be traced to its input.
+Both operations preserve row count. Keep any input columns needed later in the projection, name the generated column with SQL `AS` or Python `.alias()`, and include a stable ID so each result can be traced back to its input.
 
-SQL options are planning configuration, not row data. Pass provider and model
-selection plus common operation settings as named arguments, and pass provider
-request and execution settings through `options := struct_pack(...)`. Those
-values must be constants; provider names, models, and execution settings cannot
-vary by input row in one Expression.
-
-There is no Expression classification function. The provider capability table
-above is intentionally limited to operations that return an Expression.
+Provider, model, and operation settings apply to the whole operation; they cannot vary by row. In SQL, pass top-level settings as named arguments and put provider request and execution settings in `options := struct_pack(...)`.
 
 ## 2. Providers
 
-Provider adapters map the same Expression contract to different hosted APIs or
-local model runtimes. Install Vane once; Vane then loads provider adapters
-lazily, so only the library for the selected provider needs to be added.
+Choose a Provider based on the operation and where the model runs. Vane loads each integration only when it is used, so install the optional dependencies for the selected Provider.
 
 ```bash
 uv pip install vane-ai
@@ -740,56 +727,31 @@ uv pip install vane-ai
 | `openai` | Yes | Yes | OpenAI API or an OpenAI-compatible endpoint; install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment |
 | `google` | Yes | Yes | Google Generative AI; install `vane-ai[google]` and set `GOOGLE_API_KEY` in the worker environment |
 | `anthropic` | Yes | No | Anthropic Messages API; install `vane-ai[anthropic]` and set `ANTHROPIC_API_KEY` in the worker environment |
-| `vllm` | Yes | No | Local or remote vLLM engine; install `vane-ai[vllm]`, provide model access, and use Ray when GPU actors are required |
+| `vllm` | Yes | No | Local or remote vLLM engine; install `vane-ai[vllm]`, make the model available to the runtime, and use Ray when GPU actors are required |
 | `transformers` | No | Yes | Local SentenceTransformers model; install `vane-ai[transformers]` |
 
-Set `provider` and `model` explicitly when reproducibility matters. Model IDs,
-limits, and availability belong to the configured endpoint, so choose a model
-that endpoint supports.
+Set `provider` and `model` explicitly when reproducibility matters. The configured endpoint determines which model IDs are available and which limits apply.
 
 ## 3. Configure OpenAI
 
-The examples below use the OpenAI provider. Install its client and expose the
-credential to the process that executes the query:
+The examples below use the OpenAI provider. Install its client and expose the credential to the process that executes the query:
 
 ```bash
 uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-token>"
-
-# Optional: set this only for an OpenAI-compatible endpoint.
-export OPENAI_BASE_URL="https://provider.example/v1"
 ```
 
-The OpenAI client reads both variables when it is created on a worker.
-`OPENAI_API_KEY` accepts either an OpenAI API key or the token issued by a
-compatible service. OpenAI API users can omit `OPENAI_BASE_URL`; the client then
-uses the official API root. For Ray jobs, set the variables and install the
-client on every worker that can execute the Expression.
+The OpenAI client reads `OPENAI_API_KEY` when it is created on a worker. The variable accepts either an OpenAI API key or the token issued by a compatible service. Vane uses the official OpenAI API root by default. For Ray jobs, set the variable and install the client on every worker that can execute the Expression.
 
-The examples below demonstrate the other supported form: passing the
-non-secret `base_url` explicitly in `struct_pack(...)` or as a Python keyword.
-Replace that value for a compatible service. An explicit option takes
-precedence over `OPENAI_BASE_URL`; when relying on the environment variable,
-omit the option from the Expression. In both forms, use the API root, typically
-ending in `/v1`, rather than an operation path such as `/chat/completions`.
-For a compatible endpoint that implements Chat Completions but not the OpenAI
-Responses API, also set `use_chat_completions := true` in SQL or
-`use_chat_completions=True` in Python.
+For a compatible endpoint, explicitly pass the non-secret `base_url` in `struct_pack(...)` or as a Python keyword, as shown below. Use the API root, typically ending in `/v1`, rather than an operation path such as `/chat/completions`. If the endpoint implements Chat Completions but not the OpenAI Responses API, also set `use_chat_completions := true` in SQL or `use_chat_completions=True` in Python.
 
-Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options
-object, notebook output, or a committed file. SQL binding rejects
-credential-like option fields.
+Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options object, notebook output, or a committed file. Vane rejects credential-like option fields.
 
 ## 4. SQL Expression
 
-SQL is a compact default when the surrounding transformation is already a
-query. A Vane connection registers `ai_prompt` and `ai_embed`; provider and
-model selection plus common operation settings are named arguments, while the
-`options` struct contains provider request and execution settings. Ray is Vane's
-default runner, and the examples' `show()` calls materialize the relation through
-RayRunner. Call
-`vane.configure(runner="ray")` before creating the connection only when you
-need to override an existing local runner setting.
+Use SQL when the surrounding transformation is already a query. A Vane connection registers `ai_prompt` and `ai_embed`. Pass provider, model, and operation settings as named arguments; put provider request and execution settings in the `options` struct.
+
+Ray is Vane's default runner and executes the examples when `show()` is called. If an existing configuration selects the local runner, call `vane.configure(runner="ray")` before creating the connection.
 
 ### Generate Text with `ai_prompt`
 
@@ -830,10 +792,7 @@ prompted = con.sql("""
 prompted.show()
 ```
 
-`actor_number` selects the number of provider actors. For prompt calls,
-`max_concurrency_per_actor` bounds simultaneous API requests inside each actor.
-Start conservatively and raise either value only within the endpoint's rate
-and capacity limits.
+`actor_number` selects the number of provider actors. For Prompt calls, `max_concurrency_per_actor` bounds simultaneous API requests inside each actor. Start conservatively and raise either value only within the endpoint's rate and capacity limits.
 
 ### Create Vectors with `ai_embed`
 
@@ -860,17 +819,11 @@ embedded = con.sql("""
 embedded.show()
 ```
 
-Every embedding Expression has a fixed-size `FLOAT[n]` result. Vane knows the
-default dimensions of supported official models. For an OpenAI-compatible
-endpoint, or when requesting a supported shortened embedding, pass a positive
-`dimensions := n` named argument explicitly. `normalize := true` L2-normalizes
-each non-null vector.
+Every Embed Expression returns a fixed-size `FLOAT[n]`. Vane includes dimension metadata for its supported default models. Pass a positive `dimensions := n` for an OpenAI-compatible endpoint, an unknown model, or a model that supports reduced output dimensions. `normalize := true` L2-normalizes each non-NULL vector.
 
 ## 5. Python Expression
 
-Python Expression has the same output and execution contract. Its closed
-keyword surface keeps provider, request, and execution options together and
-rejects unknown names.
+Python Expressions follow the same row and result rules as SQL. Pass provider request and execution settings as keyword arguments; unknown options are rejected.
 
 ```python
 import vane
@@ -920,10 +873,7 @@ prompted.show()
 embedded.show()
 ```
 
-The same keywords work in relation-returning calls such as
-`vane.ai.prompt(documents, vane.col("text"), ...)`. Keep credentials in the
-worker environment: credential-like option names are rejected rather than
-serialized into a plan.
+The same keyword arguments work in Relation-returning calls such as `vane.ai.prompt(documents, vane.col("text"), ...)`. Keep credentials in the worker environment rather than passing them as function options.
 
 ## Overview
 
@@ -4455,6 +4405,492 @@ The callable filters three input rows down to two, demonstrating `N → M` cardi
 - [Implementation: `src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)
 - [`Relation.map`](relation-map.mdx)
 - [`Relation.flat_map`](relation-flat-map.mdx)
+
+## AI Functions API reference
+
+Route: /docs/data/reference/ai
+Source: docs/data/reference/ai/index.mdx
+
+Vane provides Prompt and Embed operations for model-backed column processing. Use this reference to choose an API and check its signatures, parameters, return values, and errors in `vane-ai 0.1.0`. See the [Installation guide](../../quickstart/installation.mdx) for setup and [AI Functions](../../concepts/ai-functions.mdx) for an introduction.
+
+## Choose an API
+
+| Operation | Python Expression | Relation-returning form | SQL Expression | Result |
+| --- | --- | --- | --- | --- |
+| Prompt | [`vane.ai.prompt`](prompt.mdx) | `vane.ai.prompt(rel, ...)` or `rel.prompt(...)` | [`ai_prompt`](sql/ai-prompt.mdx) | `VARCHAR`, native `STRUCT`, or raw-response JSON in `VARCHAR` |
+| Embed | [`vane.ai.embed`](embed.mdx) | `vane.ai.embed(rel, ...)` or `rel.embed(...)` | [`ai_embed`](sql/ai-embed.mdx) | Fixed-size `FLOAT[n]` |
+
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. Relation calls retain the input columns and append an output column. If that name already exists, the Relation call replaces it case-insensitively. SQL calls are projection expressions and use `AS` to name their result.
+
+## Execution guarantees
+
+- Prompt and Embed preserve input row count and order.
+- Embed with a `NULL` text input and Prompt with one `NULL` message return `NULL` while preserving the result type, without calling the provider. In a Prompt message list, `NULL` parts are omitted; if no parts remain, the result is `NULL`.
+- Provider, model, JSON Schema, dimensions, and options apply to the whole operation. They cannot vary by input row.
+- Only documented options are accepted. Unknown or provider-incompatible names fail while the query is prepared.
+- Credentials are not function options. Pass them through environment variables or runtime secret management.
+- `on_error="raise"` stops on a row execution failure. `on_error="ignore"` writes `NULL` for that row; it does not hide invalid plans or option errors.
+- Remote Prompt and all Embed calls default to three retries after the first attempt. Native vLLM Prompt does not retry. A retry can issue a provider request more than once.
+
+## Providers
+
+| Provider | Prompt | Embed | Default Prompt model | Default Embed model |
+| --- | :---: | :---: | --- | --- |
+| `openai` | Yes | Yes | `gpt-4o-mini` | `text-embedding-3-small` |
+| `google` | Yes | Yes | Must be configured | `gemini-embedding-2` |
+| `anthropic` | Yes | No | Must be configured | — |
+| `vllm` | Yes | No | `Qwen/Qwen3-1.7B` | — |
+| `transformers` | No | Yes | — | `sentence-transformers/all-MiniLM-L6-v2` |
+
+Install the optional dependency group for the selected provider and expose its credentials to every worker that may execute the operation. See [AI Functions](../../concepts/ai-functions.mdx#2-providers) for installation and setup. In the Python APIs, the `provider` argument also accepts a custom `Provider` object that implements the selected operation.
+
+## Source
+
+- [Public exports: `vane/ai/__init__.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/__init__.py)
+- [Python functions: `vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation methods: `vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [SQL functions: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+
+## vane.ai.prompt
+
+Route: /docs/data/reference/ai/prompt
+Source: docs/data/reference/ai/prompt.mdx
+
+`vane.ai.prompt` creates a row-preserving Prompt operation from one message Expression or an ordered list of message Expressions. It returns a lazy Expression, or a Relation with an appended response column when a Relation is supplied.
+
+## Signatures
+
+```python
+vane.ai.prompt(
+    messages: Expression | list[Expression],
+    /,
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    **options: Unpack[PromptOptions],
+) -> Expression
+
+vane.ai.prompt(
+    rel: Relation,
+    /,
+    messages: Expression | list[Expression],
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    output_column: str = "response",
+    **options: Unpack[PromptOptions],
+) -> Relation
+```
+
+Equivalent keyword-only forms are also supported. A Relation has the convenience method `rel.prompt(messages, ...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `messages` | `Expression` or non-empty `list[Expression]` | Ordered message parts. Each Expression must return `VARCHAR`, `BLOB`, or `BLOB[]`; native vLLM accepts text only | Required |
+| `return_format` | Pydantic model class, `JSONSchema`, or `None` | Constrains generation and converts validated output to a native DuckDB `STRUCT` | `None` |
+| `system_message` | `str` or `None` | Call-level system instruction | `None` |
+| `provider` | Registered provider name or `Provider` | Provider adapter | `"openai"` |
+| `model` | Non-empty `str` or `None` | Model ID. `None` uses provider metadata or a provider default | `None` |
+| `return_raw_response` | `bool` | Serialize the provider SDK response body as valid JSON in `VARCHAR`. A supplied JSON Schema still constrains generation | `False` |
+| `on_error` | `"raise"` or `"ignore"` | Row execution failure policy | `"raise"` |
+| `output_column` | Non-empty `str` | Relation-only output name | `"response"` |
+| `**options` | `PromptOptions` | Provider request and execution options listed below | Provider-specific |
+
+Expression calls do not accept `output_column`; use `.alias(...)`. Relation calls keep all input columns and replace an existing output column with the same case-insensitive name.
+
+## Options
+
+| Option | Type | Availability | Default | Description |
+| --- | --- | --- | --- | --- |
+| `temperature` | Finite `float >= 0` or `None` | All providers | Provider default | Sampling temperature |
+| `batch_size` | Positive `int` | All | `32` remote; `128` native | Rows submitted in an execution batch |
+| `actor_number` | Positive `int` | All | `1` | Provider or model actor count |
+| `max_retries` | Non-negative `int` | All | `3` remote; `0` native | Retries after the first attempt; native vLLM accepts only `0` |
+| `max_concurrency_per_actor` | Positive `int` | Remote providers | `32` OpenAI; `16` Anthropic/Google | Concurrent requests inside each actor |
+| `execution_backend` | Backend name or `None` | Non-native Relation calls | Runner choice | `subprocess_task`, `subprocess_actor`, `ray_task`, or `ray_actor` |
+
+`actor_number` cannot be combined with a task backend. Expression and SQL calls do not accept the Relation-only `execution_backend` option.
+
+Provider request options:
+
+| Provider | Options |
+| --- | --- |
+| OpenAI | `use_chat_completions: bool`, `max_output_tokens: int \| None`, `top_p: float \| None`, `stop_sequences: list[str] \| None`, `base_url: str \| None`, `timeout: float \| None` |
+| Anthropic | `max_tokens: int \| None`, `top_p: float \| None`, `top_k: int \| None`, `stop_sequences: list[str] \| None`, `base_url: str \| None`, `timeout: float \| None` |
+| Google | `max_output_tokens: int \| None`, `top_p: float \| None`, `top_k: int \| None`, `stop_sequences: list[str] \| None` |
+| vLLM | `max_tokens: int \| None`, `gpus_per_actor: float`, `engine_args: Mapping`, `generate_args: Mapping`, `do_prefix_routing: bool`, `max_buffer_size: int`, `min_bucket_size: int`, `prefix_match_threshold: float`, `load_balance_threshold: int`, `inflight_limit: int`, `engine_init_timeout_s: float \| None` |
+
+OpenAI `stop_sequences` requires `use_chat_completions=True`. Anthropic requires a non-`None` `max_tokens`; a value of `0` cannot be used with structured output. `top_p` is constrained to `[0, 1]`, and stop sequences must be a non-empty list of non-empty strings.
+
+For native vLLM, `max_tokens` must be a positive integer or `None`. `max_buffer_size`, `min_bucket_size`, `load_balance_threshold`, and `inflight_limit` must be non-negative integers. `prefix_match_threshold` must be in `[0, 1]`, and `gpus_per_actor` must be positive and integral when it is at least `1`.
+
+`engine_args` and `generate_args` accept only values that can be serialized as valid JSON. Configure the model with the top-level `model` argument and structured generation with `return_format`. If `engine_args.trust_remote_code=True`, pin each remote-code revision to a full 40-character commit SHA.
+
+## Result
+
+| Configuration | SQL type |
+| --- | --- |
+| No `return_format` | `VARCHAR` |
+| `return_format` supplied | Native `STRUCT` derived from the JSON Schema |
+| `return_raw_response=True` | Valid JSON serialized as `VARCHAR` |
+
+### Structured output
+
+`return_format` accepts a Pydantic `BaseModel` class or a `JSONSchema` dictionary. Vane supports the following subset across providers:
+
+- The root must be a non-nullable object. Supported types are `object`, `array`, `string`, `integer`, `number`, and `boolean`.
+- Scalars map to `VARCHAR`, `BIGINT`, `DOUBLE`, and `BOOLEAN`; arrays map to lists and nested objects map to nested structs.
+- Arrays require `items`. Every object requires at least one property. Property names must match `[A-Za-z0-9_-]{1,64}` and be unique case-insensitively.
+- `required` may contain only unique names declared in `properties`; `additionalProperties` must be boolean.
+- Nullable values may use exactly `T | null` through a two-item `type` array, `anyOf`, or `oneOf`.
+- Root-level `$defs` and `definitions` are supported. `$ref` values must resolve locally, cannot be recursive, and cannot have sibling JSON Schema keywords.
+- Constraints such as `minLength`, `maximum`, `pattern`, `format`, `uniqueItems`, and `allOf` are not supported. Integers must fit signed `BIGINT`; numbers must be finite.
+
+For supported OpenAI models, Vane uses Structured Outputs with `strict: true`. These models also require `additionalProperties: false` on every object and require every declared property. `ConfigDict(extra="forbid")` plus required Pydantic fields produces that shape.
+
+### Raw responses
+
+`return_raw_response=True` returns the provider SDK response serialized as valid JSON. A supplied JSON Schema still constrains generation. Native vLLM does not support raw-response mode.
+
+## Example
+
+This example uses OpenAI. Install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment before running it.
+
+```python
+import vane
+
+documents = vane.sql(
+    "SELECT * FROM (VALUES (1, 'I was charged twice.'), "
+    "(2, 'My parcel has not arrived.')) AS t(id, text)"
+)
+
+responses = vane.ai.prompt(
+    documents,
+    vane.col("text"),
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Summarize the support request in one sentence.",
+)
+
+print(responses.order("id").fetchall())
+vane.close()
+```
+
+Example result shape:
+
+```text
+[(1, 'I was charged twice.', '...'),
+ (2, 'My parcel has not arrived.', '...')]
+```
+
+## Errors
+
+Invalid message shapes, input types, JSON Schemas, unknown provider names, options, and model/provider combinations that Vane knows are incompatible raise before the query runs. Vane does not contact the endpoint while preparing a call, so model availability, permissions, and endpoint capabilities that cannot be determined locally may be detected only during execution. Provider request failures and responses that violate the requested JSON Schema are also detected during execution. `on_error="ignore"` converts only row execution failures to `NULL` while preserving the return type.
+
+A single NULL message produces `NULL` without calling the provider. In a message list, NULL text or image parts and NULL items inside `BLOB[]` are omitted; if no parts remain, the result is `NULL`. A zero-length image is a row error.
+
+Remote Prompt retries transient failures three times by default; native vLLM accepts only `max_retries=0`. `on_error="ignore"` applies after retry handling, but Prompt initialization failures always raise. Invalid JSON Schemas raise `SchemaValidationError`, responses that do not match the JSON Schema raise `OutputValidationError`, and unsupported endpoint capabilities raise `ProviderCapabilityError`.
+
+## Source and related pages
+
+- [Implementation: `vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation convenience method: `vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [`ai_prompt`](sql/ai-prompt.mdx)
+- [AI Functions API reference](index.mdx)
+
+## vane.ai.embed
+
+Route: /docs/data/reference/ai/embed
+Source: docs/data/reference/ai/embed.mdx
+
+`vane.ai.embed` creates a row-preserving text embedding operation. It returns a fixed-size `FLOAT[n]` Expression, or a Relation with an appended embedding column when a Relation is supplied.
+
+## Signatures
+
+```python
+vane.ai.embed(
+    text: Expression,
+    /,
+    *,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    dimensions: int | None = None,
+    on_error: Literal["raise", "ignore"] = "raise",
+    **options: Unpack[EmbedOptions],
+) -> Expression
+
+vane.ai.embed(
+    rel: Relation,
+    /,
+    text: Expression,
+    *,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    dimensions: int | None = None,
+    on_error: Literal["raise", "ignore"] = "raise",
+    output_column: str = "embedding",
+    **options: Unpack[EmbedOptions],
+) -> Relation
+```
+
+Equivalent keyword-only forms are also supported. A Relation has the convenience method `rel.embed(text, ...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `text` | `Expression` | Text input. The Expression must return `VARCHAR` | Required |
+| `provider` | Registered provider name or `Provider` | Embedding provider adapter | `"openai"` |
+| `model` | Non-empty `str` or `None` | Model ID. `None` uses provider metadata or a provider default | `None` |
+| `dimensions` | Positive `int` or `None` | Fixed result width and, where supported, requested output width | `None` |
+| `on_error` | `"raise"` or `"ignore"` | Row execution failure policy | `"raise"` |
+| `output_column` | Non-empty `str` | Relation-only output name | `"embedding"` |
+| `**options` | `EmbedOptions` | Provider request and execution options listed below | Provider-specific |
+
+Expression calls do not accept `output_column`; use `.alias(...)`. Relation calls keep all input columns and replace an existing output column with the same case-insensitive name.
+
+## Options
+
+| Option | Type | Availability | Default | Description |
+| --- | --- | --- | --- | --- |
+| `normalize` | `bool` | All | `False` | L2-normalize every non-NULL, non-zero final vector; leave zero vectors unchanged |
+| `batch_size` | Positive `int` | All | `64` | Rows submitted in an execution batch |
+| `actor_number` | Positive `int` | All | `1` | Embedder actor count |
+| `max_retries` | Non-negative `int` | All | `3` | Retries after the first attempt |
+| `execution_backend` | Backend name or `None` | Relation only | Runner choice | `subprocess_task`, `subprocess_actor`, `ray_task`, or `ray_actor` |
+| `max_chunk_chars` | Positive `int` or `None` | Relation only | `None` | Split long text into character windows |
+| `chunk_overlap_chars` | Non-negative `int` | Relation only | `200` | Window overlap; requires and must be smaller than `max_chunk_chars` |
+
+`actor_number` cannot be combined with a task backend. SQL and Expression calls do not accept the Relation-only backend and character-chunking options.
+
+Provider request options:
+
+| Provider | Option | Type and rules |
+| --- | --- | --- |
+| OpenAI | `encoding_format` | `'float'` or `'base64'`; default `'float'` |
+| OpenAI | `base_url`, `timeout` | HTTP(S) endpoint or `None`; finite positive timeout or `None` |
+| OpenAI | `batch_token_limit` | Positive `int` controlling client-side request batching |
+| OpenAI | `input_text_token_limit` | Positive `int` or `None`; cannot be combined with `max_chunk_chars` |
+| Google | `task_type` | Supported Gemini embedding task string or `None` |
+| Google | `title` | Non-empty `str` or `None`; valid only with `task_type='RETRIEVAL_DOCUMENT'` |
+| Transformers | `cache_folder`, `device`, `revision` | Non-empty `str` or `None` |
+| Transformers | `local_files_only` | `bool` |
+| Transformers | `trust_remote_code` | `bool`; `True` requires `revision` as a full 40-character commit SHA |
+
+Supported Google `task_type` values are `RETRIEVAL_QUERY`, `RETRIEVAL_DOCUMENT`, `SEMANTIC_SIMILARITY`, `CLASSIFICATION`, `CLUSTERING`, `QUESTION_ANSWERING`, `FACT_VERIFICATION`, and `CODE_RETRIEVAL_QUERY`. The default `gemini-embedding-2` model accepts neither `task_type` nor `title`; select another Google embedding model before using either option.
+
+## Dimensions and result validation
+
+Vane must know `dimensions` before the query runs. It uses an explicit value first, then built-in metadata for known models or metadata from a custom Provider. Vane does not load a model or contact an endpoint to discover the size. Pass `dimensions=...` for unknown models and compatible endpoints.
+
+Every non-NULL provider result must be a finite, one-dimensional vector of exactly the expected width. Provider batches must return the same number of embeddings in input order. Vane validates the count and vector shape, but it cannot detect an equal-length batch that a custom Provider has reordered. A custom Provider is responsible for preserving order.
+
+## Example
+
+This example uses the Transformers provider. Install `vane-ai[transformers]` before running it.
+
+```python
+import vane
+
+documents = vane.sql(
+    "SELECT * FROM (VALUES (1, 'How do I reset my password?'), "
+    "(2, 'Where can I update my billing address?')) AS t(id, text)"
+)
+
+embedded = vane.ai.embed(
+    documents,
+    vane.col("text"),
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+)
+
+print(embedded.select("id, text, len(embedding)").order("id").fetchall())
+vane.close()
+```
+
+Output:
+
+```text
+[(1, 'How do I reset my password?', 384),
+ (2, 'Where can I update my billing address?', 384)]
+```
+
+## Relation-only text chunking
+
+Set `max_chunk_chars` on a Relation call to split long text into overlapping character windows. `chunk_overlap_chars` defaults to `200` and must be smaller than the chunk size. Vane embeds the chunks and computes a chunk-length-weighted mean. A non-zero mean is L2-normalized, while a zero vector remains unchanged. `normalize=True` applies the same rule to final vectors produced without multi-chunk aggregation.
+
+`max_chunk_chars` and `chunk_overlap_chars` are unavailable on Expression and SQL calls. For every API form, OpenAI still splits oversized inputs by token count using the configured `input_text_token_limit` or Vane's built-in limit. On Relation calls, `max_chunk_chars` and `input_text_token_limit` are mutually exclusive.
+
+## Errors
+
+Invalid input types, unresolved dimensions, unsupported providers, and invalid options raise before the query runs. Provider failures and invalid returned vectors raise during execution. `on_error="ignore"` converts only row execution failures to `NULL` while preserving the vector type.
+
+A `NULL` input returns `NULL` with the resolved vector type without calling the provider. Transient failures are retried three times by default. With `on_error="ignore"`, a failed batch is isolated into individual rows so successful rows are retained. A `ProviderCapabilityError` returns `NULL` for the affected batch without resubmitting the request; configuration errors still raise.
+
+## Source and related pages
+
+- [Implementation: `vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation convenience method: `vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [`ai_embed`](sql/ai-embed.mdx)
+- [AI Functions API reference](index.mdx)
+
+## SQL ai_prompt
+
+Route: /docs/data/reference/ai/sql/ai-prompt
+Source: docs/data/reference/ai/sql/ai-prompt.mdx
+
+`ai_prompt` can be used only in a SQL `SELECT` list. It produces one text, structured, or raw-response value per input row.
+
+## Signatures
+
+```sql
+ai_prompt(
+    prompt VARCHAR,
+    return_format := NULL,
+    system_message := NULL,
+    provider := 'openai',
+    model := NULL,
+    return_raw_response := FALSE,
+    on_error := 'raise',
+    options := NULL
+)
+
+ai_prompt(prompt VARCHAR, image BLOB, ...)
+ai_prompt(prompt VARCHAR, images BLOB[], ...)
+```
+
+The media overloads add one required positional `BLOB` or `BLOB[]` argument after `prompt`; the named arguments that follow are unchanged. The selected provider and model must support image input. Native vLLM accepts text only.
+
+## Parameters
+
+| Name | SQL type | Description | Default |
+| --- | --- | --- | --- |
+| `prompt` | `VARCHAR` | Per-row text input | Required |
+| `image` | `BLOB` | Optional second positional image input | — |
+| `images` | `BLOB[]` | Optional second positional list of images | — |
+| `return_format` | `VARCHAR` containing valid JSON, `JSON` via implicit cast, or `NULL` | JSON Schema for native structured output | `NULL` |
+| `system_message` | `VARCHAR` or `NULL` | System instruction | `NULL` |
+| `provider` | `VARCHAR` | Registered provider | `'openai'` |
+| `model` | `VARCHAR` or `NULL` | Model ID | `NULL` |
+| `return_raw_response` | `BOOLEAN` | Return valid provider-response JSON as `VARCHAR` | `FALSE` |
+| `on_error` | `VARCHAR` | `'raise'` or `'ignore'` | `'raise'` |
+| `options` | `STRUCT` or `NULL` | Documented [`PromptOptions`](../prompt.mdx#options) | `NULL` |
+
+Only `prompt`, `image`, and `images` can read row data. Vane evaluates the other arguments while preparing the query, so they must not depend on a row. Put provider request and execution settings inside `struct_pack(...)`. Only documented options are accepted; provider-incompatible and credential-like fields are rejected before execution.
+
+## Result
+
+With no JSON Schema, the result is `VARCHAR`. A valid `return_format` produces a native `STRUCT` type when the query is prepared. `return_raw_response := TRUE` returns valid JSON in `VARCHAR`, even when a JSON Schema is also supplied.
+
+## Example
+
+Run this query through a Vane connection. It uses OpenAI, so install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment first.
+
+```sql
+SELECT
+    id,
+    text,
+    ai_prompt(
+        text,
+        provider := 'openai',
+        model := 'gpt-4o-mini',
+        system_message := 'Summarize the support request in one sentence.'
+    ) AS summary
+FROM (VALUES
+    (1, 'I was charged twice.'),
+    (2, 'My parcel has not arrived.')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+## Errors
+
+A `NULL` prompt returns `NULL` while preserving the result type, without contacting the provider. Locally checkable errors—including invalid types, non-constant configuration arguments, unknown providers, invalid JSON Schemas or options, and known model/provider incompatibilities—raise before execution. Model availability, permissions, endpoint capabilities that cannot be determined locally, and Provider request failures may be detected only during execution. `on_error := 'ignore'` applies only to row execution failures.
+
+## Source and related pages
+
+- [SQL implementation: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.prompt`](../prompt.mdx)
+- [AI Functions API reference](../index.mdx)
+
+## SQL ai_embed
+
+Route: /docs/data/reference/ai/sql/ai-embed
+Source: docs/data/reference/ai/sql/ai-embed.mdx
+
+`ai_embed` can be used only in a SQL `SELECT` list. It produces one fixed-size vector per input row.
+
+## Signature
+
+```sql
+ai_embed(
+    text VARCHAR,
+    provider := 'openai',
+    model := NULL,
+    dimensions := NULL,
+    on_error := 'raise',
+    options := NULL
+)
+```
+
+## Parameters
+
+| Name | SQL type | Description | Default |
+| --- | --- | --- | --- |
+| `text` | `VARCHAR` | Per-row text input | Required |
+| `provider` | `VARCHAR` | Registered embedding provider | `'openai'` |
+| `model` | `VARCHAR` or `NULL` | Embedding model ID | `NULL` |
+| `dimensions` | Positive `INTEGER` or `NULL` | Fixed result width and, where supported, requested output width | `NULL` |
+| `on_error` | `VARCHAR` | `'raise'` or `'ignore'` | `'raise'` |
+| `options` | `STRUCT` or `NULL` | Documented [`EmbedOptions`](../embed.mdx#options) | `NULL` |
+
+Only `text` can read row data. Vane evaluates the other arguments while preparing the query, so they must not depend on a row. Put provider request and execution settings inside `struct_pack(...)`. Only documented options are accepted; provider-incompatible and credential-like fields are rejected before execution.
+
+## Result
+
+The result type is `FLOAT[n]`, with `n` determined when the query is prepared. Pass `dimensions` when the selected model or endpoint has no known dimension. A `NULL` input preserves that fixed type and returns `NULL` without contacting the provider.
+
+## Example
+
+Run this query through a Vane connection. It uses OpenAI, so install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment first.
+
+```sql
+SELECT
+    id,
+    text,
+    ai_embed(
+        text,
+        provider := 'openai',
+        model := 'text-embedding-3-small'
+    ) AS embedding
+FROM (VALUES
+    (1, 'How do I reset my password?'),
+    (2, 'Where can I update my billing address?')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+With the official OpenAI endpoint, `text-embedding-3-small` returns `FLOAT[1536]` for this example.
+
+## Errors
+
+Provider batches must return one finite vector of the expected width for every non-NULL input, in the same order. Locally checkable errors—including invalid types, non-constant configuration arguments, unknown providers, unresolved output dimensions, invalid options, and known model/provider incompatibilities—raise before execution. Model availability, permissions, endpoint capabilities that cannot be determined locally, and Provider request failures may be detected only during execution. `on_error := 'ignore'` applies only to row execution failures.
+
+## Source and related pages
+
+- [SQL implementation: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.embed`](../embed.mdx)
+- [AI Functions API reference](../index.mdx)
 
 ## Deployment
 

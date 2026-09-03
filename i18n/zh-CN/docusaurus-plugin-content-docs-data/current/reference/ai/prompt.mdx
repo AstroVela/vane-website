@@ -1,0 +1,155 @@
+---
+title: vane.ai.prompt
+---
+
+`vane.ai.prompt` 根据第一个参数选择调用方式。传入消息 `Expression` 或非空 `list[Expression]` 时返回惰性 `Expression`；传入 `Relation` 时返回保留输入列并追加响应列的 `Relation`。
+
+## 签名
+
+```python
+vane.ai.prompt(
+    messages: Expression | list[Expression],
+    /,
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    **options: Unpack[PromptOptions],
+) -> Expression
+
+vane.ai.prompt(
+    rel: Relation,
+    /,
+    messages: Expression | list[Expression],
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    output_column: str = "response",
+    **options: Unpack[PromptOptions],
+) -> Relation
+```
+
+这两种形式也支持等价的纯关键字调用。Relation 还提供便捷方法 `rel.prompt(messages, ...)`。
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `messages` | `Expression` 或非空 `list[Expression]` | 有序消息片段。每个 Expression 必须返回 `VARCHAR`、`BLOB` 或 `BLOB[]`；原生 vLLM 只接受文本 | 必填 |
+| `return_format` | Pydantic 模型类、`JSONSchema` 或 `None` | 约束生成结果，并把校验后的内容转换成 DuckDB 原生 `STRUCT` | `None` |
+| `system_message` | `str` 或 `None` | 本次调用使用的系统指令 | `None` |
+| `provider` | 已注册的 Provider 名称或 `Provider` | Provider 适配器 | `"openai"` |
+| `model` | 非空 `str` 或 `None` | 模型 ID。`None` 表示使用 Provider 元数据或默认值 | `None` |
+| `return_raw_response` | `bool` | 将 Provider SDK 响应体序列化为符合严格 JSON 语法的 `VARCHAR`。即使同时传入 JSON Schema，仍会用它约束生成 | `False` |
+| `on_error` | `"raise"` 或 `"ignore"` | 单行执行失败时的处理策略 | `"raise"` |
+| `output_column` | 非空 `str` | 仅在第一个参数为 `Relation` 时可用的输出列名 | `"response"` |
+| `**options` | `PromptOptions` | 下文列出的 Provider 请求参数和执行选项 | 由 Provider 决定 |
+
+第一个参数为消息 `Expression` 或非空 `list[Expression]` 时，不接受 `output_column`，请使用 `.alias(...)`。第一个参数为 `Relation` 时，会保留所有输入列，并按大小写不敏感的规则替换已有同名输出列。
+
+## Options
+
+| 选项 | 类型 | 适用范围 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `temperature` | 有限的 `float >= 0` 或 `None` | 所有 Provider | 由 Provider 决定 | 采样温度 |
+| `batch_size` | 正整数 | 全部 | 远程 `32`；原生 `128` | 每个执行批次提交的行数 |
+| `actor_number` | 正整数 | 全部 | `1` | Provider 或模型 Actor 数量 |
+| `max_retries` | 非负整数 | 全部 | 远程 `3`；原生 `0` | 首次失败后的重试次数；原生 vLLM 只接受 `0` |
+| `max_concurrency_per_actor` | 正整数 | 远程 Provider | OpenAI 为 `32`；Anthropic/Google 为 `16` | 每个 Actor 内的并发请求数 |
+| `execution_backend` | 后端名称或 `None` | 非原生 Relation 调用 | 由 Runner 决定 | `subprocess_task`、`subprocess_actor`、`ray_task` 或 `ray_actor` |
+
+`actor_number` 不能与 Task 后端同时使用。Expression 和 SQL 调用不接受仅用于 Relation 的 `execution_backend`。
+
+各 Provider 的请求选项如下：
+
+| Provider | 选项 |
+| --- | --- |
+| OpenAI | `use_chat_completions: bool`、`max_output_tokens: int \| None`、`top_p: float \| None`、`stop_sequences: list[str] \| None`、`base_url: str \| None`、`timeout: float \| None` |
+| Anthropic | `max_tokens: int \| None`、`top_p: float \| None`、`top_k: int \| None`、`stop_sequences: list[str] \| None`、`base_url: str \| None`、`timeout: float \| None` |
+| Google | `max_output_tokens: int \| None`、`top_p: float \| None`、`top_k: int \| None`、`stop_sequences: list[str] \| None` |
+| vLLM | `max_tokens: int \| None`、`gpus_per_actor: float`、`engine_args: Mapping`、`generate_args: Mapping`、`do_prefix_routing: bool`、`max_buffer_size: int`、`min_bucket_size: int`、`prefix_match_threshold: float`、`load_balance_threshold: int`、`inflight_limit: int`、`engine_init_timeout_s: float \| None` |
+
+OpenAI 的 `stop_sequences` 要求同时设置 `use_chat_completions=True`。Anthropic 要求 `max_tokens` 不能为 `None`；结构化输出不能使用 `0`。`top_p` 的范围是 `[0, 1]`，停止序列必须是由非空字符串组成的非空列表。
+
+对于原生 vLLM，`max_tokens` 必须是正整数或 `None`。`max_buffer_size`、`min_bucket_size`、`load_balance_threshold` 和 `inflight_limit` 必须是非负整数。`prefix_match_threshold` 必须在 `[0, 1]` 之间；`gpus_per_actor` 必须大于 `0`，且大于等于 `1` 时必须是整数。
+
+`engine_args` 和 `generate_args` 只能包含可以序列化为有效 JSON 的值。模型通过顶层 `model` 参数配置，结构化生成通过 `return_format` 配置。设置 `engine_args.trust_remote_code=True` 时，远程代码版本必须固定为完整的 40 位提交 SHA。
+
+## 返回结果
+
+| 配置 | SQL 类型 |
+| --- | --- |
+| 未设置 `return_format` | `VARCHAR` |
+| 设置了 `return_format` | 从 JSON Schema 推导出的原生 `STRUCT` |
+| `return_raw_response=True` | 符合严格 JSON 语法的序列化结果，存放在 `VARCHAR` 中 |
+
+### 结构化输出
+
+`return_format` 接受 Pydantic `BaseModel` 类或 `JSONSchema` 字典。各 Provider 均支持以下规则：
+
+- 根节点必须是不可空对象。支持 `object`、`array`、`string`、`integer`、`number` 和 `boolean`。
+- 标量映射为 `VARCHAR`、`BIGINT`、`DOUBLE` 和 `BOOLEAN`；数组映射为列表，嵌套对象映射为嵌套 `STRUCT`。
+- 数组必须声明 `items`。每个对象至少要有一个属性。属性名必须匹配 `[A-Za-z0-9_-]{1,64}`，而且不能出现仅大小写不同的重名。
+- `required` 只能包含 `properties` 中声明过的不重复名称；`additionalProperties` 必须是布尔值。
+- 可空值可以通过双元素 `type` 数组、`anyOf` 或 `oneOf` 表示，并且只能是 `T | null`。
+- `$defs` 和 `definitions` 只能放在根节点。`$ref` 必须指向本地定义，不能递归，也不能带同级 JSON Schema 关键字。
+- 不支持 `minLength`、`maximum`、`pattern`、`format`、`uniqueItems` 和 `allOf` 等约束。整数必须落在有符号 `BIGINT` 范围内，数字必须是有限值。
+
+对于支持的 OpenAI 模型，Vane 使用 Structured Outputs（`strict: true`）。这些模型还要求每个对象都设置 `additionalProperties: false`，并把所有属性列入 `required`。Pydantic 模型可通过 `ConfigDict(extra="forbid")` 和必填字段生成这种结构。
+
+### 原始响应
+
+`return_raw_response=True` 返回 Provider SDK 响应，并将其序列化为符合严格 JSON 语法的字符串。即使同时提供 JSON Schema，仍会用它约束生成。原生 vLLM 不支持原始响应模式。
+
+## 示例
+
+该示例使用 OpenAI。运行前请安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY`。
+
+```python
+import vane
+
+documents = vane.sql(
+    "SELECT * FROM (VALUES (1, 'I was charged twice.'), "
+    "(2, 'My parcel has not arrived.')) AS t(id, text)"
+)
+
+responses = vane.ai.prompt(
+    documents,
+    vane.col("text"),
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Summarize the support request in one sentence.",
+)
+
+print(responses.order("id").fetchall())
+vane.close()
+```
+
+返回结果结构：
+
+```text
+[(1, 'I was charged twice.', '...'),
+ (2, 'My parcel has not arrived.', '...')]
+```
+
+## 错误
+
+消息形态、输入类型、JSON Schema、未知 Provider 名称、选项，以及 Vane 已知不兼容的模型与 Provider 组合，会在查询执行前报错。Vane 在准备调用时不会访问端点，因此模型是否存在、是否有权使用，以及无法在本地确定的端点能力，可能要到执行期间才能发现。Provider 请求失败和响应不符合 JSON Schema 也会在执行期间报错。`on_error="ignore"` 只会把逐行执行错误转换成保留返回类型的 `NULL`。
+
+单条 NULL 消息会直接得到 `NULL`，不会调用 Provider。消息列表中的 NULL 文本、图片片段和 `BLOB[]` 内的 NULL 元素会被忽略；如果没有剩下任何片段，结果为 `NULL`。零字节图片属于逐行错误。
+
+远程 Prompt 默认在首次失败后重试三次；原生 vLLM 只接受 `max_retries=0`。`on_error="ignore"` 在重试结束后生效，但 Prompt 初始化失败始终抛出。无效 JSON Schema 抛出 `SchemaValidationError`，响应不符合 JSON Schema 时抛出 `OutputValidationError`，Provider 能力不匹配时抛出 `ProviderCapabilityError`。
+
+## 源码与相关页面
+
+- [实现：`vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation 便捷方法：`vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [`ai_prompt`](sql/ai-prompt.mdx)
+- [AI 函数 API 参考](index.mdx)

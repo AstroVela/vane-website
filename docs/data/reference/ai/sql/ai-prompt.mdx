@@ -1,0 +1,77 @@
+---
+title: SQL ai_prompt
+---
+
+`ai_prompt` can be used only in a SQL `SELECT` list. It produces one text, structured, or raw-response value per input row.
+
+## Signatures
+
+```sql
+ai_prompt(
+    prompt VARCHAR,
+    return_format := NULL,
+    system_message := NULL,
+    provider := 'openai',
+    model := NULL,
+    return_raw_response := FALSE,
+    on_error := 'raise',
+    options := NULL
+)
+
+ai_prompt(prompt VARCHAR, image BLOB, ...)
+ai_prompt(prompt VARCHAR, images BLOB[], ...)
+```
+
+The media overloads add one required positional `BLOB` or `BLOB[]` argument after `prompt`; the named arguments that follow are unchanged. The selected provider and model must support image input. Native vLLM accepts text only.
+
+## Parameters
+
+| Name | SQL type | Description | Default |
+| --- | --- | --- | --- |
+| `prompt` | `VARCHAR` | Per-row text input | Required |
+| `image` | `BLOB` | Optional second positional image input | — |
+| `images` | `BLOB[]` | Optional second positional list of images | — |
+| `return_format` | `VARCHAR` containing valid JSON, `JSON` via implicit cast, or `NULL` | JSON Schema for native structured output | `NULL` |
+| `system_message` | `VARCHAR` or `NULL` | System instruction | `NULL` |
+| `provider` | `VARCHAR` | Registered provider | `'openai'` |
+| `model` | `VARCHAR` or `NULL` | Model ID | `NULL` |
+| `return_raw_response` | `BOOLEAN` | Return valid provider-response JSON as `VARCHAR` | `FALSE` |
+| `on_error` | `VARCHAR` | `'raise'` or `'ignore'` | `'raise'` |
+| `options` | `STRUCT` or `NULL` | Documented [`PromptOptions`](../prompt.mdx#options) | `NULL` |
+
+Only `prompt`, `image`, and `images` can read row data. Vane evaluates the other arguments while preparing the query, so they must not depend on a row. Put provider request and execution settings inside `struct_pack(...)`. Only documented options are accepted; provider-incompatible and credential-like fields are rejected before execution.
+
+## Result
+
+With no JSON Schema, the result is `VARCHAR`. A valid `return_format` produces a native `STRUCT` type when the query is prepared. `return_raw_response := TRUE` returns valid JSON in `VARCHAR`, even when a JSON Schema is also supplied.
+
+## Example
+
+Run this query through a Vane connection. It uses OpenAI, so install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment first.
+
+```sql
+SELECT
+    id,
+    text,
+    ai_prompt(
+        text,
+        provider := 'openai',
+        model := 'gpt-4o-mini',
+        system_message := 'Summarize the support request in one sentence.'
+    ) AS summary
+FROM (VALUES
+    (1, 'I was charged twice.'),
+    (2, 'My parcel has not arrived.')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+## Errors
+
+A `NULL` prompt returns `NULL` while preserving the result type, without contacting the provider. Locally checkable errors—including invalid types, non-constant configuration arguments, unknown providers, invalid JSON Schemas or options, and known model/provider incompatibilities—raise before execution. Model availability, permissions, endpoint capabilities that cannot be determined locally, and Provider request failures may be detected only during execution. `on_error := 'ignore'` applies only to row execution failures.
+
+## Source and related pages
+
+- [SQL implementation: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.prompt`](../prompt.mdx)
+- [AI Functions API reference](../index.mdx)

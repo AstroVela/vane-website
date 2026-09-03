@@ -1,0 +1,134 @@
+---
+title: vane.ai.embed
+---
+
+`vane.ai.embed` 根据第一个参数选择调用方式。传入文本 `Expression` 时返回定长的 `FLOAT[n]` `Expression`；传入 `Relation` 时返回保留输入列并追加向量列的 `Relation`。
+
+## 签名
+
+```python
+vane.ai.embed(
+    text: Expression,
+    /,
+    *,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    dimensions: int | None = None,
+    on_error: Literal["raise", "ignore"] = "raise",
+    **options: Unpack[EmbedOptions],
+) -> Expression
+
+vane.ai.embed(
+    rel: Relation,
+    /,
+    text: Expression,
+    *,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    dimensions: int | None = None,
+    on_error: Literal["raise", "ignore"] = "raise",
+    output_column: str = "embedding",
+    **options: Unpack[EmbedOptions],
+) -> Relation
+```
+
+这两种形式也支持等价的纯关键字调用。Relation 还提供便捷方法 `rel.embed(text, ...)`。
+
+## 参数
+
+| 参数 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `text` | `Expression` | 文本输入。Expression 必须返回 `VARCHAR` | 必填 |
+| `provider` | 已注册的 Provider 名称或 `Provider` | 文本嵌入 Provider 适配器 | `"openai"` |
+| `model` | 非空 `str` 或 `None` | 模型 ID。`None` 表示使用 Provider 元数据或默认值 | `None` |
+| `dimensions` | 正整数或 `None` | 固定返回宽度；Provider 支持时也作为请求的输出维度 | `None` |
+| `on_error` | `"raise"` 或 `"ignore"` | 单行执行失败时的处理策略 | `"raise"` |
+| `output_column` | 非空 `str` | 仅在第一个参数为 `Relation` 时可用的输出列名 | `"embedding"` |
+| `**options` | `EmbedOptions` | 下文列出的 Provider 请求参数和执行选项 | 由 Provider 决定 |
+
+第一个参数为文本 `Expression` 时，不接受 `output_column`，请使用 `.alias(...)`。第一个参数为 `Relation` 时，会保留所有输入列，并按大小写不敏感的规则替换已有同名输出列。
+
+## 选项
+
+| 选项 | 类型 | 适用范围 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `normalize` | `bool` | 全部 | `False` | 对每个非 NULL、非零的最终向量做 L2 归一化；零向量保持不变 |
+| `batch_size` | 正整数 | 全部 | `64` | 每个执行批次提交的行数 |
+| `actor_number` | 正整数 | 全部 | `1` | Embedder Actor 数量 |
+| `max_retries` | 非负整数 | 全部 | `3` | 首次失败后的重试次数 |
+| `execution_backend` | 后端名称或 `None` | 仅 Relation | 由 Runner 决定 | `subprocess_task`、`subprocess_actor`、`ray_task` 或 `ray_actor` |
+| `max_chunk_chars` | 正整数或 `None` | 仅 Relation | `None` | 把长文本拆成字符窗口 |
+| `chunk_overlap_chars` | 非负整数 | 仅 Relation | `200` | 窗口重叠长度；必须和 `max_chunk_chars` 一起使用并小于窗口大小 |
+
+`actor_number` 不能与 Task 后端同时使用。SQL 和 Expression 调用不接受仅用于 Relation 的后端与字符分块选项。
+
+各 Provider 的请求选项如下：
+
+| Provider | 选项 | 类型与规则 |
+| --- | --- | --- |
+| OpenAI | `encoding_format` | `'float'` 或 `'base64'`，默认为 `'float'` |
+| OpenAI | `base_url`、`timeout` | HTTP(S) 端点或 `None`；有限正数超时时间或 `None` |
+| OpenAI | `batch_token_limit` | 控制客户端请求分批的正整数 |
+| OpenAI | `input_text_token_limit` | 正整数或 `None`；不能与 `max_chunk_chars` 同时使用 |
+| Google | `task_type` | 支持的 Gemini 嵌入任务类型或 `None` |
+| Google | `title` | 非空 `str` 或 `None`；只能与 `task_type='RETRIEVAL_DOCUMENT'` 同时使用 |
+| Transformers | `cache_folder`、`device`、`revision` | 非空 `str` 或 `None` |
+| Transformers | `local_files_only` | `bool` |
+| Transformers | `trust_remote_code` | `bool`；设置为 `True` 时，`revision` 必须是完整的 40 位 commit SHA |
+
+Google 支持的 `task_type` 包括 `RETRIEVAL_QUERY`、`RETRIEVAL_DOCUMENT`、`SEMANTIC_SIMILARITY`、`CLASSIFICATION`、`CLUSTERING`、`QUESTION_ANSWERING`、`FACT_VERIFICATION` 和 `CODE_RETRIEVAL_QUERY`。默认的 `gemini-embedding-2` 模型不接受 `task_type` 或 `title`；使用这些选项前，需要选择其他 Google embedding 模型。
+
+## 维度与结果校验
+
+Vane 必须在查询执行前确定 `dimensions`。它会优先使用显式传入的值，然后查找已知模型的内置元数据或自定义 Provider 提供的元数据。Vane 不会为了探测维度而加载模型或访问端点。使用未知模型或兼容端点时，请显式传入 `dimensions=...`。
+
+每个非 `NULL` 结果都必须是长度准确的一维向量，且只能包含有限数值。Provider 的批量返回还必须按输入顺序返回相同数量的向量。Vane 会校验数量和向量形状，但无法识别自定义 Provider 是否重排了长度相同的批量结果。自定义 Provider 必须保证返回顺序不变。
+
+## 示例
+
+该示例使用 Transformers Provider。运行前请安装 `vane-ai[transformers]`。
+
+```python
+import vane
+
+documents = vane.sql(
+    "SELECT * FROM (VALUES (1, 'How do I reset my password?'), "
+    "(2, 'Where can I update my billing address?')) AS t(id, text)"
+)
+
+embedded = vane.ai.embed(
+    documents,
+    vane.col("text"),
+    provider="transformers",
+    model="sentence-transformers/all-MiniLM-L6-v2",
+)
+
+print(embedded.select("id, text, len(embedding)").order("id").fetchall())
+vane.close()
+```
+
+输出：
+
+```text
+[(1, 'How do I reset my password?', 384),
+ (2, 'Where can I update my billing address?', 384)]
+```
+
+## Relation 文本分块
+
+在 Relation 调用中设置 `max_chunk_chars`，可以把长文本拆成有重叠的字符窗口。`chunk_overlap_chars` 默认为 `200`，而且必须小于窗口大小。Vane 会先计算各分块的向量，再按分块文本长度加权求平均。非零的加权结果会做 L2 归一化，零向量则保持不变；设置 `normalize=True` 时，没有经过多分块聚合的最终向量也遵循同一规则。
+
+`max_chunk_chars` 和 `chunk_overlap_chars` 不适用于 Expression 和 SQL 调用。无论使用哪种 API 形式，OpenAI 都会根据显式设置的 `input_text_token_limit` 或 Vane 的内置限制，按 token 数拆分过长输入。Relation 调用不能同时设置 `max_chunk_chars` 和 `input_text_token_limit`。
+
+## 错误
+
+输入类型无效、无法确定维度、Provider 不支持 Embed 或选项错误时，会在查询执行前报错。Provider 调用失败或返回向量不符合要求时，会在执行期间报错。`on_error="ignore"` 只会把逐行执行错误转换成保留向量类型的 `NULL`。
+
+输入为 `NULL` 时，会返回保留向量类型的 `NULL`，且不调用 Provider。短暂故障默认在首次失败后重试三次。使用 `on_error="ignore"` 时，失败批次会被拆成单行重试，从而保留成功行。如果整个批次发生 `ProviderCapabilityError`，这些行会返回 `NULL`，且不会重新提交请求；配置错误仍会抛出。
+
+## 源码与相关页面
+
+- [实现：`vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation 便捷方法：`vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [`ai_embed`](sql/ai-embed.mdx)
+- [AI 函数 API 参考](index.mdx)

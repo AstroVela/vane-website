@@ -51,6 +51,7 @@ function docIdForSlug(slug: string): string {
     'tutorials': 'tutorials/index',
     'reference/udf': 'reference/udf/index',
     'reference/udf/expression': 'reference/udf/expression/index',
+    'reference/ai': 'reference/ai/index',
   }
 
   return indexDocIds[slug] ?? slug

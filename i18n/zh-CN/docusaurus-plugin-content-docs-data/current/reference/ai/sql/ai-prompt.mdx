@@ -1,0 +1,77 @@
+---
+title: SQL ai_prompt
+---
+
+`ai_prompt` 只能用于 SQL `SELECT` 列表，并为每行输入生成一个文本、结构化结果或原始响应。
+
+## 签名
+
+```sql
+ai_prompt(
+    prompt VARCHAR,
+    return_format := NULL,
+    system_message := NULL,
+    provider := 'openai',
+    model := NULL,
+    return_raw_response := FALSE,
+    on_error := 'raise',
+    options := NULL
+)
+
+ai_prompt(prompt VARCHAR, image BLOB, ...)
+ai_prompt(prompt VARCHAR, images BLOB[], ...)
+```
+
+媒体重载会在 `prompt` 后增加一个必填的位置参数，类型为 `BLOB` 或 `BLOB[]`；后续命名参数不变。所选 Provider 和模型必须支持图像输入。原生 vLLM 只接受文本。
+
+## 参数
+
+| 参数 | SQL 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `prompt` | `VARCHAR` | 逐行读取的文本输入 | 必填 |
+| `image` | `BLOB` | 可选的第二个位置参数，表示一张图像 | — |
+| `images` | `BLOB[]` | 可选的第二个位置参数，表示多张图像 | — |
+| `return_format` | 包含有效 JSON 的 `VARCHAR`、经隐式转换的 `JSON`，或 `NULL` | 用于原生结构化输出的 JSON Schema | `NULL` |
+| `system_message` | `VARCHAR` 或 `NULL` | 系统指令 | `NULL` |
+| `provider` | `VARCHAR` | 已注册的 Provider | `'openai'` |
+| `model` | `VARCHAR` 或 `NULL` | 模型 ID | `NULL` |
+| `return_raw_response` | `BOOLEAN` | 把符合严格 JSON 语法的 Provider 响应作为 `VARCHAR` 返回 | `FALSE` |
+| `on_error` | `VARCHAR` | `'raise'` 或 `'ignore'` | `'raise'` |
+| `options` | `STRUCT` 或 `NULL` | 文档列出的 [`PromptOptions`](../prompt.mdx#options) | `NULL` |
+
+只有 `prompt`、`image` 和 `images` 可以读取行数据。Vane 会在准备查询时计算其他参数，因此这些参数不能依赖当前行。Provider 请求参数和执行设置放进 `struct_pack(...)`。只能使用文档中列出的选项；与 Provider 不兼容或疑似凭证的字段会在执行前被拒绝。
+
+## 返回结果
+
+没有 JSON Schema 时返回 `VARCHAR`。有效的 `return_format` 会在准备查询时确定原生 `STRUCT` 类型。设置 `return_raw_response := TRUE` 后始终返回符合严格 JSON 语法的 `VARCHAR`，即使同时提供了 JSON Schema。
+
+## 示例
+
+请通过 Vane 连接运行这条查询。该示例使用 OpenAI，因此需要先安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY`。
+
+```sql
+SELECT
+    id,
+    text,
+    ai_prompt(
+        text,
+        provider := 'openai',
+        model := 'gpt-4o-mini',
+        system_message := 'Summarize the support request in one sentence.'
+    ) AS summary
+FROM (VALUES
+    (1, 'I was charged twice.'),
+    (2, 'My parcel has not arrived.')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+## 错误
+
+`prompt` 为 `NULL` 时，会返回保留结果类型的 `NULL`，且不访问 Provider。能够在本地完成的校验——包括类型、配置参数常量性、未知 Provider、无效 JSON Schema 或选项，以及已知不兼容的模型与 Provider 组合——会在执行前报错。模型是否存在、是否有权使用、无法在本地确定的端点能力和 Provider 请求失败，则可能要到执行期间才能发现。`on_error := 'ignore'` 只处理逐行执行失败。
+
+## 源码与相关页面
+
+- [SQL 实现：`src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.prompt`](../prompt.mdx)
+- [AI 函数 API 参考](../index.mdx)

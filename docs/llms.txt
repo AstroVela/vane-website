@@ -32,5 +32,10 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/reference/udf/relation/relation-map: Relation.map.
 - /docs/data/reference/udf/relation/relation-flat-map: Relation.flat_map.
 - /docs/data/reference/udf/relation/relation-map-batches: Relation.map_batches.
+- /docs/data/reference/ai: AI Functions API reference.
+- /docs/data/reference/ai/prompt: vane.ai.prompt.
+- /docs/data/reference/ai/embed: vane.ai.embed.
+- /docs/data/reference/ai/sql/ai-prompt: SQL ai_prompt.
+- /docs/data/reference/ai/sql/ai-embed: SQL ai_embed.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

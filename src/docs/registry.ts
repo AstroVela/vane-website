@@ -158,6 +158,31 @@ export const DOCS_PAGES = {
     title: 'Relation.map_batches',
     titleZh: 'Relation.map_batches',
   },
+  'reference/ai': {
+    source: 'docs/data/reference/ai/index.mdx',
+    title: 'AI Functions API reference',
+    titleZh: 'AI 函数 API 参考',
+  },
+  'reference/ai/prompt': {
+    source: 'docs/data/reference/ai/prompt.mdx',
+    title: 'vane.ai.prompt',
+    titleZh: 'vane.ai.prompt',
+  },
+  'reference/ai/embed': {
+    source: 'docs/data/reference/ai/embed.mdx',
+    title: 'vane.ai.embed',
+    titleZh: 'vane.ai.embed',
+  },
+  'reference/ai/sql/ai-prompt': {
+    source: 'docs/data/reference/ai/sql/ai-prompt.mdx',
+    title: 'SQL ai_prompt',
+    titleZh: 'SQL ai_prompt',
+  },
+  'reference/ai/sql/ai-embed': {
+    source: 'docs/data/reference/ai/sql/ai-embed.mdx',
+    title: 'SQL ai_embed',
+    titleZh: 'SQL ai_embed',
+  },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',
     title: 'Deployment',
@@ -230,6 +255,8 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Examples: '示例',
   'Use cases': '端到端用例',
   Reference: 'API 参考',
+  UDFs: 'UDF',
+  'AI Functions': 'AI 函数',
   'Expression UDFs': 'Expression UDF',
   'Relation UDFs': 'Relation UDF',
   Operations: '运维',

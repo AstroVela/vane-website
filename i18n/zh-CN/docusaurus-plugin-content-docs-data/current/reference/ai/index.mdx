@@ -1,0 +1,43 @@
+---
+title: AI 函数 API 参考
+---
+
+Vane 提供 Prompt 和 Embed，用于调用模型处理数据列。本参考可用于选择 API，并查询 `vane-ai 0.1.0` 的签名、参数、返回值和错误。安装方法见[安装指南](../../quickstart/installation.mdx)，入门用法见 [AI 函数](../../concepts/ai-functions.mdx)。
+
+## 如何选择接口
+
+| 操作 | Python Expression | 返回 Relation 的形式 | SQL Expression | 结果 |
+| --- | --- | --- | --- | --- |
+| Prompt | [`vane.ai.prompt`](prompt.mdx) | `vane.ai.prompt(rel, ...)` 或 `rel.prompt(...)` | [`ai_prompt`](sql/ai-prompt.mdx) | `VARCHAR`、原生 `STRUCT` 或原始响应 JSON（`VARCHAR`） |
+| Embed | [`vane.ai.embed`](embed.mdx) | `vane.ai.embed(rel, ...)` 或 `rel.embed(...)` | [`ai_embed`](sql/ai-embed.mdx) | 定长 `FLOAT[n]` |
+
+Python API 的第一个参数为 `Expression` 时，会返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名；Prompt 也接受非空 `list[Expression]`。第一个参数为 `Relation` 时，会保留输入列并追加一个结果列；如果同名列已经存在，会按大小写不敏感的规则替换。SQL API 只能用于 `SELECT` 列表，通过 `AS` 命名结果。
+
+## 执行保证
+
+- Prompt 和 Embed 都保持输入行数与顺序不变。
+- Embed 的文本输入为 `NULL`，或者 Prompt 只收到一条 `NULL` 消息时，会返回保留结果类型的 `NULL`，且不调用 Provider。Prompt 消息列表中的 `NULL` 片段会被忽略；如果没有剩下任何片段，结果为 `NULL`。
+- Provider、模型、JSON Schema、向量维度和选项对整个操作生效，不能逐行变化。
+- 只能使用文档中列出的选项。名称未知或与 Provider 不匹配时，会在准备查询时失败。
+- 凭证不是函数选项，应通过环境变量或运行时密钥管理方案提供。
+- `on_error="raise"` 会在某行执行失败时终止；`on_error="ignore"` 把该行写成 `NULL`，但不会掩盖无效查询计划或选项错误。
+- 远程 Prompt 和所有 Embed 调用默认在首次失败后重试三次。原生 vLLM Prompt 不会重试。重试可能多次向 Provider 发送同一个请求。
+
+## Provider
+
+| Provider | Prompt | Embed | 默认 Prompt 模型 | 默认 Embed 模型 |
+| --- | :---: | :---: | --- | --- |
+| `openai` | 支持 | 支持 | `gpt-4o-mini` | `text-embedding-3-small` |
+| `google` | 支持 | 支持 | 必须配置 | `gemini-embedding-2` |
+| `anthropic` | 支持 | 不支持 | 必须配置 | — |
+| `vllm` | 支持 | 不支持 | `Qwen/Qwen3-1.7B` | — |
+| `transformers` | 不支持 | 支持 | — | `sentence-transformers/all-MiniLM-L6-v2` |
+
+只需安装所选 Provider 对应的可选依赖组，并确保所有可能执行该操作的 worker 都能读取凭证。安装和配置方法见 [AI 函数](../../concepts/ai-functions.mdx#2-provider)。在 Python API 中，`provider` 参数也可以接收实现了相应操作的自定义 `Provider` 对象。
+
+## 源码
+
+- [公开导出：`vane/ai/__init__.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/__init__.py)
+- [Python 函数：`vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation 方法：`vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [SQL 函数：`src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)

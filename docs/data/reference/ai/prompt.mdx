@@ -1,0 +1,155 @@
+---
+title: vane.ai.prompt
+---
+
+`vane.ai.prompt` creates a row-preserving Prompt operation from one message Expression or an ordered list of message Expressions. It returns a lazy Expression, or a Relation with an appended response column when a Relation is supplied.
+
+## Signatures
+
+```python
+vane.ai.prompt(
+    messages: Expression | list[Expression],
+    /,
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    **options: Unpack[PromptOptions],
+) -> Expression
+
+vane.ai.prompt(
+    rel: Relation,
+    /,
+    messages: Expression | list[Expression],
+    *,
+    return_format: type[pydantic.BaseModel] | JSONSchema | None = None,
+    system_message: str | None = None,
+    provider: str | Provider = "openai",
+    model: str | None = None,
+    return_raw_response: bool = False,
+    on_error: Literal["raise", "ignore"] = "raise",
+    output_column: str = "response",
+    **options: Unpack[PromptOptions],
+) -> Relation
+```
+
+Equivalent keyword-only forms are also supported. A Relation has the convenience method `rel.prompt(messages, ...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `messages` | `Expression` or non-empty `list[Expression]` | Ordered message parts. Each Expression must return `VARCHAR`, `BLOB`, or `BLOB[]`; native vLLM accepts text only | Required |
+| `return_format` | Pydantic model class, `JSONSchema`, or `None` | Constrains generation and converts validated output to a native DuckDB `STRUCT` | `None` |
+| `system_message` | `str` or `None` | Call-level system instruction | `None` |
+| `provider` | Registered provider name or `Provider` | Provider adapter | `"openai"` |
+| `model` | Non-empty `str` or `None` | Model ID. `None` uses provider metadata or a provider default | `None` |
+| `return_raw_response` | `bool` | Serialize the provider SDK response body as valid JSON in `VARCHAR`. A supplied JSON Schema still constrains generation | `False` |
+| `on_error` | `"raise"` or `"ignore"` | Row execution failure policy | `"raise"` |
+| `output_column` | Non-empty `str` | Relation-only output name | `"response"` |
+| `**options` | `PromptOptions` | Provider request and execution options listed below | Provider-specific |
+
+Expression calls do not accept `output_column`; use `.alias(...)`. Relation calls keep all input columns and replace an existing output column with the same case-insensitive name.
+
+## Options
+
+| Option | Type | Availability | Default | Description |
+| --- | --- | --- | --- | --- |
+| `temperature` | Finite `float >= 0` or `None` | All providers | Provider default | Sampling temperature |
+| `batch_size` | Positive `int` | All | `32` remote; `128` native | Rows submitted in an execution batch |
+| `actor_number` | Positive `int` | All | `1` | Provider or model actor count |
+| `max_retries` | Non-negative `int` | All | `3` remote; `0` native | Retries after the first attempt; native vLLM accepts only `0` |
+| `max_concurrency_per_actor` | Positive `int` | Remote providers | `32` OpenAI; `16` Anthropic/Google | Concurrent requests inside each actor |
+| `execution_backend` | Backend name or `None` | Non-native Relation calls | Runner choice | `subprocess_task`, `subprocess_actor`, `ray_task`, or `ray_actor` |
+
+`actor_number` cannot be combined with a task backend. Expression and SQL calls do not accept the Relation-only `execution_backend` option.
+
+Provider request options:
+
+| Provider | Options |
+| --- | --- |
+| OpenAI | `use_chat_completions: bool`, `max_output_tokens: int \| None`, `top_p: float \| None`, `stop_sequences: list[str] \| None`, `base_url: str \| None`, `timeout: float \| None` |
+| Anthropic | `max_tokens: int \| None`, `top_p: float \| None`, `top_k: int \| None`, `stop_sequences: list[str] \| None`, `base_url: str \| None`, `timeout: float \| None` |
+| Google | `max_output_tokens: int \| None`, `top_p: float \| None`, `top_k: int \| None`, `stop_sequences: list[str] \| None` |
+| vLLM | `max_tokens: int \| None`, `gpus_per_actor: float`, `engine_args: Mapping`, `generate_args: Mapping`, `do_prefix_routing: bool`, `max_buffer_size: int`, `min_bucket_size: int`, `prefix_match_threshold: float`, `load_balance_threshold: int`, `inflight_limit: int`, `engine_init_timeout_s: float \| None` |
+
+OpenAI `stop_sequences` requires `use_chat_completions=True`. Anthropic requires a non-`None` `max_tokens`; a value of `0` cannot be used with structured output. `top_p` is constrained to `[0, 1]`, and stop sequences must be a non-empty list of non-empty strings.
+
+For native vLLM, `max_tokens` must be a positive integer or `None`. `max_buffer_size`, `min_bucket_size`, `load_balance_threshold`, and `inflight_limit` must be non-negative integers. `prefix_match_threshold` must be in `[0, 1]`, and `gpus_per_actor` must be positive and integral when it is at least `1`.
+
+`engine_args` and `generate_args` accept only values that can be serialized as valid JSON. Configure the model with the top-level `model` argument and structured generation with `return_format`. If `engine_args.trust_remote_code=True`, pin each remote-code revision to a full 40-character commit SHA.
+
+## Result
+
+| Configuration | SQL type |
+| --- | --- |
+| No `return_format` | `VARCHAR` |
+| `return_format` supplied | Native `STRUCT` derived from the JSON Schema |
+| `return_raw_response=True` | Valid JSON serialized as `VARCHAR` |
+
+### Structured output
+
+`return_format` accepts a Pydantic `BaseModel` class or a `JSONSchema` dictionary. Vane supports the following subset across providers:
+
+- The root must be a non-nullable object. Supported types are `object`, `array`, `string`, `integer`, `number`, and `boolean`.
+- Scalars map to `VARCHAR`, `BIGINT`, `DOUBLE`, and `BOOLEAN`; arrays map to lists and nested objects map to nested structs.
+- Arrays require `items`. Every object requires at least one property. Property names must match `[A-Za-z0-9_-]{1,64}` and be unique case-insensitively.
+- `required` may contain only unique names declared in `properties`; `additionalProperties` must be boolean.
+- Nullable values may use exactly `T | null` through a two-item `type` array, `anyOf`, or `oneOf`.
+- Root-level `$defs` and `definitions` are supported. `$ref` values must resolve locally, cannot be recursive, and cannot have sibling JSON Schema keywords.
+- Constraints such as `minLength`, `maximum`, `pattern`, `format`, `uniqueItems`, and `allOf` are not supported. Integers must fit signed `BIGINT`; numbers must be finite.
+
+For supported OpenAI models, Vane uses Structured Outputs with `strict: true`. These models also require `additionalProperties: false` on every object and require every declared property. `ConfigDict(extra="forbid")` plus required Pydantic fields produces that shape.
+
+### Raw responses
+
+`return_raw_response=True` returns the provider SDK response serialized as valid JSON. A supplied JSON Schema still constrains generation. Native vLLM does not support raw-response mode.
+
+## Example
+
+This example uses OpenAI. Install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment before running it.
+
+```python
+import vane
+
+documents = vane.sql(
+    "SELECT * FROM (VALUES (1, 'I was charged twice.'), "
+    "(2, 'My parcel has not arrived.')) AS t(id, text)"
+)
+
+responses = vane.ai.prompt(
+    documents,
+    vane.col("text"),
+    provider="openai",
+    model="gpt-4o-mini",
+    system_message="Summarize the support request in one sentence.",
+)
+
+print(responses.order("id").fetchall())
+vane.close()
+```
+
+Example result shape:
+
+```text
+[(1, 'I was charged twice.', '...'),
+ (2, 'My parcel has not arrived.', '...')]
+```
+
+## Errors
+
+Invalid message shapes, input types, JSON Schemas, unknown provider names, options, and model/provider combinations that Vane knows are incompatible raise before the query runs. Vane does not contact the endpoint while preparing a call, so model availability, permissions, and endpoint capabilities that cannot be determined locally may be detected only during execution. Provider request failures and responses that violate the requested JSON Schema are also detected during execution. `on_error="ignore"` converts only row execution failures to `NULL` while preserving the return type.
+
+A single NULL message produces `NULL` without calling the provider. In a message list, NULL text or image parts and NULL items inside `BLOB[]` are omitted; if no parts remain, the result is `NULL`. A zero-length image is a row error.
+
+Remote Prompt retries transient failures three times by default; native vLLM accepts only `max_retries=0`. `on_error="ignore"` applies after retry handling, but Prompt initialization failures always raise. Invalid JSON Schemas raise `SchemaValidationError`, responses that do not match the JSON Schema raise `OutputValidationError`, and unsupported endpoint capabilities raise `ProviderCapabilityError`.
+
+## Source and related pages
+
+- [Implementation: `vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation convenience method: `vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [`ai_prompt`](sql/ai-prompt.mdx)
+- [AI Functions API reference](index.mdx)

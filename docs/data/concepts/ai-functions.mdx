@@ -2,41 +2,28 @@
 title: AI Functions
 ---
 
-Vane AI Functions are provider-backed, stateful batch UDFs that return an
-Expression. They place one model result beside each input row, so identifiers,
-source text, and other review fields can remain in the same projection.
+Vane AI Functions let you generate text or structured output and create embeddings from SQL or Python. Each input row produces one result on the same row.
 
-This page covers only the Expression UDF surface. SQL and Python are two ways
-to build the same row-preserving operation; choosing one does not change its
-execution semantics.
+This page introduces the Expression UDF APIs. SQL and Python are two ways to build the same row-preserving operation; choosing one does not change its execution semantics.
 
-## 1. Expression Contract
+For exact Python and SQL signatures, Relation overloads, provider options, and failure behavior, see the [AI Functions API reference](../reference/ai/index.mdx).
 
-Vane currently exposes two AI operations as Expressions:
+## 1. Choose an Operation
+
+Vane currently provides two AI operations as Expressions:
 
 | Operation | SQL Expression | Python Expression | Result | Supported providers |
 | --- | --- | --- | --- | --- |
 | Generate text or structured output | `ai_prompt(messages, ...)` | `vane.ai.prompt(expression, ...)` | One `VARCHAR` or native `STRUCT` value per input row | `openai`, `google`, `anthropic`, `vllm` |
 | Create an embedding | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | One fixed-size `FLOAT[n]` value per input row | `openai`, `google`, `transformers` |
 
-Both operations preserve row count. Keep any source columns needed later in
-the projection, name the generated column with SQL `AS` or Python `.alias()`,
-and carry a stable ID so every provider result can be traced to its input.
+Both operations preserve row count. Keep any input columns needed later in the projection, name the generated column with SQL `AS` or Python `.alias()`, and include a stable ID so each result can be traced back to its input.
 
-SQL options are planning configuration, not row data. Pass provider and model
-selection plus common operation settings as named arguments, and pass provider
-request and execution settings through `options := struct_pack(...)`. Those
-values must be constants; provider names, models, and execution settings cannot
-vary by input row in one Expression.
-
-There is no Expression classification function. The provider capability table
-above is intentionally limited to operations that return an Expression.
+Provider, model, and operation settings apply to the whole operation; they cannot vary by row. In SQL, pass top-level settings as named arguments and put provider request and execution settings in `options := struct_pack(...)`.
 
 ## 2. Providers
 
-Provider adapters map the same Expression contract to different hosted APIs or
-local model runtimes. Install Vane once; Vane then loads provider adapters
-lazily, so only the library for the selected provider needs to be added.
+Choose a Provider based on the operation and where the model runs. Vane loads each integration only when it is used, so install the optional dependencies for the selected Provider.
 
 ```bash
 uv pip install vane-ai
@@ -47,56 +34,31 @@ uv pip install vane-ai
 | `openai` | Yes | Yes | OpenAI API or an OpenAI-compatible endpoint; install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment |
 | `google` | Yes | Yes | Google Generative AI; install `vane-ai[google]` and set `GOOGLE_API_KEY` in the worker environment |
 | `anthropic` | Yes | No | Anthropic Messages API; install `vane-ai[anthropic]` and set `ANTHROPIC_API_KEY` in the worker environment |
-| `vllm` | Yes | No | Local or remote vLLM engine; install `vane-ai[vllm]`, provide model access, and use Ray when GPU actors are required |
+| `vllm` | Yes | No | Local or remote vLLM engine; install `vane-ai[vllm]`, make the model available to the runtime, and use Ray when GPU actors are required |
 | `transformers` | No | Yes | Local SentenceTransformers model; install `vane-ai[transformers]` |
 
-Set `provider` and `model` explicitly when reproducibility matters. Model IDs,
-limits, and availability belong to the configured endpoint, so choose a model
-that endpoint supports.
+Set `provider` and `model` explicitly when reproducibility matters. The configured endpoint determines which model IDs are available and which limits apply.
 
 ## 3. Configure OpenAI
 
-The examples below use the OpenAI provider. Install its client and expose the
-credential to the process that executes the query:
+The examples below use the OpenAI provider. Install its client and expose the credential to the process that executes the query:
 
 ```bash
 uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-token>"
-
-# Optional: set this only for an OpenAI-compatible endpoint.
-export OPENAI_BASE_URL="https://provider.example/v1"
 ```
 
-The OpenAI client reads both variables when it is created on a worker.
-`OPENAI_API_KEY` accepts either an OpenAI API key or the token issued by a
-compatible service. OpenAI API users can omit `OPENAI_BASE_URL`; the client then
-uses the official API root. For Ray jobs, set the variables and install the
-client on every worker that can execute the Expression.
+The OpenAI client reads `OPENAI_API_KEY` when it is created on a worker. The variable accepts either an OpenAI API key or the token issued by a compatible service. Vane uses the official OpenAI API root by default. For Ray jobs, set the variable and install the client on every worker that can execute the Expression.
 
-The examples below demonstrate the other supported form: passing the
-non-secret `base_url` explicitly in `struct_pack(...)` or as a Python keyword.
-Replace that value for a compatible service. An explicit option takes
-precedence over `OPENAI_BASE_URL`; when relying on the environment variable,
-omit the option from the Expression. In both forms, use the API root, typically
-ending in `/v1`, rather than an operation path such as `/chat/completions`.
-For a compatible endpoint that implements Chat Completions but not the OpenAI
-Responses API, also set `use_chat_completions := true` in SQL or
-`use_chat_completions=True` in Python.
+For a compatible endpoint, explicitly pass the non-secret `base_url` in `struct_pack(...)` or as a Python keyword, as shown below. Use the API root, typically ending in `/v1`, rather than an operation path such as `/chat/completions`. If the endpoint implements Chat Completions but not the OpenAI Responses API, also set `use_chat_completions := true` in SQL or `use_chat_completions=True` in Python.
 
-Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options
-object, notebook output, or a committed file. SQL binding rejects
-credential-like option fields.
+Keep the token in `OPENAI_API_KEY`. Never place it in SQL, a Python options object, notebook output, or a committed file. Vane rejects credential-like option fields.
 
 ## 4. SQL Expression
 
-SQL is a compact default when the surrounding transformation is already a
-query. A Vane connection registers `ai_prompt` and `ai_embed`; provider and
-model selection plus common operation settings are named arguments, while the
-`options` struct contains provider request and execution settings. Ray is Vane's
-default runner, and the examples' `show()` calls materialize the relation through
-RayRunner. Call
-`vane.configure(runner="ray")` before creating the connection only when you
-need to override an existing local runner setting.
+Use SQL when the surrounding transformation is already a query. A Vane connection registers `ai_prompt` and `ai_embed`. Pass provider, model, and operation settings as named arguments; put provider request and execution settings in the `options` struct.
+
+Ray is Vane's default runner and executes the examples when `show()` is called. If an existing configuration selects the local runner, call `vane.configure(runner="ray")` before creating the connection.
 
 ### Generate Text with `ai_prompt`
 
@@ -137,10 +99,7 @@ prompted = con.sql("""
 prompted.show()
 ```
 
-`actor_number` selects the number of provider actors. For prompt calls,
-`max_concurrency_per_actor` bounds simultaneous API requests inside each actor.
-Start conservatively and raise either value only within the endpoint's rate
-and capacity limits.
+`actor_number` selects the number of provider actors. For Prompt calls, `max_concurrency_per_actor` bounds simultaneous API requests inside each actor. Start conservatively and raise either value only within the endpoint's rate and capacity limits.
 
 ### Create Vectors with `ai_embed`
 
@@ -167,17 +126,11 @@ embedded = con.sql("""
 embedded.show()
 ```
 
-Every embedding Expression has a fixed-size `FLOAT[n]` result. Vane knows the
-default dimensions of supported official models. For an OpenAI-compatible
-endpoint, or when requesting a supported shortened embedding, pass a positive
-`dimensions := n` named argument explicitly. `normalize := true` L2-normalizes
-each non-null vector.
+Every Embed Expression returns a fixed-size `FLOAT[n]`. Vane includes dimension metadata for its supported default models. Pass a positive `dimensions := n` for an OpenAI-compatible endpoint, an unknown model, or a model that supports reduced output dimensions. `normalize := true` L2-normalizes each non-NULL vector.
 
 ## 5. Python Expression
 
-Python Expression has the same output and execution contract. Its closed
-keyword surface keeps provider, request, and execution options together and
-rejects unknown names.
+Python Expressions follow the same row and result rules as SQL. Pass provider request and execution settings as keyword arguments; unknown options are rejected.
 
 ```python
 import vane
@@ -227,7 +180,4 @@ prompted.show()
 embedded.show()
 ```
 
-The same keywords work in relation-returning calls such as
-`vane.ai.prompt(documents, vane.col("text"), ...)`. Keep credentials in the
-worker environment: credential-like option names are rejected rather than
-serialized into a plan.
+The same keyword arguments work in Relation-returning calls such as `vane.ai.prompt(documents, vane.col("text"), ...)`. Keep credentials in the worker environment rather than passing them as function options.

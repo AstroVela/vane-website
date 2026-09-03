@@ -19,6 +19,10 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.doc.AI Functions reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.category.Getting Started": {
     "message": "快速开始",
     "description": "The label for category Getting Started in sidebar dataSidebar"
@@ -42,6 +46,14 @@
   "sidebar.dataSidebar.category.Reference": {
     "message": "API 参考",
     "description": "The label for category Reference in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.UDFs": {
+    "message": "UDF",
+    "description": "The label for category UDFs in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.AI Functions": {
+    "message": "AI 函数",
+    "description": "The label for category AI Functions in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Expression UDFs": {
     "message": "Expression UDF",

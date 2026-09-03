@@ -1,0 +1,43 @@
+---
+title: AI Functions API reference
+---
+
+Vane provides Prompt and Embed operations for model-backed column processing. Use this reference to choose an API and check its signatures, parameters, return values, and errors in `vane-ai 0.1.0`. See the [Installation guide](../../quickstart/installation.mdx) for setup and [AI Functions](../../concepts/ai-functions.mdx) for an introduction.
+
+## Choose an API
+
+| Operation | Python Expression | Relation-returning form | SQL Expression | Result |
+| --- | --- | --- | --- | --- |
+| Prompt | [`vane.ai.prompt`](prompt.mdx) | `vane.ai.prompt(rel, ...)` or `rel.prompt(...)` | [`ai_prompt`](sql/ai-prompt.mdx) | `VARCHAR`, native `STRUCT`, or raw-response JSON in `VARCHAR` |
+| Embed | [`vane.ai.embed`](embed.mdx) | `vane.ai.embed(rel, ...)` or `rel.embed(...)` | [`ai_embed`](sql/ai-embed.mdx) | Fixed-size `FLOAT[n]` |
+
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. Relation calls retain the input columns and append an output column. If that name already exists, the Relation call replaces it case-insensitively. SQL calls are projection expressions and use `AS` to name their result.
+
+## Execution guarantees
+
+- Prompt and Embed preserve input row count and order.
+- Embed with a `NULL` text input and Prompt with one `NULL` message return `NULL` while preserving the result type, without calling the provider. In a Prompt message list, `NULL` parts are omitted; if no parts remain, the result is `NULL`.
+- Provider, model, JSON Schema, dimensions, and options apply to the whole operation. They cannot vary by input row.
+- Only documented options are accepted. Unknown or provider-incompatible names fail while the query is prepared.
+- Credentials are not function options. Pass them through environment variables or runtime secret management.
+- `on_error="raise"` stops on a row execution failure. `on_error="ignore"` writes `NULL` for that row; it does not hide invalid plans or option errors.
+- Remote Prompt and all Embed calls default to three retries after the first attempt. Native vLLM Prompt does not retry. A retry can issue a provider request more than once.
+
+## Providers
+
+| Provider | Prompt | Embed | Default Prompt model | Default Embed model |
+| --- | :---: | :---: | --- | --- |
+| `openai` | Yes | Yes | `gpt-4o-mini` | `text-embedding-3-small` |
+| `google` | Yes | Yes | Must be configured | `gemini-embedding-2` |
+| `anthropic` | Yes | No | Must be configured | — |
+| `vllm` | Yes | No | `Qwen/Qwen3-1.7B` | — |
+| `transformers` | No | Yes | — | `sentence-transformers/all-MiniLM-L6-v2` |
+
+Install the optional dependency group for the selected provider and expose its credentials to every worker that may execute the operation. See [AI Functions](../../concepts/ai-functions.mdx#2-providers) for installation and setup. In the Python APIs, the `provider` argument also accepts a custom `Provider` object that implements the selected operation.
+
+## Source
+
+- [Public exports: `vane/ai/__init__.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/__init__.py)
+- [Python functions: `vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
+- [Relation methods: `vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)
+- [SQL functions: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)

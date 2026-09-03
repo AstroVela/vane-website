@@ -1,0 +1,67 @@
+---
+title: SQL ai_embed
+---
+
+`ai_embed` 只能用于 SQL `SELECT` 列表，并为每行输入生成一个定长向量。
+
+## 签名
+
+```sql
+ai_embed(
+    text VARCHAR,
+    provider := 'openai',
+    model := NULL,
+    dimensions := NULL,
+    on_error := 'raise',
+    options := NULL
+)
+```
+
+## 参数
+
+| 参数 | SQL 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `text` | `VARCHAR` | 逐行读取的文本输入 | 必填 |
+| `provider` | `VARCHAR` | 已注册的文本嵌入 Provider | `'openai'` |
+| `model` | `VARCHAR` 或 `NULL` | 嵌入模型 ID | `NULL` |
+| `dimensions` | 正 `INTEGER` 或 `NULL` | 固定返回宽度；Provider 支持时也作为请求的输出维度 | `NULL` |
+| `on_error` | `VARCHAR` | `'raise'` 或 `'ignore'` | `'raise'` |
+| `options` | `STRUCT` 或 `NULL` | 文档列出的 [`EmbedOptions`](../embed.mdx#选项) | `NULL` |
+
+只有 `text` 可以读取行数据。Vane 会在准备查询时计算其他参数，因此这些参数不能依赖当前行。Provider 请求参数和执行设置放进 `struct_pack(...)`。只能使用文档中列出的选项；与 Provider 不兼容或疑似凭证的字段会在执行前被拒绝。
+
+## 返回结果
+
+结果类型是 `FLOAT[n]`，其中 `n` 在准备查询时确定。如果所选模型或端点没有已知维度，需要显式传入 `dimensions`。输入为 `NULL` 时仍会保留固定结果类型，并且不会访问 Provider。
+
+## 示例
+
+请通过 Vane 连接运行这条查询。该示例使用 OpenAI，因此需要先安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY`。
+
+```sql
+SELECT
+    id,
+    text,
+    ai_embed(
+        text,
+        provider := 'openai',
+        model := 'text-embedding-3-small'
+    ) AS embedding
+FROM (VALUES
+    (1, 'How do I reset my password?'),
+    (2, 'Where can I update my billing address?')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+使用 OpenAI 官方端点时，本例中的 `text-embedding-3-small` 返回 `FLOAT[1536]`。
+
+## 错误
+
+Provider 对每个非 `NULL` 输入都必须按原顺序返回一个长度准确、数值有限的向量。能够在本地完成的校验——包括类型、配置参数常量性、未知 Provider、无法确定输出维度、无效选项，以及已知不兼容的模型与 Provider 组合——会在执行前报错。模型是否存在、是否有权使用、无法在本地确定的端点能力和 Provider 请求失败，则可能要到执行期间才能发现。`on_error := 'ignore'` 只处理逐行执行失败。
+
+## 源码与相关页面
+
+- [SQL 实现：`src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.embed`](../embed.mdx)
+- [AI 函数 API 参考](../index.mdx)

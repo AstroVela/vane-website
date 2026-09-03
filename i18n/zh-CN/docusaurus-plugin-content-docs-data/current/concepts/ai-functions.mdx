@@ -2,94 +2,63 @@
 title: AI 函数
 ---
 
-Vane AI Function 是由 provider 驱动、以有状态 batch UDF 执行的
-Expression。它会在每个输入行旁生成一个模型结果，因此标识、源文本和其他
-审查字段可以保留在同一个 projection 中。
+Vane AI 函数支持在 SQL 或 Python 中生成文本、结构化结果和向量。每个输入行都会在同一行得到一个结果。
 
-本页只介绍 Expression UDF。SQL 和 Python 是构建同一个保持行数操作的两种
-写法；切换写法不会改变执行语义。
+本页只介绍 Expression UDF 接口。SQL 和 Python 都可以构建保持行数不变的操作，执行语义相同。
 
-## 1. Expression 契约
+Python 与 SQL 的完整签名、Relation 重载、Provider 选项和失败语义，见 [AI 函数 API 参考](../reference/ai/index.mdx)。
 
-Vane 目前提供两种 AI Expression 操作：
+## 1. 选择操作
 
-| 操作 | SQL Expression | Python Expression | 结果 | 支持的 provider |
+Vane 目前提供以下两种 AI 操作：
+
+| 操作 | SQL Expression | Python Expression | 结果 | 支持的 Provider |
 | --- | --- | --- | --- | --- |
 | 生成文本或结构化输出 | `ai_prompt(messages, ...)` | `vane.ai.prompt(expression, ...)` | 每个输入行得到一个 `VARCHAR` 或原生 `STRUCT` | `openai`、`google`、`anthropic`、`vllm` |
-| 生成 embedding | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | 每个输入行得到一个定长 `FLOAT[n]` | `openai`、`google`、`transformers` |
+| 生成向量 | `ai_embed(text, ...)` | `vane.ai.embed(expression, ...)` | 每个输入行得到一个定长 `FLOAT[n]` | `openai`、`google`、`transformers` |
 
-两个操作都会保持行数。请把后续需要的源列保留在 projection 中，使用 SQL
-`AS` 或 Python `.alias()` 命名生成列，并携带稳定 ID，让每个 provider 结果
-都能追溯到输入。
+两种操作都保持输入行数不变。在投影中保留后续需要的输入列，使用 SQL `AS` 或 Python `.alias()` 命名生成列，并携带稳定 ID，以便将每个结果追溯到对应输入。
 
-SQL options 是规划配置，而不是逐行数据。`provider`、`model` 等选择项及公共
-操作设置使用 named argument；provider 请求参数和执行设置通过
-`options := struct_pack(...)` 传入。这些值必须由常量组成；同一个 Expression
-中的 provider、model 和执行设置不能随输入行变化。
-
-Expression 没有分类函数。上面的 provider 能力表有意只列出返回 Expression
-的操作。
+Provider、模型和操作设置对整个操作生效，不能逐行变化。在 SQL 中，顶层设置使用命名参数，Provider 请求参数和执行设置放在 `options := struct_pack(...)` 中。
 
 ## 2. Provider
 
-Provider adapter 会把同一个 Expression 契约映射到不同的托管 API 或本地
-模型 runtime。先安装 Vane；Vane 随后会延迟加载 provider adapter，因此只需
-再添加实际使用的 provider 库。
+请根据所需操作和模型运行位置选择 Provider。Vane 只在使用时加载相应集成，因此只需安装所选 Provider 的可选依赖。
 
 ```bash
 uv pip install vane-ai
 ```
 
-| Provider | Prompt | Embed | Runtime 与配置 |
+| Provider | Prompt | Embed | 运行时与配置 |
 | --- | :---: | :---: | --- |
-| `openai` | 支持 | 支持 | OpenAI API 或 OpenAI-compatible endpoint；安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY` |
+| `openai` | 支持 | 支持 | OpenAI API 或 OpenAI 兼容端点；安装 `vane-ai[openai]`，并在 worker 环境设置 `OPENAI_API_KEY` |
 | `google` | 支持 | 支持 | Google Generative AI；安装 `vane-ai[google]`，并在 worker 环境设置 `GOOGLE_API_KEY` |
 | `anthropic` | 支持 | 不支持 | Anthropic Messages API；安装 `vane-ai[anthropic]`，并在 worker 环境设置 `ANTHROPIC_API_KEY` |
-| `vllm` | 支持 | 不支持 | 本地或远程 vLLM engine；安装 `vane-ai[vllm]`，提供模型访问能力；需要 GPU actor 时使用 Ray |
+| `vllm` | 支持 | 不支持 | 本地或远程 vLLM 引擎；安装 `vane-ai[vllm]`，确保运行环境能够访问模型；需要 GPU Actor 时使用 Ray |
 | `transformers` | 不支持 | 支持 | 本地 SentenceTransformers 模型；安装 `vane-ai[transformers]` |
 
-需要可复现结果时，请显式设置 `provider` 和 `model`。模型 ID、限制和可用性
-由所配置的 endpoint 决定，因此应选择该 endpoint 支持的模型。
+需要可复现结果时，请显式设置 `provider` 和 `model`。可用的模型 ID 及其限制由所配置的端点决定。
 
 ## 3. 配置 OpenAI
 
-下面的示例使用 OpenAI provider。先安装客户端，并把凭据提供给实际执行查询
-的进程：
+下面的示例使用 OpenAI Provider。先安装客户端，并把凭证提供给实际执行查询的进程：
 
 ```bash
 uv pip install 'vane-ai[openai]'
 export OPENAI_API_KEY="<your-token>"
-
-# 可选：仅在使用 OpenAI-compatible endpoint 时设置。
-export OPENAI_BASE_URL="https://provider.example/v1"
 ```
 
-OpenAI client 会在 worker 上创建，并在创建时读取这两个环境变量。
-`OPENAI_API_KEY` 既可以保存 OpenAI API key，也可以保存 compatible service
-签发的 token。直接使用 OpenAI API 时可以不设置 `OPENAI_BASE_URL`，client 会
-使用官方 API 根地址。对于 Ray 作业，每个可能执行 Expression 的 worker 都
-必须安装 client 并配置这些环境变量。
+OpenAI 客户端在 worker 上创建时读取 `OPENAI_API_KEY`。该变量既可以保存 OpenAI API 密钥，也可以保存兼容服务签发的令牌。Vane 默认使用 OpenAI 官方 API 根地址。对于 Ray 作业，每个可能执行 Expression 的 worker 都必须安装客户端并配置该变量。
 
-下面的示例同时展示另一种支持的方式：在 `struct_pack(...)` 或 Python keyword
-中显式传入非敏感的 `base_url`。使用 compatible service 时请替换该值。显式
-option 的优先级高于 `OPENAI_BASE_URL`；如果依赖环境变量，请从 Expression
-中省略这个 option。两种方式都应使用通常以 `/v1` 结尾的 API 根地址，而不是
-`/chat/completions` 这样的具体 operation path。如果 compatible endpoint
-实现了 Chat Completions、但没有实现 OpenAI Responses API，还要在 SQL 中设置
-`use_chat_completions := true`，或在 Python 中设置
-`use_chat_completions=True`。
+使用兼容端点时，需要像下面的示例一样，在 `struct_pack(...)` 中或以 Python 关键字参数显式传入非敏感的 `base_url`。该值应为通常以 `/v1` 结尾的 API 根地址，而不是 `/chat/completions` 这样的具体接口路径。如果兼容端点实现了 Chat Completions，但没有实现 OpenAI Responses API，还要在 SQL 中设置 `use_chat_completions := true`，或在 Python 中设置 `use_chat_completions=True`。
 
-Token 应始终保存在 `OPENAI_API_KEY` 中。不要把它放入 SQL、Python options、
-notebook 输出或已提交文件；SQL binding 会拒绝疑似凭据的 option 字段。
+令牌应始终保存在 `OPENAI_API_KEY` 中。不要把它放进 SQL、Python 选项、notebook 输出或已提交文件；Vane 会拒绝疑似凭证的选项字段。
 
 ## 4. SQL Expression
 
-当周围的转换本来就是 query 时，SQL 是简洁的默认选择。Vane connection 会
-注册 `ai_prompt` 和 `ai_embed`；`provider`、`model` 等选择项及公共操作设置使用
-named argument，`options` struct 包含 provider 请求参数和执行设置。Ray 是 Vane
-的默认 runner，示例中的 `show()` 会通过 RayRunner 物化 relation。只有
-需要覆盖已有的 local runner 设置时，才在创建 connection 前调用
-`vane.configure(runner="ray")`。
+如果上下游转换以查询为主，可以直接使用 SQL。Vane 连接会注册 `ai_prompt` 和 `ai_embed`。Provider、模型和操作设置使用命名参数，Provider 请求参数和执行设置放在 `options` Struct 中。
+
+Ray 是 Vane 的默认 runner，调用 `show()` 时会用它执行示例。如果已有配置选择了本地 runner，请在创建连接前调用 `vane.configure(runner="ray")`。
 
 ### 使用 `ai_prompt` 生成文本
 
@@ -130,9 +99,7 @@ prompted = con.sql("""
 prompted.show()
 ```
 
-`actor_number` 选择 provider actor 数量。对于 prompt 调用，
-`max_concurrency_per_actor` 限制每个 actor 内同时进行的 API request 数。请从保守
-值开始，只在 endpoint 的速率与容量限制内提高任一参数。
+`actor_number` 用于设置 Provider Actor 数量。对于 Prompt 调用，`max_concurrency_per_actor` 限制每个 Actor 内同时进行的 API 请求数。建议从保守值开始，只在端点的速率与容量限制内提高任一参数。
 
 ### 使用 `ai_embed` 生成向量
 
@@ -159,15 +126,11 @@ embedded = con.sql("""
 embedded.show()
 ```
 
-每个 embedding Expression 的结果都是定长 `FLOAT[n]`。Vane 已知受支持官方
-模型的默认维度。使用 OpenAI-compatible endpoint，或请求模型支持的缩短
-embedding 时，应显式传入正的 named argument `dimensions := n`。
-`normalize := true` 会对每个非空向量执行 L2 normalization。
+每个 Embed Expression 都返回定长 `FLOAT[n]`。Vane 为支持的默认模型提供维度元数据。使用 OpenAI 兼容端点、未知模型或支持缩短输出维度的模型时，应显式传入正整数 `dimensions := n`。`normalize := true` 会对每个非 `NULL` 向量执行 L2 归一化。
 
 ## 5. Python Expression
 
-Python Expression 具有相同的输出和执行契约。它使用封闭的 keyword surface
-集中传递 provider、request 和执行 options，并拒绝未知名称。
+Python Expression 与 SQL 遵循相同的行数和返回结果规则。Provider 请求参数和执行设置通过关键字参数传入；未知选项会被拒绝。
 
 ```python
 import vane
@@ -217,6 +180,4 @@ prompted.show()
 embedded.show()
 ```
 
-同一组 keyword 也适用于返回 relation 的调用，例如
-`vane.ai.prompt(documents, vane.col("text"), ...)`。凭据应保留在 worker 环境
-中；疑似凭据的 option 名称会被拒绝，不会序列化到 plan 中。
+同一组关键字参数也适用于返回 Relation 的调用，例如 `vane.ai.prompt(documents, vane.col("text"), ...)`。凭证应保留在 worker 环境中，不要作为函数选项传入。

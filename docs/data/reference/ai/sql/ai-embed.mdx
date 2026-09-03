@@ -1,0 +1,67 @@
+---
+title: SQL ai_embed
+---
+
+`ai_embed` can be used only in a SQL `SELECT` list. It produces one fixed-size vector per input row.
+
+## Signature
+
+```sql
+ai_embed(
+    text VARCHAR,
+    provider := 'openai',
+    model := NULL,
+    dimensions := NULL,
+    on_error := 'raise',
+    options := NULL
+)
+```
+
+## Parameters
+
+| Name | SQL type | Description | Default |
+| --- | --- | --- | --- |
+| `text` | `VARCHAR` | Per-row text input | Required |
+| `provider` | `VARCHAR` | Registered embedding provider | `'openai'` |
+| `model` | `VARCHAR` or `NULL` | Embedding model ID | `NULL` |
+| `dimensions` | Positive `INTEGER` or `NULL` | Fixed result width and, where supported, requested output width | `NULL` |
+| `on_error` | `VARCHAR` | `'raise'` or `'ignore'` | `'raise'` |
+| `options` | `STRUCT` or `NULL` | Documented [`EmbedOptions`](../embed.mdx#options) | `NULL` |
+
+Only `text` can read row data. Vane evaluates the other arguments while preparing the query, so they must not depend on a row. Put provider request and execution settings inside `struct_pack(...)`. Only documented options are accepted; provider-incompatible and credential-like fields are rejected before execution.
+
+## Result
+
+The result type is `FLOAT[n]`, with `n` determined when the query is prepared. Pass `dimensions` when the selected model or endpoint has no known dimension. A `NULL` input preserves that fixed type and returns `NULL` without contacting the provider.
+
+## Example
+
+Run this query through a Vane connection. It uses OpenAI, so install `vane-ai[openai]` and set `OPENAI_API_KEY` in the worker environment first.
+
+```sql
+SELECT
+    id,
+    text,
+    ai_embed(
+        text,
+        provider := 'openai',
+        model := 'text-embedding-3-small'
+    ) AS embedding
+FROM (VALUES
+    (1, 'How do I reset my password?'),
+    (2, 'Where can I update my billing address?')
+) AS documents(id, text)
+ORDER BY id;
+```
+
+With the official OpenAI endpoint, `text-embedding-3-small` returns `FLOAT[1536]` for this example.
+
+## Errors
+
+Provider batches must return one finite vector of the expected width for every non-NULL input, in the same order. Locally checkable errors—including invalid types, non-constant configuration arguments, unknown providers, unresolved output dimensions, invalid options, and known model/provider incompatibilities—raise before execution. Model availability, permissions, endpoint capabilities that cannot be determined locally, and Provider request failures may be detected only during execution. `on_error := 'ignore'` applies only to row execution failures.
+
+## Source and related pages
+
+- [SQL implementation: `src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
+- [`vane.ai.embed`](../embed.mdx)
+- [AI Functions API reference](../index.mdx)

@@ -47,32 +47,51 @@
     "group": "Reference",
     "items": [
       {
-        "slug": "reference/udf",
-        "label": "Overview",
-        "key": "UDF reference overview"
-      },
-      {
-        "group": "Expression UDFs",
+        "group": "UDFs",
         "items": [
           {
-            "slug": "reference/udf/expression",
+            "slug": "reference/udf",
             "label": "Overview",
-            "key": "Expression UDF overview"
+            "key": "UDF reference overview"
           },
-          { "slug": "reference/udf/expression/vane-func" },
-          { "slug": "reference/udf/expression/vane-func-batch" },
-          { "slug": "reference/udf/expression/vane-cls" },
-          { "slug": "reference/udf/expression/vane-cls-batch" },
-          { "slug": "reference/udf/expression/vane-attach-function" },
-          { "slug": "reference/udf/expression/vane-detach-function" }
+          {
+            "group": "Expression UDFs",
+            "items": [
+              {
+                "slug": "reference/udf/expression",
+                "label": "Overview",
+                "key": "Expression UDF overview"
+              },
+              { "slug": "reference/udf/expression/vane-func" },
+              { "slug": "reference/udf/expression/vane-func-batch" },
+              { "slug": "reference/udf/expression/vane-cls" },
+              { "slug": "reference/udf/expression/vane-cls-batch" },
+              { "slug": "reference/udf/expression/vane-attach-function" },
+              { "slug": "reference/udf/expression/vane-detach-function" }
+            ]
+          },
+          {
+            "group": "Relation UDFs",
+            "items": [
+              { "slug": "reference/udf/relation/relation-map" },
+              { "slug": "reference/udf/relation/relation-flat-map" },
+              { "slug": "reference/udf/relation/relation-map-batches" }
+            ]
+          }
         ]
       },
       {
-        "group": "Relation UDFs",
+        "group": "AI Functions",
         "items": [
-          { "slug": "reference/udf/relation/relation-map" },
-          { "slug": "reference/udf/relation/relation-flat-map" },
-          { "slug": "reference/udf/relation/relation-map-batches" }
+          {
+            "slug": "reference/ai",
+            "label": "Overview",
+            "key": "AI Functions reference overview"
+          },
+          { "slug": "reference/ai/prompt" },
+          { "slug": "reference/ai/embed" },
+          { "slug": "reference/ai/sql/ai-prompt" },
+          { "slug": "reference/ai/sql/ai-embed" }
         ]
       }
     ]

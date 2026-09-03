@@ -24,6 +24,21 @@ const chineseAiFunctionsSource = readFileSync(
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/concepts/ai-functions.mdx',
   'utf8',
 )
+const readAiReferenceSources = (file) => [
+  readFileSync(`docs/data/reference/ai/${file}`, 'utf8'),
+  readFileSync(
+    `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/reference/ai/${file}`,
+    'utf8',
+  ),
+]
+const aiReferenceFiles = [
+  'reference/ai/index.mdx',
+  'reference/ai/prompt.mdx',
+  'reference/ai/embed.mdx',
+  'reference/ai/sql/ai-prompt.mdx',
+  'reference/ai/sql/ai-embed.mdx',
+]
+const aiReferenceRelease = 'v0.1.0'
 const udfConceptSources = [
   readFileSync('docs/data/concepts/udfs.mdx', 'utf8'),
   readFileSync(
@@ -236,6 +251,26 @@ test('Tutorials sidebar separates examples and use cases', () => {
   )
 })
 
+test('Reference sidebar separates UDFs and AI Functions', () => {
+  const reference = dataSidebar.find((entry) => entry.group === 'Reference')
+  assert.deepEqual(
+    reference.items.map((entry) => entry.group),
+    ['UDFs', 'AI Functions'],
+  )
+  assert.deepEqual(
+    reference.items[1].items.map((entry) => entry.slug),
+    aiReferenceFiles.map((file) => file.replace(/(?:\/index)?\.mdx$/, '')),
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.UDFs']?.message,
+    'UDF',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.AI Functions']?.message,
+    'AI 函数',
+  )
+})
+
 test('Quickstart input can cross the default Ray runner boundary', () => {
   for (const source of [quickstartSource, chineseQuickstartSource]) {
     assert.match(source, /documents\s*=\s*con\.values\(/)
@@ -249,13 +284,122 @@ test('OpenAI examples use a valid API root', () => {
     assert.doesNotMatch(source, /api\.example\.com/)
     assert.match(source, /uv pip install 'vane-ai\[openai\]'/)
     assert.match(source, /OPENAI_API_KEY="<your-token>"/)
-    assert.match(source, /OPENAI_BASE_URL="https:\/\/provider\.example\/v1"/)
     assert.match(source, /actor_number := 1/)
     assert.match(source, /max_concurrency_per_actor := 4/)
     assert.doesNotMatch(source, /OpenAI(?:Provider|Prompt|Embedding)Options/)
     assert.doesNotMatch(source, /(?:provider|prompt|embedding)_options=/)
     assert.doesNotMatch(source, /max_api_concurrency|\bconcurrency :=/)
   }
+})
+
+test('OpenAI-compatible endpoints require an explicit base_url option', () => {
+  for (const source of [
+    aiFunctionsSource,
+    chineseAiFunctionsSource,
+    ...readAiReferenceSources('prompt.mdx'),
+    ...readAiReferenceSources('embed.mdx'),
+  ]) {
+    assert.doesNotMatch(source, /OPENAI_BASE_URL/)
+    assert.match(source, /`base_url(?::[^`]+`|`)/)
+  }
+})
+
+test('AI documentation matches the stable vane-ai 0.1.0 surface', () => {
+  const aiReferenceSources = aiReferenceFiles.flatMap((file) =>
+    readAiReferenceSources(file.replace('reference/ai/', '')),
+  )
+  for (const source of [
+    aiFunctionsSource,
+    chineseAiFunctionsSource,
+    ...aiReferenceSources,
+  ]) {
+    assert.doesNotMatch(source, /sglang/i)
+  }
+
+  for (const source of readAiReferenceSources('index.mdx')) {
+    assert.match(source, /vane-ai 0\.1\.0/)
+  }
+
+  for (const source of aiReferenceSources) {
+    assert.ok(
+      source.includes(`/blob/${aiReferenceRelease}/`) ||
+        source.includes(`/tree/${aiReferenceRelease}/`),
+    )
+    assert.doesNotMatch(source, /github\.com\/AstroVela\/vane\/(?:blob|tree)\/main\//)
+  }
+
+  for (const source of readAiReferenceSources('embed.mdx')) {
+    assert.match(source, /`gemini-embedding-2`.*`task_type`.*`title`/)
+    assert.doesNotMatch(source, /max_new_tokens/)
+  }
+
+  for (const source of readAiReferenceSources('prompt.mdx')) {
+    assert.match(source, /Unpack\[PromptOptions\]/)
+    assert.match(source, /`VARCHAR`.*`BLOB`.*`BLOB\[\]`/)
+    assert.match(source, /`prefix_match_threshold`.*`\[0, 1\]`/)
+    assert.doesNotMatch(source, /`FILE(?:\[\])?`/)
+    assert.doesNotMatch(source, /max_new_tokens/)
+  }
+  const [englishPrompt, chinesePrompt] = readAiReferenceSources('prompt.mdx')
+  assert.match(englishPrompt, /`temperature`.*Finite.*>= 0/)
+  assert.match(chinesePrompt, /`temperature`.*有限.*>= 0/)
+  assert.match(englishPrompt, /`max_tokens` must be a positive integer or `None`/)
+  assert.match(chinesePrompt, /`max_tokens` 必须是正整数或 `None`/)
+
+  for (const source of readAiReferenceSources('embed.mdx')) {
+    assert.match(source, /Unpack\[EmbedOptions\]/)
+  }
+
+  for (const source of readAiReferenceSources('sql/ai-prompt.mdx')) {
+    assert.match(source, /image BLOB/)
+    assert.match(source, /images BLOB\[\]/)
+    assert.doesNotMatch(source, /\bFILE(?:\[\])?\b/)
+  }
+})
+
+test('AI Reference states the implemented execution contracts', () => {
+  const [englishOverview, chineseOverview] = readAiReferenceSources('index.mdx')
+  assert.match(englishOverview, /preserve input row count and order/)
+  assert.match(englishOverview, /`NULL` parts are omitted.*no parts remain, the result is `NULL`/)
+  assert.match(englishOverview, /Remote Prompt and all Embed calls default to three retries/)
+  assert.match(chineseOverview, /保持输入行数与顺序不变/)
+  assert.match(chineseOverview, /`NULL` 片段会被忽略.*没有剩下任何片段，结果为 `NULL`/)
+  assert.match(chineseOverview, /远程 Prompt 和所有 Embed 调用默认.*重试三次/)
+  assert.match(englishOverview, /In the Python APIs, the `provider` argument also accepts/)
+  assert.match(chineseOverview, /在 Python API 中，`provider` 参数也可以接收/)
+
+  const [englishEmbed, chineseEmbed] = readAiReferenceSources('embed.mdx')
+  assert.match(englishEmbed, /cannot detect an equal-length batch.*reordered/)
+  assert.match(chineseEmbed, /无法识别.*重排了长度相同的批量结果/)
+  assert.match(englishEmbed, /A non-zero mean is L2-normalized.*zero vector remains unchanged/)
+  assert.match(chineseEmbed, /非零的加权结果会做 L2 归一化.*零向量则保持不变/)
+  assert.match(
+    englishEmbed,
+    /`max_chunk_chars` and `chunk_overlap_chars` are unavailable.*For every API form, OpenAI still splits oversized inputs by token count/,
+  )
+  assert.match(
+    chineseEmbed,
+    /`max_chunk_chars` 和 `chunk_overlap_chars` 不适用于.*无论使用哪种 API 形式，OpenAI.*按 token 数拆分/,
+  )
+  assert.doesNotMatch(englishEmbed, /Chunking is unavailable on Expression and SQL calls/)
+  assert.match(englishEmbed, /non-NULL, non-zero final vector.*zero vectors unchanged/)
+  assert.match(chineseEmbed, /非 NULL、非零的最终向量.*零向量保持不变/)
+  assert.match(englishEmbed, /failed batch is isolated into individual rows/)
+  assert.match(chineseEmbed, /失败批次会被拆成单行重试/)
+  assert.match(englishEmbed, /`ProviderCapabilityError` returns `NULL`.*without resubmitting/)
+  assert.match(chineseEmbed, /`ProviderCapabilityError`.*返回 `NULL`.*不会重新提交请求/)
+
+  const [englishPrompt, chinesePrompt] = readAiReferenceSources('prompt.mdx')
+  assert.match(englishPrompt, /Every object requires at least one property/)
+  assert.ok(englishPrompt.includes('`[A-Za-z0-9_-]{1,64}`'))
+  assert.match(englishPrompt, /Root-level `\$defs`.*`\$ref`.*cannot have sibling JSON Schema keywords/)
+  assert.match(englishPrompt, /signed `BIGINT`.*numbers must be finite/)
+  assert.match(chinesePrompt, /每个对象至少要有一个属性/)
+  assert.ok(chinesePrompt.includes('`[A-Za-z0-9_-]{1,64}`'))
+  assert.match(chinesePrompt, /`\$defs`.*只能放在根节点.*`\$ref`.*不能带同级 JSON Schema 关键字/)
+  assert.match(chinesePrompt, /有符号 `BIGINT` 范围.*数字必须是有限值/)
+  assert.match(englishPrompt, /Prompt initialization failures always raise/)
+  assert.match(chinesePrompt, /Prompt 初始化失败始终抛出/)
 })
 
 test('AI snippets use the v0.1 named-argument SQL surface', () => {
@@ -420,6 +564,13 @@ test('English and Chinese docs trees use matching English slugs', () => {
     ),
     true,
   )
+  for (const file of aiReferenceFiles) {
+    assert.equal(existsSync(`docs/data/${file}`), true)
+    assert.equal(
+      existsSync(`i18n/zh-CN/docusaurus-plugin-content-docs-data/current/${file}`),
+      true,
+    )
+  }
 })
 
 test('Docusaurus sidebar maps custom index slugs to document ids', () => {
@@ -427,6 +578,7 @@ test('Docusaurus sidebar maps custom index slugs to document ids', () => {
     ['tutorials', 'tutorials/index'],
     ['reference/udf', 'reference/udf/index'],
     ['reference/udf/expression', 'reference/udf/expression/index'],
+    ['reference/ai', 'reference/ai/index'],
   ]) {
     assert.match(sidebarsSource, new RegExp(`'${slug}': '${docId}'`))
   }
