@@ -1,0 +1,117 @@
+---
+slug: efficient-multimodal-auto-annotation
+title: "Multimodal Auto-Annotation After GPT-6 Astra: Building Efficient Pipelines"
+description: How Vane Data connects model selection, video processing, inference, and validation to produce more quality annotations within a fixed resource budget.
+date: 2026-09-08
+---
+
+<p className="blog-body-lead">More capable models lower the barrier to multimodal auto-annotation. Using sports video as an example, this article explores how Vane Data connects data preparation, self-hosted inference, external APIs, and result validation to produce more quality annotations within a fixed resource budget.</p>
+
+<!-- truncate -->
+
+## GPT-6 Astra lowers the barrier to automated annotation
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/efficient-multimodal-auto-annotation/deep-label.png"
+  alt="Interactive artwork annotations from the Deep Label experiment"
+  width="2236"
+  height="1494"
+  loading="lazy"
+  decoding="async"
+/>
+
+In the [Deep Label experiment](https://derekau.net/blog/deep-label-gpt-6/), GPT-6 Astra annotated significant objects in a work of art. The author had previously spent considerable time building a workflow that took the artwork from annotation to a web-based presentation. This time, after receiving an initial prompt, the model carried out the annotation process autonomously. A subsequent review corrected some errors, and the model then generated an interactive web page for exploring the annotations.
+
+### Annotation efficiency matters more as workloads grow
+
+The experiment demonstrates how an individual annotation task can be completed. When teams need to process large volumes of data continuously, however, they must also consider the efficiency of the entire pipeline. Take a growing collection of sports videos: beyond model inference, the workflow must keep inputs flowing, coordinate local inference with external APIs, validate results, associate them with their sources, and write them to storage. [Vane Data](https://github.com/astrovela/vane) addresses the execution challenges of this multimodal data pipeline. The goal is clear: **produce more annotations that meet quality requirements within a fixed resource budget.**
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/efficient-multimodal-auto-annotation/sports-video-annotation.png"
+  alt="Sports video annotation across players, teams, actions, and scenes"
+  width="1498"
+  height="738"
+  loading="lazy"
+  decoding="async"
+/>
+
+As automated annotation becomes easier to adopt, teams may expand from selected clips to more match recordings and training footage. The same video can support player identification, team identification, action classification, and scene description. The annotation workload depends on both the number of videos and the types of labels required, and quality must be evaluated separately for each task.
+
+New videos continue to arrive, while changes to classification rules or output formats may require historical data to be reannotated. Automated annotation thus evolves from a one-off task into an ongoing, iterative data pipeline. As coverage expands, label dimensions multiply, and update frequency increases, teams must account for model selection, processing throughput, and the costs of validation, review, and reruns—all within limits on GPU capacity, GPU memory, API quotas, and budget.
+
+## From model selection to annotation pipeline design
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/efficient-multimodal-auto-annotation/pipeline-design-en.png"
+  alt="Model selection and annotation pipeline design"
+  width="3840"
+  height="3374"
+  loading="lazy"
+  decoding="async"
+/>
+
+### 1. Select models based on task and quality requirements
+
+For the sports video annotation tasks described above, models can be assigned according to quality requirements. A self-hosted model can handle routine recognition tasks in batches once evaluation confirms that it meets those requirements. Complex samples that require contextual understanding can be sent to more capable models such as GPT-6 Astra. Results that cannot be determined reliably go to human review. Routing can be based on task type, rule-based validation, or disagreement between models. Routing rules should be validated against samples with human reference annotations, rather than relying solely on a model's self-reported confidence.
+
+### 2. Connect video ingestion to annotation writeback
+
+Once model responsibilities are defined, data preparation, model calls, and result processing must be connected:
+
+**Read videos → Decode and extract frames → Route by task → Run model annotation → Validate and review → Write results**
+
+Videos are read from storage, decoded, and sampled into frames to form model inputs. Task-specific rules then direct those inputs to the appropriate inference path. Outputs must be checked for field format, label validity, and business constraints. Results requiring review are routed accordingly, and annotations are written back with source video references and timestamps for traceability and subsequent updates.
+
+The two inference paths have different constraints. Self-hosted models depend on GPU availability, GPU memory, and the rate at which data is supplied. The GPT-6 Astra API is subject to request quotas, response latency, and cost. Teams need to configure submission rates and resource budgets for each path, then coordinate result collection to meet budget and processing deadlines. Even when inference is fast, slow reads, decoding, or writes can still limit end-to-end throughput.
+
+## Execute multimodal annotation pipelines efficiently with Vane Data
+
+[Vane Data](https://github.com/astrovela/vane) is a multimodal data processing and execution engine for AI workloads. Built on a fork of DuckDB, it provides Python and SQL interfaces and supports execution from local environments to Ray clusters.
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/efficient-multimodal-auto-annotation/vane-data-pipeline-en.png"
+  alt="Vane Data multimodal annotation pipeline"
+  width="2762"
+  height="846"
+  loading="lazy"
+  decoding="async"
+/>
+
+In this sports video annotation pipeline, teams can call the GPT-6 Astra API through an AI Function and pass the returned annotations to subsequent processing steps. Self-hosted batch inference for routine tasks can run in the same pipeline, with business rules defining task routing and result validation.
+
+### Reduce waiting, data buildup, and redundant computation
+
+Once model calls become part of the data flow, execution efficiency depends on how well the stages work together. At scale, insufficient input supply, poorly sized batches, intermediate data buildup, and redundant computation can all limit pipeline throughput.
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/efficient-multimodal-auto-annotation/execution-efficiency-en.png"
+  alt="Asynchronous execution, batch sizing, backpressure, and prefix-aware routing"
+  width="2336"
+  height="1350"
+  loading="lazy"
+  decoding="async"
+/>
+
+**Asynchronous execution reduces waiting between stages.** When reading, decoding, and model calls each wait for the previous operation to finish, resources can sit idle between stages. Through asynchronous submission, Vane Data advances other ready work while waiting for model results. This allows CPU, GPU, and I/O work to overlap, reducing serial waits.
+
+**Batch sizing balances throughput and resource usage.** Video duration, image dimensions, and intermediate result sizes vary, so batches with the same record count can have very different memory and compute requirements. Small batches may not sufficiently amortize overhead, while large batches can put pressure on resources. Vane Data organizes inputs and outputs at each stage through batch-size configuration, data splitting, and aggregation, and uses byte budgets to control data occupancy.
+
+**Backpressure limits intermediate data buildup.** When upstream submission outpaces inference or writeback, buffered data and in-flight requests continue to accumulate. Vane Data constrains upstream submission through in-flight data limits and backpressure, resuming progress as capacity becomes available. This controls intermediate data buildup during long-running workloads.
+
+**Prefix-aware routing improves opportunities for cache reuse.** Many samples share the same annotation instructions and examples, creating opportunities to reuse common prefixes in self-hosted inference. Vane Data buckets requests by shared prefix and uses affinity routing that also accounts for load, creating opportunities for [vLLM to reuse its prefix cache](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/) and reduce redundant prefill computation.
+
+## Produce more quality annotations with limited resources
+
+More capable models make more annotation tasks feasible, while the efficiency of the annotation pipeline determines how quickly and at what cost those tasks can be completed. Vane Data brings data processing, model calls, and result writeback together to help teams produce more annotations that meet their quality requirements within a fixed resource budget.
+
+For a practical example, see [From Files to Queryable Data](/blog/from-files-to-queryable-data). For performance results and configurations, visit the [Vane Data benchmarks page](/benchmarks).
