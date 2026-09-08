@@ -64,7 +64,7 @@ For the sports video annotation tasks described above, models can be assigned ac
 
 Once model responsibilities are defined, data preparation, model calls, and result processing must be connected:
 
-**Read videos → Decode and extract frames → Route by task → Run model annotation → Validate and review → Write results**
+Read videos → Decode and extract frames → Route by task → Run model annotation → Validate and review → Write results
 
 Videos are read from storage, decoded, and sampled into frames to form model inputs. Task-specific rules then direct those inputs to the appropriate inference path. Outputs must be checked for field format, label validity, and business constraints. Results requiring review are routed accordingly, and annotations are written back with source video references and timestamps for traceability and subsequent updates.
 
