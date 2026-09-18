@@ -37,5 +37,10 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/reference/ai/embed: vane.ai.embed.
 - /docs/data/reference/ai/sql/ai-prompt: SQL ai_prompt.
 - /docs/data/reference/ai/sql/ai-embed: SQL ai_embed.
+- /docs/data/reference/media: Media reference.
+- /docs/data/reference/media/types: Multimodal types.
+- /docs/data/reference/media/image: Image functions.
+- /docs/data/reference/media/audio: Audio functions.
+- /docs/data/reference/media/video: Video functions.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

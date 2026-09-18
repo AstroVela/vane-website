@@ -23,6 +23,10 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.doc.Media reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.category.Getting Started": {
     "message": "快速开始",
     "description": "The label for category Getting Started in sidebar dataSidebar"
@@ -54,6 +58,10 @@
   "sidebar.dataSidebar.category.AI Functions": {
     "message": "AI 函数",
     "description": "The label for category AI Functions in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Media": {
+    "message": "媒体",
+    "description": "The label for category Media in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Expression UDFs": {
     "message": "Expression UDF",

@@ -93,6 +93,20 @@
           { "slug": "reference/ai/sql/ai-prompt" },
           { "slug": "reference/ai/sql/ai-embed" }
         ]
+      },
+      {
+        "group": "Media",
+        "items": [
+          {
+            "slug": "reference/media",
+            "label": "Overview",
+            "key": "Media reference overview"
+          },
+          { "slug": "reference/media/types" },
+          { "slug": "reference/media/image" },
+          { "slug": "reference/media/audio" },
+          { "slug": "reference/media/video" }
+        ]
       }
     ]
   },

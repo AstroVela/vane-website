@@ -183,6 +183,31 @@ export const DOCS_PAGES = {
     title: 'SQL ai_embed',
     titleZh: 'SQL ai_embed',
   },
+  'reference/media': {
+    source: 'docs/data/reference/media/index.mdx',
+    title: 'Media reference',
+    titleZh: '媒体 API 参考',
+  },
+  'reference/media/types': {
+    source: 'docs/data/reference/media/types.mdx',
+    title: 'Multimodal types',
+    titleZh: '多模态类型',
+  },
+  'reference/media/image': {
+    source: 'docs/data/reference/media/image.mdx',
+    title: 'Image functions',
+    titleZh: '图像函数',
+  },
+  'reference/media/audio': {
+    source: 'docs/data/reference/media/audio.mdx',
+    title: 'Audio functions',
+    titleZh: '音频函数',
+  },
+  'reference/media/video': {
+    source: 'docs/data/reference/media/video.mdx',
+    title: 'Video functions',
+    titleZh: '视频函数',
+  },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',
     title: 'Deployment',
@@ -257,6 +282,7 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Reference: 'API 参考',
   UDFs: 'UDF',
   'AI Functions': 'AI 函数',
+  Media: '媒体',
   'Expression UDFs': 'Expression UDF',
   'Relation UDFs': 'Relation UDF',
   Operations: '运维',

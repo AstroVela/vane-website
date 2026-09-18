@@ -324,6 +324,51 @@
       }
     },
     {
+      "slug": "reference/media",
+      "title": "Media reference",
+      "source": "docs/data/reference/media/index.mdx",
+      "route": "/docs/data/reference/media",
+      "frontmatter": {
+        "title": "Media reference"
+      }
+    },
+    {
+      "slug": "reference/media/types",
+      "title": "Multimodal types",
+      "source": "docs/data/reference/media/types.mdx",
+      "route": "/docs/data/reference/media/types",
+      "frontmatter": {
+        "title": "Multimodal types"
+      }
+    },
+    {
+      "slug": "reference/media/image",
+      "title": "Image functions",
+      "source": "docs/data/reference/media/image.mdx",
+      "route": "/docs/data/reference/media/image",
+      "frontmatter": {
+        "title": "Image functions"
+      }
+    },
+    {
+      "slug": "reference/media/audio",
+      "title": "Audio functions",
+      "source": "docs/data/reference/media/audio.mdx",
+      "route": "/docs/data/reference/media/audio",
+      "frontmatter": {
+        "title": "Audio functions"
+      }
+    },
+    {
+      "slug": "reference/media/video",
+      "title": "Video functions",
+      "source": "docs/data/reference/media/video.mdx",
+      "route": "/docs/data/reference/media/video",
+      "frontmatter": {
+        "title": "Video functions"
+      }
+    },
+    {
       "slug": "deploy/deployment",
       "title": "Deployment",
       "source": "docs/data/deploy/deployment.mdx",
@@ -563,6 +608,36 @@
               "slug": "reference/ai/sql/ai-embed",
               "label": "SQL ai_embed",
               "route": "/docs/data/reference/ai/sql/ai-embed"
+            }
+          ]
+        },
+        {
+          "group": "Media",
+          "items": [
+            {
+              "slug": "reference/media",
+              "label": "Overview",
+              "route": "/docs/data/reference/media"
+            },
+            {
+              "slug": "reference/media/types",
+              "label": "Multimodal types",
+              "route": "/docs/data/reference/media/types"
+            },
+            {
+              "slug": "reference/media/image",
+              "label": "Image functions",
+              "route": "/docs/data/reference/media/image"
+            },
+            {
+              "slug": "reference/media/audio",
+              "label": "Audio functions",
+              "route": "/docs/data/reference/media/audio"
+            },
+            {
+              "slug": "reference/media/video",
+              "label": "Video functions",
+              "route": "/docs/data/reference/media/video"
             }
           ]
         }

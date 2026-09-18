@@ -4892,6 +4892,361 @@ Provider batches must return one finite vector of the expected width for every n
 - [`vane.ai.embed`](../embed.mdx)
 - [AI Functions API reference](../index.mdx)
 
+## Media reference
+
+Route: /docs/data/reference/media
+Source: docs/data/reference/media/index.mdx
+
+Vane processes images, audio, and video through a unified type system with two execution backends per domain. Use this reference to choose an API and check its signatures, parameters, return values, and errors. Types are described in [Multimodal types](types.mdx); image, audio, and video functions are documented in [Image](image.mdx), [Audio](audio.mdx), and [Video](video.mdx).
+
+## Choose an API
+
+| Domain | Python Expression | SQL Expression | Result |
+| --- | --- | --- | --- |
+| Image | [`vane.image_file_metadata` / `vane.decode_image_file`](image.mdx), [`vane.crop` / `vane.resize` / `vane.convert_image` / `vane.encode_image` / `vane.decode_image` / `vane.image_hash` / `vane.image_to_tensor`](image.mdx) | `image_file_metadata`, `decode_image_file`, `decode_image`, `crop`, `resize`, `convert_image`, `encode_image`, `image_hash`, `image_to_tensor` | `IMAGE`, `TENSOR`, `BLOB`, `FIXEDBINARY`, or metadata `STRUCT` |
+| Audio | [`vane.audio_metadata` / `vane.resample`](audio.mdx) | `audio_metadata`, `resample` | `TENSOR(DOUBLE, [NULL, NULL])` waveform or metadata `STRUCT` |
+| Video | [`vane.video_metadata` / `vane.read_video_frames`](video.mdx) | `video_metadata`, `read_video_frames` | Frame rows with `data: IMAGE('RGB', H, W)` |
+
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result. `vane.read_video_frames` returns a `Relation`, one row per selected frame.
+
+## Backends
+
+Each domain selects its execution backend independently through `image_backend`, `audio_backend`, and `video_backend`. All three settings default to `python` and accept only `python` or `native`.
+
+| Backend | What it uses | What to install |
+| --- | --- | --- |
+| `python` | Pillow/tifffile/imagecodecs for images, SoundFile/SoXR for audio, PyAV for video | `vane-ai[image]`, `vane-ai[audio]`, `vane-ai[video]` |
+| `native` | The optional `native_media` C++ extension (FFmpeg, libsndfile, SoXR) | The `vane-extension-native-media` provider wheel |
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET image_backend = 'native'")
+```
+
+`image_to_tensor` belongs to the base engine and requires no optional extension, regardless of the selected backend.
+
+## Execution guarantees
+
+- Backend selection happens when an expression is bound. Set the backend before constructing and executing the query. `EXPLAIN` names the bound implementation (`native_*` for native scalar functions, `NATIVE_READ_VIDEO_FRAMES` for native frame scans).
+- A native request without the loaded `native_media` extension fails while binding, before FILE I/O. There is no automatic fallback. Set the option back to `python` for newly bound queries.
+- Python `File` value methods such as `ImageFile.decode()` and `VideoFile.frames()` always use their Python implementations; the SQL/connection settings govern SQL, expressions, and the connection-bound video source.
+- Missing Python codec packages fail with an `Install vane-ai[image|audio|video]` error before I/O.
+- `NULL` inputs propagate to `NULL` results without invoking codecs. `on_error="null"` (images) and `on_error="skip"` (video frames) suppress only encoded-format failures; I/O, resource-limit, and cancellation errors still propagate.
+
+## Source
+
+- [Native media extension](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md)
+- [Image operations](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Video frame APIs](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+
+## Multimodal types
+
+Route: /docs/data/reference/media/types
+Source: docs/data/reference/media/types.mdx
+
+Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. All six names are first-class `LogicalType` values, not string aliases.
+
+## Types
+
+| SQL type | Storage | Meaning |
+| --- | --- | --- |
+| `FILE` | `STRUCT(url VARCHAR, content_type VARCHAR, position BIGINT, size BIGINT, checksum VARCHAR)` | Generic immutable object reference with an optional byte window (`position`, `size`) |
+| `IMAGEFILE` | Same five fields, `IMAGE` media subtype | Encoded image object |
+| `AUDIOFILE` | Same five fields, `AUDIO` media subtype | Encoded audio object |
+| `VIDEOFILE` | Same five fields, `VIDEO` media subtype | Encoded video object |
+| `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
+| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+
+Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields, and `vane.image_type()` / `vane.image_type('RGB'[, H, W])` / `vane.tensor_type(dtype, shape)` build the corresponding types.
+
+## IMAGE modes
+
+Pixel dtype follows the mode:
+
+| Modes | Pixel dtype | Channels |
+| --- | --- | --- |
+| L, LA, RGB, RGBA | UInt8 | 1, 2, 3, 4 |
+| L16, LA16, RGB16, RGBA16 | UInt16 | 1, 2, 3, 4 |
+| RGB32F, RGBA32F | Float32 | 3, 4 |
+
+Generic `IMAGE` stores Float32 so one column can hold every mode without loss; a known mode stores its native pixel dtype. Fetched cells materialize as C-contiguous NumPy arrays with shape `(height, width, channels)`. Arrow carries fixed-shape images with the `vane.image` extension type.
+
+## Audio specialization
+
+The audio API uses Float64 tensors with shape `(frames, channels)`. Both counts can vary by row; mono is `(frames, 1)`. Channels must be positive, while zero frames (`(0, channels)`) are allowed for empty audio. Resampling returns exactly `ceil(decoded_frames * target_rate / source_rate)` frames, trimmed or zero-padded at the end of the complete stream. Both backends use SoXR HQ.
+
+## Video frame rows
+
+`read_video_frames` emits one row per selected frame. Each row keeps the source `path VARCHAR` and the original `file VIDEOFILE` view plus presentation-order frame metadata (`frame_index`, `frame_time`, `frame_pts`, `frame_dts`, `frame_duration`, `is_key_frame`, time-base fields) and `data: IMAGE('RGB', H, W)` packed RGB uint8 pixels resized to the requested dimensions. Unknown temporal metadata remains `NULL`.
+
+## Python values and errors
+
+- `file.is_image()` / `is_audio()` / `is_video()` classify without I/O, using the declared subtype first, then `content_type` or the URL suffix as a routing hint. `as_image()` / `as_audio()` / `as_video()` return a new value with the same five fields; converting between different media subtypes raises `TypeError`.
+- `file.stat()` and `file.exists()` inspect storage without decoding. SQL expression equality requires the same `FILE` subtype and keeps SQL `NULL` semantics.
+- A non-`NULL` image requires every field and pixel to be non-`NULL`; width and height must be positive. A non-`NULL` tensor has no `NULL` dimensions or elements; a zero dimension is an empty tensor, distinct from a `NULL` tensor.
+
+## Source and related pages
+
+- [Image](image.mdx)
+- [Audio](audio.mdx)
+- [Video](video.mdx)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+
+## Image functions
+
+Route: /docs/data/reference/media/image
+Source: docs/data/reference/media/image.mdx
+
+Image functions decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values. Each function has a Python form, an `Expression` method form, and a SQL form sharing the same arguments. The connection's `image_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the Pillow/tifffile/imagecodecs path or the C++ path; `EXPLAIN` shows `native_*` names for native plans.
+
+## Signatures
+
+```python
+vane.image_file_metadata(value, *, max_bytes=..., max_pixels=...) -> Expression
+vane.decode_image_file(
+    value, mode=None, on_error="raise",
+    *, max_input_bytes=..., max_pixels=..., max_decoded_bytes=...,
+) -> Expression
+vane.decode_image(bytes_expr, on_error="raise", mode="RGB") -> Expression
+vane.crop(image, bbox) -> Expression
+vane.resize(image, w, h, *, antialias=False) -> Expression
+vane.convert_image(image, mode) -> Expression
+vane.encode_image(image, image_format) -> Expression
+vane.image_hash(
+    image, *, method="phash", hash_size=8, binbits=3, segments=3,
+) -> Expression
+vane.image_to_tensor(image) -> Expression
+```
+
+SQL forms are `image_file_metadata(file)`, `decode_image_file(file, mode => ..., on_error => ...)`, `decode_image(bytes, ...)`, `crop(image, bbox)`, `resize(image, w, h)`, `convert_image(image, mode)`, `encode_image(image, format)`, `image_hash(image, ...)`, and `image_to_tensor(image)`. `mode=None` in `decode_image_file` preserves source modes already representable by `IMAGE`; `decode_image` defaults to `IMAGE('RGB')`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` / `image` / `bytes_expr` | `IMAGEFILE` / `IMAGE` / `BLOB` value or `Expression` | Input to inspect, decode, or transform | Required |
+| `mode` | Mode name, `ImageMode`, or `Expression`; `None` allowed for `decode_image_file`/`convert_image` | Result pixel mode; `None` preserves (file decode) or keeps (convert) the input mode | `None` (`decode_image_file`), `"RGB"` (`decode_image`) |
+| `bbox` | `(x, y, width, height)` integer tuple/list or `Expression` | Crop origin with positive width and height; out-of-input pixels are zero-filled | Required |
+| `w` / `h` | Positive integer, `Expression`, or `None` | Resize target width/height; constant dimensions with a known mode yield a fixed-shape result; `NULL` produces `NULL` | Required |
+| `antialias` | `bool` or `Expression` | Widen the triangle filter during downsampling when `True` | `False` |
+| `image_format` | `ImageFormat` member, format string, or `Expression` | `PNG`, `JPEG`, `TIFF`, `GIF`, or `BMP` under the mode matrix below | Required |
+| `method` | Hash method name (constant) | `ahash`, `dhash`, `dhash_vertical`, `phash`, `phash_simple`, `whash`, `colorhash`, or `crop_resistant` | `"phash"` |
+| `hash_size` | Integer constant, `2`–`64` | Hash grid size; `whash` requires a power of two | `8` |
+| `binbits` / `segments` | Integer constants, `1`–`8` / `1`–`16` | Color-bin bits and crop-resistant grid segments | `3` / `3` |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified media format and codec failures | `"raise"` |
+| `max_bytes`, `max_pixels`, `max_input_bytes`, `max_decoded_bytes` | Integer or `Expression` | Bounded header/probe and decode budgets | Backend defaults |
+
+`encode_image` follows an explicit mode matrix: PNG accepts all eight integer modes; TIFF accepts all ten; JPEG accepts L/RGB; GIF accepts L/RGB with at most 256 palette colors; BMP accepts L/RGB. Use `convert_image` first for other combinations.
+
+## Returns and errors
+
+`image_file_metadata` returns a metadata `STRUCT` without decoding pixels. `decode_image_file` and `decode_image` return `IMAGE` (dynamic, or `IMAGE(mode)` for a constant mode). `crop` returns a dynamic image retaining the input mode constraint. `resize` with constant dimensions and a known mode returns a fixed-shape image. `encode_image` returns encoded `BLOB` bytes. `image_hash` accepts all image modes and returns `FIXEDBINARY(n)` content-similarity bits (MSB-first, zero-padded in the last byte), not an integrity checksum; hash options must be non-`NULL` constants. `image_to_tensor` returns an HWC `TENSOR` preserving pixel values; it belongs to the base engine and needs no image backend.
+
+`NULL` inputs produce `NULL`. Invalid coordinates, modes, formats, resource-limit breaches, missing codec dependencies, and cancellation propagate as errors. Each operator accepts at most 100 million pixels and 256 MiB of pixel data per input image.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+result = con.sql("""
+    SELECT encode_image(
+        crop(decode_image_file(image_file('photo.png'), 'RGBA'), [10, 20, 64, 48]),
+        'PNG'
+    ) AS thumbnail
+""").fetchall()
+vane.close()
+```
+
+The query returns one row with the PNG-encoded thumbnail bytes.
+
+Native execution of the same query:
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET image_backend = 'native'")
+con.sql("SELECT image_file_metadata(image_file('photo.png'))").show()
+```
+
+## Source and related pages
+
+- [Multimodal types](types.mdx)
+- [Media reference](index.mdx)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+
+## Audio functions
+
+Route: /docs/data/reference/media/audio
+Source: docs/data/reference/media/audio.mdx
+
+Audio functions inspect `AUDIOFILE` metadata and resample waveforms into Float64 tensors of shape `(frames, channels)`. Each function has a Python form, an `Expression` method form, and a SQL form sharing the same arguments. The connection's `audio_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the SoundFile/SoXR path or the C++ path; both resample with SoXR HQ and return exactly `ceil(decoded_frames * target_rate / source_rate)` frames.
+
+## Signatures
+
+```python
+vane.audio_metadata(value, *, max_bytes=...) -> Expression
+vane.resample(
+    value, sample_rate,
+    *, max_input_bytes=..., max_frames=..., max_decoded_bytes=...,
+    max_output_frames=..., max_output_bytes=...,
+) -> Expression
+```
+
+SQL forms are `audio_metadata(file)` and `resample(file, rate)`. The target sample rate is the argument, not a field of the waveform value.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `AUDIOFILE` value or `Expression` | Encoded audio object to inspect or resample | Required |
+| `sample_rate` | Positive integer or `Expression` | Target sample rate in Hz | Required |
+| `max_bytes` | Integer or `Expression` | Bounded metadata probe budget | Backend default |
+| `max_input_bytes`, `max_frames`, `max_decoded_bytes`, `max_output_frames`, `max_output_bytes` | Integer or `Expression` | Bounded decode and output budgets | Backend defaults |
+
+## Returns and errors
+
+`audio_metadata` returns a metadata `STRUCT` (format, subtype, sample rate, channels, frame count, duration) without decoding samples. `resample` returns `TENSOR(DOUBLE, [NULL, NULL])` with shape `(frames, channels)`; mono keeps one channel, empty audio yields `(0, channels)`, and the complete stream is trimmed or zero-padded at the end independent of chunk sizes.
+
+`NULL` inputs propagate to `NULL` waveforms. Native rates are 1–384000 Hz with 1–64 channels; unsupported rates, channel counts, codec mismatches, resource-limit breaches, missing audio dependencies, and cancellation propagate as errors. SQL execution caps flattened sample storage at 256 MiB per vector batch.
+
+The diagnostic `native_audio_resample_profile(file, rate)` runs the same native decode and resample implementation but returns counters (phase timings, bytes read, decoded/output frames) instead of the waveform.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+waveform = con.sql("""
+    SELECT resample(audio_file('sample.wav'), 16000) AS audio
+""").fetchone()[0]
+assert waveform.shape[1] >= 1
+vane.close()
+```
+
+Native execution of the same query:
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET audio_backend = 'native'")
+con.sql("SELECT audio_metadata(audio_file('sample.wav'))").show()
+```
+
+## Source and related pages
+
+- [Multimodal types](types.mdx)
+- [Media reference](index.mdx)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Native contracts](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md#native-contracts)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
+
+## Video functions
+
+Route: /docs/data/reference/media/video
+Source: docs/data/reference/media/video.mdx
+
+Video functions inspect `VIDEOFILE` metadata and stream decoded frames as rows with `data: IMAGE('RGB', H, W)`. The connection's `video_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the PyAV DataSource path or the FFmpeg C++ scan; `EXPLAIN` shows `DATASOURCE_SCAN` for Python and `NATIVE_READ_VIDEO_FRAMES` for native.
+
+This page covers metadata inspection and streaming scans. Per-row frame expressions (`video_frames`, `video_keyframes`, `get_video_frame_by_idx`), reusable seek indexes (`build_video_index`), and diagnostics (`video_index_info`, `video_scan_stats`) are out of scope here; see [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md).
+
+## Signatures
+
+```python
+vane.video_metadata(value, *, max_bytes=...) -> Expression
+vane.read_video_frames(
+    path, image_height, image_width, is_key_frame=None,
+    *, sample_interval_seconds=None, start_time=0, end_time=None,
+    max_input_bytes=..., max_decoded_frames=..., max_pixels=...,
+    max_partition_bytes=..., frame_limit=None, read_task_count=None,
+    on_error="raise", indexes=None, connection=None,
+) -> Relation
+```
+
+SQL forms are `video_metadata(file)` and `read_video_frames(source, height, width, ...)`. The first three `read_video_frames` arguments are the source, output height, and output width; the remaining options are named arguments in both APIs.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Encoded video object to inspect | Required |
+| `path` | Path string, `os.PathLike`, `FILE`/`VIDEOFILE` value, or a list of these | Exact input paths or FILE views; no directory or glob discovery | Required |
+| `image_height` / `image_width` | Positive integer | Output frame dimensions; `data` is `IMAGE('RGB', H, W)` | Required |
+| `is_key_frame` | `bool` or `None` | Filter to key frames only when set | `None` |
+| `sample_interval_seconds` | Number or `None` | Emit frames when timestamps reach the next interval target | `None` |
+| `start_time` / `end_time` | Number | Inclusive time window in seconds relative to stream start | `0` / `None` |
+| `frame_limit` | Integer or `None` | Global ordered frame cap; uses one ordered work unit | `None` |
+| `read_task_count` | Integer or `None` | Balanced file groups for local tasks and Ray splits, capped at the file count | One group per file |
+| `indexes` | List of index `BLOB`s or `None` | Verified keyframe-seeking indexes from `build_video_index`, one per input | `None` |
+| `on_error` | `"raise"` or `"skip"` | `"skip"` suppresses only encoded-format failures | `"raise"` |
+| `connection` | Connection or `None` | Query session executing the scan | Current connection |
+| `max_bytes`, `max_input_bytes`, `max_decoded_frames`, `max_pixels`, `max_partition_bytes` | Integer | Bounded probe, decode, and partition budgets | Backend defaults |
+
+## Returns and errors
+
+`video_metadata` returns a metadata `STRUCT` for the first non-attached video stream, exposing the selected stream `duration` and the container `container_duration`; unknown durations and frame counts stay `NULL`.
+
+`read_video_frames` returns a `Relation` with one row per selected frame: `path`, the original `file` view, `frame_index`, `frame_time`, time-base and timestamp fields (`frame_pts`, `frame_dts`, `frame_duration`), `is_key_frame`, and `data`. A top-level `NULL`/`None` or empty list yields an empty table with the declared schema; `NULL` list elements and other media subtypes are rejected. Binding validates arguments without opening the videos. Row order across file tasks is unspecified; use `ORDER BY` when needed.
+
+Native video dispatch accepts the exact built-in `VideoFrameSource`; selecting native for a subclass raises before reading files.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+frames = vane.read_video_frames(
+    "clip.mp4", 224, 224,
+    start_time=1, end_time=5, sample_interval_seconds=0.5,
+    connection=con,
+)
+frames.select("path", "frame_index", "frame_time", "data").show()
+```
+
+```sql
+SELECT path, file, frame_index, frame_time, data
+FROM read_video_frames(
+    'clip.mp4', 224, 224,
+    start_time => 1, end_time => 5, sample_interval_seconds => 0.5
+);
+```
+
+Native execution of the same scan:
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET video_backend = 'native'")
+frames = vane.read_video_frames("clip.mp4", 224, 224, connection=con)
+```
+
+## Source and related pages
+
+- [Multimodal types](types.mdx)
+- [Media reference](index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)
+- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
+
 ## Deployment
 
 Route: /docs/data/deploy/deployment

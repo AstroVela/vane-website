@@ -49,6 +49,7 @@ function isGroup(entry: DocsSidebarEntry): entry is DocsSidebarGroup {
 function docIdForSlug(slug: string): string {
   const indexDocIds: Record<string, string> = {
     'tutorials': 'tutorials/index',
+    'reference/media': 'reference/media/index',
     'reference/udf': 'reference/udf/index',
     'reference/udf/expression': 'reference/udf/expression/index',
     'reference/ai': 'reference/ai/index',

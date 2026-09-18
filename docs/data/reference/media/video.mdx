@@ -1,0 +1,88 @@
+---
+title: Video functions
+---
+
+Video functions inspect `VIDEOFILE` metadata and stream decoded frames as rows with `data: IMAGE('RGB', H, W)`. The connection's `video_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the PyAV DataSource path or the FFmpeg C++ scan; `EXPLAIN` shows `DATASOURCE_SCAN` for Python and `NATIVE_READ_VIDEO_FRAMES` for native.
+
+This page covers metadata inspection and streaming scans. Per-row frame expressions (`video_frames`, `video_keyframes`, `get_video_frame_by_idx`), reusable seek indexes (`build_video_index`), and diagnostics (`video_index_info`, `video_scan_stats`) are out of scope here; see [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md).
+
+## Signatures
+
+```python
+vane.video_metadata(value, *, max_bytes=...) -> Expression
+vane.read_video_frames(
+    path, image_height, image_width, is_key_frame=None,
+    *, sample_interval_seconds=None, start_time=0, end_time=None,
+    max_input_bytes=..., max_decoded_frames=..., max_pixels=...,
+    max_partition_bytes=..., frame_limit=None, read_task_count=None,
+    on_error="raise", indexes=None, connection=None,
+) -> Relation
+```
+
+SQL forms are `video_metadata(file)` and `read_video_frames(source, height, width, ...)`. The first three `read_video_frames` arguments are the source, output height, and output width; the remaining options are named arguments in both APIs.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Encoded video object to inspect | Required |
+| `path` | Path string, `os.PathLike`, `FILE`/`VIDEOFILE` value, or a list of these | Exact input paths or FILE views; no directory or glob discovery | Required |
+| `image_height` / `image_width` | Positive integer | Output frame dimensions; `data` is `IMAGE('RGB', H, W)` | Required |
+| `is_key_frame` | `bool` or `None` | Filter to key frames only when set | `None` |
+| `sample_interval_seconds` | Number or `None` | Emit frames when timestamps reach the next interval target | `None` |
+| `start_time` / `end_time` | Number | Inclusive time window in seconds relative to stream start | `0` / `None` |
+| `frame_limit` | Integer or `None` | Global ordered frame cap; uses one ordered work unit | `None` |
+| `read_task_count` | Integer or `None` | Balanced file groups for local tasks and Ray splits, capped at the file count | One group per file |
+| `indexes` | List of index `BLOB`s or `None` | Verified keyframe-seeking indexes from `build_video_index`, one per input | `None` |
+| `on_error` | `"raise"` or `"skip"` | `"skip"` suppresses only encoded-format failures | `"raise"` |
+| `connection` | Connection or `None` | Query session executing the scan | Current connection |
+| `max_bytes`, `max_input_bytes`, `max_decoded_frames`, `max_pixels`, `max_partition_bytes` | Integer | Bounded probe, decode, and partition budgets | Backend defaults |
+
+## Returns and errors
+
+`video_metadata` returns a metadata `STRUCT` for the first non-attached video stream, exposing the selected stream `duration` and the container `container_duration`; unknown durations and frame counts stay `NULL`.
+
+`read_video_frames` returns a `Relation` with one row per selected frame: `path`, the original `file` view, `frame_index`, `frame_time`, time-base and timestamp fields (`frame_pts`, `frame_dts`, `frame_duration`), `is_key_frame`, and `data`. A top-level `NULL`/`None` or empty list yields an empty table with the declared schema; `NULL` list elements and other media subtypes are rejected. Binding validates arguments without opening the videos. Row order across file tasks is unspecified; use `ORDER BY` when needed.
+
+Native video dispatch accepts the exact built-in `VideoFrameSource`; selecting native for a subclass raises before reading files.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+frames = vane.read_video_frames(
+    "clip.mp4", 224, 224,
+    start_time=1, end_time=5, sample_interval_seconds=0.5,
+    connection=con,
+)
+frames.select("path", "frame_index", "frame_time", "data").show()
+```
+
+```sql
+SELECT path, file, frame_index, frame_time, data
+FROM read_video_frames(
+    'clip.mp4', 224, 224,
+    start_time => 1, end_time => 5, sample_interval_seconds => 0.5
+);
+```
+
+Native execution of the same scan:
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET video_backend = 'native'")
+frames = vane.read_video_frames("clip.mp4", 224, 224, connection=con)
+```
+
+## Source and related pages
+
+- [Multimodal types](types.mdx)
+- [Media reference](index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)
+- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)

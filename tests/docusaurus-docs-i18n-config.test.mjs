@@ -251,15 +251,25 @@ test('Tutorials sidebar separates examples and use cases', () => {
   )
 })
 
-test('Reference sidebar separates UDFs and AI Functions', () => {
+test('Reference sidebar separates UDFs, AI Functions, and Media', () => {
   const reference = dataSidebar.find((entry) => entry.group === 'Reference')
   assert.deepEqual(
     reference.items.map((entry) => entry.group),
-    ['UDFs', 'AI Functions'],
+    ['UDFs', 'AI Functions', 'Media'],
   )
   assert.deepEqual(
     reference.items[1].items.map((entry) => entry.slug),
     aiReferenceFiles.map((file) => file.replace(/(?:\/index)?\.mdx$/, '')),
+  )
+  assert.deepEqual(
+    reference.items[2].items.map((entry) => entry.slug),
+    [
+      'reference/media',
+      'reference/media/types',
+      'reference/media/image',
+      'reference/media/audio',
+      'reference/media/video',
+    ],
   )
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.UDFs']?.message,
@@ -268,6 +278,10 @@ test('Reference sidebar separates UDFs and AI Functions', () => {
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.AI Functions']?.message,
     'AI 函数',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Media']?.message,
+    '媒体',
   )
 })
 
@@ -579,6 +593,7 @@ test('Docusaurus sidebar maps custom index slugs to document ids', () => {
     ['reference/udf', 'reference/udf/index'],
     ['reference/udf/expression', 'reference/udf/expression/index'],
     ['reference/ai', 'reference/ai/index'],
+    ['reference/media', 'reference/media/index'],
   ]) {
     assert.match(sidebarsSource, new RegExp(`'${slug}': '${docId}'`))
   }

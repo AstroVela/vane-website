@@ -1,0 +1,67 @@
+---
+title: Audio functions
+---
+
+Audio functions inspect `AUDIOFILE` metadata and resample waveforms into Float64 tensors of shape `(frames, channels)`. Each function has a Python form, an `Expression` method form, and a SQL form sharing the same arguments. The connection's `audio_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the SoundFile/SoXR path or the C++ path; both resample with SoXR HQ and return exactly `ceil(decoded_frames * target_rate / source_rate)` frames.
+
+## Signatures
+
+```python
+vane.audio_metadata(value, *, max_bytes=...) -> Expression
+vane.resample(
+    value, sample_rate,
+    *, max_input_bytes=..., max_frames=..., max_decoded_bytes=...,
+    max_output_frames=..., max_output_bytes=...,
+) -> Expression
+```
+
+SQL forms are `audio_metadata(file)` and `resample(file, rate)`. The target sample rate is the argument, not a field of the waveform value.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `AUDIOFILE` value or `Expression` | Encoded audio object to inspect or resample | Required |
+| `sample_rate` | Positive integer or `Expression` | Target sample rate in Hz | Required |
+| `max_bytes` | Integer or `Expression` | Bounded metadata probe budget | Backend default |
+| `max_input_bytes`, `max_frames`, `max_decoded_bytes`, `max_output_frames`, `max_output_bytes` | Integer or `Expression` | Bounded decode and output budgets | Backend defaults |
+
+## Returns and errors
+
+`audio_metadata` returns a metadata `STRUCT` (format, subtype, sample rate, channels, frame count, duration) without decoding samples. `resample` returns `TENSOR(DOUBLE, [NULL, NULL])` with shape `(frames, channels)`; mono keeps one channel, empty audio yields `(0, channels)`, and the complete stream is trimmed or zero-padded at the end independent of chunk sizes.
+
+`NULL` inputs propagate to `NULL` waveforms. Native rates are 1–384000 Hz with 1–64 channels; unsupported rates, channel counts, codec mismatches, resource-limit breaches, missing audio dependencies, and cancellation propagate as errors. SQL execution caps flattened sample storage at 256 MiB per vector batch.
+
+The diagnostic `native_audio_resample_profile(file, rate)` runs the same native decode and resample implementation but returns counters (phase timings, bytes read, decoded/output frames) instead of the waveform.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+waveform = con.sql("""
+    SELECT resample(audio_file('sample.wav'), 16000) AS audio
+""").fetchone()[0]
+assert waveform.shape[1] >= 1
+vane.close()
+```
+
+Native execution of the same query:
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET audio_backend = 'native'")
+con.sql("SELECT audio_metadata(audio_file('sample.wav'))").show()
+```
+
+## Source and related pages
+
+- [Multimodal types](types.mdx)
+- [Media reference](index.mdx)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Native contracts](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md#native-contracts)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
