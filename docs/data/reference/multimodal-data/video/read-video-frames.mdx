@@ -1,0 +1,62 @@
+---
+title: read_video_frames
+---
+
+`read_video_frames` streams selected frames as rows, with `data: IMAGE('RGB', image_height, image_width)`. It returns a `Relation` and emits one row per frame rather than one row per input.
+
+## Signature
+
+```python
+vane.read_video_frames(
+    path, image_height, image_width, is_key_frame=None,
+    *, sample_interval_seconds=None, start_time=0, end_time=None,
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_partition_bytes=10485760, frame_limit=None, read_task_count=None,
+    on_error="raise", indexes=None, connection=None,
+) -> Relation
+```
+
+SQL: `read_video_frames(source, height, width [, is_key_frame], start_time => ..., ...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `path` | Path string, `os.PathLike`, `FILE`/`VIDEOFILE` value, or a list of these | Exact input paths or FILE views; no directory or glob discovery | Required |
+| `image_height` / `image_width` | Positive integer | Output frame dimensions; `data` is `IMAGE('RGB', H, W)` | Required |
+| `is_key_frame` | `bool` or `None` | Filter to keyframes only when set | `None` |
+| `sample_interval_seconds` | Number or `None` | Emit frames when timestamps reach the next interval target | `None` |
+| `start_time` / `end_time` | Number | Inclusive time window in seconds relative to stream start | `0` / `None` |
+| `max_input_bytes` | Integer | Encoded logical-view limit | `8 GiB` (maximum `16 GiB`) |
+| `max_decoded_frames` | Integer | Per-file decoding limit, including filtered frames | `1,000,000` |
+| `max_pixels` | Integer | Input and output pixel limit | `32 Mi` pixels |
+| `max_partition_bytes` | Integer | Hard emitted batch payload budget | `10 MiB` (maximum `256 MiB`) |
+| `frame_limit` | Integer or `None` | Global ordered frame cap; uses one ordered work unit | `None` |
+| `read_task_count` | Integer or `None` | Balanced file groups for local tasks and Ray splits, capped at the file count | One group per file |
+| `on_error` | `"raise"` / `"skip"` | `"skip"` suppresses only encoded-format failures | `"raise"` |
+| `indexes` | List of index `BLOB`s or `None` | Verified keyframe-seeking indexes, one per input | `None` |
+| `connection` | Connection or `None` | Query session executing the scan | Current connection |
+
+## Returns and errors
+
+Returns one row per selected frame: `path`, the original `file` view, `frame_index`, `frame_time`, time-base and timestamp fields (`frame_pts`, `frame_dts`, `frame_duration`), `is_key_frame`, and `data`. A top-level `NULL`/`None` or empty list yields an empty table with the declared schema; `NULL` list elements and other `FILE` subtypes are rejected. Binding validates arguments without opening the videos. Row order across file tasks is unspecified; use `ORDER BY` when needed.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+frames = vane.read_video_frames(
+    "clip.mp4", 224, 224,
+    start_time=1, end_time=5, sample_interval_seconds=0.5,
+    connection=con,
+)
+frames.select("path", "frame_index", "frame_time", "data").show()
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`video_frames`](video-frames.mdx)
+- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)

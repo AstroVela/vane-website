@@ -1,0 +1,83 @@
+---
+title: 视频函数
+---
+
+视频函数查看 `VIDEOFILE` 元数据、把解码帧按行流式输出，并构建或解析可复用寻址索引。每个函数都有 Python 形式和 SQL 形式；`video_metadata`、`video_frames` 和 `video_keyframes` 还有 `Expression` 方法形式。
+
+每个函数都有两种可互换实现，查询绑定时由连接的 `video_backend` 选择：
+
+- `python`（默认）调用基于 PyAV 的 Python 实现（`vane/_video_expressions.py`、`vane/_video_file.py`、`vane/_video_index.py`），不需要扩展。
+- `native` 调用已加载 `native_media` 扩展的 C++/FFmpeg 算子。需在绑定查询前设置 `video_backend`。
+
+`video_file` 只有 C++ 实现，没有 Python/PyAV 替代路径（见[文件构造器](../file/constructors.mdx)）。`read_video_frames` 绑定 native `native_read_video_frames` 扫描或 Python DataSource 扫描；`EXPLAIN` 分别显示 `NATIVE_READ_VIDEO_FRAMES` 或 `DATASOURCE_SCAN`。
+
+## 如何选择接口
+
+| 函数 | Python | SQL | 默认实现 | Native 实现 | 返回 |
+| --- | :-: | :-: | --- | --- | --- |
+| [`video_metadata`](video-metadata.mdx) | ✓ | ✓ | Python / PyAV | `native_video_metadata` | 元数据 `STRUCT` |
+| [`video_frames`](video-frames.mdx) | ✓ | ✓ | Python / PyAV | `native_video_frames` | 帧记录 `LIST` |
+| [`video_keyframes`](video-keyframes.mdx) | ✓ | ✓ | Python / PyAV | `native_video_keyframes` | `LIST<IMAGE('RGB')>` |
+| [`get_video_frame_by_idx`](get-video-frame-by-idx.mdx) | ✓ | ✓ | Python / PyAV | `native_get_video_frame_by_idx` | `IMAGE('RGB')` |
+| [`read_video_frames`](read-video-frames.mdx) | ✓ | ✓ | Python DataSource | `native_read_video_frames` | 帧行 |
+| [`build_video_index`](build-video-index.mdx) | ✓ | ✓ | Python / PyAV | `native_build_video_index` | 索引 `BLOB` |
+| [`video_index_info`](video-index-info.mdx) | ✓ | ✓ | Python | `native_video_index_info` | 索引元数据 `STRUCT` |
+| [`video_scan_stats`](video-scan-stats.mdx) | ✓ | ✓ | Python / PyAV | `native_video_scan_stats` | 诊断 `STRUCT` |
+
+## 帧表达式选项
+
+`video_frames` 与 `video_keyframes` 共享以下选项；各函数页只列自己的额外选项。
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` 值或 `Expression` | 源视频 | 必填 |
+| `start_time` / `end_time` | 数值或 `Expression` | 相对流起始的闭区间时间窗口（秒） | `0` / `None` |
+| `width` / `height` | 正整数、`Expression` 或 `None` | 输出帧尺寸，必须成对提供 | `None` |
+| `sample_interval_seconds` | 数值或 `Expression` | 时间戳达到下一个间隔点时输出帧 | `None` |
+| `on_error` | `"raise"` / `"null"` | `"null"` 只抑制已分类的编码格式失败 | `"raise"` |
+| `max_input_bytes` | 整数或 `Expression` | 编码输入上限 | `8 GiB`（上限 `16 GiB`） |
+| `max_decoded_frames` | 整数或 `Expression` | 每输入解码帧上限（含被过滤帧） | `1,000,000` |
+| `max_pixels` | 整数或 `Expression` | 输入与输出像素上限 | `32 Mi` 像素 |
+| `max_output_bytes` | 整数或 `Expression` | 每行标量负载预算 | `64 MiB`（上限 `256 MiB`） |
+| `max_output_frames` | 整数或 `Expression` | 选中帧上限 | `10,000`（上限 `100,000`） |
+| `index` | 索引 `BLOB` 或 `Expression` | `build_video_index` 生成的已验证寻址索引；`NULL` 走顺序解码 | `None` |
+
+## Python VideoFile 值
+
+`vane.VideoFile` 提供始终走 Python 实现的绑定生成器与查询方法：
+
+| 成员 | 返回 |
+| --- | --- |
+| `VideoFile.metadata(buffer_size=65536, *, max_bytes=8388608)` | `VideoMetadata` |
+| `VideoFile.frames(...)` | `VideoFrameData` 记录生成器 |
+| `VideoFile.keyframes(...)` | 解码帧生成器（PIL `Image`） |
+| `VideoFile.get_frame_by_idx(idx, ...)` | 单个解码帧（PIL `Image`） |
+
+`frames`、`keyframes` 和 `get_frame_by_idx` 接受与对应 SQL 函数相同的时间、尺寸、采样与关键帧选项，另加 `buffer_size`；解码帧上限参数名为 `max_frames`。失败会抛出 `VideoFileError` 或其 `VideoFileFormatError` / `VideoFileLimitError` 子类。
+
+## 后端
+
+两种后端实现相同的选择契约，包括闭区间时间窗口、时间戳到达采样、呈现顺序帧号、关键帧过滤，以及受支持夹具上逐字节一致的 RGB 转换。SQL 表达式和 `read_video_frames` 都接受任一后端构建的索引。预编译语句保留绑定时确定的实现；惰性关系可能在执行时重新绑定。
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET video_backend = 'native'")
+```
+
+扩展不可用会在绑定时失败，没有自动回退。绑定连接的 `VideoFrameSource` 仅在精确的内置类型时分派 native：把子类以 `video_backend = 'native'` 传给 `vane.datasource.read_datasource` 会在绑定时报错，早于读取任何文件。
+
+## 返回与错误
+
+`NULL` 输入返回 `NULL`。负索引和非法选项总是报错；缺失帧号报越界错误，或按 `on_error="null"` 返回 `NULL`。只有编码格式失败可能变为 `NULL`；I/O、依赖、资源限制和取消失败始终传播。跨文件任务的行顺序不保证，需要时用 `ORDER BY`。
+
+## 来源与相关页面
+
+- [多模态数据](../index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [Implementation: `vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)
+- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)

@@ -1,0 +1,60 @@
+---
+title: 图像函数
+---
+
+图像函数解码、查看、变换和编码 `IMAGEFILE` 与 `IMAGE` 值。连接的 `image_backend`（默认 `python`，加载 `native_media` 扩展后可用 `native`）选择 Pillow/tifffile/imagecodecs 实现或 C++ 实现；`EXPLAIN` 中 native 计划显示 `native_*` 名字。表中的每个函数与访问器都有 Python 形式、`Expression` 方法形式和 SQL 形式。Python 返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名。
+
+## 如何选择接口
+
+| 函数 | Python | SQL | Native 实现 | 返回 |
+| --- | :-: | :-: | --- | --- |
+| [`image_file_metadata`](image-file-metadata.mdx) | ✓ | ✓ | `native_image_file_metadata` | 元数据 `STRUCT` |
+| [`decode_image_file`](decode-image-file.mdx) | ✓ | ✓ | `native_decode_image_file` | `IMAGE` |
+| [`decode_image`](decode-image.mdx) | ✓ | ✓ | `native_decode_image` | `IMAGE` |
+| [`crop`](crop.mdx) | ✓ | ✓ | `native_crop` | `IMAGE` |
+| [`resize`](resize.mdx) | ✓ | ✓ | `native_resize` | `IMAGE` |
+| [`convert_image`](convert-image.mdx) | ✓ | ✓ | `native_convert_image` | `IMAGE` |
+| [`encode_image`](encode-image.mdx) | ✓ | ✓ | `native_encode_image` | `BLOB` |
+| [`image_hash`](image-hash.mdx) | ✓ | ✓ | `native_image_hash` | `FIXEDBINARY(n)` |
+| [`image_to_tensor`](image-to-tensor.mdx) | ✓ | ✓ | — | `TENSOR` |
+| [IMAGE 访问器](accessors.mdx) | ✓ | ✓ | — | `UINTEGER` |
+
+[`image_file`](../file/constructors.mdx) 是 `IMAGEFILE` 构造器。`image_to_tensor` 与访问器没有后端专属实现。
+
+## Python ImageFile 值
+
+`vane.ImageFile` 提供始终走 Python 实现的绑定方法：
+
+| 方法 | 返回 |
+| --- | --- |
+| `ImageFile.metadata(*, max_bytes=1048576, max_pixels=100000000)` | `ImageMetadata` |
+| `ImageFile.decode(mode=None, buffer_size=1048576, *, max_input_bytes=268435456, max_pixels=100000000, max_decoded_bytes=536870912)` | 解码图像（PIL `Image`） |
+
+`metadata` 只查看头部、不解码；`decode` 遵循与 `decode_image_file` 相同的模式与限制规则，失败时抛错。
+
+## 后端
+
+两种后端遵循相同的模式、格式与资源限制规则。
+
+- `python`（默认）：Pillow/tifffile/imagecodecs，需安装 `vane-ai[image]`。
+- `native`：已加载的 `native_media` 扩展。绑定查询前设置 `image_backend = 'native'`。扩展不可用会在绑定时失败，没有自动回退。
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET image_backend = 'native'")
+```
+
+## 返回与错误
+
+`NULL` 输入产生 `NULL`。非法坐标、模式、格式、超出资源限制、缺失 codec 依赖和查询取消都会传播为错误。Python `ImageFile` 失败会抛出 `ImageFileError` 或其 `ImageFileFormatError` / `ImageFileLimitError` 子类。每个算子每输入图像至多接受 1 亿像素和 256 MiB 像素数据。
+
+## 来源与相关页面
+
+- [多模态数据](../index.mdx)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [Implementation: `vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)

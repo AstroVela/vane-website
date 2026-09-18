@@ -4892,24 +4892,76 @@ Provider batches must return one finite vector of the expected width for every n
 - [`vane.ai.embed`](../embed.mdx)
 - [AI Functions API reference](../index.mdx)
 
-## Media reference
+## Multimodal data
 
-Route: /docs/data/reference/media
-Source: docs/data/reference/media/index.mdx
+Route: /docs/data/reference/multimodal-data
+Source: docs/data/reference/multimodal-data/index.mdx
 
-Vane processes images, audio, and video through a unified type system with two execution backends per domain. Use this reference to choose an API and check its signatures, parameters, return values, and errors. Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result.
+Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. Six engine types cover files, images, audio, video, and tensors; all six are first-class engine types. Each domain has a Python API and a SQL API, and image, audio, and video select a `python` (default) or `native` execution backend. Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result.
 
 ## Domains
 
+- [File functions](file/index.mdx): construct and inspect `FILE`-family values.
 - [Image functions](image/index.mdx): decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values.
 - [Audio functions](audio/index.mdx): inspect `AUDIOFILE` metadata and resample waveforms.
 - [Video functions](video/index.mdx): stream decoded frames as rows and build or inspect reusable seek indexes.
-- [Multimodal types](../types.mdx): `FILE`, `IMAGE`, and `TENSOR` storage and value contracts.
-- [Tensor functions](../tensor.mdx): construct and inspect `TENSOR` values.
+- [Tensor functions](tensor.mdx): construct and inspect `TENSOR` values.
+
+## Types
+
+| SQL type | Storage | Meaning |
+| --- | --- | --- |
+| `FILE` | `STRUCT(url VARCHAR, content_type VARCHAR, position BIGINT, size BIGINT, checksum VARCHAR)` | Generic immutable object reference with an optional byte window (`position`, `size`) |
+| `IMAGEFILE` | Same five fields, `IMAGE` subtype | Encoded image object |
+| `AUDIOFILE` | Same five fields, `AUDIO` subtype | Encoded audio object |
+| `VIDEOFILE` | Same five fields, `VIDEO` subtype | Encoded video object |
+| `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
+| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+
+Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
+
+## Type builders and enums
+
+In Python, type builders produce Vane types, and `vane.MediaType` selects a `FILE` subtype:
+
+| API | Returns |
+| --- | --- |
+| `vane.file_type(media_type=vane.MediaType.unknown())` | The `FILE`-family type selected by `media_type` |
+| `vane.image_type(mode=None, height=None, width=None)` | An `IMAGE` type; a constant mode and dimensions narrow it |
+| `vane.tensor_type(type, shape)` | A `TENSOR` type; `None` marks a variable dimension |
+| `vane.MediaType.unknown()` / `image()` / `audio()` / `video()` | The `FILE` subtype selector |
+
+`image_type()` returns a dynamic `IMAGE`; a mode narrows it, while `mode, height, and width` must be supplied together to fix both dimensions. `tensor_type(type, shape)` takes a Vane element type and a non-empty shape of nonnegative integers or `None` for a variable dimension (variable-shape rank 1–32). Invalid modes, dimensions, or shapes raise.
+
+`vane.ImageProperty` (`height`, `width`, `channel`, `mode`) names the `image_attribute` properties; `vane.ImageMode` and `vane.ImageFormat` enumerate the supported pixel modes and encode formats.
+
+## IMAGE modes
+
+Pixel dtype follows the mode:
+
+| Modes | Pixel dtype | Channels |
+| --- | --- | --- |
+| L, LA, RGB, RGBA | UInt8 | 1, 2, 3, 4 |
+| L16, LA16, RGB16, RGBA16 | UInt16 | 1, 2, 3, 4 |
+| RGB32F, RGBA32F | Float32 | 3, 4 |
+
+Generic `IMAGE` stores Float32 so one column can hold every mode without loss; a known mode stores its native pixel dtype. Fetched cells materialize as C-contiguous NumPy arrays with shape `(height, width, channels)`; `vane.Image` is the Python typing alias for these UInt8, UInt16, or Float32 arrays. Arrow carries fixed-shape images with the `vane.image` extension type.
+
+`expr.as_image(mode=None, height=None, width=None)` validates an existing image expression against the selected `IMAGE` type. Ordinary casts never convert colors or resize pixels, and `TRY_CAST` returns `NULL` for a layout mismatch.
+
+## Audio specialization
+
+Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimensions can vary by row, channels are positive, and zero frames (`(0, channels)`) represent empty audio. See [Audio functions](audio/index.mdx) for resampling contracts.
+
+## Value contracts
+
+A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a zero dimension is an empty tensor, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
 
 ## Backends
 
 Each domain selects its execution backend independently through `image_backend`, `audio_backend`, and `video_backend`. All three settings default to `python` and accept only `python` or `native`.
+
+> `native` is experimental. Its `native_media` extension and provider wheel may change between releases.
 
 | Backend | What it uses | What to install |
 | --- | --- | --- |
@@ -4929,15 +4981,244 @@ con.execute("SET image_backend = 'native'")
 ## Source and related pages
 
 - [Native media extension](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md)
-- [Image operations](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
 - [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
-- [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
-- [Video frame APIs](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+
+## File functions
+
+Route: /docs/data/reference/multimodal-data/file
+Source: docs/data/reference/multimodal-data/file/index.mdx
+
+File functions construct and inspect `FILE`-family values: `FILE`, `IMAGEFILE`, `AUDIOFILE`, and `VIDEOFILE`. They resolve storage and metadata without decoding content, and back the `file` argument used by the image, audio, and video functions. Most functions have a Python form, a SQL form, and an `Expression` method; `from_files` and `open_file` are Python-only.
+
+## Choose an API
+
+| Group | Functions | Purpose |
+| --- | --- | --- |
+| [Constructors](constructors.mdx) | `file`, `image_file`, `audio_file`, `video_file`, `to_file`, `try_to_file`, `from_files` | Build `FILE`-family values |
+| [Inspection](inspection.mdx) | `file_path`, `file_size`, `file_exists`, `file_stat`, `file_mime_type`, `guess_mime_type` | Read resolved metadata |
+| [Identity](identity.mdx) | `file_locator_id`, `file_content_id`, `file_same_location`, `file_same_content` | Compare locations and content |
+| [Listing and reading](listing.mdx) | `list_files`, `open_file`, `file_enrich` | Enumerate, open, and enrich files |
+
+## Python File values
+
+In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields (`url`, `content_type`, `position`, `size`, `checksum`). They expose:
+
+| Member | Returns |
+| --- | --- |
+| `file.exists()` | `bool` without decoding |
+| `file.stat()` | `vane.FileStat` with resolved metadata without decoding |
+| `file.mime_type(detect="metadata")` | MIME type or `None` |
+| `file.open(buffer_size=None)` | A read-only `VaneFileReader` |
+| `file.to_tempfile(buffer_size=1048576)` | A binary temp file |
+| `file.is_image()` / `is_audio()` / `is_video()` | Subtype classification without I/O |
+| `file.as_image()` / `as_audio()` / `as_video()` | Re-type the same five fields; cross-subtype conversion raises `TypeError` |
+
+Subtype classification uses the declared subtype first, then `content_type` or the URL suffix as a routing hint; `as_*` re-types the same five fields and raises `TypeError` across subtypes.
+
+`ImageFile.decode()` / `metadata()`, [AudioFile](../audio/index.mdx) methods, and [VideoFile](../video/index.mdx) methods always use their Python implementations.
+
+## Returns and errors
+
+`NULL` inputs return `NULL`. Missing or inaccessible objects raise, except `try_to_file` (returns `NULL` on a recoverable access failure), `file_exists` (returns `false` for a missing object and `NULL` for a recoverable access error), and metadata lookups that may return `NULL` (`file_size`, `file_mime_type`, `file_content_id`). SQL expression equality requires the same `FILE` subtype and keeps SQL `NULL` semantics.
+
+## Source and related pages
+
+- [Multimodal data](../index.mdx)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Implementation: `vane/_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_file.py)
+
+## File constructors
+
+Route: /docs/data/reference/multimodal-data/file/constructors
+Source: docs/data/reference/multimodal-data/file/constructors.mdx
+
+Constructors build `FILE`-family expressions. By default, `file`, `image_file`, `audio_file`, and `video_file` do not access the referenced object; `to_file`, `try_to_file`, and `from_files` resolve storage when executed.
+
+## Signature
+
+```python
+vane.file(url, content_type=None, position=None, size=None, checksum=None) -> Expression
+vane.image_file(url_or_file, verify=False) -> Expression
+vane.audio_file(url_or_file, verify=False) -> Expression
+vane.video_file(url_or_file, verify=False) -> Expression
+vane.to_file(path) -> Expression
+vane.try_to_file(path) -> Expression
+vane.from_files(path, *, connection=None) -> Relation
+```
+
+SQL: `file(url, content_type, position, size, checksum)`, `image_file(url_or_file [, verify])`, `audio_file(url_or_file [, verify])`, `video_file(url_or_file [, verify])`, `to_file(path)`, and `try_to_file(path)`. In SQL, `file` requires all five arguments; the Python form defaults the optional fields to `None`. `from_files` is Python-only.
+
+`expr.as_file(media_type=MediaType.unknown())` is the Expression method form: it builds the same FILE-family expression from the expression's string value, with `media_type` selecting `FILE`, `IMAGEFILE`, `AUDIOFILE`, or `VIDEOFILE`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `url` | String or `Expression` | Object URL | Required |
+| `content_type` | String, `Expression`, or `None` | Declared MIME type | `None` |
+| `position` / `size` | Integer, `Expression`, or `None` | Optional byte window into the object | `None` |
+| `checksum` | String, `Expression`, or `None` | Declared checksum | `None` |
+| `url_or_file` | String, `FILE` value, or `Expression` | URL or FILE view to re-type as `IMAGEFILE`/`AUDIOFILE`/`VIDEOFILE` | Required |
+| `verify` | `bool` or `Expression` | Verify bounded content when constructing the value | `False` |
+| `path` | String, `Expression`, or list of strings (`from_files`) | Path(s) resolved to `FILE` | Required |
+
+## Returns and errors
+
+`file`, `to_file`, and `try_to_file` return `FILE`; `image_file`/`audio_file`/`video_file` return the matching typed `FILE`. `to_file` and `try_to_file` open the object at execution and return its complete logical view (`position = 0`, `size` = object size); `to_file` raises on failure, while `try_to_file` returns `NULL` for recoverable access failures. `from_files` returns a one-column relation of canonical `FILE` values, built on `list_files`. `file` never accesses the object; the typed constructors access it only when `verify=True` performs a bounded content check.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_file('photo.png') AS file").show()
+vane.from_files("photos/*.png", connection=con).show()
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`list_files`](listing.mdx)
+
+## File inspection
+
+Route: /docs/data/reference/multimodal-data/file/inspection
+Source: docs/data/reference/multimodal-data/file/inspection.mdx
+
+Inspection functions read resolved `FILE` metadata without decoding content.
+
+## Signature
+
+```python
+vane.file_path(value) -> Expression
+vane.file_size(value) -> Expression
+vane.file_exists(value) -> Expression
+vane.file_stat(value) -> Expression
+vane.file_mime_type(value, detect="metadata") -> Expression
+vane.guess_mime_type(value) -> Expression
+```
+
+SQL: `file_path(file)`, `file_size(file)`, `file_exists(file)`, `file_stat(file)`, `file_mime_type(file [, detect])`, and `guess_mime_type(bytes)`. Expression methods: `expr.file_path()`, `expr.file_size()`, `expr.file_exists()`, `expr.file_stat()`, `expr.file_mime_type(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `FILE`-family value or `Expression` | Object to inspect | Required |
+| `detect` | `"metadata"`, `"content"`, or `"auto"` | MIME detection source | `"metadata"` |
+| `value` (`guess_mime_type`) | `BLOB` value or `Expression` | Raw bytes to sniff | Required |
+
+`file_mime_type` with `metadata` (the default) uses the declared `content_type` and falls back to the URL suffix without opening the object. `auto` prefers declared and resolved metadata before sniffing content, while `content` sniffs content directly. `guess_mime_type` sniffs bytes directly.
+
+## Returns and errors
+
+`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return `VARCHAR` or `NULL` when detection fails. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT file_stat(image_file('photo.png'))").show()
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`file_same_content`](identity.mdx)
+
+## File identity
+
+Route: /docs/data/reference/multimodal-data/file/identity
+Source: docs/data/reference/multimodal-data/file/identity.mdx
+
+Identity functions derive stable identifiers and compare `FILE` values by location or content.
+
+## Signature
+
+```python
+vane.file_locator_id(value) -> Expression
+vane.file_content_id(value) -> Expression
+vane.file_same_location(left, right) -> Expression
+vane.file_same_content(left, right) -> Expression
+```
+
+SQL: `file_locator_id(file)`, `file_content_id(file)`, `file_same_location(left, right)`, and `file_same_content(left, right)`. Each `FILE` subtype also supports the `=` and `!=` operators, which compare all five fields.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `FILE`-family value or `Expression` | Object to identify | Required |
+| `left` / `right` | Same `FILE` subtype values or `Expression` | Values to compare | Required |
+
+## Returns and errors
+
+`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns a content identifier (`VARCHAR`) derived from the declared checksum, `file-content-v1:empty` for an empty byte window, and `NULL` when no checksum is declared. `file_same_location` compares URL, position, and size, and returns `NULL` when only one side has a byte window. `file_same_content` compares declared checksums: it returns `false` for different window sizes, and `NULL` when either checksum is missing or the checksum algorithms differ. `=`/`!=` require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
+
+## Example
+
+```sql
+SELECT file_same_location(image_file('a.png'), image_file('a.png')) AS same_location;
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [Multimodal data](../index.mdx)
+
+## File listing and reading
+
+Route: /docs/data/reference/multimodal-data/file/listing
+Source: docs/data/reference/multimodal-data/file/listing.mdx
+
+Listing and reading functions enumerate paths, open streams, and enrich `FILE` metadata.
+
+## Signature
+
+```python
+vane.list_files(path, recursive=False, *, connection=None) -> Relation
+vane.open_file(url, mode="r", buffering=-1, encoding=None, errors=None, newline=None, *, connection=None) -> IOBase
+vane.file_enrich(value, fields) -> Expression
+```
+
+SQL: `list_files(path [, recursive])` (table function) and `file_enrich(file, fields)`. `open_file` is Python-only.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `path` | Path string or `Expression` (Python); string or list of strings (SQL) | Path(s) to enumerate; glob patterns and directories are supported | Required |
+| `recursive` | `bool` | Recurse into directories | `False` |
+| `url` | String | URL to open as a stream | Required |
+| `mode` | `"r"`, `"rt"`, or `"rb"` | Read-only text or binary mode | `"r"` |
+| `buffering`, `encoding`, `errors`, `newline` | Standard I/O options | Applied to the returned stream | Python defaults |
+| `fields` | List of strings or `Expression` | `FILE` fields to enrich; valid fields are `size`, `content_type`, and `checksum` | Required |
+
+## Returns and errors
+
+`list_files` returns one row per resolved object with columns `url VARCHAR`, `object_size UBIGINT`, `last_modified TIMESTAMP`, `version VARCHAR`, `etag VARCHAR`, `content_type VARCHAR`, and `file FILE`. `open_file` returns a standard read-only stream. `file_enrich` fills missing fields: `size` sets `position` to `0` and `size` to the object size, `content_type` uses resolved metadata before sniffing content, and `checksum` adds a `sha256:<hex>` digest. Unsupported or `NULL` field names, invalid modes, and access failures raise.
+
+## Example
+
+```sql
+SELECT url, file FROM list_files('photos');
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`file_stat`](inspection.mdx)
 
 ## Image functions
 
-Route: /docs/data/reference/media/image
-Source: docs/data/reference/media/image/index.mdx
+Route: /docs/data/reference/multimodal-data/image
+Source: docs/data/reference/multimodal-data/image/index.mdx
 
 Image functions decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values. The connection's `image_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the Pillow/tifffile/imagecodecs path or the C++ path; `EXPLAIN` shows `native_*` names for native plans. Every function and accessor in the table has a Python form, an `Expression` method form, and a SQL form. Python returns a lazy `vane.Expression`; name it with `.alias(...)`.
 
@@ -4956,7 +5237,7 @@ Image functions decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` v
 | [`image_to_tensor`](image-to-tensor.mdx) | ✓ | ✓ | — | `TENSOR` |
 | [Image accessors](accessors.mdx) | ✓ | ✓ | — | `UINTEGER` |
 
-[`image_file`](../../file/constructors.mdx) is the `IMAGEFILE` constructor. `image_to_tensor` and the accessors have no backend-specific implementation.
+[`image_file`](../file/constructors.mdx) is the `IMAGEFILE` constructor. `image_to_tensor` and the accessors have no backend-specific implementation.
 
 ## Python ImageFile values
 
@@ -4990,8 +5271,7 @@ con.execute("SET image_backend = 'native'")
 
 ## Source and related pages
 
-- [Multimodal types](../../types.mdx)
-- [Media reference](../index.mdx)
+- [Multimodal data](../index.mdx)
 - [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
 - [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
 - [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
@@ -4999,8 +5279,8 @@ con.execute("SET image_backend = 'native'")
 
 ## image_file_metadata
 
-Route: /docs/data/reference/media/image/image-file-metadata
-Source: docs/data/reference/media/image/image-file-metadata.mdx
+Route: /docs/data/reference/multimodal-data/image/image-file-metadata
+Source: docs/data/reference/multimodal-data/image/image-file-metadata.mdx
 
 `image_file_metadata` inspects bounded `IMAGEFILE` headers without decoding pixels.
 
@@ -5040,8 +5320,8 @@ con.sql("SELECT image_file_metadata(image_file('photo.png'))").show()
 
 ## decode_image_file
 
-Route: /docs/data/reference/media/image/decode-image-file
-Source: docs/data/reference/media/image/decode-image-file.mdx
+Route: /docs/data/reference/multimodal-data/image/decode-image-file
+Source: docs/data/reference/multimodal-data/image/decode-image-file.mdx
 
 `decode_image_file` decodes an `IMAGEFILE` into an `IMAGE`. `mode=None` preserves source modes already representable by `IMAGE`; palette images expand to RGBA, and integer depth and floating RGB(A) are retained.
 
@@ -5062,7 +5342,7 @@ SQL: `decode_image_file(file [, mode, on_error, max_input_bytes, max_pixels, max
 | --- | --- | --- | --- |
 | `value` | `IMAGEFILE` value or `Expression` | Encoded image object | Required |
 | `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Result pixel mode; `None` preserves a representable source mode | `None` |
-| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified media format and codec failures | `"raise"` |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified encoded-format and codec failures | `"raise"` |
 | `max_input_bytes` | Integer or `Expression` | Encoded input limit | `256 MiB` |
 | `max_pixels` | Integer or `Expression` | Pixel limit | `100,000,000` |
 | `max_decoded_bytes` | Integer or `Expression` | Decoded pixel budget | `512 MiB` |
@@ -5087,8 +5367,8 @@ con.sql("SELECT decode_image_file(image_file('photo.png'), 'RGBA')").show()
 
 ## decode_image
 
-Route: /docs/data/reference/media/image/decode-image
-Source: docs/data/reference/media/image/decode-image.mdx
+Route: /docs/data/reference/multimodal-data/image/decode-image
+Source: docs/data/reference/multimodal-data/image/decode-image.mdx
 
 `decode_image` decodes the first image from `PNG`/`JPEG`/`TIFF`/`GIF`/`BMP`/`WebP` bytes. `mode=None` preserves the encoded pixel mode; the default converts to `RGB`.
 
@@ -5129,8 +5409,8 @@ con.sql("SELECT decode_image($1)", params=[data]).show()
 
 ## crop
 
-Route: /docs/data/reference/media/image/crop
-Source: docs/data/reference/media/image/crop.mdx
+Route: /docs/data/reference/multimodal-data/image/crop
+Source: docs/data/reference/multimodal-data/image/crop.mdx
 
 `crop` extracts an integer `(x, y, width, height)` window from an `IMAGE`. Pixels outside the input are zero-filled, including alpha channels.
 
@@ -5170,8 +5450,8 @@ con.sql("SELECT crop($1, [10, 20, 64, 48])", params=[vane.Value(image, vane.imag
 
 ## resize
 
-Route: /docs/data/reference/media/image/resize
-Source: docs/data/reference/media/image/resize.mdx
+Route: /docs/data/reference/multimodal-data/image/resize
+Source: docs/data/reference/multimodal-data/image/resize.mdx
 
 `resize` scales an `IMAGE` with bilinear sampling and premultiplied alpha. A known mode with constant target dimensions yields a fixed-shape image; per-row dimensions keep a dynamic image with the input mode constraint.
 
@@ -5211,8 +5491,8 @@ con.sql("SELECT resize(decode_image_file(image_file('photo.png')), 224, 224)").s
 
 ## convert_image
 
-Route: /docs/data/reference/media/image/convert-image
-Source: docs/data/reference/media/image/convert-image.mdx
+Route: /docs/data/reference/multimodal-data/image/convert-image
+Source: docs/data/reference/multimodal-data/image/convert-image.mdx
 
 `convert_image` changes an `IMAGE` pixel mode and depth without resizing. Alpha is preserved, added as fully opaque, or dropped without compositing. Known target modes preserve fixed input dimensions; per-row modes return a dynamic image.
 
@@ -5251,8 +5531,8 @@ con.sql("SELECT convert_image(decode_image_file(image_file('photo.png')), 'RGBA'
 
 ## encode_image
 
-Route: /docs/data/reference/media/image/encode-image
-Source: docs/data/reference/media/image/encode-image.mdx
+Route: /docs/data/reference/multimodal-data/image/encode-image
+Source: docs/data/reference/multimodal-data/image/encode-image.mdx
 
 `encode_image` encodes an `IMAGE` into an image file format and returns the bytes.
 
@@ -5299,8 +5579,8 @@ con.sql("""
 
 ## image_hash
 
-Route: /docs/data/reference/media/image/image-hash
-Source: docs/data/reference/media/image/image-hash.mdx
+Route: /docs/data/reference/multimodal-data/image/image-hash
+Source: docs/data/reference/multimodal-data/image/image-hash.mdx
 
 `image_hash` computes a perceptual hash of an `IMAGE` with a fixed byte width and MSB-first bits. It accepts all image modes and ignores alpha.
 
@@ -5344,8 +5624,8 @@ con.sql("SELECT image_hash(decode_image_file(image_file('photo.png')))").show()
 
 ## image_to_tensor
 
-Route: /docs/data/reference/media/image/image-to-tensor
-Source: docs/data/reference/media/image/image-to-tensor.mdx
+Route: /docs/data/reference/multimodal-data/image/image-to-tensor
+Source: docs/data/reference/multimodal-data/image/image-to-tensor.mdx
 
 `image_to_tensor` converts `IMAGE` pixels into an HWC `TENSOR` without changing pixel values. Known modes preserve UInt8, UInt16, or Float32; a generic `IMAGE` uses Float32.
 
@@ -5379,13 +5659,13 @@ con.sql("SELECT image_to_tensor(decode_image_file(image_file('photo.png')))").sh
 ## Source and related pages
 
 - [Image functions](index.mdx)
-- [Multimodal types](../../types.mdx)
+- [Multimodal data](../index.mdx)
 - [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
 
 ## Image accessors
 
-Route: /docs/data/reference/media/image/accessors
-Source: docs/data/reference/media/image/accessors.mdx
+Route: /docs/data/reference/multimodal-data/image/accessors
+Source: docs/data/reference/multimodal-data/image/accessors.mdx
 
 `image_width`, `image_height`, `image_channel`, `image_mode`, and `image_attribute` read `IMAGE` metadata without decoding pixels or opening files. They belong to the base engine, return `UINTEGER`, and are not affected by `image_backend`.
 
@@ -5452,10 +5732,10 @@ con.sql("""
 
 ## Audio functions
 
-Route: /docs/data/reference/media/audio
-Source: docs/data/reference/media/audio/index.mdx
+Route: /docs/data/reference/multimodal-data/audio
+Source: docs/data/reference/multimodal-data/audio/index.mdx
 
-Audio functions inspect `AUDIOFILE` metadata and resample waveforms into Float64 tensors of shape `(frames, channels)`. The connection's `audio_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the SoundFile/SoXR path or the C++ path; both resample with SoXR HQ and return exactly `ceil(decoded_frames * target_rate / source_rate)` frames. `audio_metadata` and `resample` have a Python form and a SQL form; `audio_metadata` also has an `Expression` method form. [`audio_file`](../../file/constructors.mdx) is the `AUDIOFILE` constructor.
+Audio functions inspect `AUDIOFILE` metadata and resample waveforms into Float64 tensors of shape `(frames, channels)`. The connection's `audio_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the SoundFile/SoXR path or the C++ path; both resample with SoXR HQ and return exactly `ceil(decoded_frames * target_rate / source_rate)` frames. `audio_metadata` and `resample` have a Python form and a SQL form; `audio_metadata` also has an `Expression` method form. [`audio_file`](../file/constructors.mdx) is the `AUDIOFILE` constructor.
 
 ## Choose an API
 
@@ -5498,15 +5778,14 @@ con.execute("SET audio_backend = 'native'")
 
 ## Source and related pages
 
-- [Multimodal types](../../types.mdx)
-- [Media reference](../index.mdx)
+- [Multimodal data](../index.mdx)
 - [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
 - [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
 
 ## audio_metadata
 
-Route: /docs/data/reference/media/audio/audio-metadata
-Source: docs/data/reference/media/audio/audio-metadata.mdx
+Route: /docs/data/reference/multimodal-data/audio/audio-metadata
+Source: docs/data/reference/multimodal-data/audio/audio-metadata.mdx
 
 `audio_metadata` inspects bounded encoded `AUDIOFILE` metadata without decoding samples.
 
@@ -5545,8 +5824,8 @@ con.sql("SELECT audio_metadata(audio_file('sample.wav'))").show()
 
 ## resample
 
-Route: /docs/data/reference/media/audio/resample
-Source: docs/data/reference/media/audio/resample.mdx
+Route: /docs/data/reference/multimodal-data/audio/resample
+Source: docs/data/reference/multimodal-data/audio/resample.mdx
 
 `resample` converts an `AUDIOFILE` into a Float64 tensor of shape `(frames, channels)` at a target sample rate. The complete stream is trimmed or zero-padded at the end, independent of chunk sizes.
 
@@ -5599,8 +5878,8 @@ vane.close()
 
 ## native_audio_resample_profile
 
-Route: /docs/data/reference/media/audio/native-audio-resample-profile
-Source: docs/data/reference/media/audio/native-audio-resample-profile.mdx
+Route: /docs/data/reference/multimodal-data/audio/native-audio-resample-profile
+Source: docs/data/reference/multimodal-data/audio/native-audio-resample-profile.mdx
 
 `native_audio_resample_profile` runs the same native decode and resample implementation as `resample` but returns counters instead of the waveform. It is registered by the `native_media` extension and has no Python form, so it is available once that extension is loaded, independent of `audio_backend`.
 
@@ -5652,8 +5931,8 @@ SELECT native_audio_resample_profile(audio_file('sample.wav'), 16000);
 
 ## Video functions
 
-Route: /docs/data/reference/media/video
-Source: docs/data/reference/media/video/index.mdx
+Route: /docs/data/reference/multimodal-data/video
+Source: docs/data/reference/multimodal-data/video/index.mdx
 
 Video functions inspect `VIDEOFILE` metadata, stream decoded frames as rows, and build or inspect reusable seek indexes. Every function has a Python form and a SQL form; `video_metadata`, `video_frames`, and `video_keyframes` also have an `Expression` method form.
 
@@ -5662,7 +5941,7 @@ Each function has two interchangeable implementations selected by the connection
 - `python` (default) calls Python helpers built on PyAV (`vane/_video_expressions.py`, `vane/_video_file.py`, `vane/_video_index.py`). No extension is required.
 - `native` calls the loaded `native_media` extension's C++/FFmpeg operators. Set `video_backend` before binding the query.
 
-`video_file` has only a C++ implementation and no Python/PyAV alternative (see [File constructors](../../file/constructors.mdx)). `read_video_frames` binds either the native `native_read_video_frames` scan or a Python DataSource scan; `EXPLAIN` shows `NATIVE_READ_VIDEO_FRAMES` or `DATASOURCE_SCAN`.
+`video_file` has only a C++ implementation and no Python/PyAV alternative (see [File constructors](../file/constructors.mdx)). `read_video_frames` binds either the native `native_read_video_frames` scan or a Python DataSource scan; `EXPLAIN` shows `NATIVE_READ_VIDEO_FRAMES` or `DATASOURCE_SCAN`.
 
 ## Choose an API
 
@@ -5728,8 +6007,7 @@ An unavailable native extension fails during binding; there is no automatic fall
 
 ## Source and related pages
 
-- [Multimodal types](../../types.mdx)
-- [Media reference](../index.mdx)
+- [Multimodal data](../index.mdx)
 - [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
 - [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
 - [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
@@ -5738,8 +6016,8 @@ An unavailable native extension fails during binding; there is no automatic fall
 
 ## video_metadata
 
-Route: /docs/data/reference/media/video/video-metadata
-Source: docs/data/reference/media/video/video-metadata.mdx
+Route: /docs/data/reference/multimodal-data/video/video-metadata
+Source: docs/data/reference/multimodal-data/video/video-metadata.mdx
 
 `video_metadata` inspects the first non-attached video stream with bounded stream-info probing.
 
@@ -5778,8 +6056,8 @@ con.sql("SELECT video_metadata(video_file('clip.mp4'))").show()
 
 ## video_frames
 
-Route: /docs/data/reference/media/video/video-frames
-Source: docs/data/reference/media/video/video-frames.mdx
+Route: /docs/data/reference/multimodal-data/video/video-frames
+Source: docs/data/reference/multimodal-data/video/video-frames.mdx
 
 `video_frames` returns a bounded list of decoded frame records for one `VIDEOFILE` row. Each record retains the source FILE view, the presentation-order temporal fields, and `data: IMAGE('RGB')`.
 
@@ -5825,8 +6103,8 @@ FROM (SELECT video_file('clip.mp4') AS file);
 
 ## video_keyframes
 
-Route: /docs/data/reference/media/video/video-keyframes
-Source: docs/data/reference/media/video/video-keyframes.mdx
+Route: /docs/data/reference/multimodal-data/video/video-keyframes
+Source: docs/data/reference/multimodal-data/video/video-keyframes.mdx
 
 `video_keyframes` returns a bounded list of keyframes selected with the decoder's keyframe flag, as `IMAGE('RGB')` values.
 
@@ -5866,8 +6144,8 @@ FROM (SELECT video_file('clip.mp4') AS file);
 
 ## get_video_frame_by_idx
 
-Route: /docs/data/reference/media/video/get-video-frame-by-idx
-Source: docs/data/reference/media/video/get-video-frame-by-idx.mdx
+Route: /docs/data/reference/multimodal-data/video/get-video-frame-by-idx
+Source: docs/data/reference/multimodal-data/video/get-video-frame-by-idx.mdx
 
 `get_video_frame_by_idx` returns one `IMAGE('RGB')` at a zero-based presentation-order frame index. Without an index, lookup uses sequential decoding from stream start, including for late time windows.
 
@@ -5915,8 +6193,8 @@ FROM (SELECT video_file('clip.mp4') AS file);
 
 ## read_video_frames
 
-Route: /docs/data/reference/media/video/read-video-frames
-Source: docs/data/reference/media/video/read-video-frames.mdx
+Route: /docs/data/reference/multimodal-data/video/read-video-frames
+Source: docs/data/reference/multimodal-data/video/read-video-frames.mdx
 
 `read_video_frames` streams selected frames as rows, with `data: IMAGE('RGB', image_height, image_width)`. It returns a `Relation` and emits one row per frame rather than one row per input.
 
@@ -5955,7 +6233,7 @@ SQL: `read_video_frames(source, height, width [, is_key_frame], start_time => ..
 
 ## Returns and errors
 
-Returns one row per selected frame: `path`, the original `file` view, `frame_index`, `frame_time`, time-base and timestamp fields (`frame_pts`, `frame_dts`, `frame_duration`), `is_key_frame`, and `data`. A top-level `NULL`/`None` or empty list yields an empty table with the declared schema; `NULL` list elements and other media subtypes are rejected. Binding validates arguments without opening the videos. Row order across file tasks is unspecified; use `ORDER BY` when needed.
+Returns one row per selected frame: `path`, the original `file` view, `frame_index`, `frame_time`, time-base and timestamp fields (`frame_pts`, `frame_dts`, `frame_duration`), `is_key_frame`, and `data`. A top-level `NULL`/`None` or empty list yields an empty table with the declared schema; `NULL` list elements and other `FILE` subtypes are rejected. Binding validates arguments without opening the videos. Row order across file tasks is unspecified; use `ORDER BY` when needed.
 
 ## Example
 
@@ -5979,8 +6257,8 @@ frames.select("path", "frame_index", "frame_time", "data").show()
 
 ## build_video_index
 
-Route: /docs/data/reference/media/video/build-video-index
-Source: docs/data/reference/media/video/build-video-index.mdx
+Route: /docs/data/reference/multimodal-data/video/build-video-index
+Source: docs/data/reference/multimodal-data/video/build-video-index.mdx
 
 `build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. Materialize it once and store it alongside its `VIDEOFILE` before issuing repeated selections.
 
@@ -6027,8 +6305,8 @@ SELECT file, build_video_index(file) AS seek_index FROM videos;
 
 ## video_index_info
 
-Route: /docs/data/reference/media/video/video-index-info
-Source: docs/data/reference/media/video/video-index-info.mdx
+Route: /docs/data/reference/multimodal-data/video/video-index-info
+Source: docs/data/reference/multimodal-data/video/video-index-info.mdx
 
 `video_index_info` inspects a video index `BLOB` without opening a FILE and reports its counts, size, and creation I/O.
 
@@ -6064,8 +6342,8 @@ SELECT video_index_info(build_video_index(video_file('clip.mp4')));
 
 ## video_scan_stats
 
-Route: /docs/data/reference/media/video/video-scan-stats
-Source: docs/data/reference/media/video/video-scan-stats.mdx
+Route: /docs/data/reference/multimodal-data/video/video-scan-stats
+Source: docs/data/reference/multimodal-data/video/video-scan-stats.mdx
 
 `video_scan_stats` runs selection and returns diagnostics without output images. A non-`NULL` `idx` selects a single exact frame instead. Indexed reads still convert unscaled RGB pixels to verify decoded content.
 
@@ -6112,311 +6390,12 @@ FROM (SELECT video_file('clip.mp4') AS file);
 - [`build_video_index`](build-video-index.mdx)
 - [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
 
-## File functions
-
-Route: /docs/data/reference/file
-Source: docs/data/reference/file/index.mdx
-
-File functions construct and inspect `FILE`-family values: `FILE`, `IMAGEFILE`, `AUDIOFILE`, and `VIDEOFILE`. They resolve storage and metadata without decoding media, and back the `file` argument used by the image, audio, and video functions. Most functions have a Python form, a SQL form, and an `Expression` method; `from_files` and `open_file` are Python-only.
-
-## Choose an API
-
-| Group | Functions | Purpose |
-| --- | --- | --- |
-| [Constructors](constructors.mdx) | `file`, `image_file`, `audio_file`, `video_file`, `to_file`, `try_to_file`, `from_files` | Build `FILE`-family values |
-| [Inspection](inspection.mdx) | `file_path`, `file_size`, `file_exists`, `file_stat`, `file_mime_type`, `guess_mime_type` | Read resolved metadata |
-| [Identity](identity.mdx) | `file_locator_id`, `file_content_id`, `file_same_location`, `file_same_content` | Compare locations and content |
-| [Listing and reading](listing.mdx) | `list_files`, `open_file`, `file_enrich` | Enumerate, open, and enrich files |
-
-## Python File values
-
-In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields (`url`, `content_type`, `position`, `size`, `checksum`). They expose:
-
-| Member | Returns |
-| --- | --- |
-| `file.exists()` | `bool` without decoding |
-| `file.stat()` | `vane.FileStat` with resolved metadata without decoding |
-| `file.mime_type(detect="metadata")` | MIME type or `None` |
-| `file.open(buffer_size=None)` | A read-only `VaneFileReader` |
-| `file.to_tempfile(buffer_size=1048576)` | A binary temp file |
-| `file.is_image()` / `is_audio()` / `is_video()` | Subtype classification without I/O |
-| `file.as_image()` / `as_audio()` / `as_video()` | Re-type the same five fields; cross-subtype conversion raises `TypeError` |
-
-Subtype classification uses the declared subtype first, then `content_type` or the URL suffix as a routing hint; `as_*` re-types the same five fields and raises `TypeError` across subtypes.
-
-`ImageFile.decode()` / `metadata()`, [AudioFile](../media/audio/index.mdx) methods, and [VideoFile](../media/video/index.mdx) methods always use their Python implementations.
-
-## Returns and errors
-
-`NULL` inputs return `NULL`. Missing or inaccessible objects raise, except `try_to_file` (returns `NULL` on a recoverable access failure), `file_exists` (returns `false` for a missing object and `NULL` for a recoverable access error), and metadata lookups that may return `NULL` (`file_size`, `file_mime_type`, `file_content_id`). SQL expression equality requires the same `FILE` subtype and keeps SQL `NULL` semantics.
-
-## Source and related pages
-
-- [Multimodal types](../types.mdx)
-- [Media reference](../media/index.mdx)
-- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
-- [Implementation: `vane/_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_file.py)
-
-## File constructors
-
-Route: /docs/data/reference/file/constructors
-Source: docs/data/reference/file/constructors.mdx
-
-Constructors build `FILE`-family expressions. By default, `file`, `image_file`, `audio_file`, and `video_file` do not access the referenced object; `to_file`, `try_to_file`, and `from_files` resolve storage when executed.
-
-## Signature
-
-```python
-vane.file(url, content_type=None, position=None, size=None, checksum=None) -> Expression
-vane.image_file(url_or_file, verify=False) -> Expression
-vane.audio_file(url_or_file, verify=False) -> Expression
-vane.video_file(url_or_file, verify=False) -> Expression
-vane.to_file(path) -> Expression
-vane.try_to_file(path) -> Expression
-vane.from_files(path, *, connection=None) -> Relation
-```
-
-SQL: `file(url, content_type, position, size, checksum)`, `image_file(url_or_file [, verify])`, `audio_file(url_or_file [, verify])`, `video_file(url_or_file [, verify])`, `to_file(path)`, and `try_to_file(path)`. In SQL, `file` requires all five arguments; the Python form defaults the optional fields to `None`. `from_files` is Python-only.
-
-`expr.as_file(media_type=MediaType.unknown())` is the Expression method form: it builds the same FILE-family expression from the expression's string value, with `media_type` selecting `FILE`, `IMAGEFILE`, `AUDIOFILE`, or `VIDEOFILE`.
-
-## Parameters
-
-| Name | Type | Description | Default |
-| --- | --- | --- | --- |
-| `url` | String or `Expression` | Object URL | Required |
-| `content_type` | String, `Expression`, or `None` | Declared MIME type | `None` |
-| `position` / `size` | Integer, `Expression`, or `None` | Optional byte window into the object | `None` |
-| `checksum` | String, `Expression`, or `None` | Declared checksum | `None` |
-| `url_or_file` | String, `FILE` value, or `Expression` | URL or FILE view to re-type as `IMAGEFILE`/`AUDIOFILE`/`VIDEOFILE` | Required |
-| `verify` | `bool` or `Expression` | Verify bounded content when constructing the value | `False` |
-| `path` | String, `Expression`, or list of strings (`from_files`) | Path(s) resolved to `FILE` | Required |
-
-## Returns and errors
-
-`file`, `to_file`, and `try_to_file` return `FILE`; `image_file`/`audio_file`/`video_file` return the matching typed `FILE`. `to_file` and `try_to_file` open the object at execution and return its complete logical view (`position = 0`, `size` = object size); `to_file` raises on failure, while `try_to_file` returns `NULL` for recoverable access failures. `from_files` returns a one-column relation of canonical `FILE` values, built on `list_files`. `file` never accesses the object; the media constructors access it only when `verify=True` performs a bounded content check.
-
-## Example
-
-```python
-import vane
-
-con = vane.connect()
-con.sql("SELECT image_file('photo.png') AS file").show()
-vane.from_files("photos/*.png", connection=con).show()
-```
-
-## Source and related pages
-
-- [File functions](index.mdx)
-- [`list_files`](listing.mdx)
-
-## File inspection
-
-Route: /docs/data/reference/file/inspection
-Source: docs/data/reference/file/inspection.mdx
-
-Inspection functions read resolved `FILE` metadata without decoding content.
-
-## Signature
-
-```python
-vane.file_path(value) -> Expression
-vane.file_size(value) -> Expression
-vane.file_exists(value) -> Expression
-vane.file_stat(value) -> Expression
-vane.file_mime_type(value, detect="metadata") -> Expression
-vane.guess_mime_type(value) -> Expression
-```
-
-SQL: `file_path(file)`, `file_size(file)`, `file_exists(file)`, `file_stat(file)`, `file_mime_type(file [, detect])`, and `guess_mime_type(bytes)`. Expression methods: `expr.file_path()`, `expr.file_size()`, `expr.file_exists()`, `expr.file_stat()`, `expr.file_mime_type(...)`.
-
-## Parameters
-
-| Name | Type | Description | Default |
-| --- | --- | --- | --- |
-| `value` | `FILE`-family value or `Expression` | Object to inspect | Required |
-| `detect` | `"metadata"`, `"content"`, or `"auto"` | MIME detection source | `"metadata"` |
-| `value` (`guess_mime_type`) | `BLOB` value or `Expression` | Raw bytes to sniff | Required |
-
-`file_mime_type` with `metadata` (the default) uses the declared `content_type` and falls back to the URL suffix without opening the object. `auto` prefers declared and resolved metadata before sniffing content, while `content` sniffs content directly. `guess_mime_type` sniffs bytes directly.
-
-## Returns and errors
-
-`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return `VARCHAR` or `NULL` when detection fails. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
-
-## Example
-
-```python
-import vane
-
-con = vane.connect()
-con.sql("SELECT file_stat(image_file('photo.png'))").show()
-```
-
-## Source and related pages
-
-- [File functions](index.mdx)
-- [`file_same_content`](identity.mdx)
-
-## File identity
-
-Route: /docs/data/reference/file/identity
-Source: docs/data/reference/file/identity.mdx
-
-Identity functions derive stable identifiers and compare `FILE` values by location or content.
-
-## Signature
-
-```python
-vane.file_locator_id(value) -> Expression
-vane.file_content_id(value) -> Expression
-vane.file_same_location(left, right) -> Expression
-vane.file_same_content(left, right) -> Expression
-```
-
-SQL: `file_locator_id(file)`, `file_content_id(file)`, `file_same_location(left, right)`, and `file_same_content(left, right)`. Each `FILE` subtype also supports the `=` and `!=` operators, which compare all five fields.
-
-## Parameters
-
-| Name | Type | Description | Default |
-| --- | --- | --- | --- |
-| `value` | `FILE`-family value or `Expression` | Object to identify | Required |
-| `left` / `right` | Same `FILE` subtype values or `Expression` | Values to compare | Required |
-
-## Returns and errors
-
-`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns a content identifier (`VARCHAR`) derived from the declared checksum, `file-content-v1:empty` for an empty byte window, and `NULL` when no checksum is declared. `file_same_location` compares URL, position, and size, and returns `NULL` when only one side has a byte window. `file_same_content` compares declared checksums: it returns `false` for different window sizes, and `NULL` when either checksum is missing or the checksum algorithms differ. `=`/`!=` require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
-
-## Example
-
-```sql
-SELECT file_same_location(image_file('a.png'), image_file('a.png')) AS same_location;
-```
-
-## Source and related pages
-
-- [File functions](index.mdx)
-- [Multimodal types](../types.mdx)
-
-## File listing and reading
-
-Route: /docs/data/reference/file/listing
-Source: docs/data/reference/file/listing.mdx
-
-Listing and reading functions enumerate paths, open streams, and enrich `FILE` metadata.
-
-## Signature
-
-```python
-vane.list_files(path, recursive=False, *, connection=None) -> Relation
-vane.open_file(url, mode="r", buffering=-1, encoding=None, errors=None, newline=None, *, connection=None) -> IOBase
-vane.file_enrich(value, fields) -> Expression
-```
-
-SQL: `list_files(path [, recursive])` (table function) and `file_enrich(file, fields)`. `open_file` is Python-only.
-
-## Parameters
-
-| Name | Type | Description | Default |
-| --- | --- | --- | --- |
-| `path` | Path string or `Expression` (Python); string or list of strings (SQL) | Path(s) to enumerate; glob patterns and directories are supported | Required |
-| `recursive` | `bool` | Recurse into directories | `False` |
-| `url` | String | URL to open as a stream | Required |
-| `mode` | `"r"`, `"rt"`, or `"rb"` | Read-only text or binary mode | `"r"` |
-| `buffering`, `encoding`, `errors`, `newline` | Standard I/O options | Applied to the returned stream | Python defaults |
-| `fields` | List of strings or `Expression` | `FILE` fields to enrich; valid fields are `size`, `content_type`, and `checksum` | Required |
-
-## Returns and errors
-
-`list_files` returns one row per resolved object with columns `url VARCHAR`, `object_size UBIGINT`, `last_modified TIMESTAMP`, `version VARCHAR`, `etag VARCHAR`, `content_type VARCHAR`, and `file FILE`. `open_file` returns a standard read-only stream. `file_enrich` fills missing fields: `size` sets `position` to `0` and `size` to the object size, `content_type` uses resolved metadata before sniffing content, and `checksum` adds a `sha256:<hex>` digest. Unsupported or `NULL` field names, invalid modes, and access failures raise.
-
-## Example
-
-```sql
-SELECT url, file FROM list_files('photos');
-```
-
-## Source and related pages
-
-- [File functions](index.mdx)
-- [`file_stat`](inspection.mdx)
-
-## Multimodal types
-
-Route: /docs/data/reference/types
-Source: docs/data/reference/types.mdx
-
-Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. All six are first-class engine types.
-
-## Types
-
-| SQL type | Storage | Meaning |
-| --- | --- | --- |
-| `FILE` | `STRUCT(url VARCHAR, content_type VARCHAR, position BIGINT, size BIGINT, checksum VARCHAR)` | Generic immutable object reference with an optional byte window (`position`, `size`) |
-| `IMAGEFILE` | Same five fields, `IMAGE` media subtype | Encoded image object |
-| `AUDIOFILE` | Same five fields, `AUDIO` media subtype | Encoded audio object |
-| `VIDEOFILE` | Same five fields, `VIDEO` media subtype | Encoded video object |
-| `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
-| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
-
-Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
-
-## Type builders and enums
-
-In Python, type builders produce Vane types, and `vane.MediaType` selects a `FILE` subtype:
-
-| API | Returns |
-| --- | --- |
-| `vane.file_type(media_type=vane.MediaType.unknown())` | The `FILE`-family type selected by `media_type` |
-| `vane.image_type(mode=None, height=None, width=None)` | An `IMAGE` type; a constant mode and dimensions narrow it |
-| `vane.tensor_type(type, shape)` | A `TENSOR` type; `None` marks a variable dimension |
-| `vane.MediaType.unknown()` / `image()` / `audio()` / `video()` | The `FILE` media subtype selector |
-
-`image_type()` returns a dynamic `IMAGE`; a mode narrows it, while `mode, height, and width` must be supplied together to fix both dimensions. `tensor_type(type, shape)` takes a Vane element type and a non-empty shape of nonnegative integers or `None` for a variable dimension (variable-shape rank 1–32). Invalid modes, dimensions, or shapes raise.
-
-`vane.ImageProperty` (`height`, `width`, `channel`, `mode`) names the `image_attribute` properties; `vane.ImageMode` and `vane.ImageFormat` enumerate the supported pixel modes and encode formats.
-
-## IMAGE modes
-
-Pixel dtype follows the mode:
-
-| Modes | Pixel dtype | Channels |
-| --- | --- | --- |
-| L, LA, RGB, RGBA | UInt8 | 1, 2, 3, 4 |
-| L16, LA16, RGB16, RGBA16 | UInt16 | 1, 2, 3, 4 |
-| RGB32F, RGBA32F | Float32 | 3, 4 |
-
-Generic `IMAGE` stores Float32 so one column can hold every mode without loss; a known mode stores its native pixel dtype. Fetched cells materialize as C-contiguous NumPy arrays with shape `(height, width, channels)`; `vane.Image` is the Python typing alias for these UInt8, UInt16, or Float32 arrays. Arrow carries fixed-shape images with the `vane.image` extension type.
-
-`expr.as_image(mode=None, height=None, width=None)` validates an existing image expression against the selected `IMAGE` type. Ordinary casts never convert colors or resize pixels, and `TRY_CAST` returns `NULL` for a layout mismatch.
-
-## Audio specialization
-
-Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimensions can vary by row, channels are positive, and zero frames (`(0, channels)`) represent empty audio. See [Audio functions](media/audio/index.mdx) for resampling contracts.
-
-## Value contracts
-
-A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a zero dimension is an empty tensor, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
-
-## Source and related pages
-
-- [File functions](file/index.mdx)
-- [Tensor functions](tensor.mdx)
-- [Image](media/image/index.mdx)
-- [Audio](media/audio/index.mdx)
-- [Video](media/video/index.mdx)
-- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
-- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
-- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
-- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
-
 ## Tensor functions
 
-Route: /docs/data/reference/tensor
-Source: docs/data/reference/tensor.mdx
+Route: /docs/data/reference/multimodal-data/tensor
+Source: docs/data/reference/multimodal-data/tensor.mdx
 
-Tensor functions construct and inspect `TENSOR(dtype, shape)` values. Variable-shape tensors store `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY`. `tensor()` always produces a variable-shape tensor, and `tensor_data` and `tensor_shape` require one. See [Multimodal types](types.mdx) for `tensor_type` and the storage contract.
+Tensor functions construct and inspect `TENSOR(dtype, shape)` values. Variable-shape tensors store `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY`. `tensor()` always produces a variable-shape tensor, and `tensor_data` and `tensor_shape` require one. See [Multimodal data](index.mdx) for `tensor_type` and the storage contract.
 
 ## Signature
 
@@ -6454,7 +6433,7 @@ con.sql("SELECT tensor_data(t), tensor_shape(t) FROM (SELECT tensor([1, 2, 3, 4]
 
 ## Source and related pages
 
-- [Multimodal types](types.mdx)
+- [Multimodal data](index.mdx)
 - [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
 - [Implementation: `vane/_tensor.py`](https://github.com/AstroVela/vane/blob/main/vane/_tensor.py)
 

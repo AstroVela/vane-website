@@ -23,7 +23,7 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
-  "sidebar.dataSidebar.doc.Media reference overview": {
+  "sidebar.dataSidebar.doc.Multimodal data overview": {
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
@@ -75,9 +75,9 @@
     "message": "AI 函数",
     "description": "The label for category AI Functions in sidebar dataSidebar"
   },
-  "sidebar.dataSidebar.category.Media": {
-    "message": "媒体",
-    "description": "The label for category Media in sidebar dataSidebar"
+  "sidebar.dataSidebar.category.Multimodal data": {
+    "message": "多模态数据",
+    "description": "The label for category Multimodal data in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Image": {
     "message": "图像",
@@ -94,10 +94,6 @@
   "sidebar.dataSidebar.category.File": {
     "message": "文件",
     "description": "The label for category File in sidebar dataSidebar"
-  },
-  "sidebar.dataSidebar.category.Data types": {
-    "message": "数据类型",
-    "description": "The label for category Data types in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Expression UDFs": {
     "message": "Expression UDF",

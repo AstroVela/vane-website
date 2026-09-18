@@ -70,7 +70,7 @@ const mediaVideoFiles = [
   'video/video-scan-stats.mdx',
 ]
 const mediaSlug = (file) =>
-  `reference/media/${file.replace(/(?:\/index)?\.mdx$/, '')}`
+  `reference/multimodal-data/${file.replace(/(?:\/index)?\.mdx$/, '')}`
 const readReferenceSources = (file) => [
   readFileSync(`docs/data/reference/${file}`, 'utf8'),
   readFileSync(
@@ -307,35 +307,41 @@ test('Tutorials sidebar separates examples and use cases', () => {
   )
 })
 
-test('Reference sidebar separates UDFs, AI Functions, Media, File, and Data types', () => {
+test('Reference sidebar separates UDFs, AI Functions, and Multimodal data', () => {
   const reference = dataSidebar.find((entry) => entry.group === 'Reference')
   assert.deepEqual(
     reference.items.map((entry) => entry.group),
-    ['UDFs', 'AI Functions', 'Media', 'File', 'Data types'],
+    ['UDFs', 'AI Functions', 'Multimodal data'],
   )
   assert.deepEqual(
     reference.items[1].items.map((entry) => entry.slug),
     aiReferenceFiles.map((file) => file.replace(/(?:\/index)?\.mdx$/, '')),
   )
-  const media = reference.items[2]
+  const multimodal = reference.items[2]
   assert.deepEqual(
-    media.items.map((entry) => entry.slug ?? entry.group),
-    ['reference/media', 'Image', 'Audio', 'Video'],
+    multimodal.items.map((entry) => entry.slug ?? entry.group),
+    [
+      'reference/multimodal-data',
+      'File',
+      'Image',
+      'Audio',
+      'Video',
+      'reference/multimodal-data/tensor',
+    ],
   )
-  assert.deepEqual(media.items[1].items.map((entry) => entry.slug), mediaImageFiles.map(mediaSlug))
-  assert.deepEqual(media.items[2].items.map((entry) => entry.slug), mediaAudioFiles.map(mediaSlug))
-  assert.deepEqual(media.items[3].items.map((entry) => entry.slug), mediaVideoFiles.map(mediaSlug))
-
-  const file = reference.items[3]
   assert.deepEqual(
-    file.items.map((entry) => entry.slug),
-    ['reference/file', 'reference/file/constructors', 'reference/file/inspection', 'reference/file/identity', 'reference/file/listing'],
+    multimodal.items[1].items.map((entry) => entry.slug),
+    [
+      'reference/multimodal-data/file',
+      'reference/multimodal-data/file/constructors',
+      'reference/multimodal-data/file/inspection',
+      'reference/multimodal-data/file/identity',
+      'reference/multimodal-data/file/listing',
+    ],
   )
-  const dataTypes = reference.items[4]
-  assert.deepEqual(
-    dataTypes.items.map((entry) => entry.slug),
-    ['reference/types', 'reference/tensor'],
-  )
+  assert.deepEqual(multimodal.items[2].items.map((entry) => entry.slug), mediaImageFiles.map(mediaSlug))
+  assert.deepEqual(multimodal.items[3].items.map((entry) => entry.slug), mediaAudioFiles.map(mediaSlug))
+  assert.deepEqual(multimodal.items[4].items.map((entry) => entry.slug), mediaVideoFiles.map(mediaSlug))
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.UDFs']?.message,
     'UDF',
@@ -345,16 +351,12 @@ test('Reference sidebar separates UDFs, AI Functions, Media, File, and Data type
     'AI 函数',
   )
   assert.equal(
-    dataDocsTranslations['sidebar.dataSidebar.category.Media']?.message,
-    '媒体',
+    dataDocsTranslations['sidebar.dataSidebar.category.Multimodal data']?.message,
+    '多模态数据',
   )
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.File']?.message,
     '文件',
-  )
-  assert.equal(
-    dataDocsTranslations['sidebar.dataSidebar.category.Data types']?.message,
-    '数据类型',
   )
 })
 
@@ -680,11 +682,11 @@ test('Docusaurus sidebar maps custom index slugs to document ids', () => {
     ['reference/udf', 'reference/udf/index'],
     ['reference/udf/expression', 'reference/udf/expression/index'],
     ['reference/ai', 'reference/ai/index'],
-    ['reference/media', 'reference/media/index'],
-    ['reference/media/image', 'reference/media/image/index'],
-    ['reference/media/audio', 'reference/media/audio/index'],
-    ['reference/media/video', 'reference/media/video/index'],
-    ['reference/file', 'reference/file/index'],
+    ['reference/multimodal-data', 'reference/multimodal-data/index'],
+    ['reference/multimodal-data/file', 'reference/multimodal-data/file/index'],
+    ['reference/multimodal-data/image', 'reference/multimodal-data/image/index'],
+    ['reference/multimodal-data/audio', 'reference/multimodal-data/audio/index'],
+    ['reference/multimodal-data/video', 'reference/multimodal-data/video/index'],
   ]) {
     assert.match(sidebarsSource, new RegExp(`'${slug}': '${docId}'`))
   }

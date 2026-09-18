@@ -1,0 +1,83 @@
+---
+title: Video functions
+---
+
+Video functions inspect `VIDEOFILE` metadata, stream decoded frames as rows, and build or inspect reusable seek indexes. Every function has a Python form and a SQL form; `video_metadata`, `video_frames`, and `video_keyframes` also have an `Expression` method form.
+
+Each function has two interchangeable implementations selected by the connection's `video_backend` when the query is bound:
+
+- `python` (default) calls Python helpers built on PyAV (`vane/_video_expressions.py`, `vane/_video_file.py`, `vane/_video_index.py`). No extension is required.
+- `native` calls the loaded `native_media` extension's C++/FFmpeg operators. Set `video_backend` before binding the query.
+
+`video_file` has only a C++ implementation and no Python/PyAV alternative (see [File constructors](../file/constructors.mdx)). `read_video_frames` binds either the native `native_read_video_frames` scan or a Python DataSource scan; `EXPLAIN` shows `NATIVE_READ_VIDEO_FRAMES` or `DATASOURCE_SCAN`.
+
+## Choose an API
+
+| Function | Python | SQL | Default implementation | Native implementation | Returns |
+| --- | :-: | :-: | --- | --- | --- |
+| [`video_metadata`](video-metadata.mdx) | ✓ | ✓ | Python / PyAV | `native_video_metadata` | Metadata `STRUCT` |
+| [`video_frames`](video-frames.mdx) | ✓ | ✓ | Python / PyAV | `native_video_frames` | `LIST` of frame records |
+| [`video_keyframes`](video-keyframes.mdx) | ✓ | ✓ | Python / PyAV | `native_video_keyframes` | `LIST<IMAGE('RGB')>` |
+| [`get_video_frame_by_idx`](get-video-frame-by-idx.mdx) | ✓ | ✓ | Python / PyAV | `native_get_video_frame_by_idx` | `IMAGE('RGB')` |
+| [`read_video_frames`](read-video-frames.mdx) | ✓ | ✓ | Python DataSource | `native_read_video_frames` | Frame rows |
+| [`build_video_index`](build-video-index.mdx) | ✓ | ✓ | Python / PyAV | `native_build_video_index` | Index `BLOB` |
+| [`video_index_info`](video-index-info.mdx) | ✓ | ✓ | Python | `native_video_index_info` | Index metadata `STRUCT` |
+| [`video_scan_stats`](video-scan-stats.mdx) | ✓ | ✓ | Python / PyAV | `native_video_scan_stats` | Diagnostics `STRUCT` |
+
+## Frame expression options
+
+`video_frames` and `video_keyframes` share these options; each function page lists only its additional options.
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Source video | Required |
+| `start_time` / `end_time` | Number or `Expression` | Inclusive time window in seconds relative to stream start | `0` / `None` |
+| `width` / `height` | Positive integer, `Expression`, or `None` | Output frame dimensions; must be supplied together | `None` |
+| `sample_interval_seconds` | Number or `Expression` | Emit frames when timestamps reach the next interval target | `None` |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified encoded-format failures | `"raise"` |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `8 GiB` (maximum `16 GiB`) |
+| `max_decoded_frames` | Integer or `Expression` | Per-input decoded-frame limit, including filtered frames | `1,000,000` |
+| `max_pixels` | Integer or `Expression` | Input and output pixel limit | `32 Mi` pixels |
+| `max_output_bytes` | Integer or `Expression` | Per-row scalar payload budget | `64 MiB` (maximum `256 MiB`) |
+| `max_output_frames` | Integer or `Expression` | Selected-frame limit | `10,000` (maximum `100,000`) |
+| `index` | Index `BLOB` or `Expression` | Verified seek index from `build_video_index`; `NULL` uses sequential decoding | `None` |
+
+## Python VideoFile values
+
+`vane.VideoFile` exposes bound generators and lookups that always use the Python implementation:
+
+| Member | Returns |
+| --- | --- |
+| `VideoFile.metadata(buffer_size=65536, *, max_bytes=8388608)` | `VideoMetadata` |
+| `VideoFile.frames(...)` | Generator of `VideoFrameData` records |
+| `VideoFile.keyframes(...)` | Generator of decoded frames (PIL `Image`) |
+| `VideoFile.get_frame_by_idx(idx, ...)` | One decoded frame (PIL `Image`) |
+
+`frames`, `keyframes`, and `get_frame_by_idx` accept the same time, dimension, sampling, and keyframe options as the matching SQL functions, plus `buffer_size`; the decoded-frame limit is named `max_frames`. Failures raise `VideoFileError` or its `VideoFileFormatError` / `VideoFileLimitError` subclasses.
+
+## Backends
+
+Both backends implement the same selection contract, including inclusive time windows, timestamp-reached sampling, presentation-order frame indices, keyframe filtering, and byte-identical RGB conversion for supported fixtures. SQL expressions and `read_video_frames` accept indexes built by either backend. Prepared statements retain their bound implementation; lazy relations may bind again when executed.
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET video_backend = 'native'")
+```
+
+An unavailable native extension fails during binding; there is no automatic fallback. Connection-bound `VideoFrameSource` dispatches natively only for the exact built-in class: passing a subclass with `video_backend = 'native'` to `vane.datasource.read_datasource` raises during binding, before any files are read.
+
+## Returns and errors
+
+`NULL` inputs return `NULL`. Negative indices and invalid options always raise; missing frame indices raise an index-range error or return `NULL` under `on_error="null"`. Only encoded-format failures may become `NULL`; I/O, dependency, resource-limit, and cancellation failures always propagate. Row order across file tasks is unspecified; use `ORDER BY` when needed.
+
+## Source and related pages
+
+- [Multimodal data](../index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [Implementation: `vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)
+- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)

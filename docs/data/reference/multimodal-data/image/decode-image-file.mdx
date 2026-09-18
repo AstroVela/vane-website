@@ -1,0 +1,45 @@
+---
+title: decode_image_file
+---
+
+`decode_image_file` decodes an `IMAGEFILE` into an `IMAGE`. `mode=None` preserves source modes already representable by `IMAGE`; palette images expand to RGBA, and integer depth and floating RGB(A) are retained.
+
+## Signature
+
+```python
+vane.decode_image_file(
+    value, mode=None, on_error="raise",
+    *, max_input_bytes=268435456, max_pixels=100000000, max_decoded_bytes=536870912,
+) -> Expression
+```
+
+SQL: `decode_image_file(file [, mode, on_error, max_input_bytes, max_pixels, max_decoded_bytes])`. Expression method: `expr.decode_image_file(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `IMAGEFILE` value or `Expression` | Encoded image object | Required |
+| `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Result pixel mode; `None` preserves a representable source mode | `None` |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified encoded-format and codec failures | `"raise"` |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `256 MiB` |
+| `max_pixels` | Integer or `Expression` | Pixel limit | `100,000,000` |
+| `max_decoded_bytes` | Integer or `Expression` | Decoded pixel budget | `512 MiB` |
+
+## Returns and errors
+
+Returns a dynamic `IMAGE`, or `IMAGE(mode)` for a constant mode. `NULL` returns `NULL`. I/O, interruption, dependency, and limit errors propagate even under `on_error="null"`. SQL execution caps decoded pixel storage at 256 MiB per vector batch.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT decode_image_file(image_file('photo.png'), 'RGBA')").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)

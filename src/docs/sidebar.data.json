@@ -95,85 +95,79 @@
         ]
       },
       {
-        "group": "Media",
+        "group": "Multimodal data",
         "items": [
           {
-            "slug": "reference/media",
+            "slug": "reference/multimodal-data",
             "label": "Overview",
-            "key": "Media reference overview"
+            "key": "Multimodal data overview"
+          },
+          {
+            "group": "File",
+            "items": [
+              {
+                "slug": "reference/multimodal-data/file",
+                "label": "Overview",
+                "key": "File reference overview"
+              },
+              { "slug": "reference/multimodal-data/file/constructors" },
+              { "slug": "reference/multimodal-data/file/inspection" },
+              { "slug": "reference/multimodal-data/file/identity" },
+              { "slug": "reference/multimodal-data/file/listing" }
+            ]
           },
           {
             "group": "Image",
             "items": [
               {
-                "slug": "reference/media/image",
+                "slug": "reference/multimodal-data/image",
                 "label": "Overview",
                 "key": "Image reference overview"
               },
-              { "slug": "reference/media/image/image-file-metadata" },
-              { "slug": "reference/media/image/decode-image-file" },
-              { "slug": "reference/media/image/decode-image" },
-              { "slug": "reference/media/image/crop" },
-              { "slug": "reference/media/image/resize" },
-              { "slug": "reference/media/image/convert-image" },
-              { "slug": "reference/media/image/encode-image" },
-              { "slug": "reference/media/image/image-hash" },
-              { "slug": "reference/media/image/image-to-tensor" },
-              { "slug": "reference/media/image/accessors" }
+              { "slug": "reference/multimodal-data/image/image-file-metadata" },
+              { "slug": "reference/multimodal-data/image/decode-image-file" },
+              { "slug": "reference/multimodal-data/image/decode-image" },
+              { "slug": "reference/multimodal-data/image/crop" },
+              { "slug": "reference/multimodal-data/image/resize" },
+              { "slug": "reference/multimodal-data/image/convert-image" },
+              { "slug": "reference/multimodal-data/image/encode-image" },
+              { "slug": "reference/multimodal-data/image/image-hash" },
+              { "slug": "reference/multimodal-data/image/image-to-tensor" },
+              { "slug": "reference/multimodal-data/image/accessors" }
             ]
           },
           {
             "group": "Audio",
             "items": [
               {
-                "slug": "reference/media/audio",
+                "slug": "reference/multimodal-data/audio",
                 "label": "Overview",
                 "key": "Audio reference overview"
               },
-              { "slug": "reference/media/audio/audio-metadata" },
-              { "slug": "reference/media/audio/resample" },
-              { "slug": "reference/media/audio/native-audio-resample-profile" }
+              { "slug": "reference/multimodal-data/audio/audio-metadata" },
+              { "slug": "reference/multimodal-data/audio/resample" },
+              { "slug": "reference/multimodal-data/audio/native-audio-resample-profile" }
             ]
           },
           {
             "group": "Video",
             "items": [
               {
-                "slug": "reference/media/video",
+                "slug": "reference/multimodal-data/video",
                 "label": "Overview",
                 "key": "Video reference overview"
               },
-              { "slug": "reference/media/video/video-metadata" },
-              { "slug": "reference/media/video/video-frames" },
-              { "slug": "reference/media/video/video-keyframes" },
-              { "slug": "reference/media/video/get-video-frame-by-idx" },
-              { "slug": "reference/media/video/read-video-frames" },
-              { "slug": "reference/media/video/build-video-index" },
-              { "slug": "reference/media/video/video-index-info" },
-              { "slug": "reference/media/video/video-scan-stats" }
+              { "slug": "reference/multimodal-data/video/video-metadata" },
+              { "slug": "reference/multimodal-data/video/video-frames" },
+              { "slug": "reference/multimodal-data/video/video-keyframes" },
+              { "slug": "reference/multimodal-data/video/get-video-frame-by-idx" },
+              { "slug": "reference/multimodal-data/video/read-video-frames" },
+              { "slug": "reference/multimodal-data/video/build-video-index" },
+              { "slug": "reference/multimodal-data/video/video-index-info" },
+              { "slug": "reference/multimodal-data/video/video-scan-stats" }
             ]
-          }
-        ]
-      },
-      {
-        "group": "File",
-        "items": [
-          {
-            "slug": "reference/file",
-            "label": "Overview",
-            "key": "File reference overview"
           },
-          { "slug": "reference/file/constructors" },
-          { "slug": "reference/file/inspection" },
-          { "slug": "reference/file/identity" },
-          { "slug": "reference/file/listing" }
-        ]
-      },
-      {
-        "group": "Data types",
-        "items": [
-          { "slug": "reference/types" },
-          { "slug": "reference/tensor" }
+          { "slug": "reference/multimodal-data/tensor" }
         ]
       }
     ]

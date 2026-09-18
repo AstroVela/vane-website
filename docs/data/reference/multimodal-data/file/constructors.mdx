@@ -1,0 +1,52 @@
+---
+title: File constructors
+---
+
+Constructors build `FILE`-family expressions. By default, `file`, `image_file`, `audio_file`, and `video_file` do not access the referenced object; `to_file`, `try_to_file`, and `from_files` resolve storage when executed.
+
+## Signature
+
+```python
+vane.file(url, content_type=None, position=None, size=None, checksum=None) -> Expression
+vane.image_file(url_or_file, verify=False) -> Expression
+vane.audio_file(url_or_file, verify=False) -> Expression
+vane.video_file(url_or_file, verify=False) -> Expression
+vane.to_file(path) -> Expression
+vane.try_to_file(path) -> Expression
+vane.from_files(path, *, connection=None) -> Relation
+```
+
+SQL: `file(url, content_type, position, size, checksum)`, `image_file(url_or_file [, verify])`, `audio_file(url_or_file [, verify])`, `video_file(url_or_file [, verify])`, `to_file(path)`, and `try_to_file(path)`. In SQL, `file` requires all five arguments; the Python form defaults the optional fields to `None`. `from_files` is Python-only.
+
+`expr.as_file(media_type=MediaType.unknown())` is the Expression method form: it builds the same FILE-family expression from the expression's string value, with `media_type` selecting `FILE`, `IMAGEFILE`, `AUDIOFILE`, or `VIDEOFILE`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `url` | String or `Expression` | Object URL | Required |
+| `content_type` | String, `Expression`, or `None` | Declared MIME type | `None` |
+| `position` / `size` | Integer, `Expression`, or `None` | Optional byte window into the object | `None` |
+| `checksum` | String, `Expression`, or `None` | Declared checksum | `None` |
+| `url_or_file` | String, `FILE` value, or `Expression` | URL or FILE view to re-type as `IMAGEFILE`/`AUDIOFILE`/`VIDEOFILE` | Required |
+| `verify` | `bool` or `Expression` | Verify bounded content when constructing the value | `False` |
+| `path` | String, `Expression`, or list of strings (`from_files`) | Path(s) resolved to `FILE` | Required |
+
+## Returns and errors
+
+`file`, `to_file`, and `try_to_file` return `FILE`; `image_file`/`audio_file`/`video_file` return the matching typed `FILE`. `to_file` and `try_to_file` open the object at execution and return its complete logical view (`position = 0`, `size` = object size); `to_file` raises on failure, while `try_to_file` returns `NULL` for recoverable access failures. `from_files` returns a one-column relation of canonical `FILE` values, built on `list_files`. `file` never accesses the object; the typed constructors access it only when `verify=True` performs a bounded content check.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_file('photo.png') AS file").show()
+vane.from_files("photos/*.png", connection=con).show()
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`list_files`](listing.mdx)

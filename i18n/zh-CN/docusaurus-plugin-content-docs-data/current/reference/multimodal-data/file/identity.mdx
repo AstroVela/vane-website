@@ -1,0 +1,38 @@
+---
+title: 文件身份
+---
+
+身份函数生成稳定标识，并按位置或内容比较 `FILE` 值。
+
+## 签名
+
+```python
+vane.file_locator_id(value) -> Expression
+vane.file_content_id(value) -> Expression
+vane.file_same_location(left, right) -> Expression
+vane.file_same_content(left, right) -> Expression
+```
+
+SQL：`file_locator_id(file)`、`file_content_id(file)`、`file_same_location(left, right)` 和 `file_same_content(left, right)`。每个 `FILE` 子类型还支持 `=` 与 `!=` 运算符，比较全部五个字段。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `FILE` 家族值或 `Expression` | 待标识对象 | 必填 |
+| `left` / `right` | 相同子类型的值或 `Expression` | 待比较值 | 必填 |
+
+## 返回与错误
+
+`file_locator_id` 返回由 URL 与字节窗口推导的位置标识（`VARCHAR`）。`file_content_id` 返回由声明校验和推导的内容标识（`VARCHAR`）；空字节窗口返回 `file-content-v1:empty`，未声明校验和时返回 `NULL`。`file_same_location` 比较 URL、position 与 size，当只有一侧带字节窗口时返回 `NULL`。`file_same_content` 比较声明的校验和：窗口大小不同返回 `false`，任一侧校验和缺失或算法不同返回 `NULL`。`=`/`!=` 要求相同子类型并遵循 SQL `NULL` 语义；混用子类型会在绑定时报错。
+
+## 示例
+
+```sql
+SELECT file_same_location(image_file('a.png'), image_file('a.png')) AS same_location;
+```
+
+## 来源与相关页面
+
+- [文件函数](index.mdx)
+- [多模态数据](../index.mdx)

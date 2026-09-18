@@ -1,0 +1,50 @@
+---
+title: 音频函数
+---
+
+音频函数查看 `AUDIOFILE` 元数据，并把波形重采样为形状 `(frames, channels)` 的 Float64 张量。连接的 `audio_backend`（默认 `python`，加载 `native_media` 扩展后可用 `native`）选择 SoundFile/SoXR 路径或 C++ 路径；两种后端都用 SoXR HQ，返回恰好 `ceil(解码帧数 * 目标采样率 / 源采样率)` 帧。`audio_metadata` 和 `resample` 都有 Python 形式与 SQL 形式，只有 `audio_metadata` 还有 `Expression` 方法形式。[`audio_file`](../file/constructors.mdx) 是 `AUDIOFILE` 构造器。
+
+## 如何选择接口
+
+| 函数 | Python | SQL | Native 实现 | 返回 |
+| --- | :-: | :-: | --- | --- |
+| [`audio_metadata`](audio-metadata.mdx) | ✓ | ✓ | `native_audio_metadata` | 元数据 `STRUCT` |
+| [`resample`](resample.mdx) | ✓ | ✓ | `native_audio_resample` | `TENSOR(DOUBLE, [NULL, NULL])` |
+| [`native_audio_resample_profile`](native-audio-resample-profile.mdx) | — | ✓ | `native_audio_resample_profile` | 诊断 `STRUCT` |
+
+`native_audio_resample_profile` 是由 `native_media` 扩展注册的 native 专用诊断函数。
+
+## Python AudioFile 值
+
+`vane.AudioFile` 提供始终走 Python 实现的绑定方法：
+
+| 方法 | 返回 |
+| --- | --- |
+| `AudioFile.metadata(*, max_bytes=8388608)` | `AudioMetadata`，含采样率、通道数、帧数、时长、format 与 subtype |
+| `AudioFile.to_numpy(buffer_size=1048576, *, max_input_bytes=536870912, max_frames=100000000, max_decoded_bytes=536870912)` | Float64 `(frames, channels)` NumPy 数组 |
+| `AudioFile.resample(sample_rate, buffer_size=1048576, *, max_input_bytes=536870912, max_frames=100000000, max_decoded_bytes=536870912, max_output_frames=100000000, max_output_bytes=536870912)` | 重采样后的 Float64 `(frames, channels)` NumPy 数组 |
+
+`metadata` 只查看头部、不解码；`to_numpy` 解码完整流；`resample` 使用 SoXR HQ。失败会抛出 `AudioFileError` 或其 `AudioFileFormatError` / `AudioFileLimitError` 子类。
+
+## 后端
+
+- `python`（默认）：SoundFile/SoXR，需安装 `vane-ai[audio]`。
+- `native`：已加载的 `native_media` 扩展。绑定查询前设置 `audio_backend = 'native'`。扩展不可用会在绑定时失败，没有自动回退。
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET audio_backend = 'native'")
+```
+
+## 返回与错误
+
+`NULL` 输入传播为 `NULL` 波形。不支持的采样率、通道数、解码器不匹配、超出资源限制、缺失音频依赖和查询取消都会传播为错误。SQL 执行每向量批次的展平采样存储上限为 256 MiB。
+
+## 来源与相关页面
+
+- [多模态数据](../index.mdx)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
