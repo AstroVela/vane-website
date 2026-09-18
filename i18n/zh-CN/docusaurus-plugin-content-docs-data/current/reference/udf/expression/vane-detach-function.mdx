@@ -21,7 +21,7 @@ vane.detach_function(
 | `alias` | `str` | 要移除的 SQL 函数名 | 必填 |
 | `connection` | Vane 连接或 `None` | 持有该函数的连接；省略时使用 `vane.default_connection()` | `None` |
 
-## 返回值与错误
+## 返回与错误
 
 函数返回 `None`。指定函数无法移除时，底层连接错误会直接向上传递。
 
@@ -41,7 +41,7 @@ vane.detach_function("identity")
 vane.close()
 ```
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.attach_function`](vane-attach-function.mdx)

@@ -1,0 +1,38 @@
+---
+title: audio_metadata
+---
+
+`audio_metadata` 查看有界的编码 `AUDIOFILE` 元数据，不解码采样。
+
+## 签名
+
+```python
+vane.audio_metadata(value, *, max_bytes=8388608) -> Expression
+```
+
+SQL：`audio_metadata(file [, max_bytes])`。Expression 方法：`expr.audio_metadata(...)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `AUDIOFILE` 值或 `Expression` | 待查看的编码音频对象 | 必填 |
+| `max_bytes` | 整数或 `Expression` | 有界元数据探测预算 | `8 MiB`（上限 `64 MiB`） |
+
+## 返回与错误
+
+返回元数据 `STRUCT`，含 format、subtype、采样率、通道数、帧数和时长。`NULL` 返回 `NULL`；不可读或不支持的音频报错。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT audio_metadata(audio_file('sample.wav'))").show()
+```
+
+## 来源与相关页面
+
+- [音频函数](index.mdx)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)

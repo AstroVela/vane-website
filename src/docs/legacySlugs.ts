@@ -51,6 +51,7 @@ export const LEGACY_DOC_SLUGS = {
   'deploy/single-node': 'deploy/deployment',
   'deploy/ray-cluster': 'deploy/deployment',
   'deploy/sizing': 'deploy/deployment',
+  'reference/media/types': 'reference/types',
 } as const satisfies Record<string, DocSlug>
 
 export const LEGACY_DOC_SLUG_LIST = Object.keys(LEGACY_DOC_SLUGS)

@@ -1,0 +1,45 @@
+---
+title: 张量函数
+---
+
+张量函数构造和查看 `TENSOR(dtype, shape)` 值。可变形状张量存储为 `STRUCT(data LIST, shape INTEGER[rank])`，完全固定的形状使用密集 `ARRAY`。`tensor()` 始终产生可变形状张量，`tensor_data` 与 `tensor_shape` 要求可变形状张量。`tensor_type` 与存储契约见[多模态类型](types.mdx)。
+
+## 签名
+
+```python
+vane.tensor(data, shape) -> Expression
+vane.tensor_data(value) -> Expression
+vane.tensor_shape(value) -> Expression
+vane.tensor_array(values, dtype) -> pyarrow.ExtensionArray
+```
+
+SQL：`tensor(data, shape)`、`tensor_data(value)` 和 `tensor_shape(value)`。`tensor_array` 仅 Python。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `data` | 值或 `Expression` | 行主序的展平元素或兼容数组 | 必填 |
+| `shape` | 整数/`None` 序列或 `Expression` | 各维大小；`None` 表示可变维度 | 必填 |
+| `value` | `TENSOR` 值或 `Expression` | 待查看张量 | 必填 |
+| `values` | NumPy 数组或 `None` 的序列 | Arrow Tensor 列的行值 | 必填 |
+| `dtype` | Vane `DuckDBPyType` | `tensor_array` 元素类型 | 必填 |
+
+## 返回与错误
+
+`tensor` 返回可变形状 `TENSOR`，`shape` 参数决定秩与运行时各维大小。`tensor_data` 返回展平元素 `LIST`，`tensor_shape` 返回 `INTEGER[rank]`；两者都要求可变形状张量，固定形状输入会报错。`tensor_array` 返回携带 `arrow.variable_shape_tensor` 扩展类型的已校验 `pyarrow.ExtensionArray`。`NULL` 输入返回 `NULL`；形状/类型不匹配以及非 `NULL` 张量中的 `NULL` 元素报错。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT tensor_data(t), tensor_shape(t) FROM (SELECT tensor([1, 2, 3, 4], [2, 2]) AS t)").show()
+```
+
+## 来源与相关页面
+
+- [多模态类型](types.mdx)
+- [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Implementation: `vane/_tensor.py`](https://github.com/AstroVela/vane/blob/main/vane/_tensor.py)

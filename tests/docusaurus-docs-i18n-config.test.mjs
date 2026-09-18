@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -39,6 +39,62 @@ const aiReferenceFiles = [
   'reference/ai/sql/ai-embed.mdx',
 ]
 const aiReferenceRelease = 'v0.1.0'
+const mediaImageFiles = [
+  'image/index.mdx',
+  'image/image-file-metadata.mdx',
+  'image/decode-image-file.mdx',
+  'image/decode-image.mdx',
+  'image/crop.mdx',
+  'image/resize.mdx',
+  'image/convert-image.mdx',
+  'image/encode-image.mdx',
+  'image/image-hash.mdx',
+  'image/image-to-tensor.mdx',
+  'image/accessors.mdx',
+]
+const mediaAudioFiles = [
+  'audio/index.mdx',
+  'audio/audio-metadata.mdx',
+  'audio/resample.mdx',
+  'audio/native-audio-resample-profile.mdx',
+]
+const mediaVideoFiles = [
+  'video/index.mdx',
+  'video/video-metadata.mdx',
+  'video/video-frames.mdx',
+  'video/video-keyframes.mdx',
+  'video/get-video-frame-by-idx.mdx',
+  'video/read-video-frames.mdx',
+  'video/build-video-index.mdx',
+  'video/video-index-info.mdx',
+  'video/video-scan-stats.mdx',
+]
+const mediaSlug = (file) =>
+  `reference/media/${file.replace(/(?:\/index)?\.mdx$/, '')}`
+const readReferenceSources = (file) => [
+  readFileSync(`docs/data/reference/${file}`, 'utf8'),
+  readFileSync(
+    `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/reference/${file}`,
+    'utf8',
+  ),
+]
+const referenceFiles = (dir, prefix = '') =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? referenceFiles(`${dir}/${entry.name}`, `${prefix}${entry.name}/`)
+      : entry.name.endsWith('.mdx')
+        ? [`${prefix}${entry.name}`]
+        : [],
+  )
+const fencedBlocks = (source) => source.match(/```[^\n]*\n[\s\S]*?```/g) ?? []
+const proseSource = (source) =>
+  source.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/```[^\n]*\n[\s\S]*?```/g, '')
+const sectionCount = (source) => (source.match(/^## .+$/gm) ?? []).length
+function assertBilingualParity(file, english, chinese) {
+  assert.deepEqual(fencedBlocks(chinese), fencedBlocks(english), `${file}: code blocks differ`)
+  assert.equal(sectionCount(chinese), sectionCount(english), `${file}: section count differs`)
+  assert.match(proseSource(chinese), /[\u4e00-\u9fff]/, `${file}: Chinese translation is missing`)
+}
 const udfConceptSources = [
   readFileSync('docs/data/concepts/udfs.mdx', 'utf8'),
   readFileSync(
@@ -251,25 +307,34 @@ test('Tutorials sidebar separates examples and use cases', () => {
   )
 })
 
-test('Reference sidebar separates UDFs, AI Functions, and Media', () => {
+test('Reference sidebar separates UDFs, AI Functions, Media, File, and Data types', () => {
   const reference = dataSidebar.find((entry) => entry.group === 'Reference')
   assert.deepEqual(
     reference.items.map((entry) => entry.group),
-    ['UDFs', 'AI Functions', 'Media'],
+    ['UDFs', 'AI Functions', 'Media', 'File', 'Data types'],
   )
   assert.deepEqual(
     reference.items[1].items.map((entry) => entry.slug),
     aiReferenceFiles.map((file) => file.replace(/(?:\/index)?\.mdx$/, '')),
   )
+  const media = reference.items[2]
   assert.deepEqual(
-    reference.items[2].items.map((entry) => entry.slug),
-    [
-      'reference/media',
-      'reference/media/types',
-      'reference/media/image',
-      'reference/media/audio',
-      'reference/media/video',
-    ],
+    media.items.map((entry) => entry.slug ?? entry.group),
+    ['reference/media', 'Image', 'Audio', 'Video'],
+  )
+  assert.deepEqual(media.items[1].items.map((entry) => entry.slug), mediaImageFiles.map(mediaSlug))
+  assert.deepEqual(media.items[2].items.map((entry) => entry.slug), mediaAudioFiles.map(mediaSlug))
+  assert.deepEqual(media.items[3].items.map((entry) => entry.slug), mediaVideoFiles.map(mediaSlug))
+
+  const file = reference.items[3]
+  assert.deepEqual(
+    file.items.map((entry) => entry.slug),
+    ['reference/file', 'reference/file/constructors', 'reference/file/inspection', 'reference/file/identity', 'reference/file/listing'],
+  )
+  const dataTypes = reference.items[4]
+  assert.deepEqual(
+    dataTypes.items.map((entry) => entry.slug),
+    ['reference/types', 'reference/tensor'],
   )
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.UDFs']?.message,
@@ -283,6 +348,28 @@ test('Reference sidebar separates UDFs, AI Functions, and Media', () => {
     dataDocsTranslations['sidebar.dataSidebar.category.Media']?.message,
     '媒体',
   )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.File']?.message,
+    '文件',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Data types']?.message,
+    '数据类型',
+  )
+})
+
+test('Reference keeps English and Chinese pages in sync', () => {
+  const english = referenceFiles('docs/data/reference').sort()
+  const chinese = referenceFiles(
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/reference',
+  ).sort()
+  assert.deepEqual(chinese, english, 'translated reference pages must mirror the English set')
+  for (const file of english) {
+    const [englishSource, chineseSource] = readReferenceSources(file)
+    assert.ok(englishSource.trim().length > 0, `${file} is empty`)
+    assert.ok(chineseSource.trim().length > 0, `${file} translation is empty`)
+    assertBilingualParity(file, englishSource, chineseSource)
+  }
 })
 
 test('Quickstart input can cross the default Ray runner boundary', () => {
@@ -594,6 +681,10 @@ test('Docusaurus sidebar maps custom index slugs to document ids', () => {
     ['reference/udf/expression', 'reference/udf/expression/index'],
     ['reference/ai', 'reference/ai/index'],
     ['reference/media', 'reference/media/index'],
+    ['reference/media/image', 'reference/media/image/index'],
+    ['reference/media/audio', 'reference/media/audio/index'],
+    ['reference/media/video', 'reference/media/video/index'],
+    ['reference/file', 'reference/file/index'],
   ]) {
     assert.match(sidebarsSource, new RegExp(`'${slug}': '${docId}'`))
   }

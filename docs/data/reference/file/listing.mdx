@@ -1,0 +1,41 @@
+---
+title: File listing and reading
+---
+
+Listing and reading functions enumerate paths, open streams, and enrich `FILE` metadata.
+
+## Signature
+
+```python
+vane.list_files(path, recursive=False, *, connection=None) -> Relation
+vane.open_file(url, mode="r", buffering=-1, encoding=None, errors=None, newline=None, *, connection=None) -> IOBase
+vane.file_enrich(value, fields) -> Expression
+```
+
+SQL: `list_files(path [, recursive])` (table function) and `file_enrich(file, fields)`. `open_file` is Python-only.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `path` | Path string or `Expression` (Python); string or list of strings (SQL) | Path(s) to enumerate; glob patterns and directories are supported | Required |
+| `recursive` | `bool` | Recurse into directories | `False` |
+| `url` | String | URL to open as a stream | Required |
+| `mode` | `"r"`, `"rt"`, or `"rb"` | Read-only text or binary mode | `"r"` |
+| `buffering`, `encoding`, `errors`, `newline` | Standard I/O options | Applied to the returned stream | Python defaults |
+| `fields` | List of strings or `Expression` | `FILE` fields to enrich; valid fields are `size`, `content_type`, and `checksum` | Required |
+
+## Returns and errors
+
+`list_files` returns one row per resolved object with columns `url VARCHAR`, `object_size UBIGINT`, `last_modified TIMESTAMP`, `version VARCHAR`, `etag VARCHAR`, `content_type VARCHAR`, and `file FILE`. `open_file` returns a standard read-only stream. `file_enrich` fills missing fields: `size` sets `position` to `0` and `size` to the object size, `content_type` uses resolved metadata before sniffing content, and `checksum` adds a `sha256:<hex>` digest. Unsupported or `NULL` field names, invalid modes, and access failures raise.
+
+## Example
+
+```sql
+SELECT url, file FROM list_files('photos');
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`file_stat`](inspection.mdx)

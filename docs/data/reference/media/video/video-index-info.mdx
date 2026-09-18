@@ -1,0 +1,35 @@
+---
+title: video_index_info
+---
+
+`video_index_info` inspects a video index `BLOB` without opening a FILE and reports its counts, size, and creation I/O.
+
+## Signature
+
+```python
+vane.video_index_info(index) -> Expression
+```
+
+SQL: `video_index_info(index)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `index` | `BLOB` value or `Expression` | Index produced by `build_video_index` | Required |
+
+## Returns and errors
+
+Returns a `STRUCT` with `frame_count`, `keyframe_count`, `source_bytes`, `index_bytes`, `build_bytes_read`, and `codec_version`. `NULL` returns `NULL`. Its implementation follows `video_backend`, including on connections that have not loaded the native_media extension. Index integrity, identity, and format failures raise.
+
+## Example
+
+```sql
+SELECT video_index_info(build_video_index(video_file('clip.mp4')));
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)

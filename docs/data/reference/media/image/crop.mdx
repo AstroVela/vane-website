@@ -1,0 +1,39 @@
+---
+title: crop
+---
+
+`crop` extracts an integer `(x, y, width, height)` window from an `IMAGE`. Pixels outside the input are zero-filled, including alpha channels.
+
+## Signature
+
+```python
+vane.crop(image, bbox) -> Expression
+```
+
+SQL: `crop(image, bbox)`. Expression method: `expr.crop(bbox)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` value or `Expression` | Input image | Required |
+| `bbox` | `(x, y, width, height)` integer tuple/list or `Expression` | Crop origin with positive width and height; out-of-input pixels are zero-filled | Required |
+
+## Returns and errors
+
+Returns a dynamic `IMAGE` that retains the input's mode constraint. `NULL` image or `bbox` returns `NULL`. Negative or zero dimensions, missing elements, and implicit coordinate conversion raise during binding.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+image = con.sql("SELECT decode_image_file(image_file('photo.png'))").fetchone()[0]
+con.sql("SELECT crop($1, [10, 20, 64, 48])", params=[vane.Value(image, vane.image_type())]).show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

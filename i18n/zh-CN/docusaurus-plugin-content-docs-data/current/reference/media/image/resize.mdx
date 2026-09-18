@@ -1,0 +1,39 @@
+---
+title: resize
+---
+
+`resize` 用双线性采样与预乘 alpha 缩放 `IMAGE`。已知模式加常量目标尺寸得到定形图像；逐行尺寸保留带输入模式约束的动态图像。
+
+## 签名
+
+```python
+vane.resize(image, w, h, *, antialias=False) -> Expression
+```
+
+SQL：`resize(image, w, h [, antialias])`。Expression 方法：`expr.resize(w, h, antialias=...)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
+| `w` / `h` | 正整数、`Expression` 或 `None` | 目标宽/高；`NULL` 产生 `NULL` | 必填 |
+| `antialias` | `bool` 或 `Expression` | `True` 在下采样时加宽三角滤波 | `False` |
+
+## 返回与错误
+
+返回 `IMAGE`。`NULL` 图像或尺寸返回 `NULL`。非正尺寸和超范围值报错。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT resize(decode_image_file(image_file('photo.png')), 224, 224)").show()
+```
+
+## 来源与相关页面
+
+- [图像函数](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

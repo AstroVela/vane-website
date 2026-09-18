@@ -1,0 +1,46 @@
+---
+title: build_video_index
+---
+
+`build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. Materialize it once and store it alongside its `VIDEOFILE` before issuing repeated selections.
+
+Building an index performs a complete content-hashing pass and a complete sequential decode; it does not store decoded pixels or encoded video content.
+
+## Signature
+
+```python
+vane.build_video_index(
+    value, *, max_input_bytes=8589934592, max_decoded_frames=1000000,
+    max_pixels=33554432, max_index_bytes=67108864,
+) -> Expression
+```
+
+SQL: `build_video_index(file, max_input_bytes, max_decoded_frames, max_pixels, max_index_bytes)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Source video to index | Required |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `8 GiB` (maximum `16 GiB`) |
+| `max_decoded_frames` | Integer or `Expression` | Full-decode budget during construction | `1,000,000` |
+| `max_pixels` | Integer or `Expression` | Pixel limit | `32 Mi` pixels |
+| `max_index_bytes` | Integer or `Expression` | Index size limit; may only be lowered | `64 MiB` |
+
+## Returns and errors
+
+Returns an opaque `BLOB` that binds the FILE view, codec build, and decoded frame order. An index belongs to one immutable FILE view; source metadata or runtime identity changes require rebuilding it. Indexes require a known time base, unique strictly increasing presentation timestamps, and an initial keyframe; variable frame rates, nonzero timestamp origins, and B frames are supported within that contract. Duplicate/missing timestamps and discontinuities are unsupported. `NULL` input returns `NULL`.
+
+## Example
+
+```sql
+CREATE TABLE indexed_videos AS
+SELECT file, build_video_index(file) AS seek_index FROM videos;
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`video_index_info`](video-index-info.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
+- [Implementation: `vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)

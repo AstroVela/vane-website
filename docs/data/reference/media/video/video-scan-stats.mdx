@@ -1,0 +1,48 @@
+---
+title: video_scan_stats
+---
+
+`video_scan_stats` runs selection and returns diagnostics without output images. A non-`NULL` `idx` selects a single exact frame instead. Indexed reads still convert unscaled RGB pixels to verify decoded content.
+
+## Signature
+
+```python
+vane.video_scan_stats(
+    value, *, start_time=0, end_time=None, is_key_frame=None,
+    sample_interval_seconds=None, idx=None, index=None,
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+) -> Expression
+```
+
+SQL: `video_scan_stats(file, start_time, end_time, is_key_frame, sample_interval_seconds, max_input_bytes, max_decoded_frames, max_pixels, idx, index)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Source video | Required |
+| `start_time` / `end_time` | Number or `Expression` | Inclusive time window in seconds relative to stream start | `0` / `None` |
+| `is_key_frame` | `bool`, `Expression`, or `None` | Filter to keyframes only | `None` |
+| `sample_interval_seconds` | Number or `Expression` | Emit frames when timestamps reach the next interval target | `None` |
+| `idx` | `BIGINT` or `Expression` | Select one exact frame instead of scanning | `None` |
+| `index` | Index `BLOB` or `Expression` | Verified seek index from `build_video_index`; `NULL` selects sequential decoding | `None` |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `8 GiB` (maximum `16 GiB`) |
+| `max_decoded_frames` | Integer or `Expression` | Per-input decoded-frame limit | `1,000,000` |
+| `max_pixels` | Integer or `Expression` | Input and output pixel limit | `32 Mi` pixels |
+
+## Returns and errors
+
+Returns a `STRUCT` with `bytes_read`, `decoded_frames`, `seeks`, and `selected_frames`. Bytes include verification block reads; frames count decoder outputs including discarded preroll, excluding codec-internal lookahead. This is a separate diagnostic execution with no output images.
+
+## Example
+
+```sql
+SELECT video_scan_stats(file, start_time => 1, end_time => 5)
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)

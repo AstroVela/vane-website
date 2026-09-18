@@ -2,17 +2,15 @@
 title: 媒体 API 参考
 ---
 
-Vane 通过统一类型系统处理图像、音频和视频，每个域都有两种执行后端。用本参考选择 API，并查询签名、参数、返回值和错误。类型见[多模态类型](types.mdx)；图像、音频、视频函数分别见[图像](image.mdx)、[音频](audio.mdx)和[视频](video.mdx)。
+Vane 通过统一类型系统处理图像、音频和视频，每个域都有两种执行后端。用本参考选择 API，并查询签名、参数、返回值和错误。Expression 调用返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名。SQL 调用是投影表达式，用 `AS` 命名结果。
 
-## 如何选择接口
+## 域
 
-| 媒体 | Python Expression | SQL Expression | 结果 |
-| --- | --- | --- | --- |
-| 图像 | [`vane.image_file_metadata` / `vane.decode_image_file`](image.mdx)、[`vane.crop` / `vane.resize` / `vane.convert_image` / `vane.encode_image` / `vane.decode_image` / `vane.image_hash` / `vane.image_to_tensor`](image.mdx) | `image_file_metadata`、`decode_image_file`、`decode_image`、`crop`、`resize`、`convert_image`、`encode_image`、`image_hash`、`image_to_tensor` | `IMAGE`、`TENSOR`、`BLOB`、`FIXEDBINARY` 或元数据 `STRUCT` |
-| 音频 | [`vane.audio_metadata` / `vane.resample`](audio.mdx) | `audio_metadata`、`resample` | `TENSOR(DOUBLE, [NULL, NULL])` 波形或元数据 `STRUCT` |
-| 视频 | [`vane.video_metadata` / `vane.read_video_frames`](video.mdx) | `video_metadata`、`read_video_frames` | 帧行，`data: IMAGE('RGB', H, W)` |
-
-Expression 调用返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名。SQL 调用是投影表达式，用 `AS` 命名结果。`vane.read_video_frames` 返回 `Relation`，每选中一帧一行。
+- [图像函数](image/index.mdx)：解码、查看、变换和编码 `IMAGEFILE` 与 `IMAGE` 值。
+- [音频函数](audio/index.mdx)：查看 `AUDIOFILE` 元数据并重采样波形。
+- [视频函数](video/index.mdx)：按行输出解码帧，并构建或解析可复用寻址索引。
+- [多模态类型](../types.mdx)：`FILE`、`IMAGE` 和 `TENSOR` 的存储与取值契约。
+- [张量函数](../tensor.mdx)：构造和查看 `TENSOR` 值。
 
 ## 后端
 
@@ -31,17 +29,9 @@ vane.load_installed_extension("native_media", connection=con)
 con.execute("SET image_backend = 'native'")
 ```
 
-`image_to_tensor` 属于基础引擎，无论选择哪种后端都不需要可选扩展。
+`image_to_tensor` 与 `IMAGE` 访问器属于基础引擎，无论选择哪种后端都不需要可选扩展。
 
-## 执行保证
-
-- 后端在表达式绑定时确定。先设置后端，再构造并执行查询。`EXPLAIN` 会显示绑定的实现（native 标量函数显示 `native_*`，native 帧扫描显示 `NATIVE_READ_VIDEO_FRAMES`）。
-- 未加载 `native_media` 扩展的 native 请求在绑定时失败，早于 FILE I/O。没有自动回退。把对应选项设回 `python` 可让新绑定的查询走 Python。
-- `ImageFile.decode()`、`VideoFile.frames()` 等 Python `File` 值方法始终使用 Python 实现；SQL/连接设置只管 SQL、表达式和连接绑定的视频源。
-- 缺少 Python codec 包会在 I/O 之前报错，提示安装 `vane-ai[image|audio|video]`。
-- `NULL` 输入直接传播为 `NULL` 结果，不调用 codec。`on_error="null"`（图像）和 `on_error="skip"`（视频帧）只抑制编码格式错误；I/O、资源限制和取消错误仍会传播。
-
-## 来源
+## 来源与相关页面
 
 - [Native media extension](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md)
 - [Image operations](https://github.com/AstroVela/vane/blob/main/IMAGE.md)

@@ -1,0 +1,45 @@
+---
+title: video_frames
+---
+
+`video_frames` returns a bounded list of decoded frame records for one `VIDEOFILE` row. Each record retains the source FILE view, the presentation-order temporal fields, and `data: IMAGE('RGB')`.
+
+## Signature
+
+```python
+vane.video_frames(
+    value, *, start_time=0, end_time=None, width=None, height=None,
+    is_key_frame=None, sample_interval_seconds=None, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, max_output_frames=10000, index=None,
+) -> Expression
+```
+
+SQL: `video_frames(file, start_time, end_time, width, height, is_key_frame, sample_interval_seconds, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, max_output_frames, index)`. Expression method: `expr.video_frames(...)`.
+
+## Parameters
+
+Accepts the [shared frame expression options](index.mdx#frame-expression-options) plus:
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `is_key_frame` | `bool`, `Expression`, or `None` | Filter to keyframes only | `None` |
+
+## Returns and errors
+
+Returns a `LIST` of records: `file: VIDEOFILE`, the eight temporal fields (`frame_index`, `frame_time`, `frame_time_base_numerator`, `frame_time_base_denominator`, `frame_pts`, `frame_dts`, `frame_duration`, `is_key_frame`), and `data: IMAGE('RGB')`. `NULL` input returns `NULL`; a successful selection with no matches returns an empty list.
+
+## Example
+
+```sql
+SELECT video_frames(file, start_time => 1, end_time => 2,
+                    sample_interval_seconds => 0.5) AS frames
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`video_keyframes`](video-keyframes.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

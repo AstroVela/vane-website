@@ -38,9 +38,36 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/reference/ai/sql/ai-prompt: SQL ai_prompt.
 - /docs/data/reference/ai/sql/ai-embed: SQL ai_embed.
 - /docs/data/reference/media: Media reference.
-- /docs/data/reference/media/types: Multimodal types.
 - /docs/data/reference/media/image: Image functions.
+- /docs/data/reference/media/image/image-file-metadata: image_file_metadata.
+- /docs/data/reference/media/image/decode-image-file: decode_image_file.
+- /docs/data/reference/media/image/decode-image: decode_image.
+- /docs/data/reference/media/image/crop: crop.
+- /docs/data/reference/media/image/resize: resize.
+- /docs/data/reference/media/image/convert-image: convert_image.
+- /docs/data/reference/media/image/encode-image: encode_image.
+- /docs/data/reference/media/image/image-hash: image_hash.
+- /docs/data/reference/media/image/image-to-tensor: image_to_tensor.
+- /docs/data/reference/media/image/accessors: Image accessors.
 - /docs/data/reference/media/audio: Audio functions.
+- /docs/data/reference/media/audio/audio-metadata: audio_metadata.
+- /docs/data/reference/media/audio/resample: resample.
+- /docs/data/reference/media/audio/native-audio-resample-profile: native_audio_resample_profile.
 - /docs/data/reference/media/video: Video functions.
+- /docs/data/reference/media/video/video-metadata: video_metadata.
+- /docs/data/reference/media/video/video-frames: video_frames.
+- /docs/data/reference/media/video/video-keyframes: video_keyframes.
+- /docs/data/reference/media/video/get-video-frame-by-idx: get_video_frame_by_idx.
+- /docs/data/reference/media/video/read-video-frames: read_video_frames.
+- /docs/data/reference/media/video/build-video-index: build_video_index.
+- /docs/data/reference/media/video/video-index-info: video_index_info.
+- /docs/data/reference/media/video/video-scan-stats: video_scan_stats.
+- /docs/data/reference/file: File functions.
+- /docs/data/reference/file/constructors: File constructors.
+- /docs/data/reference/file/inspection: File inspection.
+- /docs/data/reference/file/identity: File identity.
+- /docs/data/reference/file/listing: File listing and reading.
+- /docs/data/reference/types: Multimodal types.
+- /docs/data/reference/tensor: Tensor functions.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

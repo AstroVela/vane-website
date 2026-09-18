@@ -1,0 +1,43 @@
+---
+title: File functions
+---
+
+File functions construct and inspect `FILE`-family values: `FILE`, `IMAGEFILE`, `AUDIOFILE`, and `VIDEOFILE`. They resolve storage and metadata without decoding media, and back the `file` argument used by the image, audio, and video functions. Most functions have a Python form, a SQL form, and an `Expression` method; `from_files` and `open_file` are Python-only.
+
+## Choose an API
+
+| Group | Functions | Purpose |
+| --- | --- | --- |
+| [Constructors](constructors.mdx) | `file`, `image_file`, `audio_file`, `video_file`, `to_file`, `try_to_file`, `from_files` | Build `FILE`-family values |
+| [Inspection](inspection.mdx) | `file_path`, `file_size`, `file_exists`, `file_stat`, `file_mime_type`, `guess_mime_type` | Read resolved metadata |
+| [Identity](identity.mdx) | `file_locator_id`, `file_content_id`, `file_same_location`, `file_same_content` | Compare locations and content |
+| [Listing and reading](listing.mdx) | `list_files`, `open_file`, `file_enrich` | Enumerate, open, and enrich files |
+
+## Python File values
+
+In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields (`url`, `content_type`, `position`, `size`, `checksum`). They expose:
+
+| Member | Returns |
+| --- | --- |
+| `file.exists()` | `bool` without decoding |
+| `file.stat()` | `vane.FileStat` with resolved metadata without decoding |
+| `file.mime_type(detect="metadata")` | MIME type or `None` |
+| `file.open(buffer_size=None)` | A read-only `VaneFileReader` |
+| `file.to_tempfile(buffer_size=1048576)` | A binary temp file |
+| `file.is_image()` / `is_audio()` / `is_video()` | Subtype classification without I/O |
+| `file.as_image()` / `as_audio()` / `as_video()` | Re-type the same five fields; cross-subtype conversion raises `TypeError` |
+
+Subtype classification uses the declared subtype first, then `content_type` or the URL suffix as a routing hint; `as_*` re-types the same five fields and raises `TypeError` across subtypes.
+
+`ImageFile.decode()` / `metadata()`, [AudioFile](../media/audio/index.mdx) methods, and [VideoFile](../media/video/index.mdx) methods always use their Python implementations.
+
+## Returns and errors
+
+`NULL` inputs return `NULL`. Missing or inaccessible objects raise, except `try_to_file` (returns `NULL` on a recoverable access failure), `file_exists` (returns `false` for a missing object and `NULL` for a recoverable access error), and metadata lookups that may return `NULL` (`file_size`, `file_mime_type`, `file_content_id`). SQL expression equality requires the same `FILE` subtype and keeps SQL `NULL` semantics.
+
+## Source and related pages
+
+- [Multimodal types](../types.mdx)
+- [Media reference](../media/index.mdx)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Implementation: `vane/_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_file.py)

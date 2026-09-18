@@ -1,0 +1,46 @@
+---
+title: 文件检查
+---
+
+检查函数读取已解析的 `FILE` 元数据，不解码内容。
+
+## 签名
+
+```python
+vane.file_path(value) -> Expression
+vane.file_size(value) -> Expression
+vane.file_exists(value) -> Expression
+vane.file_stat(value) -> Expression
+vane.file_mime_type(value, detect="metadata") -> Expression
+vane.guess_mime_type(value) -> Expression
+```
+
+SQL：`file_path(file)`、`file_size(file)`、`file_exists(file)`、`file_stat(file)`、`file_mime_type(file [, detect])` 和 `guess_mime_type(bytes)`。Expression 方法：`expr.file_path()`、`expr.file_size()`、`expr.file_exists()`、`expr.file_stat()`、`expr.file_mime_type(...)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `FILE` 家族值或 `Expression` | 待检查对象 | 必填 |
+| `detect` | `"metadata"`、`"content"` 或 `"auto"` | MIME 检测来源 | `"metadata"` |
+| `value`（`guess_mime_type`） | `BLOB` 值或 `Expression` | 待嗅探原始字节 | 必填 |
+
+`file_mime_type` 在 `metadata`（默认）下使用声明的 `content_type`，否则回退到 URL 后缀，不打开对象；`auto` 依次尝试声明元数据与已解析元数据，最后嗅探内容；`content` 直接嗅探内容。`guess_mime_type` 直接嗅探字节。
+
+## 返回与错误
+
+`file_path` 返回 `VARCHAR`，`NULL` 输入返回 `NULL`。`file_size` 返回 `UBIGINT`，`NULL` 输入返回 `NULL`。`file_exists` 在对象存在时返回 `true`、缺失时返回 `false`、可恢复访问错误时返回 `NULL`。`file_mime_type` 与 `guess_mime_type` 在检测失败时返回 `VARCHAR` 或 `NULL`。`file_stat` 返回 `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)`（Python 中为 `vane.FileStat`），未知字段为 `NULL`。其他访问失败报错。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT file_stat(image_file('photo.png'))").show()
+```
+
+## 来源与相关页面
+
+- [文件函数](index.mdx)
+- [`file_same_content`](identity.mdx)

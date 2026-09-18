@@ -23,7 +23,7 @@ vane.func(
 | `return_dtype` | SQL 类型字符串、Vane `DuckDBPyType`、受支持的 `pyarrow.DataType` 或 `None` | Expression 的返回类型。不会从 Python 返回注解推断；构建 Expression 时必填 | `None` |
 | `name` | 非空 `str` 或 `None` | UDF 在计划中的名称；省略时使用函数的 `__qualname__` | `None` |
 
-## 返回值与错误
+## 返回与错误
 
 装饰后，可以在 `select()` 中像普通 Expression 一样使用这个函数。每行输入都会得到一个 `return_dtype` 类型的结果；传入普通 Python 值时，也可以直接调用。
 
@@ -55,7 +55,7 @@ vane.close()
 [('vane',)]
 ```
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.func.batch`](vane-func-batch.mdx)

@@ -29,7 +29,7 @@ vane.cls.batch(
 | `unnest` | `bool` | 将 Struct 返回值展开成多个投影列；非 Struct 类型不能启用 | `False` |
 | `gpus` | 非负有限数或 `None` | 每个 Actor 使用的 GPU 资源；正值需要 Ray | `0` |
 
-## 返回值与错误
+## 返回与错误
 
 装饰后的类需要先实例化，再把实例用在 `select()` 中批量处理列。输出行数与输入保持一致。`unnest=False` 时，查询产生一个 `return_dtype` 类型的结果列；`unnest=True` 时，Struct 返回类型的各个字段会展开成独立列。
 
@@ -70,7 +70,7 @@ vane.close()
 
 每个 Actor 都会创建自己的 `Scale(10)` 实例。`__call__` 接收 Arrow 列，返回列的长度必须与对应输入批次一致。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [装饰器与包装对象：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.func.batch`](vane-func-batch.mdx)

@@ -1,0 +1,47 @@
+---
+title: get_video_frame_by_idx
+---
+
+`get_video_frame_by_idx` returns one `IMAGE('RGB')` at a zero-based presentation-order frame index. Without an index, lookup uses sequential decoding from stream start, including for late time windows.
+
+## Signature
+
+```python
+vane.get_video_frame_by_idx(
+    value, idx, *, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, index=None,
+) -> Expression
+```
+
+SQL: `get_video_frame_by_idx(file, idx, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, index)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Source video | Required |
+| `idx` | `BIGINT` or `Expression` | Zero-based presentation-order frame index | Required |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only classified encoded-format failures | `"raise"` |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `8 GiB` (maximum `16 GiB`) |
+| `max_decoded_frames` | Integer or `Expression` | Per-input decoded-frame limit, including filtered frames | `1,000,000` |
+| `max_pixels` | Integer or `Expression` | Input and output pixel limit | `32 Mi` pixels |
+| `max_output_bytes` | Integer or `Expression` | Scalar payload budget | `64 MiB` (maximum `256 MiB`) |
+| `index` | Index `BLOB` or `Expression` | Verified seek index from `build_video_index`; `NULL` uses sequential decoding | `None` |
+
+## Returns and errors
+
+Returns one `IMAGE('RGB')`. A `NULL` input or `idx` returns `NULL`. A missing frame raises an index-range error, or returns `NULL` under `on_error="null"`; negative indices always raise.
+
+## Example
+
+```sql
+SELECT get_video_frame_by_idx(file, 10, on_error => 'null') AS frame
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

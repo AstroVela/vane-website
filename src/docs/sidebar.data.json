@@ -102,10 +102,78 @@
             "label": "Overview",
             "key": "Media reference overview"
           },
-          { "slug": "reference/media/types" },
-          { "slug": "reference/media/image" },
-          { "slug": "reference/media/audio" },
-          { "slug": "reference/media/video" }
+          {
+            "group": "Image",
+            "items": [
+              {
+                "slug": "reference/media/image",
+                "label": "Overview",
+                "key": "Image reference overview"
+              },
+              { "slug": "reference/media/image/image-file-metadata" },
+              { "slug": "reference/media/image/decode-image-file" },
+              { "slug": "reference/media/image/decode-image" },
+              { "slug": "reference/media/image/crop" },
+              { "slug": "reference/media/image/resize" },
+              { "slug": "reference/media/image/convert-image" },
+              { "slug": "reference/media/image/encode-image" },
+              { "slug": "reference/media/image/image-hash" },
+              { "slug": "reference/media/image/image-to-tensor" },
+              { "slug": "reference/media/image/accessors" }
+            ]
+          },
+          {
+            "group": "Audio",
+            "items": [
+              {
+                "slug": "reference/media/audio",
+                "label": "Overview",
+                "key": "Audio reference overview"
+              },
+              { "slug": "reference/media/audio/audio-metadata" },
+              { "slug": "reference/media/audio/resample" },
+              { "slug": "reference/media/audio/native-audio-resample-profile" }
+            ]
+          },
+          {
+            "group": "Video",
+            "items": [
+              {
+                "slug": "reference/media/video",
+                "label": "Overview",
+                "key": "Video reference overview"
+              },
+              { "slug": "reference/media/video/video-metadata" },
+              { "slug": "reference/media/video/video-frames" },
+              { "slug": "reference/media/video/video-keyframes" },
+              { "slug": "reference/media/video/get-video-frame-by-idx" },
+              { "slug": "reference/media/video/read-video-frames" },
+              { "slug": "reference/media/video/build-video-index" },
+              { "slug": "reference/media/video/video-index-info" },
+              { "slug": "reference/media/video/video-scan-stats" }
+            ]
+          }
+        ]
+      },
+      {
+        "group": "File",
+        "items": [
+          {
+            "slug": "reference/file",
+            "label": "Overview",
+            "key": "File reference overview"
+          },
+          { "slug": "reference/file/constructors" },
+          { "slug": "reference/file/inspection" },
+          { "slug": "reference/file/identity" },
+          { "slug": "reference/file/listing" }
+        ]
+      },
+      {
+        "group": "Data types",
+        "items": [
+          { "slug": "reference/types" },
+          { "slug": "reference/tensor" }
         ]
       }
     ]

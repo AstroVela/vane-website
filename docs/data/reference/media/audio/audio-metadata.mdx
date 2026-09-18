@@ -1,0 +1,38 @@
+---
+title: audio_metadata
+---
+
+`audio_metadata` inspects bounded encoded `AUDIOFILE` metadata without decoding samples.
+
+## Signature
+
+```python
+vane.audio_metadata(value, *, max_bytes=8388608) -> Expression
+```
+
+SQL: `audio_metadata(file [, max_bytes])`. Expression method: `expr.audio_metadata(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `AUDIOFILE` value or `Expression` | Encoded audio object to inspect | Required |
+| `max_bytes` | Integer or `Expression` | Bounded metadata probe budget | `8 MiB` (maximum `64 MiB`) |
+
+## Returns and errors
+
+Returns a metadata `STRUCT` with format, subtype, sample rate, channels, frame count, and duration. `NULL` returns `NULL`; unreadable or unsupported audio raises.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT audio_metadata(audio_file('sample.wav'))").show()
+```
+
+## Source and related pages
+
+- [Audio functions](index.mdx)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)

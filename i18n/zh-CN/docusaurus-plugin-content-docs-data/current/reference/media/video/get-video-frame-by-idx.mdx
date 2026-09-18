@@ -1,0 +1,47 @@
+---
+title: get_video_frame_by_idx
+---
+
+`get_video_frame_by_idx` 按零基呈现顺序帧号返回单个 `IMAGE('RGB')`。没有索引时，查找从流起点顺序解码，包括较晚的时间窗口。
+
+## 签名
+
+```python
+vane.get_video_frame_by_idx(
+    value, idx, *, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, index=None,
+) -> Expression
+```
+
+SQL：`get_video_frame_by_idx(file, idx, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, index)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` 值或 `Expression` | 源视频 | 必填 |
+| `idx` | `BIGINT` 或 `Expression` | 零基呈现顺序帧号 | 必填 |
+| `on_error` | `"raise"` / `"null"` | `"null"` 只抑制已分类的编码格式失败 | `"raise"` |
+| `max_input_bytes` | 整数或 `Expression` | 编码输入上限 | `8 GiB`（上限 `16 GiB`） |
+| `max_decoded_frames` | 整数或 `Expression` | 每输入解码帧上限（含被过滤帧） | `1,000,000` |
+| `max_pixels` | 整数或 `Expression` | 输入与输出像素上限 | `32 Mi` 像素 |
+| `max_output_bytes` | 整数或 `Expression` | 标量负载预算 | `64 MiB`（上限 `256 MiB`） |
+| `index` | 索引 `BLOB` 或 `Expression` | `build_video_index` 生成的已验证寻址索引；`NULL` 走顺序解码 | `None` |
+
+## 返回与错误
+
+返回一个 `IMAGE('RGB')`。`NULL` 输入或 `idx` 返回 `NULL`。缺失帧号报越界错误，或按 `on_error="null"` 返回 `NULL`；负索引总是报错。
+
+## 示例
+
+```sql
+SELECT get_video_frame_by_idx(file, 10, on_error => 'null') AS frame
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## 来源与相关页面
+
+- [视频函数](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

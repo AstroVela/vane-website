@@ -1,0 +1,38 @@
+---
+title: video_metadata
+---
+
+`video_metadata` inspects the first non-attached video stream with bounded stream-info probing.
+
+## Signature
+
+```python
+vane.video_metadata(value, *, max_bytes=8388608) -> Expression
+```
+
+SQL: `video_metadata(file [, max_bytes])`. Expression method: `expr.video_metadata(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` value or `Expression` | Encoded video object to inspect | Required |
+| `max_bytes` | Integer or `Expression` | Bounded metadata probe budget | `8 MiB` (maximum `64 MiB`) |
+
+## Returns and errors
+
+Returns a `STRUCT` with `width`, `height`, `fps`, `duration`, `container_duration`, `frame_count`, and `time_base`. `duration` describes only the selected video stream; `container_duration` describes the whole container. Unknown durations and frame counts stay `NULL`.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT video_metadata(video_file('clip.mp4'))").show()
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)

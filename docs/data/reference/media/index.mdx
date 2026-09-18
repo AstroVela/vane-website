@@ -2,17 +2,15 @@
 title: Media reference
 ---
 
-Vane processes images, audio, and video through a unified type system with two execution backends per domain. Use this reference to choose an API and check its signatures, parameters, return values, and errors. Types are described in [Multimodal types](types.mdx); image, audio, and video functions are documented in [Image](image.mdx), [Audio](audio.mdx), and [Video](video.mdx).
+Vane processes images, audio, and video through a unified type system with two execution backends per domain. Use this reference to choose an API and check its signatures, parameters, return values, and errors. Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result.
 
-## Choose an API
+## Domains
 
-| Domain | Python Expression | SQL Expression | Result |
-| --- | --- | --- | --- |
-| Image | [`vane.image_file_metadata` / `vane.decode_image_file`](image.mdx), [`vane.crop` / `vane.resize` / `vane.convert_image` / `vane.encode_image` / `vane.decode_image` / `vane.image_hash` / `vane.image_to_tensor`](image.mdx) | `image_file_metadata`, `decode_image_file`, `decode_image`, `crop`, `resize`, `convert_image`, `encode_image`, `image_hash`, `image_to_tensor` | `IMAGE`, `TENSOR`, `BLOB`, `FIXEDBINARY`, or metadata `STRUCT` |
-| Audio | [`vane.audio_metadata` / `vane.resample`](audio.mdx) | `audio_metadata`, `resample` | `TENSOR(DOUBLE, [NULL, NULL])` waveform or metadata `STRUCT` |
-| Video | [`vane.video_metadata` / `vane.read_video_frames`](video.mdx) | `video_metadata`, `read_video_frames` | Frame rows with `data: IMAGE('RGB', H, W)` |
-
-Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result. `vane.read_video_frames` returns a `Relation`, one row per selected frame.
+- [Image functions](image/index.mdx): decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values.
+- [Audio functions](audio/index.mdx): inspect `AUDIOFILE` metadata and resample waveforms.
+- [Video functions](video/index.mdx): stream decoded frames as rows and build or inspect reusable seek indexes.
+- [Multimodal types](../types.mdx): `FILE`, `IMAGE`, and `TENSOR` storage and value contracts.
+- [Tensor functions](../tensor.mdx): construct and inspect `TENSOR` values.
 
 ## Backends
 
@@ -31,17 +29,9 @@ vane.load_installed_extension("native_media", connection=con)
 con.execute("SET image_backend = 'native'")
 ```
 
-`image_to_tensor` belongs to the base engine and requires no optional extension, regardless of the selected backend.
+`image_to_tensor` and the `IMAGE` accessors belong to the base engine and require no optional extension, regardless of the selected backend.
 
-## Execution guarantees
-
-- Backend selection happens when an expression is bound. Set the backend before constructing and executing the query. `EXPLAIN` names the bound implementation (`native_*` for native scalar functions, `NATIVE_READ_VIDEO_FRAMES` for native frame scans).
-- A native request without the loaded `native_media` extension fails while binding, before FILE I/O. There is no automatic fallback. Set the option back to `python` for newly bound queries.
-- Python `File` value methods such as `ImageFile.decode()` and `VideoFile.frames()` always use their Python implementations; the SQL/connection settings govern SQL, expressions, and the connection-bound video source.
-- Missing Python codec packages fail with an `Install vane-ai[image|audio|video]` error before I/O.
-- `NULL` inputs propagate to `NULL` results without invoking codecs. `on_error="null"` (images) and `on_error="skip"` (video frames) suppress only encoded-format failures; I/O, resource-limit, and cancellation errors still propagate.
-
-## Source
+## Source and related pages
 
 - [Native media extension](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md)
 - [Image operations](https://github.com/AstroVela/vane/blob/main/IMAGE.md)

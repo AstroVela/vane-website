@@ -1,0 +1,39 @@
+---
+title: video_keyframes
+---
+
+`video_keyframes` 返回由解码器关键帧标记选出的有界关键帧列表，值为 `IMAGE('RGB')`。
+
+## 签名
+
+```python
+vane.video_keyframes(
+    value, *, start_time=0, end_time=None, width=None, height=None,
+    sample_interval_seconds=None, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, max_output_frames=10000, index=None,
+) -> Expression
+```
+
+SQL：`video_keyframes(file, start_time, end_time, width, height, sample_interval_seconds, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, max_output_frames, index)`。Expression 方法：`expr.video_keyframes(...)`。
+
+## 参数
+
+接受[共享帧表达式选项](index.mdx#帧表达式选项)；关键帧始终按解码器的关键帧标记选取。
+
+## 返回与错误
+
+返回由解码器关键帧标记选出的 `LIST<IMAGE('RGB')>`。需要关联源时，把输入 FILE 列与结果一起保留。`NULL` 输入返回 `NULL`；没有匹配帧时返回空列表。
+
+## 示例
+
+```sql
+SELECT video_keyframes(file, end_time => 2) AS keyframes
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## 来源与相关页面
+
+- [视频函数](index.mdx)
+- [`video_frames`](video-frames.mdx)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

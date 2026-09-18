@@ -126,7 +126,7 @@ vane.close()
 
 输入为 `NULL` 时，会返回保留向量类型的 `NULL`，且不调用 Provider。短暂故障默认在首次失败后重试三次。使用 `on_error="ignore"` 时，失败批次会被拆成单行重试，从而保留成功行。如果整个批次发生 `ProviderCapabilityError`，这些行会返回 `NULL`，且不会重新提交请求；配置错误仍会抛出。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
 - [Relation 便捷方法：`vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)

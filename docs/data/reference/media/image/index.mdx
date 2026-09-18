@@ -1,0 +1,61 @@
+---
+title: Image functions
+---
+
+Image functions decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values. The connection's `image_backend` (`python` by default, `native` with the loaded `native_media` extension) selects the Pillow/tifffile/imagecodecs path or the C++ path; `EXPLAIN` shows `native_*` names for native plans. Every function and accessor in the table has a Python form, an `Expression` method form, and a SQL form. Python returns a lazy `vane.Expression`; name it with `.alias(...)`.
+
+## Choose an API
+
+| Function | Python | SQL | Native implementation | Returns |
+| --- | :-: | :-: | --- | --- |
+| [`image_file_metadata`](image-file-metadata.mdx) | ✓ | ✓ | `native_image_file_metadata` | Metadata `STRUCT` |
+| [`decode_image_file`](decode-image-file.mdx) | ✓ | ✓ | `native_decode_image_file` | `IMAGE` |
+| [`decode_image`](decode-image.mdx) | ✓ | ✓ | `native_decode_image` | `IMAGE` |
+| [`crop`](crop.mdx) | ✓ | ✓ | `native_crop` | `IMAGE` |
+| [`resize`](resize.mdx) | ✓ | ✓ | `native_resize` | `IMAGE` |
+| [`convert_image`](convert-image.mdx) | ✓ | ✓ | `native_convert_image` | `IMAGE` |
+| [`encode_image`](encode-image.mdx) | ✓ | ✓ | `native_encode_image` | `BLOB` |
+| [`image_hash`](image-hash.mdx) | ✓ | ✓ | `native_image_hash` | `FIXEDBINARY(n)` |
+| [`image_to_tensor`](image-to-tensor.mdx) | ✓ | ✓ | — | `TENSOR` |
+| [Image accessors](accessors.mdx) | ✓ | ✓ | — | `UINTEGER` |
+
+[`image_file`](../../file/constructors.mdx) is the `IMAGEFILE` constructor. `image_to_tensor` and the accessors have no backend-specific implementation.
+
+## Python ImageFile values
+
+`vane.ImageFile` exposes bound methods that always use the Python implementation:
+
+| Method | Returns |
+| --- | --- |
+| `ImageFile.metadata(*, max_bytes=1048576, max_pixels=100000000)` | `ImageMetadata` |
+| `ImageFile.decode(mode=None, buffer_size=1048576, *, max_input_bytes=268435456, max_pixels=100000000, max_decoded_bytes=536870912)` | Decoded image (PIL `Image`) |
+
+`metadata` inspects headers without decoding; `decode` follows the same mode and limit rules as `decode_image_file` and raises on failure.
+
+## Backends
+
+Both backends follow the same mode, format, and resource-limit rules.
+
+- `python` (default): Pillow/tifffile/imagecodecs. Install `vane-ai[image]`.
+- `native`: the loaded `native_media` extension. Set `image_backend = 'native'` before binding the query. An unavailable extension fails during binding; there is no automatic fallback.
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET image_backend = 'native'")
+```
+
+## Returns and errors
+
+`NULL` inputs produce `NULL`. Invalid coordinates, modes, formats, resource-limit breaches, missing codec dependencies, and cancellation propagate as errors. Python `ImageFile` failures raise `ImageFileError` or its `ImageFileFormatError` / `ImageFileLimitError` subclasses. Each operator accepts at most 100 million pixels and 256 MiB of pixel data per input image.
+
+## Source and related pages
+
+- [Multimodal types](../../types.mdx)
+- [Media reference](../index.mdx)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [Implementation: `vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)

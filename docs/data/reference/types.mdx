@@ -1,0 +1,67 @@
+---
+title: Multimodal types
+---
+
+Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. All six are first-class engine types.
+
+## Types
+
+| SQL type | Storage | Meaning |
+| --- | --- | --- |
+| `FILE` | `STRUCT(url VARCHAR, content_type VARCHAR, position BIGINT, size BIGINT, checksum VARCHAR)` | Generic immutable object reference with an optional byte window (`position`, `size`) |
+| `IMAGEFILE` | Same five fields, `IMAGE` media subtype | Encoded image object |
+| `AUDIOFILE` | Same five fields, `AUDIO` media subtype | Encoded audio object |
+| `VIDEOFILE` | Same five fields, `VIDEO` media subtype | Encoded video object |
+| `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
+| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+
+Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
+
+## Type builders and enums
+
+In Python, type builders produce Vane types, and `vane.MediaType` selects a `FILE` subtype:
+
+| API | Returns |
+| --- | --- |
+| `vane.file_type(media_type=vane.MediaType.unknown())` | The `FILE`-family type selected by `media_type` |
+| `vane.image_type(mode=None, height=None, width=None)` | An `IMAGE` type; a constant mode and dimensions narrow it |
+| `vane.tensor_type(type, shape)` | A `TENSOR` type; `None` marks a variable dimension |
+| `vane.MediaType.unknown()` / `image()` / `audio()` / `video()` | The `FILE` media subtype selector |
+
+`image_type()` returns a dynamic `IMAGE`; a mode narrows it, while `mode, height, and width` must be supplied together to fix both dimensions. `tensor_type(type, shape)` takes a Vane element type and a non-empty shape of nonnegative integers or `None` for a variable dimension (variable-shape rank 1–32). Invalid modes, dimensions, or shapes raise.
+
+`vane.ImageProperty` (`height`, `width`, `channel`, `mode`) names the `image_attribute` properties; `vane.ImageMode` and `vane.ImageFormat` enumerate the supported pixel modes and encode formats.
+
+## IMAGE modes
+
+Pixel dtype follows the mode:
+
+| Modes | Pixel dtype | Channels |
+| --- | --- | --- |
+| L, LA, RGB, RGBA | UInt8 | 1, 2, 3, 4 |
+| L16, LA16, RGB16, RGBA16 | UInt16 | 1, 2, 3, 4 |
+| RGB32F, RGBA32F | Float32 | 3, 4 |
+
+Generic `IMAGE` stores Float32 so one column can hold every mode without loss; a known mode stores its native pixel dtype. Fetched cells materialize as C-contiguous NumPy arrays with shape `(height, width, channels)`; `vane.Image` is the Python typing alias for these UInt8, UInt16, or Float32 arrays. Arrow carries fixed-shape images with the `vane.image` extension type.
+
+`expr.as_image(mode=None, height=None, width=None)` validates an existing image expression against the selected `IMAGE` type. Ordinary casts never convert colors or resize pixels, and `TRY_CAST` returns `NULL` for a layout mismatch.
+
+## Audio specialization
+
+Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimensions can vary by row, channels are positive, and zero frames (`(0, channels)`) represent empty audio. See [Audio functions](media/audio/index.mdx) for resampling contracts.
+
+## Value contracts
+
+A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a zero dimension is an empty tensor, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
+
+## Source and related pages
+
+- [File functions](file/index.mdx)
+- [Tensor functions](tensor.mdx)
+- [Image](media/image/index.mdx)
+- [Audio](media/audio/index.mdx)
+- [Video](media/video/index.mdx)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)

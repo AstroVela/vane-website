@@ -188,25 +188,160 @@ export const DOCS_PAGES = {
     title: 'Media reference',
     titleZh: '媒体 API 参考',
   },
-  'reference/media/types': {
-    source: 'docs/data/reference/media/types.mdx',
-    title: 'Multimodal types',
-    titleZh: '多模态类型',
-  },
   'reference/media/image': {
-    source: 'docs/data/reference/media/image.mdx',
+    source: 'docs/data/reference/media/image/index.mdx',
     title: 'Image functions',
     titleZh: '图像函数',
   },
+  'reference/media/image/image-file-metadata': {
+    source: 'docs/data/reference/media/image/image-file-metadata.mdx',
+    title: 'image_file_metadata',
+    titleZh: 'image_file_metadata',
+  },
+  'reference/media/image/decode-image-file': {
+    source: 'docs/data/reference/media/image/decode-image-file.mdx',
+    title: 'decode_image_file',
+    titleZh: 'decode_image_file',
+  },
+  'reference/media/image/decode-image': {
+    source: 'docs/data/reference/media/image/decode-image.mdx',
+    title: 'decode_image',
+    titleZh: 'decode_image',
+  },
+  'reference/media/image/crop': {
+    source: 'docs/data/reference/media/image/crop.mdx',
+    title: 'crop',
+    titleZh: 'crop',
+  },
+  'reference/media/image/resize': {
+    source: 'docs/data/reference/media/image/resize.mdx',
+    title: 'resize',
+    titleZh: 'resize',
+  },
+  'reference/media/image/convert-image': {
+    source: 'docs/data/reference/media/image/convert-image.mdx',
+    title: 'convert_image',
+    titleZh: 'convert_image',
+  },
+  'reference/media/image/encode-image': {
+    source: 'docs/data/reference/media/image/encode-image.mdx',
+    title: 'encode_image',
+    titleZh: 'encode_image',
+  },
+  'reference/media/image/image-hash': {
+    source: 'docs/data/reference/media/image/image-hash.mdx',
+    title: 'image_hash',
+    titleZh: 'image_hash',
+  },
+  'reference/media/image/image-to-tensor': {
+    source: 'docs/data/reference/media/image/image-to-tensor.mdx',
+    title: 'image_to_tensor',
+    titleZh: 'image_to_tensor',
+  },
+  'reference/media/image/accessors': {
+    source: 'docs/data/reference/media/image/accessors.mdx',
+    title: 'Image accessors',
+    titleZh: 'IMAGE 访问器',
+  },
   'reference/media/audio': {
-    source: 'docs/data/reference/media/audio.mdx',
+    source: 'docs/data/reference/media/audio/index.mdx',
     title: 'Audio functions',
     titleZh: '音频函数',
   },
+  'reference/media/audio/audio-metadata': {
+    source: 'docs/data/reference/media/audio/audio-metadata.mdx',
+    title: 'audio_metadata',
+    titleZh: 'audio_metadata',
+  },
+  'reference/media/audio/resample': {
+    source: 'docs/data/reference/media/audio/resample.mdx',
+    title: 'resample',
+    titleZh: 'resample',
+  },
+  'reference/media/audio/native-audio-resample-profile': {
+    source: 'docs/data/reference/media/audio/native-audio-resample-profile.mdx',
+    title: 'native_audio_resample_profile',
+    titleZh: 'native_audio_resample_profile',
+  },
   'reference/media/video': {
-    source: 'docs/data/reference/media/video.mdx',
+    source: 'docs/data/reference/media/video/index.mdx',
     title: 'Video functions',
     titleZh: '视频函数',
+  },
+  'reference/media/video/video-metadata': {
+    source: 'docs/data/reference/media/video/video-metadata.mdx',
+    title: 'video_metadata',
+    titleZh: 'video_metadata',
+  },
+  'reference/media/video/video-frames': {
+    source: 'docs/data/reference/media/video/video-frames.mdx',
+    title: 'video_frames',
+    titleZh: 'video_frames',
+  },
+  'reference/media/video/video-keyframes': {
+    source: 'docs/data/reference/media/video/video-keyframes.mdx',
+    title: 'video_keyframes',
+    titleZh: 'video_keyframes',
+  },
+  'reference/media/video/get-video-frame-by-idx': {
+    source: 'docs/data/reference/media/video/get-video-frame-by-idx.mdx',
+    title: 'get_video_frame_by_idx',
+    titleZh: 'get_video_frame_by_idx',
+  },
+  'reference/media/video/read-video-frames': {
+    source: 'docs/data/reference/media/video/read-video-frames.mdx',
+    title: 'read_video_frames',
+    titleZh: 'read_video_frames',
+  },
+  'reference/media/video/build-video-index': {
+    source: 'docs/data/reference/media/video/build-video-index.mdx',
+    title: 'build_video_index',
+    titleZh: 'build_video_index',
+  },
+  'reference/media/video/video-index-info': {
+    source: 'docs/data/reference/media/video/video-index-info.mdx',
+    title: 'video_index_info',
+    titleZh: 'video_index_info',
+  },
+  'reference/media/video/video-scan-stats': {
+    source: 'docs/data/reference/media/video/video-scan-stats.mdx',
+    title: 'video_scan_stats',
+    titleZh: 'video_scan_stats',
+  },
+  'reference/file': {
+    source: 'docs/data/reference/file/index.mdx',
+    title: 'File functions',
+    titleZh: '文件函数',
+  },
+  'reference/file/constructors': {
+    source: 'docs/data/reference/file/constructors.mdx',
+    title: 'File constructors',
+    titleZh: '文件构造器',
+  },
+  'reference/file/inspection': {
+    source: 'docs/data/reference/file/inspection.mdx',
+    title: 'File inspection',
+    titleZh: '文件检查',
+  },
+  'reference/file/identity': {
+    source: 'docs/data/reference/file/identity.mdx',
+    title: 'File identity',
+    titleZh: '文件身份',
+  },
+  'reference/file/listing': {
+    source: 'docs/data/reference/file/listing.mdx',
+    title: 'File listing and reading',
+    titleZh: '文件列举与读取',
+  },
+  'reference/types': {
+    source: 'docs/data/reference/types.mdx',
+    title: 'Multimodal types',
+    titleZh: '多模态类型',
+  },
+  'reference/tensor': {
+    source: 'docs/data/reference/tensor.mdx',
+    title: 'Tensor functions',
+    titleZh: '张量函数',
   },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',

@@ -50,6 +50,10 @@ function docIdForSlug(slug: string): string {
   const indexDocIds: Record<string, string> = {
     'tutorials': 'tutorials/index',
     'reference/media': 'reference/media/index',
+    'reference/media/image': 'reference/media/image/index',
+    'reference/media/audio': 'reference/media/audio/index',
+    'reference/media/video': 'reference/media/video/index',
+    'reference/file': 'reference/file/index',
     'reference/udf': 'reference/udf/index',
     'reference/udf/expression': 'reference/udf/expression/index',
     'reference/ai': 'reference/ai/index',

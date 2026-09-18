@@ -1,0 +1,38 @@
+---
+title: File identity
+---
+
+Identity functions derive stable identifiers and compare `FILE` values by location or content.
+
+## Signature
+
+```python
+vane.file_locator_id(value) -> Expression
+vane.file_content_id(value) -> Expression
+vane.file_same_location(left, right) -> Expression
+vane.file_same_content(left, right) -> Expression
+```
+
+SQL: `file_locator_id(file)`, `file_content_id(file)`, `file_same_location(left, right)`, and `file_same_content(left, right)`. Each `FILE` subtype also supports the `=` and `!=` operators, which compare all five fields.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `FILE`-family value or `Expression` | Object to identify | Required |
+| `left` / `right` | Same `FILE` subtype values or `Expression` | Values to compare | Required |
+
+## Returns and errors
+
+`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns a content identifier (`VARCHAR`) derived from the declared checksum, `file-content-v1:empty` for an empty byte window, and `NULL` when no checksum is declared. `file_same_location` compares URL, position, and size, and returns `NULL` when only one side has a byte window. `file_same_content` compares declared checksums: it returns `false` for different window sizes, and `NULL` when either checksum is missing or the checksum algorithms differ. `=`/`!=` require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
+
+## Example
+
+```sql
+SELECT file_same_location(image_file('a.png'), image_file('a.png')) AS same_location;
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [Multimodal types](../types.mdx)

@@ -45,7 +45,7 @@ Relation.flat_map(
 | `task_input_max_bytes` | 正整数或 `None` | 单次 Task 或 Actor 调用的输入字节目标 | `None` |
 | `output_target_max_bytes` | 正整数或 `None` | 输出数据块的字节目标 | `None` |
 
-## 返回值与错误
+## 返回与错误
 
 `flat_map()` 返回一个新的 Relation，原 Relation 不会改变。结果只包含 `schema` 中声明的列。
 
@@ -80,7 +80,7 @@ vane.close()
 [('vane',), ('data',)]
 ```
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [Python binding：`src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
 - [实现：`src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)

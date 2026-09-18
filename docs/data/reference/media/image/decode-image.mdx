@@ -1,0 +1,40 @@
+---
+title: decode_image
+---
+
+`decode_image` decodes the first image from `PNG`/`JPEG`/`TIFF`/`GIF`/`BMP`/`WebP` bytes. `mode=None` preserves the encoded pixel mode; the default converts to `RGB`.
+
+## Signature
+
+```python
+vane.decode_image(bytes_expr, on_error="raise", mode="RGB") -> Expression
+```
+
+SQL: `decode_image(bytes, on_error => ..., mode => ...)`. Expression method: `expr.decode_image(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `bytes_expr` | `BLOB` value or `Expression` | Encoded image bytes | Required |
+| `on_error` | `"raise"` / `"null"` | `"null"` suppresses only malformed or unsupported content | `"raise"` |
+| `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Result pixel mode | `"RGB"` |
+
+## Returns and errors
+
+Returns a dynamic `IMAGE`, or `IMAGE(mode)` for a constant mode. `NULL` returns `NULL`. Only malformed or unsupported content follows `on_error="null"`; other failures propagate.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+data = open("photo.png", "rb").read()
+con.sql("SELECT decode_image($1)", params=[data]).show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

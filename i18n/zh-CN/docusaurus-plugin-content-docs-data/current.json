@@ -27,6 +27,22 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.doc.Image reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.doc.Audio reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.doc.Video reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.doc.File reference overview": {
+    "message": "概览",
+    "description": "The label for the doc item Overview in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.category.Getting Started": {
     "message": "快速开始",
     "description": "The label for category Getting Started in sidebar dataSidebar"
@@ -62,6 +78,26 @@
   "sidebar.dataSidebar.category.Media": {
     "message": "媒体",
     "description": "The label for category Media in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Image": {
+    "message": "图像",
+    "description": "The label for category Image in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Audio": {
+    "message": "音频",
+    "description": "The label for category Audio in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Video": {
+    "message": "视频",
+    "description": "The label for category Video in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.File": {
+    "message": "文件",
+    "description": "The label for category File in sidebar dataSidebar"
+  },
+  "sidebar.dataSidebar.category.Data types": {
+    "message": "数据类型",
+    "description": "The label for category Data types in sidebar dataSidebar"
   },
   "sidebar.dataSidebar.category.Expression UDFs": {
     "message": "Expression UDF",
