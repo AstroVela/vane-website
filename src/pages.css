@@ -497,7 +497,8 @@ main[class*="docMainContainer"] {
   color: var(--ink);
 }
 
-.theme-doc-sidebar-container .docs-data-overview-link > .menu__link {
+.theme-doc-sidebar-container .docs-data-overview-link > .menu__link,
+.theme-doc-sidebar-container .docs-data-section-link > .menu__link {
   color: var(--ink);
   font-size: 12px;
   font-weight: 700;
@@ -507,7 +508,8 @@ main[class*="docMainContainer"] {
   padding: 8px;
 }
 
-html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .docs-data-overview-link > .menu__link {
+html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .docs-data-overview-link > .menu__link,
+html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .docs-data-section-link > .menu__link {
   font-size: 14px;
   letter-spacing: 0.02em;
   line-height: 1.35;

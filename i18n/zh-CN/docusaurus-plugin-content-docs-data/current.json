@@ -7,6 +7,10 @@
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.doc.Extensions": {
+    "message": "扩展",
+    "description": "The label for the doc item Extensions in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.doc.Tutorials overview": {
     "message": "概览",
     "description": "The label for the doc item Overview in sidebar dataSidebar"

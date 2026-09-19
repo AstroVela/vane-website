@@ -68,5 +68,6 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/reference/multimodal-data/video/video-index-info: video_index_info.
 - /docs/data/reference/multimodal-data/video/video-scan-stats: video_scan_stats.
 - /docs/data/reference/multimodal-data/tensor: Tensor functions.
+- /docs/data/extensions: Extensions.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

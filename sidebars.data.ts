@@ -87,6 +87,7 @@ function toSidebarItem(entry: DocsSidebarEntry): DataSidebarItem {
         label: entry.label,
         key: entry.key ?? entry.label,
         ...(entry.slug === 'index' && {className: 'docs-data-overview-link'}),
+        ...(entry.slug === 'extensions' && {className: 'docs-data-section-link'}),
       }
     : docIdForSlug(entry.slug)
 }

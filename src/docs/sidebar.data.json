@@ -172,6 +172,7 @@
       }
     ]
   },
+  { "slug": "extensions", "label": "Extensions" },
   {
     "group": "Operations",
     "items": [

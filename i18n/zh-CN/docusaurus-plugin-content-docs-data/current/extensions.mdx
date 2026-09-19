@@ -1,0 +1,18 @@
+---
+title: 扩展
+---
+
+将 Vane Data 连接到湖仓格式和外部数据存储。
+
+## 数据格式
+
+- **[Apache Iceberg](https://github.com/AstroVela/duckdb-iceberg/blob/v1.5-variegata_vane/VANE_README.md)** — 通过 Ray 分布式扫描和基于 catalog 的写入，读取与修改 Iceberg 表。
+- **[Lance](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)** — 读写 Lance 数据集，并执行向量、全文和混合检索。
+- **[Apache Paimon](https://github.com/AstroVela/duckdb-paimon/blob/main_vane/VANE_README.md)** — 通过 Ray 查询 Paimon 表与历史快照、创建仅追加表并追加数据。
+- **[Vortex](https://github.com/AstroVela/duckdb-vortex/blob/v1.5-variegata_vane/VANE_README.md)** — 通过 Ray 分布式扫描和 COPY 读写 Vortex 列式文件。
+- **[DuckLake](https://github.com/AstroVela/ducklake/blob/v1.5-variegata_vane/VANE_README.md)** — 查询 DuckLake 当前表与历史快照，并执行分布式 CTAS、INSERT、UPDATE、DELETE 和 MERGE。
+
+## 数据写入
+
+- **[Milvus](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#milvus-datasink) 和 [Qdrant](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#qdrant-datasink)** — 通过分布式 upsert 将查询结果直接写入向量数据库。
+- **[Apache Doris](https://github.com/AstroVela/vane/blob/4e12994a2fed5b872a7bdb44df72c1b9c5653cdc/README.md#apache-doris-arrow-stream-load)** — 通过 Arrow Stream Load 将 Arrow 批次直接写入 Doris。

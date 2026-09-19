@@ -6461,6 +6461,26 @@ column = vane.tensor_array(rows, dtype)
 - [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
 - [Implementation: `vane/_tensor.py`](https://github.com/AstroVela/vane/blob/main/vane/_tensor.py)
 
+## Extensions
+
+Route: /docs/data/extensions
+Source: docs/data/extensions.mdx
+
+Connect Vane Data to lakehouse formats and external data stores.
+
+## Data formats
+
+- **[Apache Iceberg](https://github.com/AstroVela/duckdb-iceberg/blob/v1.5-variegata_vane/VANE_README.md)** — Read and modify Iceberg tables with distributed scans and catalog-backed writes on Ray.
+- **[Lance](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)** — Read and write Lance datasets and run vector, full-text, and hybrid searches.
+- **[Apache Paimon](https://github.com/AstroVela/duckdb-paimon/blob/main_vane/VANE_README.md)** — Query Paimon tables and historical snapshots, create append-only tables, and append rows on Ray.
+- **[Vortex](https://github.com/AstroVela/duckdb-vortex/blob/v1.5-variegata_vane/VANE_README.md)** — Read and write Vortex columnar files through distributed scans and COPY on Ray.
+- **[DuckLake](https://github.com/AstroVela/ducklake/blob/v1.5-variegata_vane/VANE_README.md)** — Query current and historical DuckLake tables and run distributed CTAS, INSERT, UPDATE, DELETE, and MERGE.
+
+## Data sinks
+
+- **[Milvus](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#milvus-datasink) and [Qdrant](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#qdrant-datasink)** — Write query results directly to vector stores through distributed upserts.
+- **[Apache Doris](https://github.com/AstroVela/vane/blob/4e12994a2fed5b872a7bdb44df72c1b9c5653cdc/README.md#apache-doris-arrow-stream-load)** — Write Arrow batches directly to Doris through Arrow Stream Load.
+
 ## Deployment
 
 Route: /docs/data/deploy/deployment

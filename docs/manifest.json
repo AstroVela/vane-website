@@ -603,6 +603,15 @@
       }
     },
     {
+      "slug": "extensions",
+      "title": "Extensions",
+      "source": "docs/data/extensions.mdx",
+      "route": "/docs/data/extensions",
+      "frontmatter": {
+        "title": "Extensions"
+      }
+    },
+    {
       "slug": "deploy/deployment",
       "title": "Deployment",
       "source": "docs/data/deploy/deployment.mdx",
@@ -1026,6 +1035,11 @@
           ]
         }
       ]
+    },
+    {
+      "slug": "extensions",
+      "label": "Extensions",
+      "route": "/docs/data/extensions"
     },
     {
       "group": "Operations",

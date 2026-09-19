@@ -707,6 +707,16 @@ test('Overview is a direct sidebar page instead of a Docs Home child item', () =
   assert.doesNotMatch(sidebarsSource, /label:\s*'Docs Home'/)
 })
 
+test('Extensions follows Reference with shared top-level navigation styling', () => {
+  const index = dataSidebar.findIndex((entry) => entry.slug === 'extensions')
+  assert.equal(dataSidebar[index - 1].group, 'Reference')
+  assert.equal(dataSidebar[index + 1].group, 'Operations')
+  assert.equal(dataDocsTranslations['sidebar.dataSidebar.doc.Extensions'].message, '扩展')
+  assert.match(sidebarsSource, /entry\.slug === 'extensions'.*docs-data-section-link/)
+  const styles = readFileSync('src/pages.css', 'utf8')
+  assert.match(styles, /\.docs-data-overview-link > \.menu__link,\s*\.theme-doc-sidebar-container \.docs-data-section-link > \.menu__link/)
+})
+
 test('custom navbar preserves the Docusaurus navbar marker for docs TOC code', () => {
   assert.match(navSource, /<header\s+className="nav navbar"/)
 })

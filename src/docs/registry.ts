@@ -13,6 +13,11 @@ export const DOCS_PAGES = {
     title: 'Overview',
     titleZh: '概览',
   },
+  extensions: {
+    source: 'docs/data/extensions.mdx',
+    title: 'Extensions',
+    titleZh: '扩展',
+  },
   'quickstart/installation': {
     source: 'docs/data/quickstart/installation.mdx',
     title: 'Installation',
