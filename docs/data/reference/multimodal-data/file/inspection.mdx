@@ -1,0 +1,46 @@
+---
+title: File inspection
+---
+
+Inspection functions read resolved `FILE` metadata without decoding content.
+
+## Signature
+
+```python
+vane.file_path(value) -> Expression
+vane.file_size(value) -> Expression
+vane.file_exists(value) -> Expression
+vane.file_stat(value) -> Expression
+vane.file_mime_type(value, detect="metadata") -> Expression
+vane.guess_mime_type(value) -> Expression
+```
+
+SQL: `file_path(file)`, `file_size(file)`, `file_exists(file)`, `file_stat(file)`, `file_mime_type(file [, detect])`, and `guess_mime_type(bytes)`. Expression methods: `expr.file_path()`, `expr.file_size()`, `expr.file_exists()`, `expr.file_stat()`, `expr.file_mime_type(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `FILE`-family value or `Expression` | Object to inspect | Required |
+| `detect` | `"metadata"`, `"content"`, or `"auto"` | MIME detection source | `"metadata"` |
+| `value` (`guess_mime_type`) | `BLOB` value or `Expression` | Raw bytes to sniff | Required |
+
+`file_mime_type` with `metadata` (the default) uses the declared `content_type` and falls back to the URL suffix without opening the object. `auto` prefers declared and resolved metadata before sniffing content, while `content` sniffs content directly. `guess_mime_type` sniffs bytes directly.
+
+## Returns and errors
+
+`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return a MIME type string (`VARCHAR`), or `NULL` when the type cannot be identified. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT file_stat(image_file('photo.png'))").show()
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [`file_same_content`](identity.mdx)

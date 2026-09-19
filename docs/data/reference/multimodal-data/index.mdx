@@ -1,0 +1,94 @@
+---
+title: Multimodal data
+---
+
+Vane uses the `FILE` family for immutable file references, `IMAGE` for decoded image pixels, and `TENSOR` for numeric arrays, including audio waveforms. The reference below groups the Python and SQL APIs by files, images, audio, video, and tensors. Image, audio, and video functions default to the `python` backend; after loading `native_media`, you can select the `native` backend.
+
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL scalar functions can appear in `SELECT` expressions, with `AS` to name the result. Table functions such as `list_files` and `read_video_frames` appear in the `FROM` clause.
+
+## Function groups
+
+- [File functions](file/index.mdx): construct and inspect `FILE`-family values.
+- [Image functions](image/index.mdx): decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values.
+- [Audio functions](audio/index.mdx): inspect `AUDIOFILE` metadata and resample waveforms.
+- [Video functions](video/index.mdx): stream decoded frames as rows and build or inspect reusable seek indexes.
+- [Tensor functions](tensor.mdx): construct and inspect `TENSOR` values.
+
+## Types
+
+| SQL type | Storage | Meaning |
+| --- | --- | --- |
+| `FILE` | `STRUCT(url VARCHAR, content_type VARCHAR, position BIGINT, size BIGINT, checksum VARCHAR)` | Generic immutable object reference with an optional byte window (`position`, `size`) |
+| `IMAGEFILE` | Same five fields, `IMAGE` subtype | Encoded image object |
+| `AUDIOFILE` | Same five fields, `AUDIO` subtype | Encoded audio object |
+| `VIDEOFILE` | Same five fields, `VIDEO` subtype | Encoded video object |
+| `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
+| `TENSOR(dtype, shape)` | Variable shapes use `STRUCT(data LIST, shape INTEGER[rank])` with a fixed rank per column; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+
+Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
+
+## Type builders and enums
+
+In Python, type builders produce Vane types, and `vane.MediaType` selects a `FILE` subtype:
+
+| API | Returns |
+| --- | --- |
+| `vane.file_type(media_type=vane.MediaType.unknown())` | The `FILE`-family type selected by `media_type` |
+| `vane.image_type(mode=None, height=None, width=None)` | An `IMAGE` type; a constant mode and dimensions narrow it |
+| `vane.tensor_type(type, shape)` | A `TENSOR` type; `None` marks a variable dimension |
+| `vane.MediaType.unknown()` / `image()` / `audio()` / `video()` | The `FILE` subtype selector |
+
+`image_type()` returns a dynamic `IMAGE`; a mode narrows it, while `mode, height, and width` must be supplied together to fix both dimensions. `tensor_type(type, shape)` takes a Vane element type and a non-empty shape of nonnegative integers or `None` for a variable dimension (variable-shape rank 1–32). Invalid modes, dimensions, or shapes raise.
+
+`vane.ImageProperty` (`height`, `width`, `channel`, `mode`) names the `image_attribute` properties; `vane.ImageMode` and `vane.ImageFormat` enumerate the supported pixel modes and encode formats.
+
+## IMAGE modes
+
+Pixel dtype follows the mode:
+
+| Modes | Pixel dtype | Channels |
+| --- | --- | --- |
+| L, LA, RGB, RGBA | UInt8 | 1, 2, 3, 4 |
+| L16, LA16, RGB16, RGBA16 | UInt16 | 1, 2, 3, 4 |
+| RGB32F, RGBA32F | Float32 | 3, 4 |
+
+Generic `IMAGE` stores Float32 so one column can hold every mode without loss; a known mode stores its native pixel dtype. Fetched cells materialize as C-contiguous NumPy arrays with shape `(height, width, channels)`; `vane.Image` is the Python typing alias for these UInt8, UInt16, or Float32 arrays. Arrow carries fixed-shape images with the `vane.image` extension type.
+
+`expr.as_image(mode=None, height=None, width=None)` validates an existing image expression against the selected `IMAGE` type. Ordinary casts never convert colors or resize pixels, and `TRY_CAST` returns `NULL` for a layout mismatch.
+
+## Audio specialization
+
+Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimensions can vary by row, channels are positive, and zero frames (`(0, channels)`) represent empty audio. See [Audio functions](audio/index.mdx) for resampling contracts.
+
+## Value contracts
+
+A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a tensor with any dimension of size 0 is empty, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
+
+## Backends
+
+Each domain selects its execution backend independently through `image_backend`, `audio_backend`, and `video_backend`. All three settings default to `python` and accept only `python` or `native`.
+
+> `native` is experimental. Its `native_media` extension and provider wheel may change between releases.
+
+| Backend | What it uses | What to install |
+| --- | --- | --- |
+| `python` | Pillow/tifffile/imagecodecs for images, SoundFile/SoXR for audio, PyAV for video | `vane-ai[image]`, `vane-ai[audio]`, `vane-ai[video]` |
+| `native` | The optional `native_media` C++ extension (FFmpeg, libsndfile, SoXR) | The `vane-extension-native-media` provider wheel |
+
+```python
+import vane
+
+con = vane.connect()
+vane.load_installed_extension("native_media", connection=con)
+con.execute("SET image_backend = 'native'")
+```
+
+`image_to_tensor` and the `IMAGE` accessors belong to the base engine and require no optional extension, regardless of the selected backend.
+
+## Source and related pages
+
+- [Native media extension](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md)
+- [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
+- [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)

@@ -1,0 +1,58 @@
+---
+title: Tensor functions
+---
+
+Tensor functions construct and inspect `TENSOR(dtype, shape)` values. Variable-shape tensors store `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY`. `tensor()` always produces a variable-shape tensor, and `tensor_data` and `tensor_shape` require one. See [Multimodal data](index.mdx) for `tensor_type` and the storage contract.
+
+## Signature
+
+```python
+vane.tensor(data, shape) -> Expression
+vane.tensor_data(value) -> Expression
+vane.tensor_shape(value) -> Expression
+vane.tensor_array(values, dtype) -> pyarrow.ExtensionArray
+```
+
+SQL: `tensor(data, shape)`, `tensor_data(value)`, and `tensor_shape(value)`. `tensor_array` is Python-only.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `data` | Value or `Expression` | Flattened row-major elements or a compatible array | Required |
+| `shape` | Sequence of nonnegative integers or `Expression` | Actual per-dimension sizes; dimensions cannot be `NULL` | Required |
+| `value` | `TENSOR` value or `Expression` | Tensor to inspect | Required |
+| `values` | Sequence of NumPy arrays or `None` | Row values for an Arrow Tensor column | Required |
+| `dtype` | Vane `DuckDBPyType` | Complete variable-shape Tensor type from `vane.tensor_type(element_type, shape)` | Required |
+
+`None` marks a variable dimension only in the `tensor_type` declaration. Every non-`NULL` value passed to `tensor` or `tensor_array` must have concrete dimensions.
+
+## Returns and errors
+
+`tensor` returns a variable-shape `TENSOR` whose `shape` argument determines the rank and the runtime dimensions. `tensor_data` returns the flattened element `LIST` and `tensor_shape` returns `INTEGER[rank]`; both require a variable-shape tensor and raise for a fixed-shape input. `tensor_array` returns a validated `pyarrow.ExtensionArray` carrying the `arrow.variable_shape_tensor` extension type. `NULL` inputs return `NULL`; shape/type mismatches and `NULL` elements in non-`NULL` tensors raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT tensor_data(t), tensor_shape(t) FROM (SELECT tensor([1, 2, 3, 4], [2, 2]) AS t)").show()
+```
+
+To build an Arrow column, pass the complete Tensor type, including its shape:
+
+```python
+import numpy as np
+import vane
+
+dtype = vane.tensor_type(vane.sqltypes.DOUBLE, [None, 1])
+rows = [np.ones((2, 1), dtype=np.float64), np.empty((0, 1), dtype=np.float64), None]
+column = vane.tensor_array(rows, dtype)
+```
+
+## Source and related pages
+
+- [Multimodal data](index.mdx)
+- [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
+- [Implementation: `vane/_tensor.py`](https://github.com/AstroVela/vane/blob/main/vane/_tensor.py)

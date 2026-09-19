@@ -27,7 +27,7 @@ vane.func.batch(
 | `unnest` | `bool` | 返回 Struct 时，将字段展开成多列 | `False` |
 | `gpus` | 非负有限数或 `None` | 每个 Task 使用的 GPU 资源；正值需要 Ray | `None` |
 
-## 返回值与错误
+## 返回与错误
 
 在 `select()` 中调用时，输出行数与输入保持一致。`unnest=False` 时，查询产生一个 `return_dtype` 类型的结果列；`unnest=True` 时，Struct 返回类型的各个字段会展开成独立列。
 
@@ -61,7 +61,7 @@ vane.close()
 [(5,), (7,), (9,)]
 ```
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.func`](vane-func.mdx)

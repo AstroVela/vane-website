@@ -1,0 +1,45 @@
+---
+title: File identity
+---
+
+Identity functions derive stable identifiers and compare `FILE` values by location or content.
+
+## Signature
+
+```python
+vane.file_locator_id(value) -> Expression
+vane.file_content_id(value) -> Expression
+vane.file_same_location(left, right) -> Expression
+vane.file_same_content(left, right) -> Expression
+```
+
+SQL: `file_locator_id(file)`, `file_content_id(file)`, `file_same_location(left, right)`, and `file_same_content(left, right)`. Each `FILE` subtype also supports the `=` and `!=` operators, which compare all five fields.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `FILE`-family value or `Expression` | Object to identify | Required |
+| `left` / `right` | `FILE`-family values or `Expression` | Values to compare; different subtypes are accepted | Required |
+
+## Returns and errors
+
+`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns `file-content-v1:empty` for a known empty byte window; otherwise it derives a content identifier (`VARCHAR`) from the declared checksum, or returns `NULL` when no checksum is declared.
+
+`file_same_location` returns `false` for different URLs. For the same URL, it returns `true` when neither side has a byte window, `NULL` when only one side has a window, and otherwise compares position and size.
+
+`file_same_content` first returns `false` when both window sizes are known and differ, or `true` when both are zero, even without checksums. Otherwise it compares declared checksum digests, returning `NULL` when either checksum is missing or the algorithms differ.
+
+Both identity comparisons accept different `FILE` subtypes. Direct `=`/`!=` comparisons require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
+
+## Example
+
+```sql
+SELECT file_same_location(file('a.png', NULL, NULL, NULL, NULL), image_file('a.png')) AS same_location;
+SELECT file_same_content(file('a', NULL, 0, 0, NULL), file('b', NULL, 0, 0, NULL)) AS same_content;
+```
+
+## Source and related pages
+
+- [File functions](index.mdx)
+- [Multimodal data](../index.mdx)

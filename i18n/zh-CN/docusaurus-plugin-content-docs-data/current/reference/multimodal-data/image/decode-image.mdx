@@ -1,0 +1,40 @@
+---
+title: decode_image
+---
+
+`decode_image` 从 `PNG`/`JPEG`/`TIFF`/`GIF`/`BMP`/`WebP` 字节中解码第一张图像。`mode=None` 保留编码像素模式，默认转换为 `RGB`。
+
+## 签名
+
+```python
+vane.decode_image(bytes_expr, on_error="raise", mode="RGB") -> Expression
+```
+
+SQL：`decode_image(bytes, on_error => ..., mode => ...)`。Expression 方法：`expr.decode_image(...)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `bytes_expr` | `BLOB` 值或 `Expression` | 编码图像字节 | 必填 |
+| `on_error` | `"raise"` / `"null"` | `"null"` 只抑制损坏或不支持的内容 | `"raise"` |
+| `mode` | 模式名、`ImageMode`、`Expression` 或 `None` | 结果像素模式 | `"RGB"` |
+
+## 返回值与错误
+
+返回动态 `IMAGE`，常量模式对应 `IMAGE(mode)`。`NULL` 返回 `NULL`。只有损坏或不支持的内容会遵循 `on_error="null"`，其他失败会传播。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+data = open("photo.png", "rb").read()
+con.sql("SELECT decode_image($1)", params=[data]).show()
+```
+
+## 来源与相关页面
+
+- [图像函数](index.mdx)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

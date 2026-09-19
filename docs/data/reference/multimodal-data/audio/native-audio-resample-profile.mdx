@@ -1,0 +1,51 @@
+---
+title: native_audio_resample_profile
+---
+
+`native_audio_resample_profile` runs the same native decode and resample implementation as `resample` but returns counters instead of the waveform. It is registered by the `native_media` extension and has no Python form, so it is available once that extension is loaded, independent of `audio_backend`.
+
+## Signature
+
+```text
+native_audio_resample_profile(file, rate [, max_input_bytes, max_frames, max_decoded_bytes, max_output_frames, max_output_bytes])
+```
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `file` | `AUDIOFILE` value | Encoded audio object | Required |
+| `rate` | Positive integer | Target sample rate in Hz | Required |
+| `max_input_bytes`, `max_frames`, `max_decoded_bytes`, `max_output_frames`, `max_output_bytes` | Integer | Decode and output budgets | `resample` defaults |
+
+## Returns and errors
+
+Returns a diagnostic `STRUCT`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `setup_seconds` | DOUBLE | Codec and resampler setup time |
+| `decode_seconds` | DOUBLE | Decode time |
+| `resample_seconds` | DOUBLE | Resample time |
+| `allocation_seconds` | DOUBLE | Output allocation time |
+| `file_read_seconds` / `file_read_calls` | DOUBLE / UBIGINT | Governed FILE I/O time and call count |
+| `file_bytes_read` | UBIGINT | Logical bytes read |
+| `decoded_frames` / `output_frames` | UBIGINT | Decoded and emitted frame counts |
+| `output_bytes` | UBIGINT | Emitted sample bytes |
+| `buffer_growths` / `buffer_capacity_bytes` | UBIGINT | Output buffer growth count and final capacity |
+| `codec_version` / `resampler_version` | UINTEGER | Build version integers |
+| `decoder_library` / `decoder_version` | VARCHAR | Decoder identity |
+| `resampler_library` / `resampler_version_string` | VARCHAR | Resampler identity |
+| `source_sample_rate` | UINTEGER | Source rate in Hz |
+
+## Example
+
+```sql
+SELECT native_audio_resample_profile(audio_file('sample.wav'), 16000);
+```
+
+## Source and related pages
+
+- [Audio functions](index.mdx)
+- [`resample`](resample.mdx)
+- [Native contracts](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md#native-contracts)

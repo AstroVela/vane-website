@@ -19,6 +19,7 @@ import {
 
 const root = process.cwd()
 const docsDir = path.join(root, 'docs')
+const i18nDocsDir = path.join(root, 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current')
 const registryPath = path.join(root, 'src/docs/registry.ts')
 const sidebarPath = path.join(root, 'src/docs/sidebar.data.json')
 const legacySlugsPath = path.join(root, 'src/docs/legacySlugs.ts')
@@ -155,7 +156,14 @@ function checkCodeFences(file, lines) {
   }
 }
 
-function checkLinks(file, lines, pages) {
+function localeRoutePath(urlPath, locale) {
+  if (!locale) return urlPath
+  if (urlPath === `/${locale}`) return '/'
+  if (urlPath.startsWith(`/${locale}/`)) return urlPath.slice(locale.length + 1)
+  return urlPath
+}
+
+function checkLinks(file, lines, pages, locale) {
   let inFence = false
   const registeredSlugs = new Set(pages.keys())
   for (let index = 0; index < lines.length; index += 1) {
@@ -173,7 +181,7 @@ function checkLinks(file, lines, pages) {
       if (!target || target.startsWith('#') || isExternalLink(target)) continue
 
       if (target.startsWith('/')) {
-        const urlPath = stripLinkDecorations(target)
+        const urlPath = localeRoutePath(stripLinkDecorations(target), locale)
         const slug = slugForRoute(urlPath)
         if (slug && registeredSlugs.has(slug)) continue
         const publicPath = path.join(root, 'public', urlPath)
@@ -200,9 +208,22 @@ function checkDocs(pages) {
   return docFiles
 }
 
+function checkTranslatedDocs(pages) {
+  const docFiles = walk(i18nDocsDir, (file) => file.endsWith('.mdx')).sort()
+  for (const file of docFiles) {
+    const lines = readText(file).split(/\r?\n/)
+    const [locale] = path.relative(path.join(root, 'i18n'), file).split(path.sep)
+    checkTopLevelHeadings(file, lines)
+    checkCodeFences(file, lines)
+    checkLinks(file, lines, pages, locale)
+  }
+  return docFiles
+}
+
 const pages = parseRegistry(registryPath, addError)
 const sidebar = parseSidebar(sidebarPath, addError)
 const docFiles = checkDocs(pages)
+const translatedFiles = checkTranslatedDocs(pages)
 checkRegistryAndSidebar(pages, sidebar, docFiles)
 checkLegacyDocRoutes(pages, sidebar)
 
@@ -212,4 +233,8 @@ if (errors.length > 0) {
   process.exit(1)
 }
 
-console.log(`docs lint passed: ${pages.size} registered pages, ${docFiles.length} MDX files checked.`)
+console.log(
+  `docs lint passed: ${pages.size} registered pages, ` +
+    `${docFiles.length + translatedFiles.length} MDX files checked ` +
+    `(${docFiles.length} source, ${translatedFiles.length} translated).`,
+)

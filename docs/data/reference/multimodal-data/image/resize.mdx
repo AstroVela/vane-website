@@ -1,0 +1,39 @@
+---
+title: resize
+---
+
+`resize` scales an `IMAGE` with bilinear sampling and premultiplied alpha. A known mode with constant target dimensions yields a fixed-shape image; per-row dimensions keep a dynamic image with the input mode constraint.
+
+## Signature
+
+```python
+vane.resize(image, w, h, *, antialias=False) -> Expression
+```
+
+SQL: `resize(image, w, h [, antialias])`. Expression method: `expr.resize(w, h, antialias=...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` value or `Expression` | Input image | Required |
+| `w` / `h` | Positive integer, `Expression`, or `None` | Target width and height; `NULL` produces `NULL` | Required |
+| `antialias` | `bool` or `Expression` | Widen the triangle filter during downsampling when `True` | `False` |
+
+## Returns and errors
+
+Returns an `IMAGE`. `NULL` image or dimensions return `NULL`. Non-positive dimensions and out-of-range values raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT resize(decode_image_file(image_file('photo.png')), 224, 224)").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

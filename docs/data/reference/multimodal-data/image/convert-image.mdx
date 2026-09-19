@@ -1,0 +1,38 @@
+---
+title: convert_image
+---
+
+`convert_image` changes an `IMAGE` pixel mode and depth without resizing. Alpha is preserved, added as fully opaque, or dropped without compositing. Known target modes preserve fixed input dimensions; per-row modes return a dynamic image.
+
+## Signature
+
+```python
+vane.convert_image(image, mode) -> Expression
+```
+
+SQL: `convert_image(image, mode)`. Expression method: `expr.convert_image(mode)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` value or `Expression` | Input image | Required |
+| `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Target pixel mode; `None` returns `NULL` | Required |
+
+## Returns and errors
+
+Returns an `IMAGE`. `NULL` image or mode returns `NULL`. Unsupported modes raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT convert_image(decode_image_file(image_file('photo.png')), 'RGBA')").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

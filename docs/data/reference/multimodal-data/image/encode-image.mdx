@@ -1,0 +1,46 @@
+---
+title: encode_image
+---
+
+`encode_image` encodes an `IMAGE` into an image file format and returns the bytes.
+
+## Signature
+
+```python
+vane.encode_image(image, image_format) -> Expression
+```
+
+SQL: `encode_image(image, format)`. Expression method: `expr.encode_image(image_format)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` value or `Expression` | Input image | Required |
+| `image_format` | `ImageFormat` member, format string, or `Expression` | `PNG`, `JPEG`, `TIFF`, `GIF`, or `BMP` under the mode matrix below | Required |
+
+`encode_image` follows an explicit mode matrix: PNG accepts all eight integer modes; TIFF accepts all ten; JPEG accepts L/RGB; GIF accepts L/RGB with at most 256 palette colors; BMP accepts L/RGB. Use `convert_image` first for other combinations.
+
+## Returns and errors
+
+Returns encoded `BLOB` bytes. `NULL` image or format returns `NULL`. Unsupported formats, and mode/format combinations outside the matrix, raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("""
+    SELECT encode_image(
+        crop(decode_image_file(image_file('photo.png')), [10, 20, 64, 48]),
+        'PNG'
+    ) AS thumbnail
+""").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [`convert_image`](convert-image.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

@@ -31,7 +31,7 @@ Relation.map(
 | `execution_backend` | `subprocess_task`、`subprocess_actor`、`ray_task`、`ray_actor` 或 `None` | 执行后端；省略时根据 runner 和可调用对象形态选择 | `None` |
 | `actor_number` | 正整数或 `None` | Actor 实例数量；Actor 后端必填，Task 后端不能设置 | `None` |
 
-## 返回值与错误
+## 返回与错误
 
 `map()` 返回一个新的 Relation，原 Relation 不会改变。新 Relation 保留输入列，并追加名为 `value` 的结果列。
 
@@ -64,7 +64,7 @@ vane.close()
 
 结果保留 `price` 和 `quantity` 两个输入列，并把计算结果作为第三列 `value` 追加到末尾。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [Python binding：`src/vane_py/pyrelation/initialize.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation/initialize.cpp)
 - [实现：`src/vane_py/pyrelation.cpp`](https://github.com/AstroVela/vane/blob/main/src/vane_py/pyrelation.cpp)

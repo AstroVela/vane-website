@@ -1,0 +1,43 @@
+---
+title: image_hash
+---
+
+`image_hash` computes a perceptual hash of an `IMAGE` with a fixed byte width and MSB-first bits. It accepts all image modes and ignores alpha.
+
+## Signature
+
+```python
+vane.image_hash(
+    image, *, method="phash", hash_size=8, binbits=3, segments=3,
+) -> Expression
+```
+
+SQL: `image_hash(image, method => ..., hash_size => ..., binbits => ..., segments => ...)`. Expression method: `expr.image_hash(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` value or `Expression` | Input image | Required |
+| `method` | Hash method name (constant) | `ahash`, `dhash`, `dhash_vertical`, `phash`, `phash_simple`, `whash`, `colorhash`, or `crop_resistant` | `"phash"` |
+| `hash_size` | Integer constant, `2`–`64` | Hash grid size; `whash` requires a power of two | `8` |
+| `binbits` | Integer constant, `1`–`8` | Color-bin bits | `3` |
+| `segments` | Integer constant, `1`–`16` | Crop-resistant grid segments | `3` |
+
+## Returns and errors
+
+Returns `FIXEDBINARY(n)` content-similarity bits, zero-padded in the last byte. It is not an integrity checksum. `NULL` images return `NULL`; options must be non-`NULL` constants and valid for the method.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_hash(decode_image_file(image_file('photo.png')))").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

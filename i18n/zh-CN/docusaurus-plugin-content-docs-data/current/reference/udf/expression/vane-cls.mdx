@@ -27,7 +27,7 @@ vane.cls(
 | `name` | 非空 `str` 或 `None` | UDF 在计划中的名称；省略时使用类的 `__qualname__` | `None` |
 | `gpus` | 非负有限数或 `None` | 每个 Actor 使用的 GPU 资源；正值需要 Ray | `0` |
 
-## 返回值与错误
+## 返回与错误
 
 装饰后的类需要先实例化，再把实例用在 `select()` 中。每行输入都会得到一个 `return_dtype` 类型的结果。
 
@@ -68,7 +68,7 @@ vane.close()
 
 `Prefix("item-")` 只会捕获构造参数，不会立刻创建查询 Actor。执行查询时，每个 Actor 都用该参数创建各自独立的 `Prefix` 实例。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [装饰器与包装对象：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.cls.batch`](vane-cls-batch.mdx)

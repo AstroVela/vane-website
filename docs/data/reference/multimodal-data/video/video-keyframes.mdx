@@ -1,0 +1,39 @@
+---
+title: video_keyframes
+---
+
+`video_keyframes` returns a bounded list of keyframes selected with the decoder's keyframe flag, as `IMAGE('RGB')` values.
+
+## Signature
+
+```python
+vane.video_keyframes(
+    value, *, start_time=0, end_time=None, width=None, height=None,
+    sample_interval_seconds=None, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, max_output_frames=10000, index=None,
+) -> Expression
+```
+
+SQL: `video_keyframes(file, start_time, end_time, width, height, sample_interval_seconds, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, max_output_frames, index)`. Expression method: `expr.video_keyframes(...)`.
+
+## Parameters
+
+Accepts the [shared frame expression options](index.mdx#frame-expression-options); keyframes are always selected with the decoder's keyframe flag.
+
+## Returns and errors
+
+Returns `LIST<IMAGE('RGB')>` selected with the decoder's keyframe flag. For source association, keep the input FILE column alongside the result. `NULL` input returns `NULL`; no matches return an empty list.
+
+## Example
+
+```sql
+SELECT video_keyframes(file, end_time => 2) AS keyframes
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## Source and related pages
+
+- [Video functions](index.mdx)
+- [`video_frames`](video-frames.mdx)
+- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

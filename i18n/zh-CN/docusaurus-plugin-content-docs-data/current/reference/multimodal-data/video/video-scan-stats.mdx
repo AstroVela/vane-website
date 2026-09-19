@@ -1,0 +1,48 @@
+---
+title: video_scan_stats
+---
+
+`video_scan_stats` 执行选帧并返回诊断信息，不输出图像。非 `NULL` 的 `idx` 会改为选择单个精确帧。索引读仍会转换未缩放 RGB 像素以校验解码内容。
+
+## 签名
+
+```python
+vane.video_scan_stats(
+    value, *, start_time=0, end_time=None, is_key_frame=None,
+    sample_interval_seconds=None, idx=None, index=None,
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+) -> Expression
+```
+
+SQL：`video_scan_stats(file, start_time, end_time, is_key_frame, sample_interval_seconds, max_input_bytes, max_decoded_frames, max_pixels, idx, index)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `value` | `VIDEOFILE` 值或 `Expression` | 源视频 | 必填 |
+| `start_time` / `end_time` | 数值或 `Expression` | 相对流起始的闭区间时间窗口（秒） | `0` / `None` |
+| `is_key_frame` | `bool`、`Expression` 或 `None` | `True` 只选关键帧，`False` 只选非关键帧，`None` 不按关键帧标记筛选 | `None` |
+| `sample_interval_seconds` | 数值或 `Expression` | 时间戳达到下一个间隔点时输出帧 | `None` |
+| `idx` | `BIGINT` 或 `Expression` | 改为选择单个精确帧 | `None` |
+| `index` | 索引 `BLOB` 或 `Expression` | `build_video_index` 生成的已验证寻址索引；`NULL` 选择顺序解码 | `None` |
+| `max_input_bytes` | 整数或 `Expression` | 编码输入上限 | `8 GiB`（上限 `16 GiB`） |
+| `max_decoded_frames` | 整数或 `Expression` | 每输入解码帧上限 | `1,000,000` |
+| `max_pixels` | 整数或 `Expression` | 输入与输出像素上限 | `32 Mi` 像素 |
+
+## 返回值与错误
+
+返回 `STRUCT`，含 `bytes_read`、`decoded_frames`、`seeks` 和 `selected_frames`。字节数包含校验块读取；帧数统计解码器输出（含被丢弃的预卷），不含 codec 内部预读。这是不输出图像的独立诊断执行。
+
+## 示例
+
+```sql
+SELECT video_scan_stats(file, start_time => 1, end_time => 5)
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## 来源与相关页面
+
+- [视频函数](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)

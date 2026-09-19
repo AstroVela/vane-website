@@ -1,0 +1,45 @@
+---
+title: video_frames
+---
+
+`video_frames` 为一行 `VIDEOFILE` 返回有界的解码帧记录列表。每条记录保留源 FILE 视图、呈现顺序时间字段和 `data: IMAGE('RGB')`。
+
+## 签名
+
+```python
+vane.video_frames(
+    value, *, start_time=0, end_time=None, width=None, height=None,
+    is_key_frame=None, sample_interval_seconds=None, on_error="raise",
+    max_input_bytes=8589934592, max_decoded_frames=1000000, max_pixels=33554432,
+    max_output_bytes=67108864, max_output_frames=10000, index=None,
+) -> Expression
+```
+
+SQL：`video_frames(file, start_time, end_time, width, height, is_key_frame, sample_interval_seconds, on_error, max_input_bytes, max_decoded_frames, max_pixels, max_output_bytes, max_output_frames, index)`。Expression 方法：`expr.video_frames(...)`。
+
+## 参数
+
+接受[共享帧表达式选项](index.mdx#帧表达式选项)，另加：
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `is_key_frame` | `bool`、`Expression` 或 `None` | `True` 只选关键帧，`False` 只选非关键帧，`None` 不按关键帧标记筛选 | `None` |
+
+## 返回值与错误
+
+返回记录 `LIST`：`file: VIDEOFILE`、八个时间字段（`frame_index`、`frame_time`、`frame_time_base_numerator`、`frame_time_base_denominator`、`frame_pts`、`frame_dts`、`frame_duration`、`is_key_frame`）以及 `data: IMAGE('RGB')`。`NULL` 输入返回 `NULL`；成功但没有匹配帧时返回空列表。
+
+## 示例
+
+```sql
+SELECT video_frames(file, start_time => 1, end_time => 2,
+                    sample_interval_seconds => 0.5) AS frames
+FROM (SELECT video_file('clip.mp4') AS file);
+```
+
+## 来源与相关页面
+
+- [视频函数](index.mdx)
+- [`video_keyframes`](video-keyframes.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [实现：`vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

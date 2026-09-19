@@ -51,7 +51,7 @@ vane.attach_function(
 
 装饰后的类必须先实例化。例如传入 `Scorer()`，而不是装饰后的类对象 `Scorer`。
 
-## 返回值与错误
+## 返回与错误
 
 函数返回 `None`。替换现有名称前，注册过程会先检查完整配置。内置函数、其他连接持有的名称以及 SQL 签名不兼容的名称都不会被覆盖。注册函数时，DuckDB 可能会取消连接中正在进行的事务。
 
@@ -84,7 +84,7 @@ vane.close()
 [(1,), (2,), (3,)]
 ```
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/_expression_udf.py`](https://github.com/AstroVela/vane/blob/main/vane/_expression_udf.py)
 - [`vane.detach_function`](vane-detach-function.mdx)

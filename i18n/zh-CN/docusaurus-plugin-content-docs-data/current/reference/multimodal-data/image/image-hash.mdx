@@ -1,0 +1,43 @@
+---
+title: image_hash
+---
+
+`image_hash` 计算 `IMAGE` 的感知哈希，位宽固定、位序为 MSB 优先。它接受全部图像模式并忽略 alpha。
+
+## 签名
+
+```python
+vane.image_hash(
+    image, *, method="phash", hash_size=8, binbits=3, segments=3,
+) -> Expression
+```
+
+SQL：`image_hash(image, method => ..., hash_size => ..., binbits => ..., segments => ...)`。Expression 方法：`expr.image_hash(...)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
+| `method` | 哈希方法名（常量） | `ahash`、`dhash`、`dhash_vertical`、`phash`、`phash_simple`、`whash`、`colorhash` 或 `crop_resistant` | `"phash"` |
+| `hash_size` | 整数常量，`2`–`64` | 哈希网格尺寸；`whash` 要求 2 的幂 | `8` |
+| `binbits` | 整数常量，`1`–`8` | 颜色分桶位数 | `3` |
+| `segments` | 整数常量，`1`–`16` | 抗裁剪网格分段数 | `3` |
+
+## 返回值与错误
+
+返回 `FIXEDBINARY(n)` 内容相似位，末字节补零，不是完整性校验。`NULL` 图像返回 `NULL`；选项必须是非 `NULL` 常量且对所选方法有效。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_hash(decode_image_file(image_file('photo.png')))").show()
+```
+
+## 来源与相关页面
+
+- [图像函数](index.mdx)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

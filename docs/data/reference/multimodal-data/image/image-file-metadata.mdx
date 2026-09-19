@@ -1,0 +1,39 @@
+---
+title: image_file_metadata
+---
+
+`image_file_metadata` inspects bounded `IMAGEFILE` headers without decoding pixels.
+
+## Signature
+
+```python
+vane.image_file_metadata(value, *, max_bytes=1048576, max_pixels=100000000) -> Expression
+```
+
+SQL: `image_file_metadata(file [, max_bytes [, max_pixels]])`. Expression method: `expr.image_file_metadata(...)`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `IMAGEFILE` value or `Expression` | Encoded image object to inspect | Required |
+| `max_bytes` | Integer or `Expression` | Bounded header/probe budget | `1 MiB` (maximum `64 MiB`) |
+| `max_pixels` | Integer or `Expression` | Declared-dimension limit | `100,000,000` |
+
+## Returns and errors
+
+Returns `STRUCT(width UINTEGER, height UINTEGER, format VARCHAR, mode VARCHAR)`. `NULL` inputs return `NULL`; unreadable or unsupported headers raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_file_metadata(image_file('photo.png'))").show()
+```
+
+## Source and related pages
+
+- [Image functions](index.mdx)
+- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)

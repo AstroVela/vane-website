@@ -1,0 +1,39 @@
+---
+title: crop
+---
+
+`crop` 从 `IMAGE` 中裁剪整数 `(x, y, width, height)` 窗口。输入外的像素补零，包括 alpha 通道。
+
+## 签名
+
+```python
+vane.crop(image, bbox) -> Expression
+```
+
+SQL：`crop(image, bbox)`。Expression 方法：`expr.crop(bbox)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
+| `bbox` | `(x, y, width, height)` 整数元组/列表或 `Expression` | 裁剪原点，宽高为正；输入外的像素补零 | 必填 |
+
+## 返回值与错误
+
+返回保留输入模式约束的动态 `IMAGE`。`NULL` 图像或 `bbox` 返回 `NULL`。维度非正、元素缺失以及隐式坐标转换会报错。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+image = con.sql("SELECT decode_image_file(image_file('photo.png'))").fetchone()[0]
+con.sql("SELECT crop($1, [10, 20, 64, 48])", params=[vane.Value(image, vane.image_type())]).show()
+```
+
+## 来源与相关页面
+
+- [图像函数](index.mdx)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

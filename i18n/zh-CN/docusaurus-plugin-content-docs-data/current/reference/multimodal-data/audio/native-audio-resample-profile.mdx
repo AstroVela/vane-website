@@ -1,0 +1,51 @@
+---
+title: native_audio_resample_profile
+---
+
+`native_audio_resample_profile` 运行与 `resample` 相同的 native 解码与重采样实现，但返回计数器而不是波形。它由 `native_media` 扩展注册，没有 Python 形式，因此加载该扩展后即可使用，与 `audio_backend` 无关。
+
+## 签名
+
+```text
+native_audio_resample_profile(file, rate [, max_input_bytes, max_frames, max_decoded_bytes, max_output_frames, max_output_bytes])
+```
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `file` | `AUDIOFILE` 值 | 编码音频对象 | 必填 |
+| `rate` | 正整数 | 目标采样率（Hz） | 必填 |
+| `max_input_bytes`、`max_frames`、`max_decoded_bytes`、`max_output_frames`、`max_output_bytes` | 整数 | 解码与输出预算 | 同 `resample` 默认值 |
+
+## 返回值与错误
+
+返回诊断 `STRUCT`：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `setup_seconds` | DOUBLE | codec 与重采样器初始化耗时 |
+| `decode_seconds` | DOUBLE | 解码耗时 |
+| `resample_seconds` | DOUBLE | 重采样耗时 |
+| `allocation_seconds` | DOUBLE | 输出分配耗时 |
+| `file_read_seconds` / `file_read_calls` | DOUBLE / UBIGINT | 受治理的 FILE I/O 耗时与调用次数 |
+| `file_bytes_read` | UBIGINT | 逻辑读取字节数 |
+| `decoded_frames` / `output_frames` | UBIGINT | 解码与输出帧数 |
+| `output_bytes` | UBIGINT | 输出采样字节数 |
+| `buffer_growths` / `buffer_capacity_bytes` | UBIGINT | 输出缓冲扩容次数与最终容量 |
+| `codec_version` / `resampler_version` | UINTEGER | 构建版本整数 |
+| `decoder_library` / `decoder_version` | VARCHAR | 解码器标识 |
+| `resampler_library` / `resampler_version_string` | VARCHAR | 重采样器标识 |
+| `source_sample_rate` | UINTEGER | 源采样率（Hz） |
+
+## 示例
+
+```sql
+SELECT native_audio_resample_profile(audio_file('sample.wav'), 16000);
+```
+
+## 来源与相关页面
+
+- [音频函数](index.mdx)
+- [`resample`](resample.mdx)
+- [Native contracts](https://github.com/AstroVela/vane/blob/main/NATIVE_MEDIA_EXTENSIONS.md#native-contracts)

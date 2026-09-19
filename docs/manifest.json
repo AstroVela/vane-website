@@ -324,6 +324,285 @@
       }
     },
     {
+      "slug": "reference/multimodal-data",
+      "title": "Multimodal data",
+      "source": "docs/data/reference/multimodal-data/index.mdx",
+      "route": "/docs/data/reference/multimodal-data",
+      "frontmatter": {
+        "title": "Multimodal data"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/file",
+      "title": "File functions",
+      "source": "docs/data/reference/multimodal-data/file/index.mdx",
+      "route": "/docs/data/reference/multimodal-data/file",
+      "frontmatter": {
+        "title": "File functions"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/file/constructors",
+      "title": "File constructors",
+      "source": "docs/data/reference/multimodal-data/file/constructors.mdx",
+      "route": "/docs/data/reference/multimodal-data/file/constructors",
+      "frontmatter": {
+        "title": "File constructors"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/file/inspection",
+      "title": "File inspection",
+      "source": "docs/data/reference/multimodal-data/file/inspection.mdx",
+      "route": "/docs/data/reference/multimodal-data/file/inspection",
+      "frontmatter": {
+        "title": "File inspection"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/file/identity",
+      "title": "File identity",
+      "source": "docs/data/reference/multimodal-data/file/identity.mdx",
+      "route": "/docs/data/reference/multimodal-data/file/identity",
+      "frontmatter": {
+        "title": "File identity"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/file/listing",
+      "title": "File listing and reading",
+      "source": "docs/data/reference/multimodal-data/file/listing.mdx",
+      "route": "/docs/data/reference/multimodal-data/file/listing",
+      "frontmatter": {
+        "title": "File listing and reading"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image",
+      "title": "Image functions",
+      "source": "docs/data/reference/multimodal-data/image/index.mdx",
+      "route": "/docs/data/reference/multimodal-data/image",
+      "frontmatter": {
+        "title": "Image functions"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/image-file-metadata",
+      "title": "image_file_metadata",
+      "source": "docs/data/reference/multimodal-data/image/image-file-metadata.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/image-file-metadata",
+      "frontmatter": {
+        "title": "image_file_metadata"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/decode-image-file",
+      "title": "decode_image_file",
+      "source": "docs/data/reference/multimodal-data/image/decode-image-file.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/decode-image-file",
+      "frontmatter": {
+        "title": "decode_image_file"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/decode-image",
+      "title": "decode_image",
+      "source": "docs/data/reference/multimodal-data/image/decode-image.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/decode-image",
+      "frontmatter": {
+        "title": "decode_image"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/crop",
+      "title": "crop",
+      "source": "docs/data/reference/multimodal-data/image/crop.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/crop",
+      "frontmatter": {
+        "title": "crop"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/resize",
+      "title": "resize",
+      "source": "docs/data/reference/multimodal-data/image/resize.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/resize",
+      "frontmatter": {
+        "title": "resize"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/convert-image",
+      "title": "convert_image",
+      "source": "docs/data/reference/multimodal-data/image/convert-image.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/convert-image",
+      "frontmatter": {
+        "title": "convert_image"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/encode-image",
+      "title": "encode_image",
+      "source": "docs/data/reference/multimodal-data/image/encode-image.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/encode-image",
+      "frontmatter": {
+        "title": "encode_image"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/image-hash",
+      "title": "image_hash",
+      "source": "docs/data/reference/multimodal-data/image/image-hash.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/image-hash",
+      "frontmatter": {
+        "title": "image_hash"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/image-to-tensor",
+      "title": "image_to_tensor",
+      "source": "docs/data/reference/multimodal-data/image/image-to-tensor.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/image-to-tensor",
+      "frontmatter": {
+        "title": "image_to_tensor"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/image/accessors",
+      "title": "Image accessors",
+      "source": "docs/data/reference/multimodal-data/image/accessors.mdx",
+      "route": "/docs/data/reference/multimodal-data/image/accessors",
+      "frontmatter": {
+        "title": "Image accessors"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/audio",
+      "title": "Audio functions",
+      "source": "docs/data/reference/multimodal-data/audio/index.mdx",
+      "route": "/docs/data/reference/multimodal-data/audio",
+      "frontmatter": {
+        "title": "Audio functions"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/audio/audio-metadata",
+      "title": "audio_metadata",
+      "source": "docs/data/reference/multimodal-data/audio/audio-metadata.mdx",
+      "route": "/docs/data/reference/multimodal-data/audio/audio-metadata",
+      "frontmatter": {
+        "title": "audio_metadata"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/audio/resample",
+      "title": "resample",
+      "source": "docs/data/reference/multimodal-data/audio/resample.mdx",
+      "route": "/docs/data/reference/multimodal-data/audio/resample",
+      "frontmatter": {
+        "title": "resample"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/audio/native-audio-resample-profile",
+      "title": "native_audio_resample_profile",
+      "source": "docs/data/reference/multimodal-data/audio/native-audio-resample-profile.mdx",
+      "route": "/docs/data/reference/multimodal-data/audio/native-audio-resample-profile",
+      "frontmatter": {
+        "title": "native_audio_resample_profile"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video",
+      "title": "Video functions",
+      "source": "docs/data/reference/multimodal-data/video/index.mdx",
+      "route": "/docs/data/reference/multimodal-data/video",
+      "frontmatter": {
+        "title": "Video functions"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/video-metadata",
+      "title": "video_metadata",
+      "source": "docs/data/reference/multimodal-data/video/video-metadata.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/video-metadata",
+      "frontmatter": {
+        "title": "video_metadata"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/video-frames",
+      "title": "video_frames",
+      "source": "docs/data/reference/multimodal-data/video/video-frames.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/video-frames",
+      "frontmatter": {
+        "title": "video_frames"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/video-keyframes",
+      "title": "video_keyframes",
+      "source": "docs/data/reference/multimodal-data/video/video-keyframes.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/video-keyframes",
+      "frontmatter": {
+        "title": "video_keyframes"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/get-video-frame-by-idx",
+      "title": "get_video_frame_by_idx",
+      "source": "docs/data/reference/multimodal-data/video/get-video-frame-by-idx.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/get-video-frame-by-idx",
+      "frontmatter": {
+        "title": "get_video_frame_by_idx"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/read-video-frames",
+      "title": "read_video_frames",
+      "source": "docs/data/reference/multimodal-data/video/read-video-frames.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/read-video-frames",
+      "frontmatter": {
+        "title": "read_video_frames"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/build-video-index",
+      "title": "build_video_index",
+      "source": "docs/data/reference/multimodal-data/video/build-video-index.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/build-video-index",
+      "frontmatter": {
+        "title": "build_video_index"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/video-index-info",
+      "title": "video_index_info",
+      "source": "docs/data/reference/multimodal-data/video/video-index-info.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/video-index-info",
+      "frontmatter": {
+        "title": "video_index_info"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/video/video-scan-stats",
+      "title": "video_scan_stats",
+      "source": "docs/data/reference/multimodal-data/video/video-scan-stats.mdx",
+      "route": "/docs/data/reference/multimodal-data/video/video-scan-stats",
+      "frontmatter": {
+        "title": "video_scan_stats"
+      }
+    },
+    {
+      "slug": "reference/multimodal-data/tensor",
+      "title": "Tensor functions",
+      "source": "docs/data/reference/multimodal-data/tensor.mdx",
+      "route": "/docs/data/reference/multimodal-data/tensor",
+      "frontmatter": {
+        "title": "Tensor functions"
+      }
+    },
+    {
       "slug": "deploy/deployment",
       "title": "Deployment",
       "source": "docs/data/deploy/deployment.mdx",
@@ -563,6 +842,186 @@
               "slug": "reference/ai/sql/ai-embed",
               "label": "SQL ai_embed",
               "route": "/docs/data/reference/ai/sql/ai-embed"
+            }
+          ]
+        },
+        {
+          "group": "Multimodal data",
+          "items": [
+            {
+              "slug": "reference/multimodal-data",
+              "label": "Overview",
+              "route": "/docs/data/reference/multimodal-data"
+            },
+            {
+              "group": "File",
+              "items": [
+                {
+                  "slug": "reference/multimodal-data/file",
+                  "label": "Overview",
+                  "route": "/docs/data/reference/multimodal-data/file"
+                },
+                {
+                  "slug": "reference/multimodal-data/file/constructors",
+                  "label": "File constructors",
+                  "route": "/docs/data/reference/multimodal-data/file/constructors"
+                },
+                {
+                  "slug": "reference/multimodal-data/file/inspection",
+                  "label": "File inspection",
+                  "route": "/docs/data/reference/multimodal-data/file/inspection"
+                },
+                {
+                  "slug": "reference/multimodal-data/file/identity",
+                  "label": "File identity",
+                  "route": "/docs/data/reference/multimodal-data/file/identity"
+                },
+                {
+                  "slug": "reference/multimodal-data/file/listing",
+                  "label": "File listing and reading",
+                  "route": "/docs/data/reference/multimodal-data/file/listing"
+                }
+              ]
+            },
+            {
+              "group": "Image",
+              "items": [
+                {
+                  "slug": "reference/multimodal-data/image",
+                  "label": "Overview",
+                  "route": "/docs/data/reference/multimodal-data/image"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/image-file-metadata",
+                  "label": "image_file_metadata",
+                  "route": "/docs/data/reference/multimodal-data/image/image-file-metadata"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/decode-image-file",
+                  "label": "decode_image_file",
+                  "route": "/docs/data/reference/multimodal-data/image/decode-image-file"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/decode-image",
+                  "label": "decode_image",
+                  "route": "/docs/data/reference/multimodal-data/image/decode-image"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/crop",
+                  "label": "crop",
+                  "route": "/docs/data/reference/multimodal-data/image/crop"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/resize",
+                  "label": "resize",
+                  "route": "/docs/data/reference/multimodal-data/image/resize"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/convert-image",
+                  "label": "convert_image",
+                  "route": "/docs/data/reference/multimodal-data/image/convert-image"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/encode-image",
+                  "label": "encode_image",
+                  "route": "/docs/data/reference/multimodal-data/image/encode-image"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/image-hash",
+                  "label": "image_hash",
+                  "route": "/docs/data/reference/multimodal-data/image/image-hash"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/image-to-tensor",
+                  "label": "image_to_tensor",
+                  "route": "/docs/data/reference/multimodal-data/image/image-to-tensor"
+                },
+                {
+                  "slug": "reference/multimodal-data/image/accessors",
+                  "label": "Image accessors",
+                  "route": "/docs/data/reference/multimodal-data/image/accessors"
+                }
+              ]
+            },
+            {
+              "group": "Audio",
+              "items": [
+                {
+                  "slug": "reference/multimodal-data/audio",
+                  "label": "Overview",
+                  "route": "/docs/data/reference/multimodal-data/audio"
+                },
+                {
+                  "slug": "reference/multimodal-data/audio/audio-metadata",
+                  "label": "audio_metadata",
+                  "route": "/docs/data/reference/multimodal-data/audio/audio-metadata"
+                },
+                {
+                  "slug": "reference/multimodal-data/audio/resample",
+                  "label": "resample",
+                  "route": "/docs/data/reference/multimodal-data/audio/resample"
+                },
+                {
+                  "slug": "reference/multimodal-data/audio/native-audio-resample-profile",
+                  "label": "native_audio_resample_profile",
+                  "route": "/docs/data/reference/multimodal-data/audio/native-audio-resample-profile"
+                }
+              ]
+            },
+            {
+              "group": "Video",
+              "items": [
+                {
+                  "slug": "reference/multimodal-data/video",
+                  "label": "Overview",
+                  "route": "/docs/data/reference/multimodal-data/video"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/video-metadata",
+                  "label": "video_metadata",
+                  "route": "/docs/data/reference/multimodal-data/video/video-metadata"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/video-frames",
+                  "label": "video_frames",
+                  "route": "/docs/data/reference/multimodal-data/video/video-frames"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/video-keyframes",
+                  "label": "video_keyframes",
+                  "route": "/docs/data/reference/multimodal-data/video/video-keyframes"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/get-video-frame-by-idx",
+                  "label": "get_video_frame_by_idx",
+                  "route": "/docs/data/reference/multimodal-data/video/get-video-frame-by-idx"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/read-video-frames",
+                  "label": "read_video_frames",
+                  "route": "/docs/data/reference/multimodal-data/video/read-video-frames"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/build-video-index",
+                  "label": "build_video_index",
+                  "route": "/docs/data/reference/multimodal-data/video/build-video-index"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/video-index-info",
+                  "label": "video_index_info",
+                  "route": "/docs/data/reference/multimodal-data/video/video-index-info"
+                },
+                {
+                  "slug": "reference/multimodal-data/video/video-scan-stats",
+                  "label": "video_scan_stats",
+                  "route": "/docs/data/reference/multimodal-data/video/video-scan-stats"
+                }
+              ]
+            },
+            {
+              "slug": "reference/multimodal-data/tensor",
+              "label": "Tensor functions",
+              "route": "/docs/data/reference/multimodal-data/tensor"
             }
           ]
         }

@@ -1,0 +1,38 @@
+---
+title: image_to_tensor
+---
+
+`image_to_tensor` 在不改变像素值的前提下把 `IMAGE` 转换为 HWC `TENSOR`。已知模式保留 UInt8、UInt16 或 Float32；通用 `IMAGE` 使用 Float32。
+
+## 签名
+
+```python
+vane.image_to_tensor(image) -> Expression
+```
+
+SQL：`image_to_tensor(image)`。Expression 方法：`expr.image_to_tensor()`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
+
+## 返回值与错误
+
+返回形状 `(height, width, channels)` 的 `TENSOR`。`image_to_tensor` 属于基础引擎，无论 `image_backend` 取值都不需要图像后端。`NULL` 返回 `NULL`。
+
+## 示例
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT image_to_tensor(decode_image_file(image_file('photo.png')))").show()
+```
+
+## 来源与相关页面
+
+- [图像函数](index.mdx)
+- [多模态数据](../index.mdx)
+- [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)

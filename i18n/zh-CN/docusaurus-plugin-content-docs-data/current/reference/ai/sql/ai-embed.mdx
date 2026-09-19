@@ -60,7 +60,7 @@ ORDER BY id;
 
 Provider 对每个非 `NULL` 输入都必须按原顺序返回一个长度准确、数值有限的向量。能够在本地完成的校验——包括类型、配置参数常量性、未知 Provider、无法确定输出维度、无效选项，以及已知不兼容的模型与 Provider 组合——会在执行前报错。模型是否存在、是否有权使用、无法在本地确定的端点能力和 Provider 请求失败，则可能要到执行期间才能发现。`on_error := 'ignore'` 只处理逐行执行失败。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [SQL 实现：`src/vane_py/ai_sql_functions.cpp`](https://github.com/AstroVela/vane/blob/v0.1.0/src/vane_py/ai_sql_functions.cpp)
 - [`vane.ai.embed`](../embed.mdx)

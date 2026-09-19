@@ -1,0 +1,52 @@
+---
+title: resample
+---
+
+`resample` converts an `AUDIOFILE` into a Float64 tensor of shape `(frames, channels)` at a target sample rate. The complete stream is trimmed or zero-padded at the end, independent of chunk sizes.
+
+## Signature
+
+```python
+vane.resample(
+    value, sample_rate,
+    *, max_input_bytes=536870912, max_frames=100000000, max_decoded_bytes=536870912,
+    max_output_frames=100000000, max_output_bytes=536870912,
+) -> Expression
+```
+
+SQL: `resample(file, rate [, max_input_bytes, max_frames, max_decoded_bytes, max_output_frames, max_output_bytes])`. There is no `Expression` method for `resample`.
+
+## Parameters
+
+| Name | Type | Description | Default |
+| --- | --- | --- | --- |
+| `value` | `AUDIOFILE` value or `Expression` | Encoded audio object to resample | Required |
+| `sample_rate` | Positive integer or `Expression` | Target sample rate in Hz | Required |
+| `max_input_bytes` | Integer or `Expression` | Encoded input limit | `512 MiB` |
+| `max_frames` | Integer or `Expression` | Per-input decoded-frame limit | `100,000,000` |
+| `max_decoded_bytes` | Integer or `Expression` | Decoded sample budget | `512 MiB` |
+| `max_output_frames` | Integer or `Expression` | Resampled output-frame limit | `100,000,000` |
+| `max_output_bytes` | Integer or `Expression` | Resampled output-byte limit | `512 MiB` |
+
+The native backend requires a target and source rate in 1–384000 Hz and 1–64 channels. The Python backend accepts any positive target rate, up to 1024 channels, and a rate ratio of at most 64×.
+
+## Returns and errors
+
+Returns `TENSOR(DOUBLE, [NULL, NULL])` with shape `(frames, channels)`; mono keeps one channel and empty audio yields `(0, channels)`. `NULL` inputs return `NULL`; unsupported rates, channel counts, codec mismatches, and limit breaches raise.
+
+## Example
+
+```python
+import vane
+
+con = vane.connect()
+waveform = con.sql("SELECT resample(audio_file('sample.wav'), 16000)").fetchone()[0]
+assert waveform.shape[1] >= 1
+vane.close()
+```
+
+## Source and related pages
+
+- [Audio functions](index.mdx)
+- [`native_audio_resample_profile`](native-audio-resample-profile.mdx)
+- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)

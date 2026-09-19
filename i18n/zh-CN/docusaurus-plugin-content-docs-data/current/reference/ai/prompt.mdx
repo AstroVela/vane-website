@@ -147,7 +147,7 @@ vane.close()
 
 远程 Prompt 默认在首次失败后重试三次；原生 vLLM 只接受 `max_retries=0`。`on_error="ignore"` 在重试结束后生效，但 Prompt 初始化失败始终抛出。无效 JSON Schema 抛出 `SchemaValidationError`，响应不符合 JSON Schema 时抛出 `OutputValidationError`，Provider 能力不匹配时抛出 `ProviderCapabilityError`。
 
-## 源码与相关页面
+## 来源与相关页面
 
 - [实现：`vane/ai/functions.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/functions.py)
 - [Relation 便捷方法：`vane/ai/_relation_patch.py`](https://github.com/AstroVela/vane/blob/v0.1.0/vane/ai/_relation_patch.py)

@@ -1,0 +1,41 @@
+---
+title: 文件列举与读取
+---
+
+列举与读取函数枚举路径、打开流，并补全 `FILE` 元数据。
+
+## 签名
+
+```python
+vane.list_files(path, recursive=False, *, connection=None) -> Relation
+vane.open_file(url, mode="r", buffering=-1, encoding=None, errors=None, newline=None, *, connection=None) -> IOBase
+vane.file_enrich(value, fields) -> Expression
+```
+
+SQL：`list_files(path [, recursive])`（表函数）和 `file_enrich(file, fields)`。`open_file` 仅 Python。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `path` | 路径字符串（Python）；字符串或字符串列表（SQL） | 待枚举路径；支持 glob 模式与目录 | 必填 |
+| `recursive` | `bool` | 是否递归目录 | `False` |
+| `url` | 字符串 | 待打开为流的 URL | 必填 |
+| `mode` | `"r"`、`"rt"` 或 `"rb"` | 只读文本或二进制模式 | `"r"` |
+| `buffering`、`encoding`、`errors`、`newline` | 标准 I/O 选项 | 应用于返回的流 | Python 默认值 |
+| `fields` | 字符串列表或 `Expression` | 待补全的 `FILE` 字段；合法字段为 `size`、`content_type` 和 `checksum` | 必填 |
+
+## 返回值与错误
+
+`list_files` 每个已解析对象一行，列为 `url VARCHAR`、`object_size UBIGINT`、`last_modified TIMESTAMP`、`version VARCHAR`、`etag VARCHAR`、`content_type VARCHAR` 和 `file FILE`。`open_file` 返回标准只读流。`file_enrich` 补全缺失字段：`size` 把 `position` 置为 `0`、`size` 置为对象大小；`content_type` 先取已解析元数据再嗅探内容；`checksum` 补充 `sha256:<hex>` 摘要。不支持的字段、`NULL` 字段名、非法模式和访问失败都会报错。
+
+## 示例
+
+```sql
+SELECT url, file FROM list_files('photos');
+```
+
+## 来源与相关页面
+
+- [文件函数](index.mdx)
+- [`file_stat`](inspection.mdx)

@@ -183,6 +183,161 @@ export const DOCS_PAGES = {
     title: 'SQL ai_embed',
     titleZh: 'SQL ai_embed',
   },
+  'reference/multimodal-data': {
+    source: 'docs/data/reference/multimodal-data/index.mdx',
+    title: 'Multimodal data',
+    titleZh: '多模态数据',
+  },
+  'reference/multimodal-data/image': {
+    source: 'docs/data/reference/multimodal-data/image/index.mdx',
+    title: 'Image functions',
+    titleZh: '图像函数',
+  },
+  'reference/multimodal-data/image/image-file-metadata': {
+    source: 'docs/data/reference/multimodal-data/image/image-file-metadata.mdx',
+    title: 'image_file_metadata',
+    titleZh: 'image_file_metadata',
+  },
+  'reference/multimodal-data/image/decode-image-file': {
+    source: 'docs/data/reference/multimodal-data/image/decode-image-file.mdx',
+    title: 'decode_image_file',
+    titleZh: 'decode_image_file',
+  },
+  'reference/multimodal-data/image/decode-image': {
+    source: 'docs/data/reference/multimodal-data/image/decode-image.mdx',
+    title: 'decode_image',
+    titleZh: 'decode_image',
+  },
+  'reference/multimodal-data/image/crop': {
+    source: 'docs/data/reference/multimodal-data/image/crop.mdx',
+    title: 'crop',
+    titleZh: 'crop',
+  },
+  'reference/multimodal-data/image/resize': {
+    source: 'docs/data/reference/multimodal-data/image/resize.mdx',
+    title: 'resize',
+    titleZh: 'resize',
+  },
+  'reference/multimodal-data/image/convert-image': {
+    source: 'docs/data/reference/multimodal-data/image/convert-image.mdx',
+    title: 'convert_image',
+    titleZh: 'convert_image',
+  },
+  'reference/multimodal-data/image/encode-image': {
+    source: 'docs/data/reference/multimodal-data/image/encode-image.mdx',
+    title: 'encode_image',
+    titleZh: 'encode_image',
+  },
+  'reference/multimodal-data/image/image-hash': {
+    source: 'docs/data/reference/multimodal-data/image/image-hash.mdx',
+    title: 'image_hash',
+    titleZh: 'image_hash',
+  },
+  'reference/multimodal-data/image/image-to-tensor': {
+    source: 'docs/data/reference/multimodal-data/image/image-to-tensor.mdx',
+    title: 'image_to_tensor',
+    titleZh: 'image_to_tensor',
+  },
+  'reference/multimodal-data/image/accessors': {
+    source: 'docs/data/reference/multimodal-data/image/accessors.mdx',
+    title: 'Image accessors',
+    titleZh: 'IMAGE 访问器',
+  },
+  'reference/multimodal-data/audio': {
+    source: 'docs/data/reference/multimodal-data/audio/index.mdx',
+    title: 'Audio functions',
+    titleZh: '音频函数',
+  },
+  'reference/multimodal-data/audio/audio-metadata': {
+    source: 'docs/data/reference/multimodal-data/audio/audio-metadata.mdx',
+    title: 'audio_metadata',
+    titleZh: 'audio_metadata',
+  },
+  'reference/multimodal-data/audio/resample': {
+    source: 'docs/data/reference/multimodal-data/audio/resample.mdx',
+    title: 'resample',
+    titleZh: 'resample',
+  },
+  'reference/multimodal-data/audio/native-audio-resample-profile': {
+    source: 'docs/data/reference/multimodal-data/audio/native-audio-resample-profile.mdx',
+    title: 'native_audio_resample_profile',
+    titleZh: 'native_audio_resample_profile',
+  },
+  'reference/multimodal-data/video': {
+    source: 'docs/data/reference/multimodal-data/video/index.mdx',
+    title: 'Video functions',
+    titleZh: '视频函数',
+  },
+  'reference/multimodal-data/video/video-metadata': {
+    source: 'docs/data/reference/multimodal-data/video/video-metadata.mdx',
+    title: 'video_metadata',
+    titleZh: 'video_metadata',
+  },
+  'reference/multimodal-data/video/video-frames': {
+    source: 'docs/data/reference/multimodal-data/video/video-frames.mdx',
+    title: 'video_frames',
+    titleZh: 'video_frames',
+  },
+  'reference/multimodal-data/video/video-keyframes': {
+    source: 'docs/data/reference/multimodal-data/video/video-keyframes.mdx',
+    title: 'video_keyframes',
+    titleZh: 'video_keyframes',
+  },
+  'reference/multimodal-data/video/get-video-frame-by-idx': {
+    source: 'docs/data/reference/multimodal-data/video/get-video-frame-by-idx.mdx',
+    title: 'get_video_frame_by_idx',
+    titleZh: 'get_video_frame_by_idx',
+  },
+  'reference/multimodal-data/video/read-video-frames': {
+    source: 'docs/data/reference/multimodal-data/video/read-video-frames.mdx',
+    title: 'read_video_frames',
+    titleZh: 'read_video_frames',
+  },
+  'reference/multimodal-data/video/build-video-index': {
+    source: 'docs/data/reference/multimodal-data/video/build-video-index.mdx',
+    title: 'build_video_index',
+    titleZh: 'build_video_index',
+  },
+  'reference/multimodal-data/video/video-index-info': {
+    source: 'docs/data/reference/multimodal-data/video/video-index-info.mdx',
+    title: 'video_index_info',
+    titleZh: 'video_index_info',
+  },
+  'reference/multimodal-data/video/video-scan-stats': {
+    source: 'docs/data/reference/multimodal-data/video/video-scan-stats.mdx',
+    title: 'video_scan_stats',
+    titleZh: 'video_scan_stats',
+  },
+  'reference/multimodal-data/file': {
+    source: 'docs/data/reference/multimodal-data/file/index.mdx',
+    title: 'File functions',
+    titleZh: '文件函数',
+  },
+  'reference/multimodal-data/file/constructors': {
+    source: 'docs/data/reference/multimodal-data/file/constructors.mdx',
+    title: 'File constructors',
+    titleZh: '文件构造器',
+  },
+  'reference/multimodal-data/file/inspection': {
+    source: 'docs/data/reference/multimodal-data/file/inspection.mdx',
+    title: 'File inspection',
+    titleZh: '文件检查',
+  },
+  'reference/multimodal-data/file/identity': {
+    source: 'docs/data/reference/multimodal-data/file/identity.mdx',
+    title: 'File identity',
+    titleZh: '文件身份',
+  },
+  'reference/multimodal-data/file/listing': {
+    source: 'docs/data/reference/multimodal-data/file/listing.mdx',
+    title: 'File listing and reading',
+    titleZh: '文件列举与读取',
+  },
+  'reference/multimodal-data/tensor': {
+    source: 'docs/data/reference/multimodal-data/tensor.mdx',
+    title: 'Tensor functions',
+    titleZh: '张量函数',
+  },
   'deploy/deployment': {
     source: 'docs/data/deploy/deployment.mdx',
     title: 'Deployment',
@@ -257,6 +412,11 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Reference: 'API 参考',
   UDFs: 'UDF',
   'AI Functions': 'AI 函数',
+  'Multimodal data': '多模态数据',
+  File: '文件',
+  Image: '图像',
+  Audio: '音频',
+  Video: '视频',
   'Expression UDFs': 'Expression UDF',
   'Relation UDFs': 'Relation UDF',
   Operations: '运维',

@@ -1,0 +1,35 @@
+---
+title: video_index_info
+---
+
+`video_index_info` 不打开 FILE，解析视频索引 `BLOB` 并报告其计数、大小和构建 I/O。
+
+## 签名
+
+```python
+vane.video_index_info(index) -> Expression
+```
+
+SQL：`video_index_info(index)`。
+
+## 参数
+
+| 名称 | 类型 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `index` | `BLOB` 值或 `Expression` | `build_video_index` 生成的索引 | 必填 |
+
+## 返回值与错误
+
+返回 `STRUCT`，含 `frame_count`、`keyframe_count`、`source_bytes`、`index_bytes`、`build_bytes_read` 和 `codec_version`。`NULL` 返回 `NULL`。其实现遵循 `video_backend`，包括尚未加载 native_media 扩展的连接。索引完整性、身份和格式失败会报错。
+
+## 示例
+
+```sql
+SELECT video_index_info(build_video_index(video_file('clip.mp4')));
+```
+
+## 来源与相关页面
+
+- [视频函数](index.mdx)
+- [`build_video_index`](build-video-index.mdx)
+- [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
