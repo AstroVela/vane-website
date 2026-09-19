@@ -13,6 +13,51 @@ export const DOCS_PAGES = {
     title: 'Overview',
     titleZh: '概览',
   },
+  extensions: {
+    source: 'docs/data/extensions.mdx',
+    title: 'Overview',
+    titleZh: '概览',
+  },
+  'extensions/iceberg': {
+    source: 'docs/data/extensions/iceberg.mdx',
+    title: 'Apache Iceberg',
+    titleZh: 'Apache Iceberg',
+  },
+  'extensions/lance': {
+    source: 'docs/data/extensions/lance.mdx',
+    title: 'Lance',
+    titleZh: 'Lance',
+  },
+  'extensions/paimon': {
+    source: 'docs/data/extensions/paimon.mdx',
+    title: 'Apache Paimon',
+    titleZh: 'Apache Paimon',
+  },
+  'extensions/vortex': {
+    source: 'docs/data/extensions/vortex.mdx',
+    title: 'Vortex',
+    titleZh: 'Vortex',
+  },
+  'extensions/ducklake': {
+    source: 'docs/data/extensions/ducklake.mdx',
+    title: 'DuckLake',
+    titleZh: 'DuckLake',
+  },
+  'extensions/milvus': {
+    source: 'docs/data/extensions/milvus.mdx',
+    title: 'Milvus',
+    titleZh: 'Milvus',
+  },
+  'extensions/qdrant': {
+    source: 'docs/data/extensions/qdrant.mdx',
+    title: 'Qdrant',
+    titleZh: 'Qdrant',
+  },
+  'extensions/doris': {
+    source: 'docs/data/extensions/doris.mdx',
+    title: 'Apache Doris',
+    titleZh: 'Apache Doris',
+  },
   'quickstart/installation': {
     source: 'docs/data/quickstart/installation.mdx',
     title: 'Installation',
@@ -410,6 +455,7 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Examples: '示例',
   'Use cases': '端到端用例',
   Reference: 'API 参考',
+  Extensions: '扩展',
   UDFs: 'UDF',
   'AI Functions': 'AI 函数',
   'Multimodal data': '多模态数据',

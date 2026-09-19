@@ -6461,6 +6461,190 @@ column = vane.tensor_array(rows, dtype)
 - [Tensor contract](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
 - [Implementation: `vane/_tensor.py`](https://github.com/AstroVela/vane/blob/main/vane/_tensor.py)
 
+## Overview
+
+Route: /docs/data/extensions
+Source: docs/data/extensions.mdx
+
+Connect Vane Data to lakehouse formats and external data stores.
+
+- **[Apache Iceberg](https://iceberg.apache.org/)** — A high-performance open table format for large-scale analytics. The Vane extension provides distributed query and write capabilities.
+- **[Lance](https://lance.org/)** — A columnar data format designed for multimodal AI. The Vane extension provides distributed query and write capabilities, supporting dataset reads and writes, vector search, and hybrid search.
+- **[Apache Paimon](https://paimon.apache.org/)** — A lakehouse table format for unified stream and batch processing. The Vane extension provides distributed query and write capabilities.
+- **[Vortex](https://vortex.dev/)** — A columnar file format designed for efficient compression and computation. The Vane extension provides distributed query and write capabilities.
+- **[DuckLake](https://ducklake.select/)** — A lakehouse format combining SQL analytics with data lake scalability. The Vane extension provides distributed query and write capabilities.
+- **[Milvus](https://milvus.io/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
+- **[Qdrant](https://qdrant.tech/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
+- **[Apache Doris](https://doris.apache.org/)** — A real-time analytical database with a high-performance OLAP engine. The Vane extension provides distributed write capabilities, supporting Arrow batch writes through Arrow Stream Load.
+
+## Apache Iceberg
+
+Route: /docs/data/extensions/iceberg
+Source: docs/data/extensions/iceberg.mdx
+
+[Apache Iceberg](https://iceberg.apache.org/) is a high-performance open table format for large-scale analytics.
+
+The Vane extension provides distributed query and write capabilities.
+
+- **GitHub:** [AstroVela/duckdb-iceberg](https://github.com/AstroVela/duckdb-iceberg)
+- **Document:** [VANE_README.md](https://github.com/AstroVela/duckdb-iceberg/blob/v1.5-variegata_vane/VANE_README.md)
+
+## Lance
+
+Route: /docs/data/extensions/lance
+Source: docs/data/extensions/lance.mdx
+
+[Lance](https://lance.org/) is a columnar data format designed for multimodal AI.
+
+The Vane extension provides distributed query and write capabilities, supporting dataset reads and writes, vector search, and hybrid search.
+
+- **GitHub:** [AstroVela/lance-duckdb](https://github.com/AstroVela/lance-duckdb)
+- **Document:** [VANE_README.md](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)
+
+## Apache Paimon
+
+Route: /docs/data/extensions/paimon
+Source: docs/data/extensions/paimon.mdx
+
+[Apache Paimon](https://paimon.apache.org/) is a lakehouse table format for unified stream and batch processing.
+
+The Vane extension provides distributed query and write capabilities.
+
+- **GitHub:** [AstroVela/duckdb-paimon](https://github.com/AstroVela/duckdb-paimon)
+- **Document:** [VANE_README.md](https://github.com/AstroVela/duckdb-paimon/blob/main_vane/VANE_README.md)
+
+## Vortex
+
+Route: /docs/data/extensions/vortex
+Source: docs/data/extensions/vortex.mdx
+
+[Vortex](https://vortex.dev/) is a columnar file format designed for efficient compression and computation.
+
+The Vane extension provides distributed query and write capabilities.
+
+- **GitHub:** [AstroVela/duckdb-vortex](https://github.com/AstroVela/duckdb-vortex)
+- **Document:** [VANE_README.md](https://github.com/AstroVela/duckdb-vortex/blob/v1.5-variegata_vane/VANE_README.md)
+
+## DuckLake
+
+Route: /docs/data/extensions/ducklake
+Source: docs/data/extensions/ducklake.mdx
+
+[DuckLake](https://ducklake.select/) is a lakehouse format combining SQL analytics with data lake scalability.
+
+The Vane extension provides distributed query and write capabilities.
+
+- **GitHub:** [AstroVela/ducklake](https://github.com/AstroVela/ducklake)
+- **Document:** [VANE_README.md](https://github.com/AstroVela/ducklake/blob/v1.5-variegata_vane/VANE_README.md)
+
+## Milvus
+
+Route: /docs/data/extensions/milvus
+Source: docs/data/extensions/milvus.mdx
+
+[Milvus](https://milvus.io/) is a vector database for similarity search over embeddings. Vane writes query results to an existing collection through distributed, full-row upserts.
+
+## Example
+
+This example writes two document embeddings to `documents`. Install the `vane-ai[milvus]` extra and prepare a collection with `id` (INT64 primary key), `embedding` (3-dimensional FLOAT_VECTOR), and `title` (VARCHAR, max length 128). Disable AutoID and dynamic fields, and do not configure collection functions.
+
+```python
+import vane
+from vane import MilvusSink
+
+relation = vane.sql("""
+    SELECT id::BIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = MilvusSink(
+    "documents",
+    uri="http://localhost:19530",
+    primary_key="id",
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+Use an endpoint reachable by all workers. Reusing an ID replaces the full row; successful batches are not rolled back if a later batch fails.
+
+## Qdrant
+
+Route: /docs/data/extensions/qdrant
+Source: docs/data/extensions/qdrant.mdx
+
+[Qdrant](https://qdrant.tech/) stores vectors and payload metadata for similarity search. Vane writes query results through distributed point upserts, mapping columns to point IDs, vectors, and payload fields.
+
+## Example
+
+This example writes two document embeddings to `documents`. Install the `vane-ai[qdrant]` extra and create a collection with one unnamed, 3-dimensional dense vector using cosine distance. The query supplies unsigned 64-bit IDs and float32 vectors.
+
+```python
+import vane
+from vane import QdrantSink
+
+relation = vane.sql("""
+    SELECT id::UBIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = QdrantSink(
+    "documents",
+    url="http://localhost:6333",
+    point_id="id",
+    vector_mapping="embedding",
+    payload_mapping={"title": "title"},
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+Use an endpoint reachable by all workers. Reusing an ID replaces the point's full vector and payload; successful batches are not rolled back if a later batch fails.
+
+## Apache Doris
+
+Route: /docs/data/extensions/doris
+Source: docs/data/extensions/doris.mdx
+
+[Apache Doris](https://doris.apache.org/) is a real-time analytical database with a high-performance OLAP engine. Vane writes query results as Arrow batches through distributed Arrow Stream Load.
+
+## Example
+
+This example writes two orders to `analytics.orders`. Install the `vane-ai[doris]` extra and create the target table with `order_id BIGINT` and `amount DOUBLE`. Use a Doris deployment supporting Arrow Stream Load, and set `DORIS_PASSWORD` in every worker's environment.
+
+```python
+import pyarrow as pa
+import vane
+from vane import DorisStreamLoadSink, EnvironmentSecret
+
+relation = vane.sql("""
+    SELECT order_id::BIGINT AS order_id, amount::DOUBLE AS amount
+    FROM (VALUES (1, 29.9), (2, 49.0)) AS orders(order_id, amount)
+""")
+
+sink = DorisStreamLoadSink(
+    "analytics",
+    "orders",
+    endpoint="http://localhost:8040",
+    user="root",
+    password=EnvironmentSecret("DORIS_PASSWORD"),
+    destination_schema=pa.schema([
+        ("order_id", pa.int64()),
+        ("amount", pa.float64()),
+    ]),
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+The example uses a direct BE HTTP endpoint; replace it with an address reachable by all workers. `destination_schema` must match the target column types and input order. Batches commit independently; if an upload's outcome is unknown, inspect its Doris load label before retrying.
+
 ## Deployment
 
 Route: /docs/data/deploy/deployment

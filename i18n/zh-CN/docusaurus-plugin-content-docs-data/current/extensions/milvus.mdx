@@ -1,0 +1,32 @@
+---
+title: Milvus
+---
+
+[Milvus](https://milvus.io/) 是面向向量相似度检索的数据库。Vane 通过分布式整行 upsert，将查询结果写入已有集合。
+
+## 示例
+
+下面将两条文档向量写入 `documents`。安装 `vane-ai[milvus]` 可选依赖，并预先创建集合：`id` 为 INT64 主键，`embedding` 为 3 维 FLOAT_VECTOR，`title` 为 VARCHAR（最大长度 128）。关闭 AutoID 和动态字段，不配置集合函数。
+
+```python
+import vane
+from vane import MilvusSink
+
+relation = vane.sql("""
+    SELECT id::BIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = MilvusSink(
+    "documents",
+    uri="http://localhost:19530",
+    primary_key="id",
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+服务地址需能被所有 worker 访问。相同 ID 会替换整行；后续批次失败时，已成功的批次不会回滚。

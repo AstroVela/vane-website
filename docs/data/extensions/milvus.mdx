@@ -1,0 +1,32 @@
+---
+title: Milvus
+---
+
+[Milvus](https://milvus.io/) is a vector database for similarity search over embeddings. Vane writes query results to an existing collection through distributed, full-row upserts.
+
+## Example
+
+This example writes two document embeddings to `documents`. Install the `vane-ai[milvus]` extra and prepare a collection with `id` (INT64 primary key), `embedding` (3-dimensional FLOAT_VECTOR), and `title` (VARCHAR, max length 128). Disable AutoID and dynamic fields, and do not configure collection functions.
+
+```python
+import vane
+from vane import MilvusSink
+
+relation = vane.sql("""
+    SELECT id::BIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = MilvusSink(
+    "documents",
+    uri="http://localhost:19530",
+    primary_key="id",
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+Use an endpoint reachable by all workers. Reusing an ID replaces the full row; successful batches are not rolled back if a later batch fails.

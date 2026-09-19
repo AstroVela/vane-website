@@ -1,0 +1,34 @@
+---
+title: Qdrant
+---
+
+[Qdrant](https://qdrant.tech/) stores vectors and payload metadata for similarity search. Vane writes query results through distributed point upserts, mapping columns to point IDs, vectors, and payload fields.
+
+## Example
+
+This example writes two document embeddings to `documents`. Install the `vane-ai[qdrant]` extra and create a collection with one unnamed, 3-dimensional dense vector using cosine distance. The query supplies unsigned 64-bit IDs and float32 vectors.
+
+```python
+import vane
+from vane import QdrantSink
+
+relation = vane.sql("""
+    SELECT id::UBIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = QdrantSink(
+    "documents",
+    url="http://localhost:6333",
+    point_id="id",
+    vector_mapping="embedding",
+    payload_mapping={"title": "title"},
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+Use an endpoint reachable by all workers. Reusing an ID replaces the point's full vector and payload; successful batches are not rolled back if a later batch fails.

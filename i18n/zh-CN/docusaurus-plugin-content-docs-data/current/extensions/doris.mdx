@@ -1,0 +1,36 @@
+---
+title: Apache Doris
+---
+
+[Apache Doris](https://doris.apache.org/) 是提供高性能 OLAP 引擎的实时分析型数据库。Vane 通过分布式 Arrow Stream Load，将查询结果以 Arrow 批次写入 Doris。
+
+## 示例
+
+下面将两条订单写入 `analytics.orders`。安装 `vane-ai[doris]` 可选依赖，并预先创建包含 `order_id BIGINT` 和 `amount DOUBLE` 的目标表。Doris 需支持 Arrow Stream Load，并在每个 worker 的环境中设置 `DORIS_PASSWORD`。
+
+```python
+import pyarrow as pa
+import vane
+from vane import DorisStreamLoadSink, EnvironmentSecret
+
+relation = vane.sql("""
+    SELECT order_id::BIGINT AS order_id, amount::DOUBLE AS amount
+    FROM (VALUES (1, 29.9), (2, 49.0)) AS orders(order_id, amount)
+""")
+
+sink = DorisStreamLoadSink(
+    "analytics",
+    "orders",
+    endpoint="http://localhost:8040",
+    user="root",
+    password=EnvironmentSecret("DORIS_PASSWORD"),
+    destination_schema=pa.schema([
+        ("order_id", pa.int64()),
+        ("amount", pa.float64()),
+    ]),
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+示例直接连接 BE 的 HTTP 端口，请替换为所有 worker 均可访问的地址。`destination_schema` 必须匹配目标列类型及输入顺序。各批次独立提交；上传结果不确定时，应先检查对应的 Doris 导入 label，再决定是否重试。

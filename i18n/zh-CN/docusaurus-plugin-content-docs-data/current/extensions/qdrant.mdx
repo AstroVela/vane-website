@@ -1,0 +1,34 @@
+---
+title: Qdrant
+---
+
+[Qdrant](https://qdrant.tech/) 存储向量及 payload 元数据，用于相似度检索。Vane 通过分布式 point upsert 写入查询结果，将列映射为 point ID、向量及 payload 字段。
+
+## 示例
+
+下面将两条文档向量写入 `documents`。安装 `vane-ai[qdrant]` 可选依赖，并预先创建使用余弦距离、包含一个未命名 3 维稠密向量的集合。查询提供无符号 64 位 ID 和 float32 向量。
+
+```python
+import vane
+from vane import QdrantSink
+
+relation = vane.sql("""
+    SELECT id::UBIGINT AS id, embedding::FLOAT[] AS embedding, title
+    FROM (VALUES
+        (1, [0.1, 0.2, 0.3], 'Vector search'),
+        (2, [0.4, 0.5, 0.6], 'Data pipelines')
+    ) AS documents(id, embedding, title)
+""")
+
+sink = QdrantSink(
+    "documents",
+    url="http://localhost:6333",
+    point_id="id",
+    vector_mapping="embedding",
+    payload_mapping={"title": "title"},
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+服务地址需能被所有 worker 访问。相同 ID 会替换该 point 的完整向量及 payload；后续批次失败时，已成功的批次不会回滚。

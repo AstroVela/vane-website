@@ -707,6 +707,48 @@ test('Overview is a direct sidebar page instead of a Docs Home child item', () =
   assert.doesNotMatch(sidebarsSource, /label:\s*'Docs Home'/)
 })
 
+test('Extensions follows Reference as a category with an overview and localized child pages', () => {
+  const index = dataSidebar.findIndex((entry) => entry.group === 'Extensions')
+  assert.equal(dataSidebar[index - 1].group, 'Reference')
+  assert.equal(dataSidebar[index + 1].group, 'Operations')
+  assert.equal(dataDocsTranslations['sidebar.dataSidebar.category.Extensions'].message, '扩展')
+  assert.equal(dataDocsTranslations['sidebar.dataSidebar.doc.Extensions overview'].message, '概览')
+  const slugs = ['iceberg', 'lance', 'paimon', 'vortex', 'ducklake', 'milvus', 'qdrant', 'doris']
+  assert.deepEqual(dataSidebar[index].items.map((entry) => entry.slug), [
+    'extensions', ...slugs.map((slug) => `extensions/${slug}`),
+  ])
+  const websites = {
+    iceberg: 'https://iceberg.apache.org/',
+    lance: 'https://lance.org/',
+    paimon: 'https://paimon.apache.org/',
+    vortex: 'https://vortex.dev/',
+    ducklake: 'https://ducklake.select/',
+    milvus: 'https://milvus.io/',
+    qdrant: 'https://qdrant.tech/',
+    doris: 'https://doris.apache.org/',
+  }
+  for (const root of [
+    'docs/data',
+    'i18n/zh-CN/docusaurus-plugin-content-docs-data/current',
+  ]) {
+    const overview = readFileSync(`${root}/extensions.mdx`, 'utf8')
+    for (const slug of slugs) {
+      assert.ok(overview.includes(`](${websites[slug]})`))
+      const page = readFileSync(`${root}/extensions/${slug}.mdx`, 'utf8')
+      if (['milvus', 'qdrant', 'doris'].includes(slug)) {
+        assert.doesNotMatch(page, /\*\*(?:GitHub|Document|文档):\*\*|archived|历史版本/)
+        assert.match(page, /```python/)
+        assert.match(page, /relation\.write_datasink\(sink\)/)
+        continue
+      }
+      assert.match(page, /\*\*GitHub:\*\* \[AstroVela\//)
+      assert.match(page, /\*\*(?:Document|文档):\*\* \[.*README\.md/)
+      assert.equal((page.match(/https:\/\/github\.com\//g) ?? []).length, 2)
+    }
+    assert.doesNotMatch(overview, /Native Media/)
+  }
+})
+
 test('custom navbar preserves the Docusaurus navbar marker for docs TOC code', () => {
   assert.match(navSource, /<header\s+className="nav navbar"/)
 })
