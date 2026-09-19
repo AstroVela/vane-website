@@ -1,18 +1,14 @@
 ---
-title: Extensions
+title: Overview
 ---
 
 Connect Vane Data to lakehouse formats and external data stores.
 
-## Data formats
-
-- **[Apache Iceberg](https://github.com/AstroVela/duckdb-iceberg/blob/v1.5-variegata_vane/VANE_README.md)** — Read and modify Iceberg tables with distributed scans and catalog-backed writes on Ray.
-- **[Lance](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)** — Read and write Lance datasets and run vector, full-text, and hybrid searches.
-- **[Apache Paimon](https://github.com/AstroVela/duckdb-paimon/blob/main_vane/VANE_README.md)** — Query Paimon tables and historical snapshots, create append-only tables, and append rows on Ray.
-- **[Vortex](https://github.com/AstroVela/duckdb-vortex/blob/v1.5-variegata_vane/VANE_README.md)** — Read and write Vortex columnar files through distributed scans and COPY on Ray.
-- **[DuckLake](https://github.com/AstroVela/ducklake/blob/v1.5-variegata_vane/VANE_README.md)** — Query current and historical DuckLake tables and run distributed CTAS, INSERT, UPDATE, DELETE, and MERGE.
-
-## Data sinks
-
-- **[Milvus](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#milvus-datasink) and [Qdrant](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#qdrant-datasink)** — Write query results directly to vector stores through distributed upserts.
-- **[Apache Doris](https://github.com/AstroVela/vane/blob/4e12994a2fed5b872a7bdb44df72c1b9c5653cdc/README.md#apache-doris-arrow-stream-load)** — Write Arrow batches directly to Doris through Arrow Stream Load.
+- **[Apache Iceberg](https://iceberg.apache.org/)** — A high-performance open table format for large-scale analytics. The Vane extension provides distributed query and write capabilities.
+- **[Lance](https://lance.org/)** — A columnar data format designed for multimodal AI. The Vane extension provides distributed query and write capabilities, supporting dataset reads and writes, vector search, and hybrid search.
+- **[Apache Paimon](https://paimon.apache.org/)** — A lakehouse table format for unified stream and batch processing. The Vane extension provides distributed query and write capabilities.
+- **[Vortex](https://vortex.dev/)** — A columnar file format designed for efficient compression and computation. The Vane extension provides distributed query and write capabilities.
+- **[DuckLake](https://ducklake.select/)** — A lakehouse format combining SQL analytics with data lake scalability. The Vane extension provides distributed query and write capabilities.
+- **[Milvus](https://milvus.io/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
+- **[Qdrant](https://qdrant.tech/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
+- **[Apache Doris](https://doris.apache.org/)** — A real-time analytical database with a high-performance OLAP engine. The Vane extension provides distributed write capabilities, supporting Arrow batch writes through Arrow Stream Load.

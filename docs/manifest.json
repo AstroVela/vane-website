@@ -604,11 +604,83 @@
     },
     {
       "slug": "extensions",
-      "title": "Extensions",
+      "title": "Overview",
       "source": "docs/data/extensions.mdx",
       "route": "/docs/data/extensions",
       "frontmatter": {
-        "title": "Extensions"
+        "title": "Overview"
+      }
+    },
+    {
+      "slug": "extensions/iceberg",
+      "title": "Apache Iceberg",
+      "source": "docs/data/extensions/iceberg.mdx",
+      "route": "/docs/data/extensions/iceberg",
+      "frontmatter": {
+        "title": "Apache Iceberg"
+      }
+    },
+    {
+      "slug": "extensions/lance",
+      "title": "Lance",
+      "source": "docs/data/extensions/lance.mdx",
+      "route": "/docs/data/extensions/lance",
+      "frontmatter": {
+        "title": "Lance"
+      }
+    },
+    {
+      "slug": "extensions/paimon",
+      "title": "Apache Paimon",
+      "source": "docs/data/extensions/paimon.mdx",
+      "route": "/docs/data/extensions/paimon",
+      "frontmatter": {
+        "title": "Apache Paimon"
+      }
+    },
+    {
+      "slug": "extensions/vortex",
+      "title": "Vortex",
+      "source": "docs/data/extensions/vortex.mdx",
+      "route": "/docs/data/extensions/vortex",
+      "frontmatter": {
+        "title": "Vortex"
+      }
+    },
+    {
+      "slug": "extensions/ducklake",
+      "title": "DuckLake",
+      "source": "docs/data/extensions/ducklake.mdx",
+      "route": "/docs/data/extensions/ducklake",
+      "frontmatter": {
+        "title": "DuckLake"
+      }
+    },
+    {
+      "slug": "extensions/milvus",
+      "title": "Milvus",
+      "source": "docs/data/extensions/milvus.mdx",
+      "route": "/docs/data/extensions/milvus",
+      "frontmatter": {
+        "title": "Milvus"
+      }
+    },
+    {
+      "slug": "extensions/qdrant",
+      "title": "Qdrant",
+      "source": "docs/data/extensions/qdrant.mdx",
+      "route": "/docs/data/extensions/qdrant",
+      "frontmatter": {
+        "title": "Qdrant"
+      }
+    },
+    {
+      "slug": "extensions/doris",
+      "title": "Apache Doris",
+      "source": "docs/data/extensions/doris.mdx",
+      "route": "/docs/data/extensions/doris",
+      "frontmatter": {
+        "title": "Apache Doris"
       }
     },
     {
@@ -1037,9 +1109,54 @@
       ]
     },
     {
-      "slug": "extensions",
-      "label": "Extensions",
-      "route": "/docs/data/extensions"
+      "group": "Extensions",
+      "items": [
+        {
+          "slug": "extensions",
+          "label": "Overview",
+          "route": "/docs/data/extensions"
+        },
+        {
+          "slug": "extensions/iceberg",
+          "label": "Apache Iceberg",
+          "route": "/docs/data/extensions/iceberg"
+        },
+        {
+          "slug": "extensions/lance",
+          "label": "Lance",
+          "route": "/docs/data/extensions/lance"
+        },
+        {
+          "slug": "extensions/paimon",
+          "label": "Apache Paimon",
+          "route": "/docs/data/extensions/paimon"
+        },
+        {
+          "slug": "extensions/vortex",
+          "label": "Vortex",
+          "route": "/docs/data/extensions/vortex"
+        },
+        {
+          "slug": "extensions/ducklake",
+          "label": "DuckLake",
+          "route": "/docs/data/extensions/ducklake"
+        },
+        {
+          "slug": "extensions/milvus",
+          "label": "Milvus",
+          "route": "/docs/data/extensions/milvus"
+        },
+        {
+          "slug": "extensions/qdrant",
+          "label": "Qdrant",
+          "route": "/docs/data/extensions/qdrant"
+        },
+        {
+          "slug": "extensions/doris",
+          "label": "Apache Doris",
+          "route": "/docs/data/extensions/doris"
+        }
+      ]
     },
     {
       "group": "Operations",

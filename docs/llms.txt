@@ -68,6 +68,14 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/reference/multimodal-data/video/video-index-info: video_index_info.
 - /docs/data/reference/multimodal-data/video/video-scan-stats: video_scan_stats.
 - /docs/data/reference/multimodal-data/tensor: Tensor functions.
-- /docs/data/extensions: Extensions.
+- /docs/data/extensions: Overview.
+- /docs/data/extensions/iceberg: Apache Iceberg.
+- /docs/data/extensions/lance: Lance.
+- /docs/data/extensions/paimon: Apache Paimon.
+- /docs/data/extensions/vortex: Vortex.
+- /docs/data/extensions/ducklake: DuckLake.
+- /docs/data/extensions/milvus: Milvus.
+- /docs/data/extensions/qdrant: Qdrant.
+- /docs/data/extensions/doris: Apache Doris.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

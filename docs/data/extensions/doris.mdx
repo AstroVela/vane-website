@@ -1,0 +1,36 @@
+---
+title: Apache Doris
+---
+
+[Apache Doris](https://doris.apache.org/) is a real-time analytical database with a high-performance OLAP engine. Vane writes query results as Arrow batches through distributed Arrow Stream Load.
+
+## Example
+
+This example writes two orders to `analytics.orders`. Install the `vane-ai[doris]` extra and create the target table with `order_id BIGINT` and `amount DOUBLE`. Use a Doris deployment supporting Arrow Stream Load, and set `DORIS_PASSWORD` in every worker's environment.
+
+```python
+import pyarrow as pa
+import vane
+from vane import DorisStreamLoadSink, EnvironmentSecret
+
+relation = vane.sql("""
+    SELECT order_id::BIGINT AS order_id, amount::DOUBLE AS amount
+    FROM (VALUES (1, 29.9), (2, 49.0)) AS orders(order_id, amount)
+""")
+
+sink = DorisStreamLoadSink(
+    "analytics",
+    "orders",
+    endpoint="http://localhost:8040",
+    user="root",
+    password=EnvironmentSecret("DORIS_PASSWORD"),
+    destination_schema=pa.schema([
+        ("order_id", pa.int64()),
+        ("amount", pa.float64()),
+    ]),
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+The example uses a direct BE HTTP endpoint; replace it with an address reachable by all workers. `destination_schema` must match the target column types and input order. Batches commit independently; if an upload's outcome is unknown, inspect its Doris load label before retrying.

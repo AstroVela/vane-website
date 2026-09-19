@@ -1,18 +1,14 @@
 ---
-title: 扩展
+title: 概览
 ---
 
 将 Vane Data 连接到湖仓格式和外部数据存储。
 
-## 数据格式
-
-- **[Apache Iceberg](https://github.com/AstroVela/duckdb-iceberg/blob/v1.5-variegata_vane/VANE_README.md)** — 通过 Ray 分布式扫描和基于 catalog 的写入，读取与修改 Iceberg 表。
-- **[Lance](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)** — 读写 Lance 数据集，并执行向量、全文和混合检索。
-- **[Apache Paimon](https://github.com/AstroVela/duckdb-paimon/blob/main_vane/VANE_README.md)** — 通过 Ray 查询 Paimon 表与历史快照、创建仅追加表并追加数据。
-- **[Vortex](https://github.com/AstroVela/duckdb-vortex/blob/v1.5-variegata_vane/VANE_README.md)** — 通过 Ray 分布式扫描和 COPY 读写 Vortex 列式文件。
-- **[DuckLake](https://github.com/AstroVela/ducklake/blob/v1.5-variegata_vane/VANE_README.md)** — 查询 DuckLake 当前表与历史快照，并执行分布式 CTAS、INSERT、UPDATE、DELETE 和 MERGE。
-
-## 数据写入
-
-- **[Milvus](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#milvus-datasink) 和 [Qdrant](https://github.com/AstroVela/vane/blob/abcfd37d6f6f34534e75bd7e364a1c329996f977/README.md#qdrant-datasink)** — 通过分布式 upsert 将查询结果直接写入向量数据库。
-- **[Apache Doris](https://github.com/AstroVela/vane/blob/4e12994a2fed5b872a7bdb44df72c1b9c5653cdc/README.md#apache-doris-arrow-stream-load)** — 通过 Arrow Stream Load 将 Arrow 批次直接写入 Doris。
+- **[Apache Iceberg](https://iceberg.apache.org/)** — 一种面向海量分析的高性能开放表格式。Vane 扩展提供分布式查询写入功能。
+- **[Lance](https://lance.org/)** — 一种专为多模态 AI 设计的列式数据格式。Vane 扩展提供分布式查询写入功能，支持数据集读写、向量检索及混合搜索。
+- **[Apache Paimon](https://paimon.apache.org/)** — 一种流批一体的湖仓表格式。Vane 扩展提供分布式查询写入功能。
+- **[Vortex](https://vortex.dev/)** — 一种面向高效压缩与计算的列式文件格式。Vane 扩展提供分布式查询写入功能。
+- **[DuckLake](https://ducklake.select/)** — 一种融合 SQL 分析与数据湖扩展性的湖仓格式。Vane 扩展提供分布式查询写入功能。
+- **[Milvus](https://milvus.io/)** — 一款面向高维相似度检索的向量数据库。Vane 扩展提供分布式写入功能，支持分布式 upsert 及查询结果写入。
+- **[Qdrant](https://qdrant.tech/)** — 一款面向高维相似度检索的向量数据库。Vane 扩展提供分布式写入功能，支持分布式 upsert 及查询结果写入。
+- **[Apache Doris](https://doris.apache.org/)** — 一款提供高性能 OLAP 引擎的实时分析型数据库。Vane 扩展提供分布式写入功能，支持通过 Arrow Stream Load 写入 Arrow 批次。

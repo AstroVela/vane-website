@@ -172,7 +172,20 @@
       }
     ]
   },
-  { "slug": "extensions", "label": "Extensions" },
+  {
+    "group": "Extensions",
+    "items": [
+      { "slug": "extensions", "label": "Overview", "key": "Extensions overview" },
+      { "slug": "extensions/iceberg" },
+      { "slug": "extensions/lance" },
+      { "slug": "extensions/paimon" },
+      { "slug": "extensions/vortex" },
+      { "slug": "extensions/ducklake" },
+      { "slug": "extensions/milvus" },
+      { "slug": "extensions/qdrant" },
+      { "slug": "extensions/doris" }
+    ]
+  },
   {
     "group": "Operations",
     "items": [
