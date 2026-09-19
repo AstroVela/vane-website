@@ -2,7 +2,7 @@
 title: image_file_metadata
 ---
 
-`image_file_metadata` 查看有界的 `IMAGEFILE` 头部，不解码像素。
+`image_file_metadata` 在限定的字节数内读取 `IMAGEFILE` 头部，不解码像素。
 
 ## 签名
 
@@ -17,10 +17,10 @@ SQL：`image_file_metadata(file [, max_bytes [, max_pixels]])`。Expression 方�
 | 名称 | 类型 | 说明 | 默认值 |
 | --- | --- | --- | --- |
 | `value` | `IMAGEFILE` 值或 `Expression` | 待查看的编码图像对象 | 必填 |
-| `max_bytes` | 整数或 `Expression` | 有界头部/探测预算 | `1 MiB`（上限 `64 MiB`） |
+| `max_bytes` | 整数或 `Expression` | 头部读取与探测的字节数上限 | `1 MiB`（上限 `64 MiB`） |
 | `max_pixels` | 整数或 `Expression` | 声明尺寸上限 | `100,000,000` |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `STRUCT(width UINTEGER, height UINTEGER, format VARCHAR, mode VARCHAR)`。`NULL` 输入返回 `NULL`；不可读或不支持的头部报错。
 
@@ -36,4 +36,4 @@ con.sql("SELECT image_file_metadata(image_file('photo.png'))").show()
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [实现：`vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)

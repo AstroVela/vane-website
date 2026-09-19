@@ -4897,9 +4897,11 @@ Provider batches must return one finite vector of the expected width for every n
 Route: /docs/data/reference/multimodal-data
 Source: docs/data/reference/multimodal-data/index.mdx
 
-Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. Six engine types cover files, images, audio, video, and tensors; all six are first-class engine types. Each domain has a Python API and a SQL API, and image, audio, and video select a `python` (default) or `native` execution backend. Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result.
+Vane uses the `FILE` family for immutable file references, `IMAGE` for decoded image pixels, and `TENSOR` for numeric arrays, including audio waveforms. The reference below groups the Python and SQL APIs by files, images, audio, video, and tensors. Image, audio, and video functions default to the `python` backend; after loading `native_media`, you can select the `native` backend.
 
-## Domains
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL scalar functions can appear in `SELECT` expressions, with `AS` to name the result. Table functions such as `list_files` and `read_video_frames` appear in the `FROM` clause.
+
+## Function groups
 
 - [File functions](file/index.mdx): construct and inspect `FILE`-family values.
 - [Image functions](image/index.mdx): decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values.
@@ -4916,7 +4918,7 @@ Vane carries multimodal data as typed engine values: the `FILE` family for immut
 | `AUDIOFILE` | Same five fields, `AUDIO` subtype | Encoded audio object |
 | `VIDEOFILE` | Same five fields, `VIDEO` subtype | Encoded video object |
 | `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
-| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+| `TENSOR(dtype, shape)` | Variable shapes use `STRUCT(data LIST, shape INTEGER[rank])` with a fixed rank per column; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
 
 Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
 
@@ -4955,7 +4957,7 @@ Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimens
 
 ## Value contracts
 
-A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a zero dimension is an empty tensor, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
+A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a tensor with any dimension of size 0 is empty, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
 
 ## Backends
 
@@ -5116,7 +5118,7 @@ SQL: `file_path(file)`, `file_size(file)`, `file_exists(file)`, `file_stat(file)
 
 ## Returns and errors
 
-`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return `VARCHAR` or `NULL` when detection fails. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
+`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return a MIME type string (`VARCHAR`), or `NULL` when the type cannot be identified. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
 
 ## Example
 
@@ -5155,16 +5157,23 @@ SQL: `file_locator_id(file)`, `file_content_id(file)`, `file_same_location(left,
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
 | `value` | `FILE`-family value or `Expression` | Object to identify | Required |
-| `left` / `right` | Same `FILE` subtype values or `Expression` | Values to compare | Required |
+| `left` / `right` | `FILE`-family values or `Expression` | Values to compare; different subtypes are accepted | Required |
 
 ## Returns and errors
 
-`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns a content identifier (`VARCHAR`) derived from the declared checksum, `file-content-v1:empty` for an empty byte window, and `NULL` when no checksum is declared. `file_same_location` compares URL, position, and size, and returns `NULL` when only one side has a byte window. `file_same_content` compares declared checksums: it returns `false` for different window sizes, and `NULL` when either checksum is missing or the checksum algorithms differ. `=`/`!=` require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
+`file_locator_id` returns a locator identifier (`VARCHAR`) derived from the URL and byte window. `file_content_id` returns `file-content-v1:empty` for a known empty byte window; otherwise it derives a content identifier (`VARCHAR`) from the declared checksum, or returns `NULL` when no checksum is declared.
+
+`file_same_location` returns `false` for different URLs. For the same URL, it returns `true` when neither side has a byte window, `NULL` when only one side has a window, and otherwise compares position and size.
+
+`file_same_content` first returns `false` when both window sizes are known and differ, or `true` when both are zero, even without checksums. Otherwise it compares declared checksum digests, returning `NULL` when either checksum is missing or the algorithms differ.
+
+Both identity comparisons accept different `FILE` subtypes. Direct `=`/`!=` comparisons require the same subtype and follow SQL `NULL` semantics; mixing subtypes raises at binding.
 
 ## Example
 
 ```sql
-SELECT file_same_location(image_file('a.png'), image_file('a.png')) AS same_location;
+SELECT file_same_location(file('a.png', NULL, NULL, NULL, NULL), image_file('a.png')) AS same_location;
+SELECT file_same_content(file('a', NULL, 0, 0, NULL), file('b', NULL, 0, 0, NULL)) AS same_content;
 ```
 
 ## Source and related pages
@@ -5193,7 +5202,7 @@ SQL: `list_files(path [, recursive])` (table function) and `file_enrich(file, fi
 
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
-| `path` | Path string or `Expression` (Python); string or list of strings (SQL) | Path(s) to enumerate; glob patterns and directories are supported | Required |
+| `path` | Path string (Python); string or list of strings (SQL) | Path(s) to enumerate; glob patterns and directories are supported | Required |
 | `recursive` | `bool` | Recurse into directories | `False` |
 | `url` | String | URL to open as a stream | Required |
 | `mode` | `"r"`, `"rt"`, or `"rb"` | Read-only text or binary mode | `"r"` |
@@ -5431,7 +5440,7 @@ SQL: `crop(image, bbox)`. Expression method: `expr.crop(bbox)`.
 
 ## Returns and errors
 
-Returns a dynamic `IMAGE` that retains the input's mode constraint. `NULL` image or `bbox` returns `NULL`. Negative or zero dimensions, missing elements, and implicit coordinate conversion raise during binding.
+Returns a dynamic `IMAGE` that retains the input's mode constraint. `NULL` image or `bbox` returns `NULL`. Negative or zero dimensions, missing elements, and implicit coordinate conversion raise.
 
 ## Example
 
@@ -5509,7 +5518,7 @@ SQL: `convert_image(image, mode)`. Expression method: `expr.convert_image(mode)`
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
 | `image` | `IMAGE` value or `Expression` | Input image | Required |
-| `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Target pixel mode; `None` keeps the input mode | Required |
+| `mode` | Mode name, `ImageMode`, `Expression`, or `None` | Target pixel mode; `None` returns `NULL` | Required |
 
 ## Returns and errors
 
@@ -5989,7 +5998,9 @@ Each function has two interchangeable implementations selected by the connection
 
 ## Backends
 
-Both backends implement the same selection contract, including inclusive time windows, timestamp-reached sampling, presentation-order frame indices, keyframe filtering, and byte-identical RGB conversion for supported fixtures. SQL expressions and `read_video_frames` accept indexes built by either backend. Prepared statements retain their bound implementation; lazy relations may bind again when executed.
+Both backends implement the same selection contract, including inclusive time windows, timestamp-reached sampling, presentation-order frame indices, keyframe filtering. RGB conversion results are byte-identical for the supported test fixtures.
+
+SQL expressions and `read_video_frames` accept indexes built by either backend. Prepared statements retain their bound implementation; lazy relations may bind again when executed.
 
 ```python
 import vane
@@ -6019,7 +6030,7 @@ An unavailable native extension fails during binding; there is no automatic fall
 Route: /docs/data/reference/multimodal-data/video/video-metadata
 Source: docs/data/reference/multimodal-data/video/video-metadata.mdx
 
-`video_metadata` inspects the first non-attached video stream with bounded stream-info probing.
+`video_metadata` reads stream metadata within a probe byte limit. It selects the first video stream without the `attached_pic` flag, skipping cover art and other attached pictures.
 
 ## Signature
 
@@ -6080,7 +6091,7 @@ Accepts the [shared frame expression options](index.mdx#frame-expression-options
 
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
-| `is_key_frame` | `bool`, `Expression`, or `None` | Filter to keyframes only | `None` |
+| `is_key_frame` | `bool`, `Expression`, or `None` | `True` selects keyframes, `False` selects non-keyframes, and `None` disables this filter | `None` |
 
 ## Returns and errors
 
@@ -6218,7 +6229,7 @@ SQL: `read_video_frames(source, height, width [, is_key_frame], start_time => ..
 | --- | --- | --- | --- |
 | `path` | Path string, `os.PathLike`, `FILE`/`VIDEOFILE` value, or a list of these | Exact input paths or FILE views; no directory or glob discovery | Required |
 | `image_height` / `image_width` | Positive integer | Output frame dimensions; `data` is `IMAGE('RGB', H, W)` | Required |
-| `is_key_frame` | `bool` or `None` | Filter to keyframes only when set | `None` |
+| `is_key_frame` | `bool` or `None` | `True` selects keyframes, `False` selects non-keyframes, and `None` disables this filter | `None` |
 | `sample_interval_seconds` | Number or `None` | Emit frames when timestamps reach the next interval target | `None` |
 | `start_time` / `end_time` | Number | Inclusive time window in seconds relative to stream start | `0` / `None` |
 | `max_input_bytes` | Integer | Encoded logical-view limit | `8 GiB` (maximum `16 GiB`) |
@@ -6260,7 +6271,7 @@ frames.select("path", "frame_index", "frame_time", "data").show()
 Route: /docs/data/reference/multimodal-data/video/build-video-index
 Source: docs/data/reference/multimodal-data/video/build-video-index.mdx
 
-`build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. Materialize it once and store it alongside its `VIDEOFILE` before issuing repeated selections.
+`build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. For repeated frame selections, build the index once and store the result alongside its `VIDEOFILE`.
 
 Building an index performs a complete content-hashing pass and a complete sequential decode; it does not store decoded pixels or encoded video content.
 
@@ -6365,7 +6376,7 @@ SQL: `video_scan_stats(file, start_time, end_time, is_key_frame, sample_interval
 | --- | --- | --- | --- |
 | `value` | `VIDEOFILE` value or `Expression` | Source video | Required |
 | `start_time` / `end_time` | Number or `Expression` | Inclusive time window in seconds relative to stream start | `0` / `None` |
-| `is_key_frame` | `bool`, `Expression`, or `None` | Filter to keyframes only | `None` |
+| `is_key_frame` | `bool`, `Expression`, or `None` | `True` selects keyframes, `False` selects non-keyframes, and `None` disables this filter | `None` |
 | `sample_interval_seconds` | Number or `Expression` | Emit frames when timestamps reach the next interval target | `None` |
 | `idx` | `BIGINT` or `Expression` | Select one exact frame instead of scanning | `None` |
 | `index` | Index `BLOB` or `Expression` | Verified seek index from `build_video_index`; `NULL` selects sequential decoding | `None` |
@@ -6413,10 +6424,12 @@ SQL: `tensor(data, shape)`, `tensor_data(value)`, and `tensor_shape(value)`. `te
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
 | `data` | Value or `Expression` | Flattened row-major elements or a compatible array | Required |
-| `shape` | Sequence of integers/`None` or `Expression` | Per-dimension sizes; `None` marks a variable dimension | Required |
+| `shape` | Sequence of nonnegative integers or `Expression` | Actual per-dimension sizes; dimensions cannot be `NULL` | Required |
 | `value` | `TENSOR` value or `Expression` | Tensor to inspect | Required |
 | `values` | Sequence of NumPy arrays or `None` | Row values for an Arrow Tensor column | Required |
-| `dtype` | Vane `DuckDBPyType` | `tensor_array` element type | Required |
+| `dtype` | Vane `DuckDBPyType` | Complete variable-shape Tensor type from `vane.tensor_type(element_type, shape)` | Required |
+
+`None` marks a variable dimension only in the `tensor_type` declaration. Every non-`NULL` value passed to `tensor` or `tensor_array` must have concrete dimensions.
 
 ## Returns and errors
 
@@ -6429,6 +6442,17 @@ import vane
 
 con = vane.connect()
 con.sql("SELECT tensor_data(t), tensor_shape(t) FROM (SELECT tensor([1, 2, 3, 4], [2, 2]) AS t)").show()
+```
+
+To build an Arrow column, pass the complete Tensor type, including its shape:
+
+```python
+import numpy as np
+import vane
+
+dtype = vane.tensor_type(vane.sqltypes.DOUBLE, [None, 1])
+rows = [np.ones((2, 1), dtype=np.float64), np.empty((0, 1), dtype=np.float64), None]
+column = vane.tensor_array(rows, dtype)
 ```
 
 ## Source and related pages

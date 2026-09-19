@@ -30,7 +30,7 @@ SQL：`resample(file, rate [, max_input_bytes, max_frames, max_decoded_bytes, ma
 
 native 后端要求目标与源采样率在 1–384000 Hz、通道数在 1–64。Python 后端接受任意正目标采样率、至多 1024 个通道，以及至多 64× 的采样率比。
 
-## 返回与错误
+## 返回值与错误
 
 返回 `TENSOR(DOUBLE, [NULL, NULL])`，形状 `(frames, channels)`；单声道保留一个通道，空音频为 `(0, channels)`。`NULL` 输入返回 `NULL`；不支持的采样率、通道数、解码器不匹配和超限都会报错。
 
@@ -49,4 +49,4 @@ vane.close()
 
 - [音频函数](index.mdx)
 - [`native_audio_resample_profile`](native-audio-resample-profile.mdx)
-- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
+- [实现：`vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)

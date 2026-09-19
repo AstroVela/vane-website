@@ -21,7 +21,7 @@ SQL：`video_keyframes(file, start_time, end_time, width, height, sample_interva
 
 接受[共享帧表达式选项](index.mdx#帧表达式选项)；关键帧始终按解码器的关键帧标记选取。
 
-## 返回与错误
+## 返回值与错误
 
 返回由解码器关键帧标记选出的 `LIST<IMAGE('RGB')>`。需要关联源时，把输入 FILE 列与结果一起保留。`NULL` 输入返回 `NULL`；没有匹配帧时返回空列表。
 
@@ -36,4 +36,4 @@ FROM (SELECT video_file('clip.mp4') AS file);
 
 - [视频函数](index.mdx)
 - [`video_frames`](video-frames.mdx)
-- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [实现：`vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

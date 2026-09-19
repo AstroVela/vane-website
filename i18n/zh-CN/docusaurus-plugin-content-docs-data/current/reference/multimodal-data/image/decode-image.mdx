@@ -20,7 +20,7 @@ SQL：`decode_image(bytes, on_error => ..., mode => ...)`。Expression 方法：
 | `on_error` | `"raise"` / `"null"` | `"null"` 只抑制损坏或不支持的内容 | `"raise"` |
 | `mode` | 模式名、`ImageMode`、`Expression` 或 `None` | 结果像素模式 | `"RGB"` |
 
-## 返回与错误
+## 返回值与错误
 
 返回动态 `IMAGE`，常量模式对应 `IMAGE(mode)`。`NULL` 返回 `NULL`。只有损坏或不支持的内容会遵循 `on_error="null"`，其他失败会传播。
 
@@ -37,4 +37,4 @@ con.sql("SELECT decode_image($1)", params=[data]).show()
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

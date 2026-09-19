@@ -2,7 +2,7 @@
 title: video_metadata
 ---
 
-`video_metadata` inspects the first non-attached video stream with bounded stream-info probing.
+`video_metadata` reads stream metadata within a probe byte limit. It selects the first video stream without the `attached_pic` flag, skipping cover art and other attached pictures.
 
 ## Signature
 

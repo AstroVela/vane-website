@@ -32,7 +32,7 @@ SQL：`file(url, content_type, position, size, checksum)`、`image_file(url_or_f
 | `verify` | `bool` 或 `Expression` | 构造时是否验证有界内容 | `False` |
 | `path` | 字符串、`Expression` 或字符串列表（`from_files`） | 解析为 `FILE` 的路径 | 必填 |
 
-## 返回与错误
+## 返回值与错误
 
 `file`、`to_file` 和 `try_to_file` 返回 `FILE`；`image_file`/`audio_file`/`video_file` 返回对应子类型的 `FILE`。`to_file` 与 `try_to_file` 在执行时打开对象并返回其完整逻辑视图（`position = 0`、`size` 为对象大小）；`to_file` 失败时报错，`try_to_file` 对可恢复的访问失败返回 `NULL`。`from_files` 返回由 `FILE` 值构成的单列关系，基于 `list_files`。`file` 不访问对象；类型化构造器仅在 `verify=True` 进行有界内容校验时访问对象。
 

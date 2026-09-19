@@ -26,9 +26,9 @@ SQL：`decode_image_file(file [, mode, on_error, max_input_bytes, max_pixels, ma
 | `max_pixels` | 整数或 `Expression` | 像素上限 | `100,000,000` |
 | `max_decoded_bytes` | 整数或 `Expression` | 解码像素预算 | `512 MiB` |
 
-## 返回与错误
+## 返回值与错误
 
-返回动态 `IMAGE`，常量模式对应 `IMAGE(mode)`。`NULL` 返回 `NULL`。即使 `on_error="null"`，I/O、中断、依赖和限制错误仍会传播。SQL 执行每向量批次的解码像素存储上限为 256 MiB。
+返回动态 `IMAGE`，常量模式对应 `IMAGE(mode)`。`NULL` 返回 `NULL`。即使 `on_error="null"`，I/O、中断、依赖和限制错误仍会传播。SQL 执行时，每个向量批次用于存储解码像素的空间上限为 256 MiB。
 
 ## 示例
 
@@ -42,4 +42,4 @@ con.sql("SELECT decode_image_file(image_file('photo.png'), 'RGBA')").show()
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [实现：`vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)

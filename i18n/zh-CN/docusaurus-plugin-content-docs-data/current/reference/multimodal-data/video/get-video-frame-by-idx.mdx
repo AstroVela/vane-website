@@ -29,7 +29,7 @@ SQL：`get_video_frame_by_idx(file, idx, on_error, max_input_bytes, max_decoded_
 | `max_output_bytes` | 整数或 `Expression` | 标量负载预算 | `64 MiB`（上限 `256 MiB`） |
 | `index` | 索引 `BLOB` 或 `Expression` | `build_video_index` 生成的已验证寻址索引；`NULL` 走顺序解码 | `None` |
 
-## 返回与错误
+## 返回值与错误
 
 返回一个 `IMAGE('RGB')`。`NULL` 输入或 `idx` 返回 `NULL`。缺失帧号报越界错误，或按 `on_error="null"` 返回 `NULL`；负索引总是报错。
 
@@ -44,4 +44,4 @@ FROM (SELECT video_file('clip.mp4') AS file);
 
 - [视频函数](index.mdx)
 - [`build_video_index`](build-video-index.mdx)
-- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [实现：`vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

@@ -41,7 +41,7 @@ SQL：`image_width(image)`、`image_height(image)`、`image_channel(image)`、`i
 | RGB32F | 9 | 3 | Float32 |
 | RGBA32F | 10 | 4 | Float32 |
 
-## 返回与错误
+## 返回值与错误
 
 每个访问器返回 `UINTEGER`；`NULL` 输入返回 `NULL`。`image_attribute` 遇到未知属性名会报错。
 
@@ -63,4 +63,4 @@ con.sql("""
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)
+- [实现：`vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)

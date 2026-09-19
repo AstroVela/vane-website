@@ -39,12 +39,12 @@ vane.load_installed_extension("native_media", connection=con)
 con.execute("SET audio_backend = 'native'")
 ```
 
-## 返回与错误
+## 返回值与错误
 
-`NULL` 输入传播为 `NULL` 波形。不支持的采样率、通道数、解码器不匹配、超出资源限制、缺失音频依赖和查询取消都会传播为错误。SQL 执行每向量批次的展平采样存储上限为 256 MiB。
+`NULL` 输入传播为 `NULL` 波形。不支持的采样率、通道数、解码器不匹配、超出资源限制、缺失音频依赖和查询取消都会传播为错误。SQL 执行时，每个向量批次用于存储展平音频样本的空间上限为 256 MiB。
 
 ## 来源与相关页面
 
 - [多模态数据](../index.mdx)
 - [Tensor contract and audio specialization](https://github.com/AstroVela/vane/blob/main/VARIABLE_TENSOR.md)
-- [Implementation: `vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)
+- [实现：`vane/_audio_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_audio_file.py)

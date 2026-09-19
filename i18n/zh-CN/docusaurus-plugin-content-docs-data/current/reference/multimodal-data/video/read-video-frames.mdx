@@ -24,7 +24,7 @@ SQL：`read_video_frames(source, height, width [, is_key_frame], start_time => .
 | --- | --- | --- | --- |
 | `path` | 路径字符串、`os.PathLike`、`FILE`/`VIDEOFILE` 值或其列表 | 精确的输入路径或 FILE 视图；不支持目录或 glob 发现 | 必填 |
 | `image_height` / `image_width` | 正整数 | 输出帧尺寸；`data` 为 `IMAGE('RGB', H, W)` | 必填 |
-| `is_key_frame` | `bool` 或 `None` | 设置后只过滤关键帧 | `None` |
+| `is_key_frame` | `bool` 或 `None` | `True` 只选关键帧，`False` 只选非关键帧，`None` 不按关键帧标记筛选 | `None` |
 | `sample_interval_seconds` | 数值或 `None` | 时间戳达到下一个间隔点时输出帧 | `None` |
 | `start_time` / `end_time` | 数值 | 相对流起始的闭区间时间窗口（秒） | `0` / `None` |
 | `max_input_bytes` | 整数 | 编码逻辑视图上限 | `8 GiB`（上限 `16 GiB`） |
@@ -37,7 +37,7 @@ SQL：`read_video_frames(source, height, width [, is_key_frame], start_time => .
 | `indexes` | 索引 `BLOB` 列表或 `None` | 已验证的关键帧寻址索引，每个输入一份 | `None` |
 | `connection` | 连接或 `None` | 执行扫描的查询会话 | 当前连接 |
 
-## 返回与错误
+## 返回值与错误
 
 每选中一帧一行：`path`、原始 `file` 视图、`frame_index`、`frame_time`、时间基与时间戳字段（`frame_pts`、`frame_dts`、`frame_duration`）、`is_key_frame` 和 `data`。顶层的 `NULL`/`None` 或空列表返回具有声明 schema 的空表；列表中的 `NULL` 元素和其他 `FILE` 子类型会直接报错。绑定时校验参数，不打开视频。跨文件任务的行顺序不保证，需要时用 `ORDER BY`。
 
@@ -59,4 +59,4 @@ frames.select("path", "frame_index", "frame_time", "data").show()
 
 - [视频函数](index.mdx)
 - [`video_frames`](video-frames.mdx)
-- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)
+- [实现：`vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)

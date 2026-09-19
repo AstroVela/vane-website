@@ -2,9 +2,11 @@
 title: 多模态数据
 ---
 
-Vane 以类型化的引擎值承载多模态数据：`FILE` 家族表示不可变对象引用，`IMAGE` 表示解码后的像素，`TENSOR` 表示数值数组（含音频波形）。六个引擎类型覆盖文件、图像、音频、视频与张量，且都是一等引擎类型。每个域都有 Python API 与 SQL API；图像、音频、视频还可选择执行后端：默认 `python`，加载 `native_media` 扩展后可用 `native`。Expression 调用返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名。SQL 调用是投影表达式，用 `AS` 命名结果。
+Vane 使用 `FILE` 家族类型表示不可变文件引用，使用 `IMAGE` 表示解码后的图像像素，使用 `TENSOR` 表示数值数组，包括音频波形。下文按文件、图像、音频、视频和张量介绍相关的 Python 与 SQL 接口。图像、音频和视频函数默认使用 `python` 后端；加载 `native_media` 扩展后，可以切换到 `native` 后端。
 
-## 域
+Expression 调用返回惰性的 `vane.Expression`，可用 `.alias(...)` 命名。SQL 标量函数可用于 `SELECT` 表达式，通过 `AS` 命名结果；`list_files`、`read_video_frames` 等表函数用于 `FROM` 子句。
+
+## 函数分类
 
 - [文件函数](file/index.mdx)：构造和查看 `FILE` 家族值。
 - [图像函数](image/index.mdx)：解码、查看、变换和编码 `IMAGEFILE` 与 `IMAGE` 值。
@@ -20,8 +22,8 @@ Vane 以类型化的引擎值承载多模态数据：`FILE` 家族表示不可�
 | `IMAGEFILE` | 同上五字段，`IMAGE` 子类型 | 编码后的图像对象 |
 | `AUDIOFILE` | 同上五字段，`AUDIO` 子类型 | 编码后的音频对象 |
 | `VIDEOFILE` | 同上五字段，`VIDEO` 子类型 | 编码后的视频对象 |
-| `IMAGE` | 动态 `STRUCT(data, channel, height, width, mode)`；定形 `IMAGE(mode, H, W)` 为稠密 `ARRAY` | 解码后的交错 HWC 像素 |
-| `TENSOR(dtype, shape)` | 可变秩用 `STRUCT(data LIST, shape INTEGER[rank])`；全定形用稠密 `ARRAY` | 稠密行主序数值张量 |
+| `IMAGE` | 动态 `STRUCT(data, channel, height, width, mode)`；固定形状的 `IMAGE(mode, H, W)` 为稠密 `ARRAY` | 解码后的交错 HWC 像素 |
+| `TENSOR(dtype, shape)` | 可变形状用 `STRUCT(data LIST, shape INTEGER[rank])`，同列的秩固定；固定形状用稠密 `ARRAY` | 稠密行主序数值张量 |
 
 `FILE` 家族的构造器为 `file`、`image_file`、`audio_file`、`video_file`；图像为 `IMAGE`、`IMAGE('RGB')`、`IMAGE('RGB', H, W)`；张量为 `tensor(data, shape)`。SQL 中 `image(data, width, height, channels, mode)` 从打包像素字节构建动态 `IMAGE`；`data` 必须恰好包含 `width * height * channels` 个该模式的像素元素。Python 中 `vane.File`、`vane.ImageFile`、`vane.AudioFile`、`vane.VideoFile` 是同五字段的不可变引用。
 
@@ -50,9 +52,9 @@ Python 的类型构造器生成 Vane 类型，`vane.MediaType` 选择 `FILE` 子
 | L16、LA16、RGB16、RGBA16 | UInt16 | 1、2、3、4 |
 | RGB32F、RGBA32F | Float32 | 3、4 |
 
-泛型 `IMAGE` 存储为 Float32，一列可无损容纳全部模式；已知模式存储其原生像素 dtype。读取的单元格物化为形状 `(height, width, channels)` 的 C 连续 NumPy 数组；`vane.Image` 是这些 UInt8、UInt16 或 Float32 数组的 Python 类型别名。Arrow 用 `vane.image` 扩展承载定形图像。
+泛型 `IMAGE` 存储为 Float32，一列可无损容纳全部模式；已知模式存储其原生像素 dtype。读取的单元格物化为形状 `(height, width, channels)` 的 C 连续 NumPy 数组；`vane.Image` 是这些 UInt8、UInt16 或 Float32 数组的 Python 类型别名。Arrow 用 `vane.image` 扩展承载固定形状图像。
 
-`expr.as_image(mode=None, height=None, width=None)` 把已有图像表达式校验到所选 `IMAGE` 类型。普通 cast 不转换颜色、不缩放像素，布局不匹配时 `TRY_CAST` 返回 `NULL`。
+`expr.as_image(mode=None, height=None, width=None)` 检查已有图像表达式是否满足指定 `IMAGE` 类型的约束。普通 cast 不转换颜色、不缩放像素，布局不匹配时 `TRY_CAST` 返回 `NULL`。
 
 ## 音频特化
 
@@ -60,11 +62,11 @@ Python 的类型构造器生成 Vane 类型，`vane.MediaType` 选择 `FILE` 子
 
 ## 取值契约
 
-非 `NULL` 图像要求所有字段和像素非 `NULL`，宽高为正。非 `NULL` 张量没有 `NULL` 维度或元素，零维度是空张量，与 `NULL` 张量不同。`File` 值的查看、子类型分类、相等与转换见[文件函数](file/index.mdx)。
+非 `NULL` 图像要求所有字段和像素非 `NULL`，宽高为正。非 `NULL` 张量没有 `NULL` 维度或元素，任一维度的大小为 0 时表示空张量，与 `NULL` 张量不同。`File` 值的查看、子类型分类、相等与转换见[文件函数](file/index.mdx)。
 
 ## 后端
 
-每个域通过 `image_backend`、`audio_backend`、`video_backend` 独立选择执行后端。三项设置的默认值都是 `python`，仅接受 `python` 或 `native`。
+图像、音频和视频分别通过 `image_backend`、`audio_backend`、`video_backend` 独立选择执行后端。三项设置的默认值都是 `python`，仅接受 `python` 或 `native`。
 
 > `native` 为实验性功能：其 `native_media` 扩展与 provider wheel 可能随版本变化。
 

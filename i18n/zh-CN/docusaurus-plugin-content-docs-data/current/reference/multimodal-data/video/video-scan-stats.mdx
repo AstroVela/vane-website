@@ -22,7 +22,7 @@ SQL：`video_scan_stats(file, start_time, end_time, is_key_frame, sample_interva
 | --- | --- | --- | --- |
 | `value` | `VIDEOFILE` 值或 `Expression` | 源视频 | 必填 |
 | `start_time` / `end_time` | 数值或 `Expression` | 相对流起始的闭区间时间窗口（秒） | `0` / `None` |
-| `is_key_frame` | `bool`、`Expression` 或 `None` | 只过滤关键帧 | `None` |
+| `is_key_frame` | `bool`、`Expression` 或 `None` | `True` 只选关键帧，`False` 只选非关键帧，`None` 不按关键帧标记筛选 | `None` |
 | `sample_interval_seconds` | 数值或 `Expression` | 时间戳达到下一个间隔点时输出帧 | `None` |
 | `idx` | `BIGINT` 或 `Expression` | 改为选择单个精确帧 | `None` |
 | `index` | 索引 `BLOB` 或 `Expression` | `build_video_index` 生成的已验证寻址索引；`NULL` 选择顺序解码 | `None` |
@@ -30,7 +30,7 @@ SQL：`video_scan_stats(file, start_time, end_time, is_key_frame, sample_interva
 | `max_decoded_frames` | 整数或 `Expression` | 每输入解码帧上限 | `1,000,000` |
 | `max_pixels` | 整数或 `Expression` | 输入与输出像素上限 | `32 Mi` 像素 |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `STRUCT`，含 `bytes_read`、`decoded_frames`、`seeks` 和 `selected_frames`。字节数包含校验块读取；帧数统计解码器输出（含被丢弃的预卷），不含 codec 内部预读。这是不输出图像的独立诊断执行。
 

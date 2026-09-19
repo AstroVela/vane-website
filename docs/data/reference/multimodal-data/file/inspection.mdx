@@ -29,7 +29,7 @@ SQL: `file_path(file)`, `file_size(file)`, `file_exists(file)`, `file_stat(file)
 
 ## Returns and errors
 
-`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return `VARCHAR` or `NULL` when detection fails. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
+`file_path` returns `VARCHAR`, or `NULL` for a `NULL` input. `file_size` returns `UBIGINT`, or `NULL` for a `NULL` input. `file_exists` returns `true` when the object is present, `false` when it is missing, and `NULL` for a recoverable access error. `file_mime_type` and `guess_mime_type` return a MIME type string (`VARCHAR`), or `NULL` when the type cannot be identified. `file_stat` returns `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)` (`vane.FileStat` in Python) with `NULL` for unknown fields. Other access failures raise.
 
 ## Example
 

@@ -2,7 +2,7 @@
 title: convert_image
 ---
 
-`convert_image` 在不缩放的前提下改变 `IMAGE` 的像素模式与位深。Alpha 会被保留、按完全不透明补齐，或在不合成的情况下丢弃。已知目标模式保留输入的定形尺寸；逐行模式返回动态图像。
+`convert_image` 在不缩放的前提下改变 `IMAGE` 的像素模式与位深。Alpha 会被保留、按完全不透明补齐，或在不合成的情况下丢弃。目标模式为常量时，保留输入类型中的固定尺寸；目标模式随行变化时，返回动态形状的 `IMAGE`。
 
 ## 签名
 
@@ -17,9 +17,9 @@ SQL：`convert_image(image, mode)`。Expression 方法：`expr.convert_image(mod
 | 名称 | 类型 | 说明 | 默认值 |
 | --- | --- | --- | --- |
 | `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
-| `mode` | 模式名、`ImageMode`、`Expression` 或 `None` | 目标像素模式；`None` 保持输入模式 | 必填 |
+| `mode` | 模式名、`ImageMode`、`Expression` 或 `None` | 目标像素模式；`None` 返回 `NULL` | 必填 |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `IMAGE`。`NULL` 图像或模式返回 `NULL`。不支持的模式报错。
 
@@ -35,4 +35,4 @@ con.sql("SELECT convert_image(decode_image_file(image_file('photo.png')), 'RGBA'
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

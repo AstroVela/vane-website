@@ -2,7 +2,7 @@
 title: build_video_index
 ---
 
-`build_video_index` 按所选后端返回不透明 `BLOB`，记录实际的呈现顺序帧及其关键帧锚点。请在重复选择前把它物化一次并与对应 `VIDEOFILE` 一起保存。
+`build_video_index` 按所选后端返回不透明 `BLOB`，记录实际的呈现顺序帧及其关键帧锚点。需要反复选取视频帧时，先构建索引，并将结果与对应的 `VIDEOFILE` 一起保存。
 
 构建索引会执行一次完整的内容哈希与完整顺序解码，不存储解码像素，也不存储编码视频内容。
 
@@ -27,7 +27,7 @@ SQL：`build_video_index(file, max_input_bytes, max_decoded_frames, max_pixels, 
 | `max_pixels` | 整数或 `Expression` | 像素上限 | `32 Mi` 像素 |
 | `max_index_bytes` | 整数或 `Expression` | 索引大小上限，只能调低 | `64 MiB` |
 
-## 返回与错误
+## 返回值与错误
 
 返回绑定 FILE 视图、codec 构建与解码帧顺序的不透明 `BLOB`。索引属于某一个不可变 FILE 视图；源元数据或运行时身份变化后必须重建。索引要求已知时间基、唯一严格递增的呈现时间戳和起始关键帧；可变帧率、非零时间戳原点和 B 帧在该契约内受支持，重复/缺失时间戳和不连续则不支持。`NULL` 输入返回 `NULL`。
 
@@ -43,4 +43,4 @@ SELECT file, build_video_index(file) AS seek_index FROM videos;
 - [视频函数](index.mdx)
 - [`video_index_info`](video-index-info.mdx)
 - [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
-- [Implementation: `vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)
+- [实现：`vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)

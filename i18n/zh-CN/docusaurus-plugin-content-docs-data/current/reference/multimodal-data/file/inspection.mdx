@@ -27,9 +27,9 @@ SQL：`file_path(file)`、`file_size(file)`、`file_exists(file)`、`file_stat(f
 
 `file_mime_type` 在 `metadata`（默认）下使用声明的 `content_type`，否则回退到 URL 后缀，不打开对象；`auto` 依次尝试声明元数据与已解析元数据，最后嗅探内容；`content` 直接嗅探内容。`guess_mime_type` 直接嗅探字节。
 
-## 返回与错误
+## 返回值与错误
 
-`file_path` 返回 `VARCHAR`，`NULL` 输入返回 `NULL`。`file_size` 返回 `UBIGINT`，`NULL` 输入返回 `NULL`。`file_exists` 在对象存在时返回 `true`、缺失时返回 `false`、可恢复访问错误时返回 `NULL`。`file_mime_type` 与 `guess_mime_type` 在检测失败时返回 `VARCHAR` 或 `NULL`。`file_stat` 返回 `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)`（Python 中为 `vane.FileStat`），未知字段为 `NULL`。其他访问失败报错。
+`file_path` 返回 `VARCHAR`，`NULL` 输入返回 `NULL`。`file_size` 返回 `UBIGINT`，`NULL` 输入返回 `NULL`。`file_exists` 在对象存在时返回 `true`、缺失时返回 `false`、可恢复访问错误时返回 `NULL`。`file_mime_type` 与 `guess_mime_type` 返回 MIME 类型字符串（`VARCHAR`）；无法识别类型时返回 `NULL`。`file_stat` 返回 `STRUCT(url VARCHAR, object_size UBIGINT, last_modified TIMESTAMP, version VARCHAR, etag VARCHAR, content_type VARCHAR)`（Python 中为 `vane.FileStat`），未知字段为 `NULL`。其他访问失败报错。
 
 ## 示例
 

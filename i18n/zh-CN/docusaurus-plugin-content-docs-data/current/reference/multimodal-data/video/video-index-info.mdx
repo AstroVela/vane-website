@@ -18,7 +18,7 @@ SQL：`video_index_info(index)`。
 | --- | --- | --- | --- |
 | `index` | `BLOB` 值或 `Expression` | `build_video_index` 生成的索引 | 必填 |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `STRUCT`，含 `frame_count`、`keyframe_count`、`source_bytes`、`index_bytes`、`build_bytes_read` 和 `codec_version`。`NULL` 返回 `NULL`。其实现遵循 `video_backend`，包括尚未加载 native_media 扩展的连接。索引完整性、身份和格式失败会报错。
 

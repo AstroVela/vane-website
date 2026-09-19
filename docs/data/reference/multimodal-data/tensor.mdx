@@ -20,10 +20,12 @@ SQL: `tensor(data, shape)`, `tensor_data(value)`, and `tensor_shape(value)`. `te
 | Name | Type | Description | Default |
 | --- | --- | --- | --- |
 | `data` | Value or `Expression` | Flattened row-major elements or a compatible array | Required |
-| `shape` | Sequence of integers/`None` or `Expression` | Per-dimension sizes; `None` marks a variable dimension | Required |
+| `shape` | Sequence of nonnegative integers or `Expression` | Actual per-dimension sizes; dimensions cannot be `NULL` | Required |
 | `value` | `TENSOR` value or `Expression` | Tensor to inspect | Required |
 | `values` | Sequence of NumPy arrays or `None` | Row values for an Arrow Tensor column | Required |
-| `dtype` | Vane `DuckDBPyType` | `tensor_array` element type | Required |
+| `dtype` | Vane `DuckDBPyType` | Complete variable-shape Tensor type from `vane.tensor_type(element_type, shape)` | Required |
+
+`None` marks a variable dimension only in the `tensor_type` declaration. Every non-`NULL` value passed to `tensor` or `tensor_array` must have concrete dimensions.
 
 ## Returns and errors
 
@@ -36,6 +38,17 @@ import vane
 
 con = vane.connect()
 con.sql("SELECT tensor_data(t), tensor_shape(t) FROM (SELECT tensor([1, 2, 3, 4], [2, 2]) AS t)").show()
+```
+
+To build an Arrow column, pass the complete Tensor type, including its shape:
+
+```python
+import numpy as np
+import vane
+
+dtype = vane.tensor_type(vane.sqltypes.DOUBLE, [None, 1])
+rows = [np.ones((2, 1), dtype=np.float64), np.empty((0, 1), dtype=np.float64), None]
+column = vane.tensor_array(rows, dtype)
 ```
 
 ## Source and related pages

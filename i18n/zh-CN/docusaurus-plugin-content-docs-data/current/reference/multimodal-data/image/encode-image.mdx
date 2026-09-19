@@ -21,7 +21,7 @@ SQL：`encode_image(image, format)`。Expression 方法：`expr.encode_image(ima
 
 `encode_image` 遵循显式模式矩阵：PNG 接受全部八种整数模式；TIFF 接受全部十种；JPEG 接受 L/RGB；GIF 接受 L/RGB 且至多 256 色；BMP 接受 L/RGB。其他组合先用 `convert_image` 显式转换。
 
-## 返回与错误
+## 返回值与错误
 
 返回编码后的 `BLOB` 字节。`NULL` 图像或格式返回 `NULL`。不支持的格式，以及矩阵之外的模式/格式组合会报错。
 
@@ -43,4 +43,4 @@ con.sql("""
 
 - [图像函数](index.mdx)
 - [`convert_image`](convert-image.mdx)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

@@ -2,7 +2,7 @@
 title: build_video_index
 ---
 
-`build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. Materialize it once and store it alongside its `VIDEOFILE` before issuing repeated selections.
+`build_video_index` uses the selected backend and returns an opaque `BLOB` recording the actual presentation-order frames and their keyframe anchors. For repeated frame selections, build the index once and store the result alongside its `VIDEOFILE`.
 
 Building an index performs a complete content-hashing pass and a complete sequential decode; it does not store decoded pixels or encoded video content.
 

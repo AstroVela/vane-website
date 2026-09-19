@@ -24,7 +24,7 @@ SQL：`image_hash(image, method => ..., hash_size => ..., binbits => ..., segmen
 | `binbits` | 整数常量，`1`–`8` | 颜色分桶位数 | `3` |
 | `segments` | 整数常量，`1`–`16` | 抗裁剪网格分段数 | `3` |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `FIXEDBINARY(n)` 内容相似位，末字节补零，不是完整性校验。`NULL` 图像返回 `NULL`；选项必须是非 `NULL` 常量且对所选方法有效。
 
@@ -40,4 +40,4 @@ con.sql("SELECT image_hash(decode_image_file(image_file('photo.png')))").show()
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

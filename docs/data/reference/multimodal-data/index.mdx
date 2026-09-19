@@ -2,9 +2,11 @@
 title: Multimodal data
 ---
 
-Vane carries multimodal data as typed engine values: the `FILE` family for immutable object references, `IMAGE` for decoded pixels, and `TENSOR` for numeric arrays including audio waveforms. Six engine types cover files, images, audio, video, and tensors; all six are first-class engine types. Each domain has a Python API and a SQL API, and image, audio, and video select a `python` (default) or `native` execution backend. Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL calls are projection expressions and use `AS` to name their result.
+Vane uses the `FILE` family for immutable file references, `IMAGE` for decoded image pixels, and `TENSOR` for numeric arrays, including audio waveforms. The reference below groups the Python and SQL APIs by files, images, audio, video, and tensors. Image, audio, and video functions default to the `python` backend; after loading `native_media`, you can select the `native` backend.
 
-## Domains
+Expression calls return a lazy `vane.Expression`; name it with `.alias(...)`. SQL scalar functions can appear in `SELECT` expressions, with `AS` to name the result. Table functions such as `list_files` and `read_video_frames` appear in the `FROM` clause.
+
+## Function groups
 
 - [File functions](file/index.mdx): construct and inspect `FILE`-family values.
 - [Image functions](image/index.mdx): decode, inspect, transform, and encode `IMAGEFILE` and `IMAGE` values.
@@ -21,7 +23,7 @@ Vane carries multimodal data as typed engine values: the `FILE` family for immut
 | `AUDIOFILE` | Same five fields, `AUDIO` subtype | Encoded audio object |
 | `VIDEOFILE` | Same five fields, `VIDEO` subtype | Encoded video object |
 | `IMAGE` | Dynamic `STRUCT(data, channel, height, width, mode)`; fixed `IMAGE(mode, H, W)` is a dense `ARRAY` | Decoded interleaved HWC pixels |
-| `TENSOR(dtype, shape)` | Variable rank uses `STRUCT(data LIST, shape INTEGER[rank])`; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
+| `TENSOR(dtype, shape)` | Variable shapes use `STRUCT(data LIST, shape INTEGER[rank])` with a fixed rank per column; fully fixed shapes use a dense `ARRAY` | Dense row-major numeric tensor |
 
 Constructors are `file`, `image_file`, `audio_file`, and `video_file` for the `FILE` family, `IMAGE`, `IMAGE('RGB')`, and `IMAGE('RGB', H, W)` for images, and `tensor(data, shape)` for tensors. In SQL, `image(data, width, height, channels, mode)` builds a dynamic `IMAGE` from packed pixel bytes; `data` must hold exactly `width * height * channels` elements of the mode's pixel type. In Python, `vane.File`, `vane.ImageFile`, `vane.AudioFile`, and `vane.VideoFile` are immutable references with the same five fields.
 
@@ -60,7 +62,7 @@ Audio waveforms use Float64 tensors with shape `(frames, channels)`; both dimens
 
 ## Value contracts
 
-A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a zero dimension is an empty tensor, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
+A non-`NULL` image requires every field and pixel to be non-`NULL`, with positive width and height. A non-`NULL` tensor has no `NULL` dimensions or elements, and a tensor with any dimension of size 0 is empty, distinct from a `NULL` tensor. See [File functions](file/index.mdx) for `File` value inspection, subtype classification, equality, and conversion.
 
 ## Backends
 

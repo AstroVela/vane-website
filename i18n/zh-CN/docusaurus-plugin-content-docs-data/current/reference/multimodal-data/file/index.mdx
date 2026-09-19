@@ -31,7 +31,7 @@ title: 文件函数
 
 `ImageFile.decode()` / `metadata()`、[AudioFile](../audio/index.mdx) 方法与 [VideoFile](../video/index.mdx) 方法始终使用其 Python 实现。
 
-## 返回与错误
+## 返回值与错误
 
 `NULL` 输入返回 `NULL`。缺失或不可访问的对象报错，例外包括：`try_to_file`（可恢复访问失败时返回 `NULL`）、`file_exists`（对象缺失时返回 `false`，可恢复访问错误时返回 `NULL`），以及可能返回 `NULL` 的元数据查询（`file_size`、`file_mime_type`、`file_content_id`）。SQL 表达式相等要求相同 `FILE` 子类型，并保持 SQL `NULL` 语义。
 
@@ -39,4 +39,4 @@ title: 文件函数
 
 - [多模态数据](../index.mdx)
 - [File Python values](https://github.com/AstroVela/vane/blob/main/FILE_PYTHON_API.md)
-- [Implementation: `vane/_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_file.py)
+- [实现：`vane/_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_file.py)

@@ -2,7 +2,7 @@
 title: video_metadata
 ---
 
-`video_metadata` 用有界流信息探测查看首个非附加视频流。
+`video_metadata` 在限定的探测字节数内读取视频流元数据。它选择第一个不带 `attached_pic` 标记的视频流，跳过封面图等附带图片。
 
 ## 签名
 
@@ -17,9 +17,9 @@ SQL：`video_metadata(file [, max_bytes])`。Expression 方法：`expr.video_met
 | 名称 | 类型 | 说明 | 默认值 |
 | --- | --- | --- | --- |
 | `value` | `VIDEOFILE` 值或 `Expression` | 待查看的编码视频对象 | 必填 |
-| `max_bytes` | 整数或 `Expression` | 有界元数据探测预算 | `8 MiB`（上限 `64 MiB`） |
+| `max_bytes` | 整数或 `Expression` | 元数据探测的字节数上限 | `8 MiB`（上限 `64 MiB`） |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `STRUCT`，含 `width`、`height`、`fps`、`duration`、`container_duration`、`frame_count` 和 `time_base`。`duration` 只描述所选视频流，`container_duration` 描述整个容器。未知时长和帧数仍为 `NULL`。
 
@@ -35,4 +35,4 @@ con.sql("SELECT video_metadata(video_file('clip.mp4'))").show()
 ## 来源与相关页面
 
 - [视频函数](index.mdx)
-- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
+- [实现：`vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)

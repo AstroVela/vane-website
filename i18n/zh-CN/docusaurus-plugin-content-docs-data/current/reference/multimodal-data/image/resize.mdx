@@ -2,7 +2,7 @@
 title: resize
 ---
 
-`resize` 用双线性采样与预乘 alpha 缩放 `IMAGE`。已知模式加常量目标尺寸得到定形图像；逐行尺寸保留带输入模式约束的动态图像。
+`resize` 用双线性采样与预乘 alpha 缩放 `IMAGE`。输入模式已知且目标尺寸为常量时，返回固定形状图像；目标尺寸随行变化时，返回动态形状的 `IMAGE`，并保留输入的模式约束。
 
 ## 签名
 
@@ -20,7 +20,7 @@ SQL：`resize(image, w, h [, antialias])`。Expression 方法：`expr.resize(w, 
 | `w` / `h` | 正整数、`Expression` 或 `None` | 目标宽/高；`NULL` 产生 `NULL` | 必填 |
 | `antialias` | `bool` 或 `Expression` | `True` 在下采样时加宽三角滤波 | `False` |
 
-## 返回与错误
+## 返回值与错误
 
 返回 `IMAGE`。`NULL` 图像或尺寸返回 `NULL`。非正尺寸和超范围值报错。
 
@@ -36,4 +36,4 @@ con.sql("SELECT resize(decode_image_file(image_file('photo.png')), 224, 224)").s
 ## 来源与相关页面
 
 - [图像函数](index.mdx)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)

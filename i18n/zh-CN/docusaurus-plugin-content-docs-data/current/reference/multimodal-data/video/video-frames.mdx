@@ -23,9 +23,9 @@ SQL：`video_frames(file, start_time, end_time, width, height, is_key_frame, sam
 
 | 名称 | 类型 | 说明 | 默认值 |
 | --- | --- | --- | --- |
-| `is_key_frame` | `bool`、`Expression` 或 `None` | 只过滤关键帧 | `None` |
+| `is_key_frame` | `bool`、`Expression` 或 `None` | `True` 只选关键帧，`False` 只选非关键帧，`None` 不按关键帧标记筛选 | `None` |
 
-## 返回与错误
+## 返回值与错误
 
 返回记录 `LIST`：`file: VIDEOFILE`、八个时间字段（`frame_index`、`frame_time`、`frame_time_base_numerator`、`frame_time_base_denominator`、`frame_pts`、`frame_dts`、`frame_duration`、`is_key_frame`）以及 `data: IMAGE('RGB')`。`NULL` 输入返回 `NULL`；成功但没有匹配帧时返回空列表。
 
@@ -42,4 +42,4 @@ FROM (SELECT video_file('clip.mp4') AS file);
 - [视频函数](index.mdx)
 - [`video_keyframes`](video-keyframes.mdx)
 - [`build_video_index`](build-video-index.mdx)
-- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [实现：`vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)

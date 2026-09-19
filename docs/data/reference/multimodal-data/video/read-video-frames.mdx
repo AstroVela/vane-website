@@ -24,7 +24,7 @@ SQL: `read_video_frames(source, height, width [, is_key_frame], start_time => ..
 | --- | --- | --- | --- |
 | `path` | Path string, `os.PathLike`, `FILE`/`VIDEOFILE` value, or a list of these | Exact input paths or FILE views; no directory or glob discovery | Required |
 | `image_height` / `image_width` | Positive integer | Output frame dimensions; `data` is `IMAGE('RGB', H, W)` | Required |
-| `is_key_frame` | `bool` or `None` | Filter to keyframes only when set | `None` |
+| `is_key_frame` | `bool` or `None` | `True` selects keyframes, `False` selects non-keyframes, and `None` disables this filter | `None` |
 | `sample_interval_seconds` | Number or `None` | Emit frames when timestamps reach the next interval target | `None` |
 | `start_time` / `end_time` | Number | Inclusive time window in seconds relative to stream start | `0` / `None` |
 | `max_input_bytes` | Integer | Encoded logical-view limit | `8 GiB` (maximum `16 GiB`) |

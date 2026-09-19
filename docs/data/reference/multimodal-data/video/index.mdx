@@ -57,7 +57,9 @@ Each function has two interchangeable implementations selected by the connection
 
 ## Backends
 
-Both backends implement the same selection contract, including inclusive time windows, timestamp-reached sampling, presentation-order frame indices, keyframe filtering, and byte-identical RGB conversion for supported fixtures. SQL expressions and `read_video_frames` accept indexes built by either backend. Prepared statements retain their bound implementation; lazy relations may bind again when executed.
+Both backends implement the same selection contract, including inclusive time windows, timestamp-reached sampling, presentation-order frame indices, keyframe filtering. RGB conversion results are byte-identical for the supported test fixtures.
+
+SQL expressions and `read_video_frames` accept indexes built by either backend. Prepared statements retain their bound implementation; lazy relations may bind again when executed.
 
 ```python
 import vane

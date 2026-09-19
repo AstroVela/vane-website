@@ -47,14 +47,14 @@ vane.load_installed_extension("native_media", connection=con)
 con.execute("SET image_backend = 'native'")
 ```
 
-## 返回与错误
+## 返回值与错误
 
-`NULL` 输入产生 `NULL`。非法坐标、模式、格式、超出资源限制、缺失 codec 依赖和查询取消都会传播为错误。Python `ImageFile` 失败会抛出 `ImageFileError` 或其 `ImageFileFormatError` / `ImageFileLimitError` 子类。每个算子每输入图像至多接受 1 亿像素和 256 MiB 像素数据。
+`NULL` 输入产生 `NULL`。非法坐标、模式、格式、超出资源限制、缺失 codec 依赖和查询取消都会传播为错误。Python `ImageFile` 失败会抛出 `ImageFileError` 或其 `ImageFileFormatError` / `ImageFileLimitError` 子类。每个算子对单张输入图像的限制为 1 亿像素和 256 MiB 像素数据。
 
 ## 来源与相关页面
 
 - [多模态数据](../index.mdx)
 - [Image operations, modes and Tensor conversion](https://github.com/AstroVela/vane/blob/main/IMAGE.md)
-- [Implementation: `vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
-- [Implementation: `vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
-- [Implementation: `vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)
+- [实现：`vane/_image_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_file.py)
+- [实现：`vane/_image_operators.py`](https://github.com/AstroVela/vane/blob/main/vane/_image_operators.py)
+- [实现：`vane/_image.py`](https://github.com/AstroVela/vane/blob/main/vane/_image.py)

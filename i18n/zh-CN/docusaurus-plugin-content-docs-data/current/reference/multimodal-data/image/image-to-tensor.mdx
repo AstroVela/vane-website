@@ -18,7 +18,7 @@ SQL：`image_to_tensor(image)`。Expression 方法：`expr.image_to_tensor()`。
 | --- | --- | --- | --- |
 | `image` | `IMAGE` 值或 `Expression` | 输入图像 | 必填 |
 
-## 返回与错误
+## 返回值与错误
 
 返回形状 `(height, width, channels)` 的 `TENSOR`。`image_to_tensor` 属于基础引擎，无论 `image_backend` 取值都不需要图像后端。`NULL` 返回 `NULL`。
 

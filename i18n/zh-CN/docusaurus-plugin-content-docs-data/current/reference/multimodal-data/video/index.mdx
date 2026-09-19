@@ -44,7 +44,7 @@ title: 视频函数
 
 ## Python VideoFile 值
 
-`vane.VideoFile` 提供始终走 Python 实现的绑定生成器与查询方法：
+`vane.VideoFile` 实例提供以下方法，均使用 Python 实现：
 
 | 成员 | 返回 |
 | --- | --- |
@@ -57,7 +57,9 @@ title: 视频函数
 
 ## 后端
 
-两种后端实现相同的选择契约，包括闭区间时间窗口、时间戳到达采样、呈现顺序帧号、关键帧过滤，以及受支持夹具上逐字节一致的 RGB 转换。SQL 表达式和 `read_video_frames` 都接受任一后端构建的索引。预编译语句保留绑定时确定的实现；惰性关系可能在执行时重新绑定。
+两种后端遵循相同的选帧规则：时间窗口包含起止时间，按时间戳是否达到采样点选帧，帧号按呈现顺序编号，并支持关键帧筛选。在受支持的测试样本上，RGB 转换结果逐字节一致。
+
+SQL 表达式和 `read_video_frames` 都接受任一后端构建的索引。预编译语句保留绑定时确定的实现；惰性关系可能在执行时重新绑定。
 
 ```python
 import vane
@@ -69,7 +71,7 @@ con.execute("SET video_backend = 'native'")
 
 扩展不可用会在绑定时失败，没有自动回退。绑定连接的 `VideoFrameSource` 仅在精确的内置类型时分派 native：把子类以 `video_backend = 'native'` 传给 `vane.datasource.read_datasource` 会在绑定时报错，早于读取任何文件。
 
-## 返回与错误
+## 返回值与错误
 
 `NULL` 输入返回 `NULL`。负索引和非法选项总是报错；缺失帧号报越界错误，或按 `on_error="null"` 返回 `NULL`。只有编码格式失败可能变为 `NULL`；I/O、依赖、资源限制和取消失败始终传播。跨文件任务的行顺序不保证，需要时用 `ORDER BY`。
 
@@ -77,7 +79,7 @@ con.execute("SET video_backend = 'native'")
 
 - [多模态数据](../index.mdx)
 - [Frames, streaming and indexes](https://github.com/AstroVela/vane/blob/main/VIDEO_FRAME_API.md)
-- [Implementation: `vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
-- [Implementation: `vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
-- [Implementation: `vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)
-- [Implementation: `vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)
+- [实现：`vane/_video_file.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_file.py)
+- [实现：`vane/_video_expressions.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_expressions.py)
+- [实现：`vane/_video_index.py`](https://github.com/AstroVela/vane/blob/main/vane/_video_index.py)
+- [实现：`vane/_read_video_frames.py`](https://github.com/AstroVela/vane/blob/main/vane/_read_video_frames.py)

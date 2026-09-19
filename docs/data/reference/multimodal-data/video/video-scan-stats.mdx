@@ -22,7 +22,7 @@ SQL: `video_scan_stats(file, start_time, end_time, is_key_frame, sample_interval
 | --- | --- | --- | --- |
 | `value` | `VIDEOFILE` value or `Expression` | Source video | Required |
 | `start_time` / `end_time` | Number or `Expression` | Inclusive time window in seconds relative to stream start | `0` / `None` |
-| `is_key_frame` | `bool`, `Expression`, or `None` | Filter to keyframes only | `None` |
+| `is_key_frame` | `bool`, `Expression`, or `None` | `True` selects keyframes, `False` selects non-keyframes, and `None` disables this filter | `None` |
 | `sample_interval_seconds` | Number or `Expression` | Emit frames when timestamps reach the next interval target | `None` |
 | `idx` | `BIGINT` or `Expression` | Select one exact frame instead of scanning | `None` |
 | `index` | Index `BLOB` or `Expression` | Verified seek index from `build_video_index`; `NULL` selects sequential decoding | `None` |
