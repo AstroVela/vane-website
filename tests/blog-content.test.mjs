@@ -33,6 +33,15 @@ const englishMultimodalImageUrl =
 const chineseMultimodalImageUrl =
   '/img/blog/from-files-to-queryable-data/vane-data-multimodal-pipeline-zh-cn.png'
 const multimodalImageSize = ['1800', '766']
+const englishProductReviewPostPath = 'blog/2026-09-20-product-category-review.mdx'
+const chineseProductReviewPostPath =
+  'i18n/zh-CN/docusaurus-plugin-content-blog/2026-09-20-product-category-review.mdx'
+const productReviewImageDirectory = 'public/img/blog/product-category-review'
+const englishProductReviewImagePath = `${productReviewImageDirectory}/pipeline-en.png`
+const chineseProductReviewImagePath = `${productReviewImageDirectory}/pipeline-zh-cn.png`
+const englishProductReviewImageUrl = '/img/blog/product-category-review/pipeline-en.png'
+const chineseProductReviewImageUrl = '/img/blog/product-category-review/pipeline-zh-cn.png'
+const productReviewImageSize = ['2400', '700']
 
 const configSource = readFileSync('docusaurus.config.ts', 'utf8')
 const routesSource = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
@@ -51,6 +60,8 @@ const englishPost = readFileSync(englishPostPath, 'utf8')
 const chinesePost = readFileSync(chinesePostPath, 'utf8')
 const englishMultimodalPost = readFileSync(englishMultimodalPostPath, 'utf8')
 const chineseMultimodalPost = readFileSync(chineseMultimodalPostPath, 'utf8')
+const englishProductReviewPost = readFileSync(englishProductReviewPostPath, 'utf8')
+const chineseProductReviewPost = readFileSync(chineseProductReviewPostPath, 'utf8')
 const chineseBlogOptions = JSON.parse(
   readFileSync('i18n/zh-CN/docusaurus-plugin-content-blog/options.json', 'utf8'),
 )
@@ -349,4 +360,112 @@ test('Blog prose fills the available article width', () => {
     pageStyles,
     /\.blog-wrapper \.markdown ul\.dl \{[^}]*max-width:\s*var\(--blog-prose-w\)/,
   )
+})
+
+test('Product category review post translations share explicit localized metadata', () => {
+  assert.equal(frontmatterValue(englishProductReviewPost, 'slug'), 'product-category-review')
+  assert.equal(
+    frontmatterValue(chineseProductReviewPost, 'slug'),
+    frontmatterValue(englishProductReviewPost, 'slug'),
+  )
+  assert.equal(
+    frontmatterValue(chineseProductReviewPost, 'date'),
+    frontmatterValue(englishProductReviewPost, 'date'),
+  )
+  assert.equal(
+    frontmatterValue(englishProductReviewPost, 'title'),
+    'Assisted Product Category Review with Vane Data and Lance',
+  )
+  assert.equal(
+    frontmatterValue(chineseProductReviewPost, 'title'),
+    '用 Vane Data + Lance 做商品类目辅助审核',
+  )
+  assert.match(
+    frontmatterValue(englishProductReviewPost, 'description'),
+    /Jina CLIP embeddings, Gemini structured verdicts/,
+  )
+  assert.match(
+    frontmatterValue(chineseProductReviewPost, 'description'),
+    /Jina CLIP 向量、Gemini 结构化结论/,
+  )
+  for (const source of [englishProductReviewPost, chineseProductReviewPost]) {
+    const preview = source.split('<!-- truncate -->', 1)[0]
+    const previewBody = preview.replace(/^---\n[\s\S]*?\n---\n/, '')
+    assert.doesNotMatch(previewBody, /^# /m)
+    assert.doesNotMatch(previewBody, /<Callout(?:\s|>)/)
+    assert.match(previewBody.trim(), /^<p className="blog-body-lead">[\s\S]*<\/p>$/)
+  }
+})
+
+test('Product category review post translations use localized in-article diagrams', () => {
+  const localizedPosts = [
+    [englishProductReviewPost, englishProductReviewImagePath, englishProductReviewImageUrl],
+    [chineseProductReviewPost, chineseProductReviewImagePath, chineseProductReviewImageUrl],
+  ]
+
+  for (const [source, imagePath, imageUrl] of localizedPosts) {
+    const preview = source.split('<!-- truncate -->', 1)[0]
+    const previewBody = preview.replace(/^---\n[\s\S]*?\n---\n/, '')
+
+    assert.equal(existsSync(imagePath), true)
+    assert.equal(readFileSync(imagePath).subarray(1, 4).toString('ascii'), 'PNG')
+    assert.equal(frontmatterValue(source, 'image'), imageUrl)
+    assert.match(source, /<img\s+className="dimg"/)
+    assert.match(source, /style=\{\{ width: '100%', height: 'auto' \}\}/)
+    assert.ok(source.includes(`src="${imageUrl}"`))
+    assert.ok(source.includes(`width="${productReviewImageSize[0]}"`))
+    assert.ok(source.includes(`height="${productReviewImageSize[1]}"`))
+    assert.match(source, /loading="lazy"/)
+    assert.match(source, /decoding="async"/)
+    assert.equal(previewBody.includes(imageUrl), false)
+  }
+})
+
+test('Product category review post keeps the Lance extension contract', () => {
+  const localizedPosts = [
+    {
+      source: englishProductReviewPost,
+      calloutLabel: /label="Reading note"/,
+      lanceDocs: /\[Lance extension documentation\]\(\/docs\/data\/extensions\/lance\)/,
+      quickstart: /\[Vane Data quickstart\]\(\/docs\/data\/quickstart\/quickstart\)/,
+    },
+    {
+      source: chineseProductReviewPost,
+      calloutLabel: /label="阅读说明"/,
+      lanceDocs: /\[Lance 扩展文档\]\(\/zh-CN\/docs\/data\/extensions\/lance\)/,
+      quickstart: /\[Vane Data 快速开始\]\(\/zh-CN\/docs\/data\/quickstart\/quickstart\)/,
+    },
+  ]
+
+  for (const { source, calloutLabel, lanceDocs, quickstart } of localizedPosts) {
+    const blocks = fencedCode(source)
+
+    assert.match(source, calloutLabel)
+    assert.match(source, lanceDocs)
+    assert.match(source, quickstart)
+    assert.match(source, /jina-clip-v2/)
+    assert.match(source, /gemini-3\.5-flash-lite/)
+    assert.match(source, /lance_vector_search/)
+    assert.ok(source.includes("ATTACH 'lance_store' AS lance_ns (TYPE LANCE, READ_ONLY false)"))
+    assert.match(source, /\.create\("lance_ns\.main\.products_search"\)/)
+    assert.match(source, /\.insert_into\("lance_ns\.main\.products_category_audit"\)/)
+    assert.match(source, /\.fetchall\(\)/)
+    assert.match(source, /\.show\(\)/)
+    for (const block of blocks) {
+      assert.doesNotMatch(block, /VANE_RUNNER/)
+    }
+    assert.equal(blocks.length, 16)
+    assert.equal((source.match(/^## /gm) ?? []).length, 9)
+  }
+})
+
+test('Product category review post code comments match each locale', () => {
+  const englishComments = codeComments(englishProductReviewPost)
+  const chineseComments = codeComments(chineseProductReviewPost)
+
+  assert.ok(englishComments.length > 0)
+  assert.equal(chineseComments.length, englishComments.length)
+  for (const comment of chineseComments) {
+    assert.match(comment, /\p{Script=Han}/u)
+  }
 })
