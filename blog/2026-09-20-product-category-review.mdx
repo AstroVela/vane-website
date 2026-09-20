@@ -6,9 +6,17 @@ date: 2026-09-20
 image: /img/blog/product-category-review/pipeline-en.png
 ---
 
-<p className="blog-body-lead">Merchants choose a category for every product they upload, and some of those choices are wrong. Checking each listing by hand does not scale. This article builds an assisted review pipeline on a small batch of listings: a vision model audits the title, category, and images together and flags the suspicious rows, and a similarity search then follows one confirmed mistake to the other listings that deserve the same check. Lance stores the listings, images, and audit results and answers the similarity queries; Vane Data prepares the rows, generates embeddings, calls the model, and turns the answers into structured data. Reviewers look only at the flagged rows.</p>
+<p className="blog-body-lead">Merchants sometimes choose the wrong category for a product, and checking every title and image by hand takes time. This article uses a small batch of listings to demonstrate assisted review: a model checks whether the title, images, and category agree and flags listings for a person to review. Once a reviewer confirms a mistake, similarity search finds other listings in the batch worth checking.</p>
 
 <!-- truncate -->
+
+The responsibilities are:
+
+- **Lance** stores listings, images, vectors, and audit results, and retrieves similar listings.
+- **Vane Data** prepares the content, generates embeddings, calls the model, and turns its answers into structured data.
+- **Reviewers** check flagged listings and decide whether a category needs correcting.
+
+The model and similarity search select listings for review. A person makes the final decision.
 
 <Callout label="Reading note">
 
@@ -20,16 +28,16 @@ The code follows the [Lance extension for Vane](https://github.com/AstroVela/lan
   className="dimg"
   style={{ width: '100%', height: 'auto' }}
   src="/img/blog/product-category-review/pipeline-en.png"
-  alt="Preparing listings, generating embeddings, auditing with a model, human review, and similarity search"
-  width="2400"
-  height="700"
+  alt="A desk lamp listed as a light bulb: Vane Data generates embeddings and audits the listing, a person confirms the mismatch, and Lance retrieves candidates for further review"
+  width="2350"
+  height="1000"
   loading="lazy"
   decoding="async"
 />
 
 ## Start from one confirmed mistake
 
-The scenario starts with listing `B073P3NK7T`, titled **"Table Desk Lamp With Bulb."** The title describes a complete desk lamp that includes a bulb, and the image shows the lamp itself. The listing belongs in **Table Lamp**, but the merchant filed it under **Light Bulb**.
+Listing `B073P3NK7T` is titled **"Table Desk Lamp With Bulb."** In this scenario, it is a complete lamp that belongs in **Table Lamp**, but the merchant has placed it in **Light Bulb**. The example code generates placeholder images by default; checking whether the actual title and images agree requires real product images.
 
 A reviewer confirms that this one listing is misplaced. That confirmation becomes the seed for the rest of the pipeline: search the same batch with the seed's title and image vectors for listings close to it, audit those candidates, and let a person decide again.
 
@@ -39,13 +47,13 @@ The batch used below has eight listings. One of them, `B011AA1004`, has no image
 
 Embeddings and vision review need two free API keys: Jina for `jina-clip-v2`, and Google AI Studio for the audit model. Eight listings use very little of either free tier.
 
-The Lance provider is published on PyPI as `vane-extension-lance` and pins an exact `vane-ai` version, so one command installs the matched pair. The `google` extra supplies the Gemini client used for the audit. Pin exact versions when a reproducible deployment matters.
+Install Vane Data and the Lance extension with the following command:
 
 ```bash
 export JINA_API_KEY="..."
 export GOOGLE_API_KEY="..."
 
-python -m pip install "vane-ai[google]" vane-extension-lance "grpcio>=1.42.0" requests pillow
+python -m pip install vane-ai vane-extension-lance "grpcio>=1.42.0"
 ```
 
 Then connect, load the Lance extension, and attach the namespace that receives the writes:
@@ -321,7 +329,13 @@ connection.sql("SELECT count(*) AS rows FROM lance_ns.main.products_search").sho
 
 ## 3. Audit the batch with a model
 
-Each listing goes to the model with its title, its category name, and all of its images. The model returns `recognized_product`, `verdict`, `suggested_category`, `confidence`, and `reason`.
+Send each listing's title, category name, and all images to the model, requesting these fields:
+
+- `recognized_product`: the product the model identifies;
+- `verdict`: whether the category matches;
+- `suggested_category`: a suggested category, which may be null;
+- `confidence`: the model's self-reported confidence;
+- `reason`: the reason for its judgment.
 
 The `verdict` has three possible values:
 
@@ -435,11 +449,25 @@ connection.sql("""
 """).show()
 ```
 
-One row shows the merchant's category, the product the model recognized, the model's suggested category, the model's reason, and the original images together. After a person confirms a correction, the listing goes back to the catalog system that applies it.
+Reviewers can see the following in a single record:
 
-## 5. Expand a confirmed mistake with similarity search
+- The category selected by the merchant
+- The product identified by the model
+- The category suggested by the model
+- The model's reasoning
+- The original images
 
-When a reviewer confirms that a listing is misplaced, it becomes a seed. Searching the same batch with the seed's title vector and image vector returns the listings worth checking next. Each search produces its own ranking; merging the two rankings by listing ID pushes listings that rank high in both searches to the top, and a hit in only one ranking is still kept as a candidate.
+After a reviewer confirms a correction, the listing goes to the catalog system for the change. Listings with an `uncertain` verdict also need review and should not be treated as approved.
+
+## 5. Find more candidates with similarity search
+
+Once a reviewer confirms that a listing is in the wrong category, it can serve as a seed for finding similar listings in the same batch.
+
+Search separately with the seed's title vector and image vector, then merge the two rankings by listing ID. Listings that rank highly in both searches receive a better combined rank. A listing found in only one search can still make the final candidate list.
+
+These candidates can go through another model audit or directly to a reviewer. Similarity alone does not establish a category error; each candidate still needs to be checked.
+
+One confirmed mistake can therefore help identify other listings in the batch that may share the same error and deserve attention in the next review pass. The code below performs the searches, merges the rankings, and writes the candidates to the audit table.
 
 ```python
 # Read the seed vectors for the confirmed mismatch (Python needs rows, so use fetchall):
@@ -526,17 +554,17 @@ connection.sql("""
 """).insert_into("lance_ns.main.products_category_audit")
 ```
 
-The candidates can go through the model audit again, or straight to a reviewer. Either way, one confirmed mistake now points at the other listings that deserve the same check.
+At this point, the code has appended the candidates to the audit table as `pending` records, retaining the seed listing ID and retrieval rank for traceability. Another model audit or human review is a separate step. For a model audit, follow the approach in step 3 with this candidate batch as the input.
 
 ## What the run produces
 
-The pipeline runs end to end on the seven complete listings, with Jina embeddings and Gemini audit, on the default Ray runner. The verdicts are:
+The original demonstration recorded results for seven complete listings, using Jina embeddings and Gemini audit on the default Ray runner. The model outputs below are retained from the original draft. The merchant category for `B011AA1005` has been corrected to `Table Lamp` to match the seed data; its model output has not been revalidated with that input.
 
 | Listing | Merchant category | Recognized product | Verdict | Suggested category | Confidence |
 | --- | --- | --- | --- | --- | ---: |
 | `B073P3NK7T` | Light Bulb | Table Desk Lamp | mismatch | Table Lamps | 0.95 |
 | `B011AA1003` | Light Bulb | Table Lamp With USB Port | mismatch | Table Lamps | 0.95 |
-| `B011AA1005` | Light Bulb | Glass Pendant Light Shade | mismatch | Pendant Light Shade | 0.95 |
+| `B011AA1005` | Table Lamp | Glass Pendant Light Shade | mismatch | Pendant Light Shade | 0.95 |
 | `B073Q8LM2A` | Table Lamp | Modern Fabric Table Lamp Shade | mismatch | Lamp Shades | 0.95 |
 | `B011AA1001` | Light Bulb | LED Light Bulb | match | — | 0.5 |
 | `B011AA1002` | Light Bulb | Edison Vintage Bulb | match | — | 1.0 |
@@ -550,15 +578,15 @@ Expanding from `B073P3NK7T` ranks the other misplaced listing, `B011AA1003`, fir
 | 2 | `B011AA1001` | 5 | 3 |
 | 3 | `B073R1N9QW` | 3 | — |
 
-The demonstration run uses placeholder images, so the model judged mostly from titles and the image side of the audit contributes little. With real ABO images, the image vectors and the image part of the audit participate fully. The pipeline itself — vectors into Lance, structured audit output, and the two-way rank merge — does not depend on the images and is verified end to end.
+The demonstration used placeholder images, so the model judged mostly from titles. These results illustrate storing vectors, producing structured audit output, and merging two search rankings. They do not establish audit accuracy or retrieval quality for real product images. Evaluating those requires replacing the placeholders with real images and running the pipeline again.
 
 ## Conclusion
 
-Lance stores and retrieves; Vane Data understands and calls models. Listings and images stop being something a person merely glances at and become data that can be queried, reviewed, and reused. The model flags, the similarity search points at candidates, and the reviewer moves from every listing to only the suspicious ones.
+This workflow keeps product content, model judgments, and retrieval provenance in Lance so reviewers can query flagged records and check the evidence. After confirming a mistake, they can use title and image search to find more listings to review. The example ends with pending candidates; category changes still require human confirmation and are applied by the catalog system.
 
-The listing data comes from the Amazon Berkeley Objects (ABO) dataset, licensed under CC BY 4.0. The merchant, the upload dates, and the batch-wide misclassification story are scenario settings, not real ABO events.
+> Data note: Product data is sourced from Amazon Berkeley Objects (ABO), licensed under CC BY 4.0. The code uses manually listed example records and generates placeholders for missing images. The merchant's category errors and the batch review scenario are illustrative, not real events recorded in ABO.
 
-To go further:
+## Further reading
 
 - [Lance extension documentation](/docs/data/extensions/lance)
 - [Lance Extension for Vane reference](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)

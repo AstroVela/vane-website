@@ -41,7 +41,7 @@ const englishProductReviewImagePath = `${productReviewImageDirectory}/pipeline-e
 const chineseProductReviewImagePath = `${productReviewImageDirectory}/pipeline-zh-cn.png`
 const englishProductReviewImageUrl = '/img/blog/product-category-review/pipeline-en.png'
 const chineseProductReviewImageUrl = '/img/blog/product-category-review/pipeline-zh-cn.png'
-const productReviewImageSize = ['2400', '700']
+const productReviewImageSize = ['2350', '1000']
 
 const configSource = readFileSync('docusaurus.config.ts', 'utf8')
 const routesSource = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
@@ -408,7 +408,10 @@ test('Product category review post translations use localized in-article diagram
     const previewBody = preview.replace(/^---\n[\s\S]*?\n---\n/, '')
 
     assert.equal(existsSync(imagePath), true)
-    assert.equal(readFileSync(imagePath).subarray(1, 4).toString('ascii'), 'PNG')
+    const image = readFileSync(imagePath)
+    assert.equal(image.subarray(1, 4).toString('ascii'), 'PNG')
+    assert.equal(image.readUInt32BE(16), Number(productReviewImageSize[0]))
+    assert.equal(image.readUInt32BE(20), Number(productReviewImageSize[1]))
     assert.equal(frontmatterValue(source, 'image'), imageUrl)
     assert.match(source, /<img\s+className="dimg"/)
     assert.match(source, /style=\{\{ width: '100%', height: 'auto' \}\}/)
@@ -455,7 +458,7 @@ test('Product category review post keeps the Lance extension contract', () => {
       assert.doesNotMatch(block, /VANE_RUNNER/)
     }
     assert.equal(blocks.length, 16)
-    assert.equal((source.match(/^## /gm) ?? []).length, 9)
+    assert.equal((source.match(/^## /gm) ?? []).length, 10)
   }
 })
 

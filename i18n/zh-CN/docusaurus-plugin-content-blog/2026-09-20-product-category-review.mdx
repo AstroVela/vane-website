@@ -6,9 +6,17 @@ date: 2026-09-20
 image: /img/blog/product-category-review/pipeline-zh-cn.png
 ---
 
-<p className="blog-body-lead">商家上传商品时要选类目，难免选错，逐条人工核对图文和类目又无法规模化。本文用一小批商品搭一条辅助审核流水线：视觉模型同时看标题、类目和全部图片，标出可疑记录；再用相似搜索，从一件已确认的错分商品出发，找出同批同样值得检查的商品。Lance 负责存取商品图文与审核结果、回答相似查询；Vane Data 负责整理行、生成向量、调用模型，并把模型回答变成结构化数据。人工只需要看被标出的记录。</p>
+<p className="blog-body-lead">商家上传商品时可能选错类目，人工逐条核对图文很费时。本文用一小批商品演示如何辅助审核：先让模型检查标题、图片和类目是否一致，标出可疑记录供人工复核；确认一件商品错分后，再用相似搜索找出同批值得检查的其他商品。</p>
 
 <!-- truncate -->
+
+这套方案中，各部分的分工是：
+
+- **Lance**：保存商品图文、向量和审核结果，检索相似商品。
+- **Vane Data**：整理图文、生成向量、调用模型，把模型回答转成结构化数据。
+- **人工**：复核可疑记录，确认是否需要纠正类目。
+
+模型和相似搜索用于筛选待检查的商品，最终判断由人工完成。
 
 <Callout label="阅读说明">
 
@@ -20,16 +28,16 @@ image: /img/blog/product-category-review/pipeline-zh-cn.png
   className="dimg"
   style={{ width: '100%', height: 'auto' }}
   src="/img/blog/product-category-review/pipeline-zh-cn.png"
-  alt="准备商品图文、生成向量、模型审核、人工复核与相似商品搜索"
-  width="2400"
-  height="700"
+  alt="以误归为灯泡的台灯为例：Vane Data 生成向量并审核，人工确认后由 Lance 检索相似商品，候选再进入审核"
+  width="2350"
+  height="1000"
   loading="lazy"
   decoding="async"
 />
 
 ## 从一件已确认的错分商品开始
 
-案例从商品 `B073P3NK7T` 开始，标题是 **“Table Desk Lamp With Bulb”**。标题描述的是附带灯泡的完整台灯，图片展示的也是台灯本身。它应该归到 **Table Lamp**（台灯），但商家把它放进了 **Light Bulb**（灯泡）。
+案例中的商品 `B073P3NK7T` 标题是 **“Table Desk Lamp With Bulb”**，意思是“附带灯泡的台灯”。按案例设定，这是一盏完整台灯，应归到 **Table Lamp**（台灯），商家却把它放进了 **Light Bulb**（灯泡）。示例代码默认生成占位图；要检查真实图文是否一致，需要换成实际商品图片。
 
 审核人员先确认这一件确实错分。这个确认就是后续流程的种子：在同批商品中分别用标题向量和图片向量搜索靠近它的商品，对候选再走一轮审核，最终仍然由人工判断。
 
@@ -39,13 +47,13 @@ image: /img/blog/product-category-review/pipeline-zh-cn.png
 
 向量和视觉审核需要两个免费 key：Jina 用于 `jina-clip-v2`，Google AI Studio 用于审核模型。8 件商品的用量远低于两个免费档的额度。
 
-Lance 扩展以 `vane-extension-lance` 发布在 PyPI 上，并精确钉住一个 `vane-ai` 版本，所以一条命令就能装好配对的两个包；`google` extra 提供审核用的 Gemini 客户端。需要可复现部署时，把版本都钉死。
+使用下面的命令安装 Vane Data 和 Lance 扩展：
 
 ```bash
 export JINA_API_KEY="..."
 export GOOGLE_API_KEY="..."
 
-python -m pip install "vane-ai[google]" vane-extension-lance "grpcio>=1.42.0" requests pillow
+python -m pip install vane-ai vane-extension-lance "grpcio>=1.42.0"
 ```
 
 然后建立连接、加载 Lance 扩展，并挂上用于写入的命名空间：
@@ -321,7 +329,13 @@ connection.sql("SELECT count(*) AS rows FROM lance_ns.main.products_search").sho
 
 ## 3. 用模型审核这批商品
 
-每件商品带着标题、类目名称和全部图片一起交给模型。模型返回 `recognized_product`、`verdict`、`suggested_category`、`confidence` 和 `reason`。
+将每件商品的标题、类目名称和全部图片一起交给模型，要求它返回以下字段：
+
+- `recognized_product`：识别出的商品；
+- `verdict`：类目是否匹配；
+- `suggested_category`：建议类目，可以为空；
+- `confidence`：模型自报的置信度；
+- `reason`：判断理由。
 
 `verdict` 有三种值：
 
@@ -435,11 +449,25 @@ connection.sql("""
 """).show()
 ```
 
-一条记录里能同时看到商家原来选的类目、模型识别出的商品、模型建议的类目、模型给出的理由和原始图片。人工确认后，再把需要纠正的商品交给上架系统处理。
+审核人员可以在同一条记录中查看：
+
+- 商家原来选的类目
+- 模型识别出的商品
+- 模型建议的类目
+- 模型给出的理由
+- 原始图片
+
+人工确认后，再把需要纠正的商品交给上架系统处理。对于模型返回 `uncertain` 的记录，也需要另行复核，不能视为审核通过。
 
 ## 5. 用相似搜索扩线
 
-人工确认某件商品确实错分后，它就成为一个种子。用它的标题向量和图片向量在同一批商品里搜索，就能找出接下来值得检查的记录。两路搜索各自产生一份排名；按商品 ID 合并后，两路都靠前的商品排得更前面，只命中一路的商品也会作为候选保留。
+如果人工确认某件商品确实错分，可以用它作为种子，搜索同批相似商品。
+
+分别用种子的标题向量和图片向量搜索，得到两份排名，再按商品 ID 合并。两路排名都靠前的商品，综合排名更高；只命中一路的商品，也可能进入最终候选。
+
+对这些候选，可以再做一轮模型审核，也可以直接交给人工复核。搜索结果只表示商品相似，是否存在同样的类目错误，还需要逐件确认。
+
+这样就能从一件已确认的错分商品出发，找到同批可能同样错分的其他商品，作为下一轮检查的重点。下面的代码演示如何搜索、合并排名，并将候选写入审核表。
 
 ```python
 # 取出已确认错分的种子向量（Python 需要行数据 → 用 fetchall）：
@@ -526,17 +554,17 @@ connection.sql("""
 """).insert_into("lance_ns.main.products_category_audit")
 ```
 
-候选可以再走一轮模型审核，也可以直接交给人工。无论哪种方式，一件已确认的错分商品都能指向同批需要检查的其他商品。
+代码执行到这里，候选已作为 `pending` 记录追加到审核表，并保留种子商品 ID 和检索排名，方便追溯来源。第二轮模型审核或人工复核需要后续执行；如果选择模型审核，可以参考第 3 步，对这批候选调用模型。
 
 ## 运行结果
 
-整条流水线在 7 件完整商品上端到端跑通（Jina 向量 + Gemini 审核，默认 Ray），模型结论如下：
+原始演示记录了 7 件完整商品的处理结果，使用 Jina 生成向量、Gemini 审核，运行在默认 Ray runner 上。以下保留原稿中的模型输出；其中 `B011AA1005` 的商家类目已按种子数据统一为 `Table Lamp`，该条模型输出尚未按此输入重新验证。
 
 | 商品 | 商家类目 | 识别商品 | 结论 | 建议类目 | 置信度 |
 | --- | --- | --- | --- | --- | ---: |
 | `B073P3NK7T` | Light Bulb | Table Desk Lamp | mismatch | Table Lamps | 0.95 |
 | `B011AA1003` | Light Bulb | Table Lamp With USB Port | mismatch | Table Lamps | 0.95 |
-| `B011AA1005` | Light Bulb | Glass Pendant Light Shade | mismatch | Pendant Light Shade | 0.95 |
+| `B011AA1005` | Table Lamp | Glass Pendant Light Shade | mismatch | Pendant Light Shade | 0.95 |
 | `B073Q8LM2A` | Table Lamp | Modern Fabric Table Lamp Shade | mismatch | Lamp Shades | 0.95 |
 | `B011AA1001` | Light Bulb | LED Light Bulb | match | — | 0.5 |
 | `B011AA1002` | Light Bulb | Edison Vintage Bulb | match | — | 1.0 |
@@ -550,15 +578,15 @@ connection.sql("""
 | 2 | `B011AA1001` | 5 | 3 |
 | 3 | `B073R1N9QW` | 3 | — |
 
-演示运行用的是占位图，模型判断主要依据标题，图片几乎没有参与判断；换上真实 ABO 图片后，图片向量和图文审核的图片部分才会完整发挥作用。流水线本身（向量入库、STRUCT 审核、两路搜索合并）与用图无关，已完整验证。
+这次演示使用占位图，模型判断主要依据标题。结果展示了向量入库、结构化审核和两路搜索合并的处理过程，不能用于评估真实商品图片的审核效果或检索质量。评估这两项能力，需要换上真实图片并重新运行。
 
 ## 小结
 
-Lance 负责保存和检索，Vane Data 负责理解和调模型。图文不再只是被看一眼，而是变成可查询、可复核、可复用的数据。模型负责标出可疑记录，相似搜索负责指出候选，人工则从“逐条看全部商品”变成“只看可疑商品”。
+这套流程将商品图文、模型判断和检索来源保存在 Lance 中，审核人员可以查询可疑记录并核对依据。确认一件商品错分后，还能通过标题和图片搜索扩大检查范围。示例到生成待审核候选为止，最终类目修改仍由人工确认后交给上架系统处理。
 
-商品数据来自 Amazon Berkeley Objects（ABO）数据集，许可证为 CC BY 4.0。商家、上架日期和批量分错类的情节为案例设定，不是 ABO 记录的真实事件。
+> 数据说明：商品数据来源为 Amazon Berkeley Objects（ABO），许可证为 CC BY 4.0。代码使用手工列出的示例记录，缺图时生成占位图；商家错分类目和批量审核的情节均为演示设定，不代表 ABO 中的真实事件。
 
-延伸阅读：
+## 延伸阅读
 
 - [Lance 扩展文档](/zh-CN/docs/data/extensions/lance)
 - [Lance Extension for Vane 参考](https://github.com/AstroVela/lance-duckdb/blob/main_vane/VANE_README.md)
