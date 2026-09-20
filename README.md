@@ -176,6 +176,25 @@ date. Use frontmatter for the title and metadata, keep only one locale in each
 file, and add `<!-- truncate -->` after the list-page excerpt. Shared MDX
 components such as `DataArchitecture` are available without an explicit import.
 
+## Authoring release notes
+
+Release notes cover published Vane Data versions. They use a separate Docusaurus
+blog instance at `/release-notes`, independent of engineering posts in `/blog`.
+Add English MDX under `release-notes/` and the matching Chinese translation under
+`i18n/zh-CN/docusaurus-plugin-content-blog-release-notes/`.
+
+Use `YYYY-MM-DD-vX.Y.Z.mdx`, the actual release date, and a stable `vX.Y.Z` slug
+in both locales. Include one `<!-- truncate -->` marker after the summary. Verify
+claims against the corresponding GitHub Release and tag, preserve experimental
+status and limitations, and link to that release and tagged source. Do not infer
+historical capabilities from `main` or current documentation. Add compatibility
+and upgrade guidance only when supported by the release evidence. Review both
+translations when upstream release notes are corrected.
+
+Check the GitHub Releases API before updating the inventory; search-engine
+snapshots may omit recent versions. Keep independently released provider
+artifacts and candidates out of the Vane Data runtime version list.
+
 ## License
 
 Licensed under the [Apache License 2.0](./LICENSE).

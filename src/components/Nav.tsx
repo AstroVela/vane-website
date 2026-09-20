@@ -339,14 +339,12 @@ export default function Nav({
                   <Link to="/blog" onClick={() => setROpen(false)}>
                     {copy.blog} <span className="ar">→</span>
                   </Link>
-                  <a
-                    href={`${GITHUB_URL}/releases`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <Link
+                    to="/release-notes"
                     onClick={() => setROpen(false)}
                   >
                     {copy.releaseNotes} <span className="ar">→</span>
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -461,15 +459,13 @@ export default function Nav({
               <Link className="mob-sub" to="/contact" onClick={() => setMobOpen(false)}>
                 {copy.contact}
               </Link>
-              <a
+              <Link
                 className="mob-sub"
-                href={`${GITHUB_URL}/releases`}
-                target="_blank"
-                rel="noreferrer"
+                to="/release-notes"
                 onClick={() => setMobOpen(false)}
               >
                 {copy.releaseNotes}
-              </a>
+              </Link>
             </div>
             <div className="mob-sec">
               <button

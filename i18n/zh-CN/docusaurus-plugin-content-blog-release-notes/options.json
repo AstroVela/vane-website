@@ -1,0 +1,14 @@
+{
+  "title": {
+    "message": "Vane Data 发布说明",
+    "description": "The title for the blog used in SEO"
+  },
+  "description": {
+    "message": "Vane Data 已发布版本的能力与使用限制。",
+    "description": "The description for the blog used in SEO"
+  },
+  "sidebar.title": {
+    "message": "发布说明",
+    "description": "The label for the left sidebar"
+  }
+}

@@ -91,3 +91,24 @@ declare module '@theme/MDXContent' {
 
   export default function MDXContent(props: {children: ReactNode}): ReactNode
 }
+
+declare module '@theme/BlogLayout' {
+  import type {ReactNode} from 'react'
+  import type {BlogSidebar} from '@docusaurus/plugin-content-blog'
+
+  export default function BlogLayout(props: {children: ReactNode; sidebar?: BlogSidebar}): ReactNode
+}
+
+declare module '@theme/BlogListPaginator' {
+  import type {ReactNode} from 'react'
+  import type {BlogPaginatedMetadata} from '@docusaurus/plugin-content-blog'
+
+  export default function BlogListPaginator(props: {metadata: BlogPaginatedMetadata}): ReactNode
+}
+
+declare module '@theme/BlogPostItems' {
+  import type {ReactNode} from 'react'
+  import type {PropBlogPostContent} from '@docusaurus/plugin-content-blog'
+
+  export default function BlogPostItems(props: {items: readonly {content: PropBlogPostContent}[]}): ReactNode
+}

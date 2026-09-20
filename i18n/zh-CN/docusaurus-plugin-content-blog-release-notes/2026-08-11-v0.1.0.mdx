@@ -1,0 +1,51 @@
+---
+slug: v0.1.0
+title: Vane Data v0.1.0
+description: 面向多模态数据工作负载的分布式执行、Python UDF 与 AI 函数。
+date: 2026-08-11
+---
+
+Vane Data 是面向 AI 工作负载的高性能多模态数据引擎。它基于 [DuckDB](https://duckdb.org/) fork，提供原生多模态处理能力，以及适用于本地和分布式环境的统一执行模型。
+
+<!-- truncate -->
+
+## 核心能力
+
+- **分布式 DuckDB 执行引擎**\
+  在 DuckDB 基础上扩展分布式物理计划、分布式 Plan Fragment、FTE（容错执行）调度和分布式算子执行，并通过 Arrow Flight 提供跨 Worker 的 Exchange/Shuffle 数据传输。
+
+- **Python UDF**\
+  Relation UDF 支持逐行的 `map`、基于 Arrow Table 的 `map_batches` 和一对多的 `flat_map`。Expression UDF 提供 `@vane.func`、`@vane.cls` 及其对应的 `.batch` 形式。标量、批处理和类 UDF 均可通过 `vane.attach_function()` 注册为 SQL 函数。
+
+- **AI 函数**\
+  在 Python Expression API、Relation API 和 SQL 中提供带类型的 `Prompt` 与 `Embed` API。`Prompt` 集成 OpenAI、Anthropic、Google 和原生 vLLM 后端，`Embed` 支持 OpenAI、Google 和 SentenceTransformers。结构化输出和图像 Prompt 输入取决于 Provider 的支持情况。
+
+- **原生 vLLM 批处理执行**\
+  实现原生 `PhysicalVLLM` 算子和 Actor Pool，通过在途任务数量限制控制任务提交。Prompt 按共享前缀分桶，并通过前缀感知路由分配给 Actor，以增加复用 vLLM Prefix Cache 的机会。\
+  **原生 vLLM `Prompt` 路径目前仅支持文本输入。**
+
+- **自适应多模态批处理与背压**\
+  UDF 和 vLLM 执行路径根据行数、数据大小及在途任务限制，动态拆分或合并批次。资源准入控制和对象流背压限制排队任务的数量及其内存占用。
+
+- **容错执行**\
+  支持任务重试、Worker 故障检测与替换、Split 重新分配、Attempt Fencing、取消和资源清理。
+
+- **Ray Runner 与 Local Runner**\
+  同一套 SQL 和 Relation 计划模型既可通过分布式 Ray Runner 执行，也可通过本地进程内 FTE Runner 执行。Ray Runner 是默认执行路径，支持单机和分布式执行。Local Runner 面向不依赖 Ray 的轻量、低开销本地执行。\
+  **Local Runner 目前为实验性功能。**
+
+- **多模态基准测试**\
+  提供可对比的 Vane、Ray Data 和 Daft 流水线，覆盖音频转写、文档嵌入、图像分类和视频目标检测。\
+  **当前基准测试使用单 GPU 机器上的本地文件，代表单节点环境，不是对原始分布式 Ray Data benchmark 的直接复现。**
+
+## 贡献者致谢
+
+感谢所有通过非自动化贡献支持本次发布的作者与共同作者，贡献涉及 [Vane](https://github.com/AstroVela/vane)、[vane-website](https://github.com/AstroVela/vane-website) 和 [demo-scene](https://github.com/AstroVela/demo-scene)：
+
+[@kaka11chen](https://github.com/kaka11chen)、[@QuakeWang](https://github.com/QuakeWang)、[@caomaocao](https://github.com/caomaocao)、[@hubgeter](https://github.com/hubgeter)、[@liwuhen](https://github.com/liwuhen)、[@pollychen-lab](https://github.com/pollychen-lab)、[@figurant](https://github.com/figurant)、[@zy-kkk](https://github.com/zy-kkk)、[@suxiaogang223](https://github.com/suxiaogang223)、[@jingdaws](https://github.com/jingdaws)、[@freemandealer](https://github.com/freemandealer)、[@liujiwen-up](https://github.com/liujiwen-up) 和 [@StanleyXu512](https://github.com/StanleyXu512)。
+
+## 发布相关链接
+
+- [原始发布说明与下载](https://github.com/AstroVela/vane/releases/tag/v0.1.0)
+- [v0.1.0 版本源码](https://github.com/AstroVela/vane/tree/v0.1.0)
+- [官方公告与发布时的路线图](https://x.com/AstroVelaAI/status/2087045421109801261)

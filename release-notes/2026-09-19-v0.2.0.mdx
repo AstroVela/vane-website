@@ -1,0 +1,47 @@
+---
+slug: v0.2.0
+title: Vane Data v0.2.0
+description: Native multimodal types, distributed extensions, lakehouse providers, and new data sinks.
+date: 2026-09-19
+---
+
+Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org/), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
+
+<!-- truncate -->
+
+## What's New
+
+- **Distributed extensions for Ray Runner**\
+  Implements a distributed extension framework compatible with the Ray Runner, building on the existing DuckDB extension architecture. Extensions declare scan splits and write providers; the Ray Runner plans fragments, ships snapshots, and prepares workers with exact contract validation.
+
+- **Native multimodal types**\
+  Adds first-class native `FILE`, `IMAGEFILE`, `AUDIOFILE`, `VIDEOFILE`, `IMAGE`, and `TENSOR` types, so multimodal data flows through the engine as typed values. Audio is carried as float64 tensors and video frames as `IMAGE` rows.
+
+- **Python and C++ functions for multimodal types**\
+  Provides Python functions alongside C++ embedded functions (`native_*`) for decode, metadata, crop, resize, color conversion, resampling, and frame access, keeping hot paths inside the native engine. The Python backend works out of the box; native acceleration requires the separate `vane-extension-native-media` provider wheel (see note below).
+
+- **Distributed lakehouse extensions, delivered as separate providers**\
+  Enables distributed read and write for lakehouse formats through independently released provider packages. See each provider repository for its supported operations and installation recipe.
+  - [Iceberg](https://github.com/AstroVela/duckdb-iceberg) — distributed scans, auto-commit `INSERT`, constrained `CTAS`.
+  - [Lance](https://github.com/AstroVela/lance-duckdb) — fragment scans, directory-namespace writes, eligible vector and full-text search.
+  - [Paimon](https://github.com/AstroVela/duckdb-paimon) — distributed read and write via its provider package.
+  - [DuckLake](https://github.com/AstroVela/ducklake) — distributed read and write via its provider package.
+  - [Vortex](https://github.com/AstroVela/duckdb-vortex) — distributed read and write via its provider package.
+
+- **Milvus, Qdrant, and Doris sinks**\
+  Adds distributed data sinks for Milvus, Qdrant, and Apache Doris (Arrow Stream Load), so query results can be written directly to vector stores and analytical databases.
+
+- **Distributed CSV and JSON read and write**\
+  Enables distributed read and write for CSV and JSON formats, with file discovery, byte-range and multi-file splitting, and parallel execution on the Ray Runner.
+
+- **DuckDB 1.5.0 → 1.5.5 upstream merge**\
+  Merges relevant upstream DuckDB changes from 1.5.0 through 1.5.5 into the Vane engine fork, keeping the distributed engine aligned with upstream fixes and behavior.
+
+> **Note:** `native_*` functions are **not** included in `vane-ai`. Install the separate `vane-extension-native-media` provider wheel, load it with `vane.load_installed_extension("native_media")`, and set `image_backend` / `audio_backend` / `video_backend` to `'native'`. Without the loaded extension, native requests fail at bind time with no automatic fallback; the default `'python'` backend keeps working.
+>
+> **Note:** Lakehouse connectors are separate `vane-extension-*` provider packages with their own versions and release cycles. They are discovered through the [vane-extensions registry](https://github.com/AstroVela/vane-extensions) and qualified against this exact `vane-ai` runtime. Installing `vane-ai==0.2.0` alone does not include them.
+
+## Release references
+
+- [Original release and downloads](https://github.com/AstroVela/vane/releases/tag/v0.2.0)
+- [Source at v0.2.0](https://github.com/AstroVela/vane/tree/v0.2.0)

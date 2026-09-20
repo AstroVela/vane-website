@@ -96,7 +96,7 @@ export default function Footer({ home = false }: { home?: boolean }) {
           <div>
             <h4>{copy.resources}</h4>
             <Link to="/blog">{copy.blog}</Link>
-            <a href={`${GITHUB_URL}/releases`} target="_blank" rel="noreferrer">{copy.releaseNotes}</a>
+            <Link to="/release-notes">{copy.releaseNotes}</Link>
           </div>
 
           <div>
