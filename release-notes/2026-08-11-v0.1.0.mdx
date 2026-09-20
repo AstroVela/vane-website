@@ -1,0 +1,51 @@
+---
+slug: v0.1.0
+title: Vane Data v0.1.0
+description: Distributed execution, Python UDFs, and AI functions for multimodal data workloads.
+date: 2026-08-11
+---
+
+Vane Data is a high-performance multimodal data engine built for AI workloads. Forked from [DuckDB](https://duckdb.org/), it provides native multimodal processing and a unified execution model for both local and distributed environments.
+
+<!-- truncate -->
+
+## Core Features
+
+- **Distributed DuckDB execution engine**\
+  Extends DuckDB with distributed physical plans, distributed Plan Fragments, FTE (Fault-Tolerant Execution) scheduling, and distributed operator execution, with Arrow Flight providing cross-worker Exchange/Shuffle data transport.
+
+- **Python UDFs**\
+  Relation UDFs support row-wise `map`, Arrow Table-based `map_batches`, and one-to-many `flat_map`. Expression UDFs provide `@vane.func`, `@vane.cls`, and their corresponding `.batch` forms. Scalar, batch, and class UDFs can all be registered as SQL functions through `vane.attach_function()`.
+
+- **AI Functions**\
+  Provides typed `Prompt` and `Embed` APIs across the Python Expression API, Relation API, and SQL. `Prompt` integrates with OpenAI, Anthropic, Google, and the native vLLM backend, while `Embed` supports OpenAI, Google, and SentenceTransformers. Structured outputs and image Prompt inputs are available where supported by the provider.
+
+- **Native vLLM batch execution**\
+  Implements a native `PhysicalVLLM` operator and Actor Pool, with bounded task submission enforced through in-flight limits. Prompts are bucketed by shared prefixes and routed to actors using prefix-aware routing to improve opportunities for reusing the vLLM Prefix Cache.\
+  **The native vLLM `Prompt` path currently supports text input only.**
+
+- **Adaptive multimodal batching and backpressure**\
+  The UDF and vLLM execution paths dynamically split or combine batches according to row count, data size, and in-flight limits. Resource admission control and object-stream backpressure limit the number of queued tasks and their memory consumption.
+
+- **Fault-Tolerant Execution**\
+  Supports task retries, Worker failure detection and replacement, Split reassignment, Attempt Fencing, cancellation, and resource cleanup.
+
+- **Ray Runner and Local Runner**\
+  The same SQL and Relation plan model can run through either the distributed Ray Runner or the local In-Process FTE Runner. Ray Runner is the default execution path and supports both single-machine and distributed execution. Local Runner targets lightweight, lower-overhead local execution without Ray.\
+  **Local Runner is currently experimental.**
+
+- **Multimodal benchmarks**\
+  Provides comparable Vane, Ray Data, and Daft pipelines covering audio transcription, document embedding, image classification, and video object detection.\
+  **The current benchmarks use local files on a single-GPU machine. They represent a single-node environment and are not a direct reproduction of the original distributed Ray Data benchmark.**
+
+## Contributor Acknowledgements
+
+Thank you to all authors and co-authors whose non-automated contributions supported this release across [Vane](https://github.com/AstroVela/vane), [vane-website](https://github.com/AstroVela/vane-website), and [demo-scene](https://github.com/AstroVela/demo-scene):
+
+[@kaka11chen](https://github.com/kaka11chen), [@QuakeWang](https://github.com/QuakeWang), [@caomaocao](https://github.com/caomaocao), [@hubgeter](https://github.com/hubgeter), [@liwuhen](https://github.com/liwuhen), [@pollychen-lab](https://github.com/pollychen-lab), [@figurant](https://github.com/figurant), [@zy-kkk](https://github.com/zy-kkk), [@suxiaogang223](https://github.com/suxiaogang223), [@jingdaws](https://github.com/jingdaws), [@freemandealer](https://github.com/freemandealer), [@liujiwen-up](https://github.com/liujiwen-up), and [@StanleyXu512](https://github.com/StanleyXu512).
+
+## Release references
+
+- [Original release and downloads](https://github.com/AstroVela/vane/releases/tag/v0.1.0)
+- [Source at v0.1.0](https://github.com/AstroVela/vane/tree/v0.1.0)
+- [Official announcement and roadmap at release time](https://x.com/AstroVelaAI/status/2087045421109801261)

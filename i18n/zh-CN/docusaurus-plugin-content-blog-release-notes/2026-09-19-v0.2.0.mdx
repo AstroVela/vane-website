@@ -1,0 +1,47 @@
+---
+slug: v0.2.0
+title: Vane Data v0.2.0
+description: 原生多模态类型、分布式扩展、湖仓 Provider 与新增数据 Sink。
+date: 2026-09-19
+---
+
+Vane Data 是面向 AI 工作负载的高性能多模态原生数据引擎。它基于 [DuckDB](https://duckdb.org/) fork，在核心执行引擎上扩展原生多模态处理能力，并提供统一的本地与分布式执行框架。
+
+<!-- truncate -->
+
+## 新增与改进
+
+- **面向 Ray Runner 的分布式扩展**\
+  基于现有 DuckDB 扩展架构，实现兼容 Ray Runner 的分布式扩展框架。扩展声明扫描 Split 和写入 Provider；Ray Runner 负责 Fragment 规划、快照传输和 Worker 准备，并进行精确的契约校验。
+
+- **原生多模态类型**\
+  新增一等原生类型 `FILE`、`IMAGEFILE`、`AUDIOFILE`、`VIDEOFILE`、`IMAGE` 和 `TENSOR`，让多模态数据以带类型的值在引擎中流转。音频以 float64 张量承载，视频帧以 `IMAGE` 行承载。
+
+- **面向多模态类型的 Python 与 C++ 函数**\
+  提供 Python 函数及 C++ 内嵌函数（`native_*`），覆盖解码、元数据、裁剪、缩放、颜色转换、重采样和视频帧访问，将热点执行路径保留在原生引擎内。Python 后端开箱即用；原生加速需要独立的 `vane-extension-native-media` Provider wheel（见下方说明）。
+
+- **以独立 Provider 交付的分布式湖仓扩展**\
+  通过独立发布的 Provider 包支持湖仓格式的分布式读写。支持的操作和安装方法请参阅各 Provider 仓库。
+  - [Iceberg](https://github.com/AstroVela/duckdb-iceberg)：分布式扫描、自动提交的 `INSERT`、受约束的 `CTAS`。
+  - [Lance](https://github.com/AstroVela/lance-duckdb)：Fragment 扫描、目录命名空间写入，以及满足条件的向量与全文搜索。
+  - [Paimon](https://github.com/AstroVela/duckdb-paimon)：通过其 Provider 包支持分布式读写。
+  - [DuckLake](https://github.com/AstroVela/ducklake)：通过其 Provider 包支持分布式读写。
+  - [Vortex](https://github.com/AstroVela/duckdb-vortex)：通过其 Provider 包支持分布式读写。
+
+- **Milvus、Qdrant 和 Doris Sink**\
+  新增面向 Milvus、Qdrant 和 Apache Doris（Arrow Stream Load）的分布式数据 Sink，可将查询结果直接写入向量存储和分析型数据库。
+
+- **CSV 与 JSON 分布式读写**\
+  支持 CSV 和 JSON 格式的分布式读写，包括文件发现、字节范围与多文件切分，以及 Ray Runner 上的并行执行。
+
+- **合并 DuckDB 1.5.0 → 1.5.5 上游变更**\
+  将 DuckDB 1.5.0 至 1.5.5 的相关上游变更合入 Vane 引擎 fork，使分布式引擎与上游修复和行为保持同步。
+
+> **说明：** `vane-ai` **不包含** `native_*` 函数。需要单独安装 `vane-extension-native-media` Provider wheel，通过 `vane.load_installed_extension("native_media")` 加载，并将 `image_backend` / `audio_backend` / `video_backend` 设为 `'native'`。未加载扩展时，原生请求会在绑定阶段失败，不会自动回退；默认的 `'python'` 后端仍可正常使用。
+>
+> **说明：** 湖仓连接器是独立的 `vane-extension-*` Provider 包，有各自的版本与发布周期。它们通过 [vane-extensions 注册表](https://github.com/AstroVela/vane-extensions)发现，并针对这一精确的 `vane-ai` 运行时版本进行兼容性验证。仅安装 `vane-ai==0.2.0` 不会包含这些连接器。
+
+## 发布相关链接
+
+- [原始发布说明与下载](https://github.com/AstroVela/vane/releases/tag/v0.2.0)
+- [v0.2.0 版本源码](https://github.com/AstroVela/vane/tree/v0.2.0)
