@@ -71,10 +71,21 @@ Vane Data lets you keep using familiar PDF parsing tools, text splitters, and em
 ```python title="Key Vane steps: Expand into chunks → Batch inference → Write to Milvus"
 import vane
 
-# Definitions of files (an Arrow table) and the output schemas are omitted.
+# The file list files (an Arrow table) is defined separately.
 # User-defined pdf_chunks: parse a PDF, split the text, and yield chunks one at a time.
 # User-defined Embedder: initialize the model and convert a batch of chunks into an Arrow table with embeddings.
 con = vane.connect()
+
+chunk_schema = {
+    "id": vane.sqltypes.VARCHAR,
+    "source": vane.sqltypes.VARCHAR,
+    "page": vane.sqltypes.INTEGER,
+    "text": vane.sqltypes.VARCHAR,
+}
+vector_schema = {
+    **chunk_schema,
+    "vector": vane.array_type(vane.sqltypes.FLOAT, 384),
+}
 
 # 1. Read the file list and expand each PDF into text chunks
 chunks = con.from_arrow(files).flat_map(pdf_chunks, schema=chunk_schema)
@@ -93,6 +104,10 @@ vectors.write_datasink(vane.MilvusSink(
 ```
 
 > *pdf_chunks and Embedder are a user-defined processing function and class, respectively; their implementations are omitted here. Both examples write to a Milvus collection containing the primary key id, source, page, text, and a 384-dimensional vector field, with AutoID and dynamic fields disabled. The Vane engine batch size, model inference batch size, and Milvus write batch size can be configured independently.*
+
+Here, `schema` is a dictionary of output column names to Vane types, not a `pyarrow.Schema`. `pdf_chunks(row)` receives one input row as a dictionary and yields chunk dictionaries; `Embedder.__call__(table)` receives a `pyarrow.Table` and must return all five output columns, including the metadata. The `vector` column must use Arrow `float32` elements with 384 values per row, matching `vane.array_type(vane.sqltypes.FLOAT, 384)`. Assign every chunk a non-null string `id` that is unique across the entire input, for example from the document path, page number, and chunk index.
+
+Install the Milvus client dependency with `pip install 'vane-ai[milvus]'` and create a matching collection before running either example. `MilvusSink` performs full-row upserts and does not create the collection. This example assumes a local Milvus service and one schedulable GPU; `gpus=1.0` reserves the GPU resource, while the user-defined `Embedder` must load its model onto CUDA. With remote workers, use a Milvus endpoint reachable from every worker instead of `localhost`.
 
 In this code, flat_map() expands each PDF into multiple text chunks; map_batches() passes chunks in batches to a model that remains loaded in the worker process; and write_datasink() uses MilvusSink to write embeddings and their source text in batches. **The application logic at each stage remains explicit, while Vane Data coordinates execution.**
 

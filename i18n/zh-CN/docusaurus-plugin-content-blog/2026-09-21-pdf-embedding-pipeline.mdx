@@ -71,10 +71,21 @@ Vane Data 让你继续使用熟悉的 PDF 解析工具、文本切分器和向�
 ```python title="Vane 关键步骤：展开片段 → 批量推理 → Milvus 写入"
 import vane
 
-# 省略文件清单 files（Arrow 表）与输出字段 schema 的定义。
+# 文件清单 files（Arrow 表）在此处省略。
 # 自定义 pdf_chunks：解析 PDF，切分文本，逐条 yield 片段。
 # 自定义 Embedder：初始化模型，将一批片段转为带向量的 Arrow 表。
 con = vane.connect()
+
+chunk_schema = {
+    "id": vane.sqltypes.VARCHAR,
+    "source": vane.sqltypes.VARCHAR,
+    "page": vane.sqltypes.INTEGER,
+    "text": vane.sqltypes.VARCHAR,
+}
+vector_schema = {
+    **chunk_schema,
+    "vector": vane.array_type(vane.sqltypes.FLOAT, 384),
+}
 
 # 1. 读取文件清单，将 PDF 展开为文本片段
 chunks = con.from_arrow(files).flat_map(pdf_chunks, schema=chunk_schema)
@@ -93,6 +104,10 @@ vectors.write_datasink(vane.MilvusSink(
 ```
 
 > *pdf_chunks 和 Embedder 是用户定义的处理函数与类；此处省略实现。两段示例均写入包含 id 主键、source、page、text 和 384 维 vector 的 Milvus 集合，关闭 AutoID 和动态字段。Vane 引擎批次、模型推理批次与 Milvus 写入批次可分别配置。*
+
+这里的 `schema` 是“输出列名 → Vane 类型”的字典，不是 `pyarrow.Schema`。`pdf_chunks(row)` 接收一行输入字典，逐条 yield 片段字典；`Embedder.__call__(table)` 接收 `pyarrow.Table`，必须返回包含元数据在内的全部五列。`vector` 列的 Arrow 元素类型必须是 `float32`，每行包含 384 个值，与 `vane.array_type(vane.sqltypes.FLOAT, 384)` 一致。每个片段的字符串 `id` 必须非空且在整个输入中唯一，例如由文档路径、页码和片段序号组成。
+
+运行前需通过 `pip install 'vane-ai[milvus]'` 安装 Milvus 客户端依赖，并提前创建字段匹配的集合。`MilvusSink` 执行整行 upsert，不会自动创建集合。示例假设 Milvus 服务位于本机且有一块可调度的 GPU；`gpus=1.0` 用于预留 GPU 资源，用户定义的 `Embedder` 仍需将模型加载到 CUDA。使用远程工作进程时，应将 `localhost` 替换为所有工作进程均可访问的 Milvus 地址。
 
 代码中，flat_map() 将一份 PDF 展开为多个文本片段；map_batches() 将片段成批交给常驻模型处理；write_datasink() 通过 MilvusSink 批量写入向量和原文。**每一步的业务逻辑清楚可见，执行工作交给 Vane Data 组织。**
 
