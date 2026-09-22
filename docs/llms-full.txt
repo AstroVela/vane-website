@@ -3628,6 +3628,531 @@ The primary release is `deduped_documents.parquet`; the supporting outputs expla
 
 See the [complete use case](https://github.com/AstroVela/demo-scene/tree/main/web-text-deduplication) for the optional Common Crawl source, band expansion, all diagnostic Relations, artifact writers, and fixture data.
 
+## Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback
+
+Route: /docs/data/tutorials/use-cases/audio-support-doris-search
+Source: docs/data/tutorials/use-cases/audio-support-doris-search.mdx
+
+This tutorial uses Vane to transcribe English customer support recordings into text segments, extract candidate fault categories, and generate embeddings, then load the results into Apache Doris using Stream Load. You will then retrieve similar feedback in Doris using product model and date filters, and link recording segments to orders and production batches.
+
+The inputs are local WAV recordings and a support ticket manifest. The output is a Doris table containing transcribed text, candidate classifications, 384-dimensional embeddings, and timestamps within each recording. A single recording may produce multiple segments. Search results are returned at the segment level, while ticket counts are deduplicated by ticket_id.
+
+Processing flow: recordings and ticket manifest → transcription, classification, and embedding generation in Vane → verification of data loaded into Doris → similarity search → linkage to orders and production batches.
+
+## 1. Prepare the Environment and Recordings
+
+This example runs in Bash and processes recordings locally on the CPU. It assumes that an Apache Doris 4.1.3 instance is accessible and that you have permission to create databases and tables and load data. Deploying Doris is outside the scope of this tutorial. Complete the environment checks in this section before creating the tables.
+
+| Component | Requirements |
+|-|-|
+| Python | Python 3.12 is recommended. Place the example directory outside the Vane source repository. |
+| Vane | Vane 0.2.0, using FILE/AUDIOFILE, the SQL functions ai_prompt/ai_embed, and DorisStreamLoadSink. |
+| Doris | Target version: 4.1.3. Requires a MySQL client and network access to the frontend (FE) query port, the HTTP ingestion port, and the backend (BE) HTTP endpoints. |
+| Transcription and embedding models | Faster-Whisper small and paraphrase-multilingual-MiniLM-L12-v2. Model weights must be downloaded on the first run. |
+| Text classification service | The OpenAI provider. Prepare a text model ID available to your account and an OPENAI_API_KEY. Transcribed segments will be sent to this service. |
+
+### 1.1 Install and Check Dependencies
+
+```bash
+mkdir -p ~/doris-vane-demo/recordings
+cd ~/doris-vane-demo
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
+python -c "from vane import DorisStreamLoadSink, AudioFile, attach_function; print('API available')"
+mysql --version
+```
+
+Continue once API available appears. Run python -m pip show vane-ai to confirm that version 0.2.0 is installed. This import check only verifies that the Python interfaces exist; full compatibility must be verified by running the subsequent steps.
+
+### 1.2 Prepare Three English Recordings
+
+Prepare three short, clear English WAV recordings and save them with the filenames shown below. You can read the suggested English scripts into a recording tool and export them as WAV files; do not simply change the extension of files in another audio format. This tutorial does not include downloadable audio files, so you must prepare the recordings yourself. Record the scripts as written; the recordings should remain in English.
+
+| File | Suggested Recording Script (English) |
+|-|-|
+| recordings/T1024.wav | My X1 does not respond when I press the power button, and the indicator light does not come on. |
+| recordings/T1025.wav | I would like to know how to clean the X1. The device is currently working normally. |
+| recordings/T1026.wav | My X1 will not start today. It still will not turn on after I connect it to power. |
+
+These scripts provide sample inputs for the exercise. Actual transcripts, segment counts, classifications, and rankings depend on the recordings and models. Save the following content as tickets.csv. All example dates are in September 2026, and subsequent queries use the same date range.
+
+```plaintext
+ticket_id,product_model,event_date
+T1024,X1,20260915
+T1025,X1,20260915
+T1026,X1,20260915
+```
+
+ticket_id must be unique and match the recording filename without its extension. If you use your own tickets, update tickets.csv, the business relationships in schema.sql, and the subsequent query filters accordingly. WAV files not listed in the manifest will not be processed. The following sections provide the complete scripts to save.
+
+```plaintext
+doris-vane-demo/
+├── recordings/
+│   ├── T1024.wav
+│   ├── T1025.wav
+│   └── T1026.wav
+├── tickets.csv
+├── schema.sql
+├── prepare.py
+├── pipeline.sql
+├── check.sql
+├── search.sql
+└── analysis.sql
+```
+
+### 1.3 Configure the Model and Doris Connection
+
+```bash
+# Adjust the hosts and ports for your deployment.
+export DORIS_HOST='127.0.0.1'
+export DORIS_QUERY_PORT='9030'
+export DORIS_HTTP_ENDPOINT='http://127.0.0.1:8030'
+export DORIS_USER='root'
+export DORIS_BE_HOSTS='127.0.0.1'
+read -r -s -p 'Doris password: ' DORIS_PASSWORD
+export DORIS_PASSWORD
+read -r -s -p 'OpenAI API key: ' OPENAI_API_KEY
+export OPENAI_API_KEY
+read -r -p 'Available text model ID: ' VANE_PROMPT_MODEL
+export VANE_PROMPT_MODEL
+
+mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SELECT VERSION(); SHOW BACKENDS;'
+```
+
+Check the Doris version and whether the BEs are alive. Set DORIS_BE_HOSTS to the actual BE hostnames or IP addresses used in FE redirects, separated by commas and without port numbers. The machine running the example must be able to reach the corresponding BE HTTP endpoints. The -p option in subsequent mysql commands prompts separately for the Doris password; the Python ingestion script reads it from the environment variable.
+
+## 2. Create Tables and Indexes in Doris
+
+Save the following content as schema.sql and run it in a test environment where the vane_support_demo database does not already exist. The feedback table uses DUPLICATE KEY, which does not automatically deduplicate rows by ticket_id and segment_id. A single bucket and a single replica are used for this small-scale demonstration.
+
+```sql
+CREATE DATABASE vane_support_demo;
+
+CREATE TABLE vane_support_demo.feedback_segments (
+    -- Identify content by ticket and segment; DUPLICATE KEY does not deduplicate automatically.
+    ticket_id VARCHAR(64) NOT NULL,
+    segment_id INT NOT NULL,
+    product_model VARCHAR(64),
+    event_date INT, -- YYYYMMDD integer, matching the type written by Vane.
+    text STRING,
+    fault_category VARCHAR(64),
+    review_status VARCHAR(32),
+    source_uri STRING,
+    start_ms BIGINT,
+    end_ms BIGINT,
+    embedding ARRAY<FLOAT> NOT NULL, -- Matches the 384-dimensional output of ai_embed.
+    -- The inverted index supports text filtering; the ANN index supports vector similarity queries.
+    INDEX idx_text(text) USING INVERTED PROPERTIES("parser" = "english"),
+    INDEX idx_embedding(embedding) USING ANN PROPERTIES(
+        "index_type" = "hnsw", "metric_type" = "l2_distance", "dim" = "384"
+    )
+) ENGINE=OLAP
+DUPLICATE KEY(ticket_id, segment_id)
+DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
+PROPERTIES("replication_num" = "1");
+
+
+CREATE TABLE vane_support_demo.ticket_orders (
+    ticket_id VARCHAR(64) NOT NULL,
+    order_id VARCHAR(64)
+) ENGINE=OLAP
+UNIQUE KEY(ticket_id)
+DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
+PROPERTIES("replication_num" = "1", "enable_unique_key_merge_on_write" = "true");
+
+CREATE TABLE vane_support_demo.orders (
+    order_id VARCHAR(64) NOT NULL,
+    production_batch VARCHAR(64)
+) ENGINE=OLAP
+UNIQUE KEY(order_id)
+DISTRIBUTED BY HASH(order_id) BUCKETS 1
+PROPERTIES("replication_num" = "1", "enable_unique_key_merge_on_write" = "true");
+
+INSERT INTO vane_support_demo.ticket_orders VALUES
+    ('T1024', 'O9001'), ('T1025', 'O9002'), ('T1026', 'O9003');
+INSERT INTO vane_support_demo.orders VALUES
+    ('O9001', 'B202608'), ('O9002', 'B202608'), ('O9003', 'B202609');
+```
+
+The inverted index on text supports optional keyword filtering, while the approximate nearest neighbor (ANN) index on embedding supports vector ranking. The vector column, sink, and model all use 384-dimensional floating-point arrays. event_date is an integer in YYYYMMDD format, matching the Arrow type accepted by the current sink. The sample business relationships assume that each ticket maps to one order and each order maps to one production batch.
+
+```bash
+mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < schema.sql
+mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SHOW TABLES FROM vane_support_demo;'
+```
+
+You should see three tables: feedback_segments, ticket_orders, and orders. If table creation fails, resolve the error before running the processing script.
+
+## 3. Process Recordings with Vane and Load Them into Doris
+
+Save the two complete files in this section in the same example directory. prepare.py registers the UDFs and invokes the Doris sink. pipeline.sql defines recording ingestion, transcription, expansion into individual segments, classification, and embedding generation.
+
+### 3.1 Save prepare.py
+
+SpeechRecognizer uses @vane.cls.batch to define a stateful batch UDF, allowing each actor to reuse a transcription model loaded once. normalize_fault uses @vane.func to define a stateless UDF that validates the classification JSON and normalizes category values. main() checks the recording files before executing the SQL and loading the results. 
+
+```python
+import csv
+import json
+import os
+from pathlib import Path
+
+import pyarrow as pa
+import vane
+from vane import DorisStreamLoadSink, EnvironmentSecret
+
+
+# Each actor loads the model once and reuses it across recording batches; this example uses one CPU actor.
+@vane.cls.batch(actor_number=1, gpus=0, return_dtype="VARCHAR", name="transcribe_audio")
+class SpeechRecognizer:
+    def __init__(self, model_name: str):
+        from faster_whisper import WhisperModel
+
+        self.model = WhisperModel(model_name, device="cpu", compute_type="int8")
+
+    def __call__(self, audios) -> "pa.Array":
+        import pyarrow as pa
+
+        if isinstance(audios, pa.ChunkedArray):
+            audios = audios.combine_chunks()
+        items = audios.to_pylist()
+        out = []
+        for item in items:
+            url = item.get("url") if isinstance(item, dict) else None
+            if not url:
+                out.append("[]")
+                continue
+            segments, _ = self.model.transcribe(url, language="en", beam_size=5)
+            # segments is a lazy iterator: consume it item by item and retain timestamps in milliseconds.
+            rows = [
+                {"segment_id": i, "text": s.text.strip(),
+                 "start_ms": round(s.start * 1000), "end_ms": round(s.end * 1000)}
+                for i, s in enumerate(segments) if s.text.strip()
+            ]
+            out.append(json.dumps(rows, ensure_ascii=False))
+        # Return one JSON string per input row; pipeline.sql expands each array into one row per segment.
+        return pa.array(out, type=pa.string())
+
+
+
+
+@vane.func(return_dtype="VARCHAR", name="normalize_fault")
+def normalize_fault(raw: str) -> str:
+    # Deterministic validation of model JSON and allowed values; model judgments are not human confirmations.
+    try:
+        obj = json.loads(raw)
+    except (TypeError, ValueError):
+        return "pending_review"
+    if not isinstance(obj, dict):
+        return "pending_review"
+    # Accept only a string field in a JSON object to keep malformed model output out of the category column.
+    value = obj.get("fault_category")
+    if not isinstance(value, str):
+        return "pending_review"
+    # Normalize aliases and restrict allowed values; these rules do not constitute business review of a fault.
+    value = {"unable_to_start": "cannot_start", "no_response_on_power_on": "cannot_start"}.get(value.strip().lower(), value.strip().lower())
+    return value if value in {"cannot_start", "general_inquiry", "other_fault", "pending_review"} else "pending_review"
+
+
+
+def sql_literal(value: str) -> str:
+    # Escape single quotes before inserting the model name into a SQL literal; always read the API key from the environment.
+    return "'" + value.replace("'", "''") + "'"
+
+
+
+def main():
+    # Check the ticket manifest and files before invoking models so the JOIN cannot silently skip missing recordings.
+    with open("tickets.csv", encoding="utf-8", newline="") as source:
+        tickets = list(csv.DictReader(source))
+    ids = [row["ticket_id"] for row in tickets]
+    if not ids or len(ids) != len(set(ids)):
+        raise ValueError("tickets.csv must be nonempty and ticket_id must be unique")
+    for ticket_id in ids:
+        path = Path("recordings") / f"{ticket_id}.wav"
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"Recording file is missing or empty: {path}")
+    prompt_model = sql_literal(os.environ["VANE_PROMPT_MODEL"])
+    pipeline = Path("pipeline.sql").read_text(encoding="utf-8")
+    pipeline = pipeline.replace("__PROMPT_MODEL__", prompt_model)
+
+    with vane.connect() as con:
+        # Once registered, both Python UDFs can be called directly from SQL. AUDIOFILE preserves file-reference semantics.
+        vane.attach_function(
+            SpeechRecognizer("small"), connection=con,
+            alias="transcribe_audio", parameters=["AUDIOFILE"],
+        )
+        vane.attach_function(
+            normalize_fault, connection=con,
+            alias="normalize_fault", parameters=["VARCHAR"],
+        )
+        # SQL handles native file ingestion, transcription, segment expansion, business information extraction, normalization, and embedding generation.
+        assets = con.sql(pipeline)
+
+        # Match the column order of the final SQL SELECT; native file objects are not written to the Doris table.
+        destination_schema = pa.schema([
+            ("ticket_id", pa.string()), ("segment_id", pa.int32()),
+            ("product_model", pa.string()), ("event_date", pa.int32()),
+            ("text", pa.string()), ("fault_category", pa.string()),
+            ("review_status", pa.string()), ("source_uri", pa.string()),
+            ("start_ms", pa.int64()), ("end_ms", pa.int64()),
+            # Arrow float32 arrays map to Doris ARRAY<FLOAT>.
+            pa.field("embedding", pa.list_(pa.float32()), nullable=False),
+        ])
+        hosts = tuple(h.strip() for h in os.environ.get("DORIS_BE_HOSTS", "").split(",") if h.strip())
+        print(assets.write_datasink(DorisStreamLoadSink(
+            "vane_support_demo", "feedback_segments",
+            endpoint=os.environ["DORIS_HTTP_ENDPOINT"],
+            user=os.environ.get("DORIS_USER", "root"),
+            password=EnvironmentSecret("DORIS_PASSWORD"),
+            destination_schema=destination_schema,
+            # Keep this consistent with dimensions in pipeline.sql and dim in the Doris ANN index.
+            vector_dimensions={"embedding": 384},
+            trusted_redirect_hosts=hosts,
+        )))
+        # Close the connection after ingestion; see the Doris SQL sections below for retrieval and analysis.
+
+
+if __name__ == "__main__":
+    main()
+```
+
+The column order in destination_schema matches the final SELECT in pipeline.sql, and embeddings are converted to Arrow float32 arrays. source_uri stores the recording reference, while start_ms and end_ms store segment boundaries. Native AUDIOFILE objects remain on the processing side.
+
+### 3.2 Save pipeline.sql
+
+file(f.url, NULL, NULL, NULL, NULL) constructs a file reference. audio_file(...) converts the reference to AUDIOFILE, and the transcription UDF reads the content in batches. ai_prompt extracts candidate classifications, normalize_fault normalizes the category values, and ai_embed generates embeddings for the original transcript segments. All records initially have review_status set to pending. The queries in this tutorial do not require a manual review step. The English prompt and category literals match the English recordings. The prompt asks the model to return only a JSON object with a fault_category value from the allowed categories, avoid treating negated, hypothetical, or resolved faults as confirmed faults, and use pending_review when evidence is insufficient.
+
+```sql
+-- Business metadata supplies the ticket, product model, and date; ticket_id must be unique.
+WITH manifest AS (
+    SELECT * FROM read_csv('tickets.csv', header = true, columns = {
+        'ticket_id': 'VARCHAR', 'product_model': 'VARCHAR', 'event_date': 'INTEGER'
+    })
+), files AS (
+    SELECT m.ticket_id, m.product_model, m.event_date,
+           -- Construct a native FILE reference without reading the entire recording into a BLOB here.
+           file(f.url, NULL, NULL, NULL, NULL) AS source_file
+    FROM list_files('./recordings/*.wav') AS f
+    JOIN manifest m
+      -- The filename T1024.wav maps to ticket T1024.
+      ON regexp_extract(f.url, '([^/]+)\.wav$', 1) = m.ticket_id
+), audio_inputs AS (
+    SELECT ticket_id, product_model, event_date,
+           -- Convert FILE to AUDIOFILE for the stateful transcription UDF in SQL.
+           audio_file(source_file) AS audio
+    FROM files
+), 
+transcripts AS (
+    SELECT ticket_id, product_model, event_date,
+           audio.url AS source_uri,
+           -- The Python UDF loads the model and reads recordings, returning an array of timestamped segments.
+           transcribe_audio(audio) AS segments_json
+    FROM audio_inputs
+), expanded AS (
+    SELECT ticket_id, product_model, event_date, source_uri,
+           -- JSON → a typed array of structs → one row per recording segment.
+           unnest(from_json(segments_json,
+               '[{"segment_id":"INTEGER","text":"VARCHAR","start_ms":"BIGINT","end_ms":"BIGINT"}]'
+           )) AS segment
+    FROM transcripts
+), segments AS (
+    SELECT ticket_id, product_model, event_date, source_uri,
+           segment.segment_id AS segment_id, segment.text AS text,
+           segment.start_ms AS start_ms, segment.end_ms AS end_ms
+    FROM expanded
+    -- Exclude empty segments from subsequent model calls.
+    WHERE length(trim(segment.text)) > 0
+), 
+knowledge AS (
+    -- AI interprets the business context and returns candidate classifications, not reviewed facts.
+    SELECT *, ai_prompt(
+        'Extract the fault category from the support recording segment below. Return only a JSON object with key fault_category;'
+        || 'value must be one of: cannot_start, general_inquiry, other_fault, pending_review.'
+        || 'Do not treat negated, hypothetical, or already-resolved descriptions as confirmed faults; use pending_review when evidence is insufficient. Segment: '
+        || text,
+
+        -- prepare.py replaces this placeholder with an escaped SQL literal containing the model name.
+        provider := 'openai', model := __PROMPT_MODEL__,
+        on_error := 'raise',
+        options := struct_pack(actor_number := 1, batch_size := 8)
+    ) AS facts_json
+    FROM segments
+)
+
+-- Align the final SELECT column order with destination_schema in the Doris sink.
+SELECT ticket_id, segment_id, product_model, event_date, text,
+       -- Validate and normalize AI output with a deterministic UDF; keep review status separate.
+       normalize_fault(facts_json) AS fault_category,
+       'pending'::VARCHAR AS review_status,
+       source_uri, start_ms, end_ms,
+       -- Embed the original segments; the model, 384 dimensions, and normalization must match the query side.
+       ai_embed(
+           text, provider := 'transformers',
+           model := 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+           dimensions := 384, on_error := 'raise',
+           options := struct_pack(normalize := true, actor_number := 1, batch_size := 16)
+       ) AS embedding
+FROM knowledge;
+```
+
+### 3.3 Run Processing and Ingestion
+
+```bash
+python prepare.py
+```
+
+The first run includes time to download and load the models. The script prints the sink's ingestion result. Once it finishes, run the SQL in the next section to verify the data actually loaded. If an error occurs, follow Section 7 before rerunning the ingestion script.
+
+## 4. Verify the Loaded Data
+
+Save the following SQL as check.sql. First check the segment count and embedding dimensions, then inspect the transcripts, classifications, and recording timestamps, and finally check for duplicate segments.
+
+```sql
+SELECT COUNT(*) AS segment_count,
+       COUNT(DISTINCT ticket_id) AS ticket_count,
+       MIN(ARRAY_SIZE(embedding)) AS min_dimension,
+       MAX(ARRAY_SIZE(embedding)) AS max_dimension
+FROM vane_support_demo.feedback_segments;
+
+SELECT ticket_id, segment_id, text, fault_category, review_status,
+       source_uri, start_ms, end_ms
+FROM vane_support_demo.feedback_segments
+ORDER BY ticket_id, segment_id
+LIMIT 20;
+
+-- Expected: 0 rows. Any results indicate duplicate ingestion or duplicate segment identifiers.
+SELECT ticket_id, segment_id, COUNT(*) AS copies
+FROM vane_support_demo.feedback_segments
+GROUP BY ticket_id, segment_id
+HAVING COUNT(*) > 1;
+```
+
+```bash
+mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < check.sql
+```
+
+If nonempty transcripts are produced, segment_count should be greater than 0, and both min_dimension and max_dimension should be 384. If all three recordings successfully produce nonempty transcripts, ticket_count should be 3; the total segment count may exceed 3. The final duplicate check should return 0 rows. Possible category values are cannot_start (“Unable to start”), general_inquiry (“General inquiry”), other_fault (“Other fault”), and pending_review (“To be confirmed”). review_status should be pending.
+
+Spot-check that text matches the recording content. Verify that 0 ≤ start_ms < end_ms and that both timestamps fall within the recording's duration. source_uri identifies the local recording for playback, and the timestamps are in milliseconds. It is not an automatically generated public playback URL.
+
+## 5. Retrieve Similar Feedback
+
+Run the queries in this section directly in a Doris SQL client. Use the first nonempty transcript segment from the ingested ticket T1024 as the query example, reusing its embedding to retrieve semantically similar feedback from other tickets. This demonstrates finding similar cases from existing feedback. Both the query example and the candidate records use embeddings generated by the same pipeline in Section 3.
+
+```sql
+-- Inspect the query segment first; the search below uses the same selection criteria.
+SELECT ticket_id, segment_id, text
+FROM vane_support_demo.feedback_segments
+WHERE ticket_id = 'T1024'
+  AND length(trim(text)) > 0
+ORDER BY segment_id
+LIMIT 1;
+
+-- Use the first nonempty segment of T1024 to find similar feedback in other tickets.
+WITH query_feedback AS (
+    SELECT ticket_id, segment_id, text, embedding
+    FROM vane_support_demo.feedback_segments
+    WHERE ticket_id = 'T1024'
+      AND length(trim(text)) > 0
+    ORDER BY segment_id
+    LIMIT 1
+)
+SELECT q.ticket_id AS query_ticket_id,
+       q.segment_id AS query_segment_id,
+       q.text AS query_text,
+       f.ticket_id, f.segment_id, f.text, f.fault_category,
+       f.source_uri, f.start_ms, f.end_ms,
+       l2_distance(f.embedding, q.embedding) AS distance
+FROM vane_support_demo.feedback_segments f
+CROSS JOIN query_feedback q
+WHERE f.product_model = 'X1'
+  AND f.event_date >= 20260901 AND f.event_date < 20261001
+  AND f.ticket_id <> q.ticket_id
+ORDER BY distance ASC, f.ticket_id, f.segment_id
+LIMIT 3;
+```
+
+Save the two SQL statements above as search.sql and execute them in order in the Doris SQL client. The first statement should return one query example. If it returns no rows, check the ingested data as described in Section 4. To use a different ticket, update both ticket_id conditions.
+
+The second statement returns up to three candidate segments for product model X1 in September 2026, excluding the query ticket itself. query_text shows the actual query example; a smaller distance indicates closer vectors. Use text, source_uri, start_ms, and end_ms to locate and replay candidate feedback. The result may contain fewer than three rows, and multiple segments may come from the same candidate ticket. A high ranking does not confirm a fault.
+
+To additionally require the candidate text to match “indicator light”, add the following condition at the end of the WHERE clause in the second statement, before ORDER BY, and rerun the query.
+
+```sql
+  AND f.text MATCH_ANY 'indicator light'
+```
+
+This example uses l2_distance to calculate exact distances, allowing a small-scale demonstration directly with a sample vector stored in the table without relying on ANN index acceleration. Keyword filtering excludes candidates that do not match, so adding the condition may produce an empty result. For larger datasets, separately evaluate the ANN query path using a constant query vector and l2_distance_approximate. This example is not intended as a performance benchmark.
+
+Function reference: [Doris Vector Search: Exact and Approximate Distances](https://doris.apache.org/docs/4.x/table-design/index/vector-index/overview/).
+
+## 6. Link Feedback to Orders and Production Batches
+
+Save the following two SQL statements as analysis.sql. The first shows the order and production batch associated with each recording segment, using LEFT JOIN to retain unmatched records. The second is an optional summary of candidate classifications: it counts distinct tickets across all segments within the date range, rather than using the top-three search results as the population for aggregation.
+
+```sql
+-- Link recording segments to orders and production batches; retain unmatched records for inspection.
+SELECT f.ticket_id, f.segment_id, f.text, f.fault_category,
+       t.order_id, o.production_batch,
+       f.source_uri, f.start_ms, f.end_ms
+FROM vane_support_demo.feedback_segments f
+LEFT JOIN vane_support_demo.ticket_orders t ON f.ticket_id = t.ticket_id
+LEFT JOIN vane_support_demo.orders o ON t.order_id = o.order_id
+WHERE f.product_model = 'X1'
+  AND f.event_date >= 20260901 AND f.event_date < 20261001
+ORDER BY f.ticket_id, f.segment_id;
+
+-- Optional aggregation: count candidate tickets classified by AI as "Unable to start" by production batch.
+-- Use all records within the specified business scope, not the top-three search results above.
+WITH candidate_tickets AS (
+    SELECT DISTINCT ticket_id
+    FROM vane_support_demo.feedback_segments
+    WHERE product_model = 'X1'
+      AND event_date >= 20260901 AND event_date < 20261001
+      AND fault_category = 'cannot_start'
+)
+SELECT COALESCE(o.production_batch, 'NOT_LINKED_TO_BATCH') AS production_batch,
+       COUNT(DISTINCT f.ticket_id) AS candidate_ticket_count
+FROM candidate_tickets f
+LEFT JOIN vane_support_demo.ticket_orders t ON f.ticket_id = t.ticket_id
+LEFT JOIN vane_support_demo.orders o ON t.order_id = o.order_id
+GROUP BY COALESCE(o.production_batch, 'NOT_LINKED_TO_BATCH')
+ORDER BY candidate_ticket_count DESC, production_batch;
+```
+
+```bash
+mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < analysis.sql
+```
+
+If all three recordings have been loaded, the first query should link T1024 to O9001 / B202608, T1025 to O9002 / B202608, and T1026 to O9003 / B202609. A ticket may appear in multiple segment rows. These business relationships come from the fixed inputs in schema.sql and are independent of the model's classifications.
+
+In the second query, candidate_ticket_count counts candidate tickets classified by AI as cannot_start (“Unable to start”). The actual values depend on model output; if no records have this category, the query returns no rows. This count does not represent confirmed faults, device counts, or a failure rate. Formal business review and maintenance of the confirmed status are future extensions, not prerequisites for completing this tutorial. The output label NOT_LINKED_TO_BATCH means “Not linked to a production batch.”
+
+## 7. Rerunning the Example and Troubleshooting
+
+After a successful load, running prepare.py again appends data to the DUPLICATE KEY table. To repeat the exercise, choose a new demo database name and replace vane_support_demo in schema.sql, prepare.py, check.sql, search.sql, and analysis.sql, then recreate the tables and rerun processing. Rerunning only the queries does not append data.
+
+The sink commits each batch separately; the pipeline does not provide a transaction spanning multiple batches. A failure partway through may leave some data already loaded. If the result indicates an unknown commit status, record the returned Doris label and check the corresponding load status before deciding what to do next. Do not blindly retry to determine whether the load succeeded.
+
+| Symptom | What to Check |
+|-|-|
+| Vane or API import fails | Confirm that the example virtual environment is active and that the directory is outside the source repository. Run python -m pip show vane-ai to confirm version 0.2.0, then repeat the import check. |
+| The first run appears stuck loading models | Check model-weight download logs, network connectivity, the cache directory, and available disk space. Confirm that both local models can be downloaded. |
+| ai_prompt authentication or model error | Check that OPENAI_API_KEY and VANE_PROMPT_MODEL have been exported and that the account can access the specified model. |
+| Stream Load redirect rejected or connection failed | Check DORIS_HTTP_ENDPOINT, the actual BE redirect host, DORIS_BE_HOSTS, and network access to the BE HTTP endpoint. |
+| Embedding dimension or field type error during ingestion | Verify that the model outputs 384 dimensions, ANN dim=384, and vector_dimensions=384. Check that the SELECT column order matches destination_schema. |
+| No segments in the table, or fewer tickets than expected | Check that the recordings can be decoded and contain speech, and that manifest IDs match filenames. Check for empty automatic speech recognition (ASR) output and ingestion errors. |
+| Search returns no results | Run check.sql first and verify the product_model and event_date filters. If MATCH_ANY was added, remove that condition and compare the results. |
+| Tickets are not linked to production batches | Check the business keys in ticket_orders and orders. The example tables contain mappings only for T1024, T1025, and T1026. |
+
+Completion criteria: Doris contains recording segments with 384-dimensional embeddings; search.sql can be executed directly to retrieve similar feedback from other tickets using an existing recording segment; and segments can be linked to orders and production batches and replayed using their source references and timestamps.
+
+
+
+References: [Vane Build and Installation Instructions](https://github.com/astrovela/vane/blob/3e2bdde3cc9b9d38ab61ae225d7c65c7195fe695/DEVELOPMENT.md); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
+
 ## UDF reference
 
 Route: /docs/data/reference/udf
