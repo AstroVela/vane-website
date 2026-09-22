@@ -3790,7 +3790,7 @@ Save the two complete files in this section in the same example directory. prepa
 
 ### 3.1 Save prepare.py
 
-SpeechRecognizer uses @vane.cls.batch to define a stateful batch UDF, allowing each actor to reuse a transcription model loaded once. normalize_fault uses @vane.func to define a stateless UDF that validates the classification JSON and normalizes category values. main() checks the recording files before executing the SQL and loading the results. 
+SpeechRecognizer uses @vane.cls.batch to define a stateful batch UDF, allowing each actor to reuse a transcription model loaded once. normalize_fault uses @vane.func to define a stateless UDF that validates the classification JSON and normalizes category values. main() checks the recording files before executing the SQL and loading the results.
 
 ```python
 import csv
@@ -4148,8 +4148,6 @@ The sink commits each batch separately; the pipeline does not provide a transact
 | Tickets are not linked to production batches | Check the business keys in ticket_orders and orders. The example tables contain mappings only for T1024, T1025, and T1026. |
 
 Completion criteria: Doris contains recording segments with 384-dimensional embeddings; search.sql can be executed directly to retrieve similar feedback from other tickets using an existing recording segment; and segments can be linked to orders and production batches and replayed using their source references and timestamps.
-
-
 
 References: [Vane Build and Installation Instructions](https://github.com/astrovela/vane/blob/3e2bdde3cc9b9d38ab61ae225d7c65c7195fe695/DEVELOPMENT.md); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
 
