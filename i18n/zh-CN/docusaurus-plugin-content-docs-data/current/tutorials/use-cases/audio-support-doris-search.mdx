@@ -1,0 +1,521 @@
+---
+title: Vane + Doris 客服录音检索
+---
+
+本教程使用 Vane 将中文客服录音转写为文本片段，提取候选故障类别并生成向量，再通过 Stream Load 写入 Apache Doris。随后在 Doris 中按产品型号和日期检索相似反馈，并将录音片段关联到订单和生产批次。
+
+输入是本地 WAV 录音与工单清单；输出是一张包含转写文本、候选分类、384 维向量和录音时间位置的 Doris 表。一段录音可能产生多个片段，检索按片段返回，工单统计按 ticket_id 去重。
+
+处理顺序：录音与工单清单 → Vane 转写、分类、向量化 → Doris 写入检查 → 相似检索 → 订单与批次关联。
+
+本教程为自包含教程：录音以本地 WAV 文件提供，所有脚本都内联在下方各节中，无需额外的源码工程。由于本页录音为中文，代码使用中文 ASR、中文文本索引分词、中文提示词和中文分类取值；英文版页面使用对应的英文设置。
+
+## 1. 准备环境与录音
+
+本例面向 Bash 环境，使用本地 CPU 加工，前提是已有可连接的 Apache Doris 4.1.3 实例及建库、建表和写入权限。Doris 的部署不在本教程范围内。先完成本节的环境检查，再继续建表。
+
+| 组件 | 要求 |
+|-|-|
+| Python | 建议 3.12；请为该示例创建独立项目目录 |
+| Vane | Vane 0.2.0；使用 FILE/AUDIOFILE、SQL ai_prompt/ai_embed 和 DorisStreamLoadSink |
+| Doris | 目标版本 4.1.3；需要 MySQL 客户端及 FE 查询端口、HTTP 写入端口和 BE HTTP 的网络可达性 |
+| 转写与向量模型 | Faster-Whisper small；paraphrase-multilingual-MiniLM-L12-v2。首次运行需要下载权重 |
+| 文本分类服务 | OpenAI provider；准备账号可用的文本模型 ID 和 OPENAI_API_KEY。转写片段会发送到该服务 |
+
+### 1.1 安装并检查依赖
+
+如果尚未安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，请先安装；其他环境方案见[安装指南](/zh-CN/docs/data/quickstart/installation)。
+
+```bash
+mkdir -p ~/doris-vane-demo/recordings
+cd ~/doris-vane-demo
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
+python -c "from vane import DorisStreamLoadSink, attach_function; print('API available')"
+mysql --version
+```
+
+看到 API available 后继续。可执行 uv pip show vane-ai 确认安装版本为 0.2.0。导入检查只确认这些 Python 接口存在，完整兼容性仍需通过后续运行验证。
+
+### 1.2 准备三段中文录音
+
+准备三段简短、清晰的中文 WAV 录音，分别保存到 `recordings/` 下并按下表命名。可直接下载示例文件（[T1024](/tutorials/audio-support-doris-search/zh/T1024.wav)、[T1025](/tutorials/audio-support-doris-search/zh/T1025.wav)、[T1026](/tutorials/audio-support-doris-search/zh/T1026.wav)），也可用录音工具读出建议文本后导出 WAV；不要仅修改其他音频格式的扩展名。录音请保持中文。
+
+| 文件 | 建议录制文本 |
+|-|-|
+| recordings/T1024.wav | 我的 X1 按下开关没有反应，指示灯也不亮。 |
+| recordings/T1025.wav | 我想问一下 X1 怎么清洁，机器目前使用正常。 |
+| recordings/T1026.wav | 我的 X1 今天无法启动，接通电源后还是开不了机。 |
+
+这些文本用于构造练习输入；实际转写、片段数、分类和排序取决于录音与模型。将下面内容保存为 tickets.csv。示例日期统一为 2026 年 9 月，后面的查询使用同一日期范围。
+
+```plaintext
+ticket_id,product_model,event_date
+T1024,X1,20260915
+T1025,X1,20260915
+T1026,X1,20260915
+```
+
+ticket_id 必须唯一，并与录音文件名一致。使用自己的工单时，同时修改 tickets.csv、schema.sql 中的业务关系和后续查询条件。清单以外的 WAV 文件不会进入加工。后续各节会依次给出需要保存的完整脚本。
+
+```plaintext
+doris-vane-demo/
+├── recordings/
+│   ├── T1024.wav
+│   ├── T1025.wav
+│   └── T1026.wav
+├── tickets.csv
+├── schema.sql
+├── prepare.py
+├── pipeline.sql
+├── check.sql
+├── search.sql
+└── analysis.sql
+```
+
+### 1.3 配置模型与 Doris 连接
+
+```bash
+# 按实际部署修改主机和端口。
+export DORIS_HOST='127.0.0.1'
+export DORIS_QUERY_PORT='9030'
+export DORIS_HTTP_ENDPOINT='http://127.0.0.1:8030'
+export DORIS_USER='root'
+export DORIS_BE_HOSTS='127.0.0.1'
+read -r -s -p 'Doris password: ' DORIS_PASSWORD
+export DORIS_PASSWORD
+read -r -s -p 'OpenAI API key: ' OPENAI_API_KEY
+export OPENAI_API_KEY
+read -r -p '可用的文本模型 ID: ' VANE_PROMPT_MODEL
+export VANE_PROMPT_MODEL
+# 一次性打包连接参数；-p 仍会在每次执行时提示输入密码。
+export MYSQL_ARGS="--default-character-set=utf8mb4 -h $DORIS_HOST -P $DORIS_QUERY_PORT -u $DORIS_USER -p"
+
+mysql $MYSQL_ARGS -e 'SELECT VERSION(); SHOW BACKENDS;'
+```
+
+检查 Doris 版本及 BE 的存活状态。DORIS_BE_HOSTS 填写 FE 重定向所用的真实 BE 主机名或 IP，多个用逗号分隔，不含端口；运行机器必须能访问对应 BE HTTP 地址。后续命令复用 MYSQL_ARGS 中的连接参数；其中的 -p 会在每次执行时提示输入 Doris 密码，Python 写入脚本从环境变量读取密码。
+
+## 2. 在 Doris 中创建表和索引
+
+将下面内容保存为 schema.sql，使用一个尚不存在 vane_support_demo 数据库的测试环境执行。反馈表使用 DUPLICATE KEY；它不会按 ticket_id、segment_id 自动去重。单 bucket 和单副本用于小规模演示。
+
+```sql
+CREATE DATABASE vane_support_demo;
+
+CREATE TABLE vane_support_demo.feedback_segments (
+    -- 工单 + 片段定位内容；DUPLICATE KEY 不会自动去重。
+    ticket_id VARCHAR(64) NOT NULL,
+    segment_id INT NOT NULL,
+    product_model VARCHAR(64),
+    event_date INT, -- YYYYMMDD 整数，与 Vane 写入类型一致。
+    text STRING,
+    fault_category VARCHAR(64),
+    review_status VARCHAR(32),
+    source_uri STRING,
+    start_ms BIGINT,
+    end_ms BIGINT,
+    embedding ARRAY<FLOAT> NOT NULL, -- 与 ai_embed 的 384 维输出对应。
+    -- 倒排索引用于文本过滤，ANN 索引用于向量相似度查询。
+    INDEX idx_text(text) USING INVERTED PROPERTIES("parser" = "chinese"),
+    INDEX idx_embedding(embedding) USING ANN PROPERTIES(
+        "index_type" = "hnsw", "metric_type" = "l2_distance", "dim" = "384"
+    )
+) ENGINE=OLAP
+DUPLICATE KEY(ticket_id, segment_id)
+DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
+PROPERTIES("replication_num" = "1");
+
+CREATE TABLE vane_support_demo.ticket_orders (
+    ticket_id VARCHAR(64) NOT NULL,
+    order_id VARCHAR(64)
+) ENGINE=OLAP
+UNIQUE KEY(ticket_id)
+DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
+PROPERTIES("replication_num" = "1", "enable_unique_key_merge_on_write" = "true");
+
+CREATE TABLE vane_support_demo.orders (
+    order_id VARCHAR(64) NOT NULL,
+    production_batch VARCHAR(64)
+) ENGINE=OLAP
+UNIQUE KEY(order_id)
+DISTRIBUTED BY HASH(order_id) BUCKETS 1
+PROPERTIES("replication_num" = "1", "enable_unique_key_merge_on_write" = "true");
+
+INSERT INTO vane_support_demo.ticket_orders VALUES
+    ('T1024', 'O9001'), ('T1025', 'O9002'), ('T1026', 'O9003');
+INSERT INTO vane_support_demo.orders VALUES
+    ('O9001', 'B202608'), ('O9002', 'B202608'), ('O9003', 'B202609');
+```
+
+text 的倒排索引用于可选关键词过滤，embedding 的 ANN 索引用于向量排序。向量列、Sink 与模型统一使用 384 维浮点数组。event_date 使用 YYYYMMDD 整数，与当前 Sink 接收的 Arrow 类型对应。业务关系示例假定一个工单对应一个订单、一个订单对应一个生产批次。
+
+```bash
+mysql $MYSQL_ARGS < schema.sql
+mysql $MYSQL_ARGS -e 'SHOW TABLES FROM vane_support_demo;'
+```
+
+应能看到 feedback_segments、ticket_orders、orders 三张表。如果建表失败，先解决错误再运行加工脚本。
+
+## 3. 使用 Vane 加工录音并写入 Doris
+
+这一节需要保存两个完整文件。prepare.py 注册 UDF 并调用 Doris Sink；pipeline.sql 描述录音接入、转写、片段展开、分类和向量化。两份文件放在同一个示例目录中。
+
+### 3.1 保存 prepare.py
+
+SpeechRecognizer 使用 @vane.cls.batch 声明有状态批量 UDF，每个 Actor 复用一次加载的转写模型。normalize_fault 使用 @vane.func 声明无状态 UDF，检查分类 JSON 并统一类别。main() 先检查录音文件，再执行 SQL 和写入。
+
+```python
+import csv
+import json
+import os
+from pathlib import Path
+
+import pyarrow as pa
+import vane
+from vane import DorisStreamLoadSink, EnvironmentSecret
+
+
+# 每个 Actor 只加载一次模型，后续录音按批复用它；这里使用一个 CPU Actor。
+@vane.cls.batch(actor_number=1, gpus=0, return_dtype="VARCHAR", name="transcribe_audio")
+class SpeechRecognizer:
+    def __init__(self, model_name: str):
+        from faster_whisper import WhisperModel
+
+        self.model = WhisperModel(model_name, device="cpu", compute_type="int8")
+
+    def __call__(self, audios) -> "pa.Array":
+        import pyarrow as pa
+
+        if isinstance(audios, pa.ChunkedArray):
+            audios = audios.combine_chunks()
+        items = audios.to_pylist()
+        out = []
+        for item in items:
+            url = item.get("url") if isinstance(item, dict) else None
+            if not url:
+                out.append("[]")
+                continue
+            segments, _ = self.model.transcribe(url, language="zh", beam_size=5)
+            # segments 是惰性迭代器：逐条消费，并保留毫秒位置。
+            rows = [
+                {"segment_id": i, "text": s.text.strip(),
+                 "start_ms": round(s.start * 1000), "end_ms": round(s.end * 1000)}
+                for i, s in enumerate(segments) if s.text.strip()
+            ]
+            out.append(json.dumps(rows, ensure_ascii=False))
+        # 返回与输入行数一致的 JSON 文本数组；pipeline.sql 再把数组展开为一行一个片段。
+        return pa.array(out, type=pa.string())
+
+
+@vane.func(return_dtype="VARCHAR", name="normalize_fault")
+def normalize_fault(raw: str) -> str:
+    # 确定性规则：验证模型 JSON 和枚举，不把模型判断升级成人工确认。
+    try:
+        obj = json.loads(raw)
+    except (TypeError, ValueError):
+        return "待确认"
+    if not isinstance(obj, dict):
+        return "待确认"
+    # 只接受 JSON 对象中的字符串字段，避免异常模型输出混入分类列。
+    value = obj.get("fault_category")
+    if not isinstance(value, str):
+        return "待确认"
+    # 归一别名、限制枚举；这些规则不代表故障已通过业务审核。
+    value = {"无法开机": "无法启动", "开机无反应": "无法启动"}.get(value.strip(), value.strip())
+    return value if value in {"无法启动", "正常咨询", "其他故障", "待确认"} else "待确认"
+
+
+def sql_literal(value: str) -> str:
+    # 模型名进入 SQL 常量前转义单引号；API Key 始终从环境变量读取。
+    return "'" + value.replace("'", "''") + "'"
+
+
+def main():
+    # 在调用模型前检查工单清单和文件，避免缺失录音被 JOIN 静默跳过。
+    with open("tickets.csv", encoding="utf-8", newline="") as source:
+        tickets = list(csv.DictReader(source))
+    ids = [row["ticket_id"] for row in tickets]
+    if not ids or len(ids) != len(set(ids)):
+        raise ValueError("tickets.csv 必须非空，且 ticket_id 唯一")
+    for ticket_id in ids:
+        path = Path("recordings") / f"{ticket_id}.wav"
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"录音文件缺失或为空：{path}")
+    prompt_model = sql_literal(os.environ["VANE_PROMPT_MODEL"])
+    pipeline = Path("pipeline.sql").read_text(encoding="utf-8")
+    pipeline = pipeline.replace("__PROMPT_MODEL__", prompt_model)
+
+    with vane.connect() as con:
+        # 注册后，SQL 可以直接调用两个 Python UDF。AUDIOFILE 保留文件引用语义。
+        vane.attach_function(
+            SpeechRecognizer("small"), connection=con,
+            alias="transcribe_audio", parameters=["AUDIOFILE"],
+        )
+        vane.attach_function(
+            normalize_fault, connection=con,
+            alias="normalize_fault", parameters=["VARCHAR"],
+        )
+        # SQL 完成原生文件接入、转写、片段展开、业务抽取、归一和向量化。
+        assets = con.sql(pipeline)
+
+        # 与 SQL 最终 SELECT 的列顺序一致；原生文件对象不进入 Doris 表。
+        destination_schema = pa.schema([
+            ("ticket_id", pa.string()), ("segment_id", pa.int32()),
+            ("product_model", pa.string()), ("event_date", pa.int32()),
+            ("text", pa.string()), ("fault_category", pa.string()),
+            ("review_status", pa.string()), ("source_uri", pa.string()),
+            ("start_ms", pa.int64()), ("end_ms", pa.int64()),
+            # Arrow 的 float32 数组对应 Doris ARRAY<FLOAT>。
+            pa.field("embedding", pa.list_(pa.float32()), nullable=False),
+        ])
+        hosts = tuple(h.strip() for h in os.environ.get("DORIS_BE_HOSTS", "").split(",") if h.strip())
+        print(assets.write_datasink(DorisStreamLoadSink(
+            "vane_support_demo", "feedback_segments",
+            endpoint=os.environ["DORIS_HTTP_ENDPOINT"],
+            user=os.environ.get("DORIS_USER", "root"),
+            password=EnvironmentSecret("DORIS_PASSWORD"),
+            destination_schema=destination_schema,
+            # 与 pipeline.sql 的 dimensions 和 Doris ANN 索引 dim 保持一致。
+            vector_dimensions={"embedding": 384},
+            trusted_redirect_hosts=hosts,
+        )))
+        # 写入完成后退出连接；检索与分析见下方 Doris SQL 小节。
+
+
+if __name__ == "__main__":
+    main()
+```
+
+destination_schema 的列顺序与 pipeline.sql 的最终 SELECT 一致，向量转换为 Arrow float32 数组。source_uri 保存录音引用，start_ms 和 end_ms 保存片段位置；原生 AUDIOFILE 对象留在加工侧。
+
+### 3.2 保存 pipeline.sql
+
+file(f.url, NULL, NULL, NULL, NULL) 构造文件引用，audio_file(...) 将其转换为 AUDIOFILE，转写 UDF 按批读取内容。ai_prompt 提取候选分类，normalize_fault 统一类别，ai_embed 为原始转写片段生成向量。所有记录的 review_status 初始为 pending；本教程的查询不依赖人工审核步骤。分类值「待确认」由模型给出，与 review_status 列相互独立；后者在人工复核前始终为 pending。
+
+```sql
+-- 业务元数据决定工单、型号和日期；ticket_id 应唯一。
+WITH manifest AS (
+    SELECT * FROM read_csv('tickets.csv', header = true, columns = {
+        'ticket_id': 'VARCHAR', 'product_model': 'VARCHAR', 'event_date': 'INTEGER'
+    })
+), files AS (
+    SELECT m.ticket_id, m.product_model, m.event_date,
+           -- 构造原生 FILE 引用，此处不把整段录音读取成 BLOB。
+           file(f.url, NULL, NULL, NULL, NULL) AS source_file
+    FROM list_files('./recordings/*.wav') AS f
+    JOIN manifest m
+      -- 文件名 T1024.wav 对应工单 T1024。
+      ON regexp_extract(f.url, '([^/]+)\.wav$', 1) = m.ticket_id
+), audio_inputs AS (
+    SELECT ticket_id, product_model, event_date,
+           -- FILE → AUDIOFILE，交给 SQL 中的有状态转写 UDF。
+           audio_file(source_file) AS audio
+    FROM files
+),
+transcripts AS (
+    SELECT ticket_id, product_model, event_date,
+           audio.url AS source_uri,
+           -- Python UDF 加载模型并读取录音，返回带时间位置的片段数组。
+           transcribe_audio(audio) AS segments_json
+    FROM audio_inputs
+), expanded AS (
+    SELECT ticket_id, product_model, event_date, source_uri,
+           -- JSON → 类型明确的结构体数组 → 一行一个录音片段。
+           unnest(from_json(segments_json,
+               '[{"segment_id":"INTEGER","text":"VARCHAR","start_ms":"BIGINT","end_ms":"BIGINT"}]'
+           )) AS segment
+    FROM transcripts
+), segments AS (
+    SELECT ticket_id, product_model, event_date, source_uri,
+           segment.segment_id AS segment_id, segment.text AS text,
+           segment.start_ms AS start_ms, segment.end_ms AS end_ms
+    FROM expanded
+    -- 空片段不进入后续模型调用。
+    WHERE length(trim(segment.text)) > 0
+),
+knowledge AS (
+    -- AI 负责理解业务表述；返回的是候选分类，不是已审核事实。
+    SELECT *, ai_prompt(
+        '仅根据下面的售后录音片段提取故障类别。只返回 JSON 对象，键为 fault_category；'
+        || '值只能是：无法启动、正常咨询、其他故障、待确认。'
+        || '不要把否定、假设或维修后已恢复的描述当作已确认故障；证据不足填待确认。片段：'
+        || text,
+        -- prepare.py 将此标记替换成已转义的模型名 SQL 常量。
+        provider := 'openai', model := __PROMPT_MODEL__,
+        on_error := 'raise',
+        options := struct_pack(actor_number := 1, batch_size := 8)
+    ) AS facts_json
+    FROM segments
+)
+
+-- 最终 SELECT 的列顺序与 Doris Sink 的 destination_schema 对齐。
+SELECT ticket_id, segment_id, product_model, event_date, text,
+       -- 用确定性 UDF 验证、归一 AI 输出；审核状态单独保留。
+       normalize_fault(facts_json) AS fault_category,
+       'pending'::VARCHAR AS review_status,
+       source_uri, start_ms, end_ms,
+       -- 对原始片段生成向量：模型、384 维、归一化方式需与查询端一致。
+       ai_embed(
+           text, provider := 'transformers',
+           model := 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+           dimensions := 384, on_error := 'raise',
+           options := struct_pack(normalize := true, actor_number := 1, batch_size := 16)
+       ) AS embedding
+FROM knowledge;
+```
+
+### 3.3 运行加工与写入
+
+```bash
+python prepare.py
+```
+
+首次运行包含模型下载和加载时间。脚本会输出 Sink 的写入结果；完成后继续执行下一节 SQL 核对实际入库数据。遇到错误先按第 7 节检查，不要直接重复运行写入脚本。
+
+## 4. 检查写入结果
+
+将以下 SQL 保存为 check.sql。先检查片段数量和向量维度，再查看转写、分类与录音位置，最后检查重复片段。
+
+```sql
+SELECT COUNT(*) AS segment_count,
+       COUNT(DISTINCT ticket_id) AS ticket_count,
+       MIN(ARRAY_SIZE(embedding)) AS min_dimension,
+       MAX(ARRAY_SIZE(embedding)) AS max_dimension
+FROM vane_support_demo.feedback_segments;
+
+SELECT ticket_id, segment_id, text, fault_category, review_status,
+       source_uri, start_ms, end_ms
+FROM vane_support_demo.feedback_segments
+ORDER BY ticket_id, segment_id
+LIMIT 20;
+
+-- 正常情况下返回 0 行；有结果表示重复写入或片段标识重复。
+SELECT ticket_id, segment_id, COUNT(*) AS copies
+FROM vane_support_demo.feedback_segments
+GROUP BY ticket_id, segment_id
+HAVING COUNT(*) > 1;
+```
+
+```bash
+mysql $MYSQL_ARGS < check.sql
+```
+
+有非空转写时，segment_count 应大于 0，min_dimension 和 max_dimension 均应为 384。三段录音都成功产生非空转写时，ticket_count 应为 3；片段总数可以超过 3。最后一条重复检查应返回 0 行。分类可能为无法启动、正常咨询、其他故障或待确认，review_status 应为 pending。
+
+抽查 text 是否对应录音内容，确认 0 ≤ start_ms < end_ms，且时间位置在录音范围内。source_uri 供本地回听定位，单位为毫秒；它不是自动生成的公网播放链接。
+
+## 5. 检索相似反馈
+
+本节直接在 Doris SQL 客户端中执行查询。以已入库工单 T1024 的第一个非空转写片段为查询样本，复用该片段的 embedding，检索其他工单中语义相近的反馈。此例演示“按已有反馈找相似案例”；查询样本和候选记录的向量均来自第 3 节的同一加工流程。
+
+```sql
+-- 先检查作为查询样本的片段；下方检索使用相同的选择条件。
+SELECT ticket_id, segment_id, text
+FROM vane_support_demo.feedback_segments
+WHERE ticket_id = 'T1024'
+  AND length(trim(text)) > 0
+ORDER BY segment_id
+LIMIT 1;
+
+-- 以 T1024 的第一个非空片段为样本，寻找其他工单的相似反馈。
+WITH query_feedback AS (
+    SELECT ticket_id, segment_id, text, embedding
+    FROM vane_support_demo.feedback_segments
+    WHERE ticket_id = 'T1024'
+      AND length(trim(text)) > 0
+    ORDER BY segment_id
+    LIMIT 1
+)
+SELECT q.ticket_id AS query_ticket_id,
+       q.segment_id AS query_segment_id,
+       q.text AS query_text,
+       f.ticket_id, f.segment_id, f.text, f.fault_category,
+       f.source_uri, f.start_ms, f.end_ms,
+       l2_distance(f.embedding, q.embedding) AS distance
+FROM vane_support_demo.feedback_segments f
+CROSS JOIN query_feedback q
+WHERE f.product_model = 'X1'
+  AND f.event_date >= 20260901 AND f.event_date < 20261001
+  AND f.ticket_id <> q.ticket_id
+ORDER BY distance ASC, f.ticket_id, f.segment_id
+LIMIT 3;
+```
+
+将以上两条 SQL 保存为 search.sql，在 Doris SQL 客户端中按顺序执行。第一条应返回一个查询样本；如果没有结果，先检查第 4 节的写入数据。需要换一个工单时，同时修改两处 ticket_id 条件。
+
+第二条 SQL 在 X1、2026 年 9 月范围内返回最多 3 个候选片段，并排除查询工单本身。query_text 显示实际查询样本；distance 越小表示向量越接近。查看 text、source_uri、start_ms 和 end_ms 可以定位候选反馈并回听。结果可能少于 3 行，同一候选工单也可能返回多个片段；排名不等于故障确认。
+
+如果还要求候选原文包含“指示灯”，在第二条 SQL 的 WHERE 条件末尾、ORDER BY 之前增加以下条件，再执行该查询。
+
+```sql
+  AND f.text MATCH_ANY '指示灯'
+```
+
+这里使用 l2_distance 做精确距离计算，便于用表内样本向量直接完成小规模演示，不依赖 ANN 索引加速。关键词过滤会排除不匹配的候选，因此加上条件后可能返回空集。扩大数据规模后，应另行评估常量查询向量与 l2_distance_approximate 的 ANN 查询路径；本例不用于性能测试。
+
+函数说明：[Doris 向量搜索：精确距离与近似距离](https://doris.apache.org/docs/4.x/table-design/index/vector-index/overview/)。
+
+## 6. 关联订单与生产批次
+
+将下面两条 SQL 保存为 analysis.sql。第一条展示录音片段对应的订单和批次，LEFT JOIN 保留未关联的数据。第二条是可选的候选分类汇总：从时间范围内的全部片段取工单去重后统计，不使用 Top-3 检索结果作为统计集合。
+
+```sql
+-- 将录音片段关联到订单和生产批次；保留未匹配的记录以便检查。
+SELECT f.ticket_id, f.segment_id, f.text, f.fault_category,
+       t.order_id, o.production_batch,
+       f.source_uri, f.start_ms, f.end_ms
+FROM vane_support_demo.feedback_segments f
+LEFT JOIN vane_support_demo.ticket_orders t ON f.ticket_id = t.ticket_id
+LEFT JOIN vane_support_demo.orders o ON t.order_id = o.order_id
+WHERE f.product_model = 'X1'
+  AND f.event_date >= 20260901 AND f.event_date < 20261001
+ORDER BY f.ticket_id, f.segment_id;
+
+-- 可选统计：按批次汇总 AI 分类为“无法启动”的候选工单。
+-- 输入来自整张表的业务范围，不使用前面的 Top-3 检索结果。
+WITH candidate_tickets AS (
+    SELECT DISTINCT ticket_id
+    FROM vane_support_demo.feedback_segments
+    WHERE product_model = 'X1'
+      AND event_date >= 20260901 AND event_date < 20261001
+      AND fault_category = '无法启动'
+)
+SELECT COALESCE(o.production_batch, '未关联到批次') AS production_batch,
+       COUNT(DISTINCT f.ticket_id) AS candidate_ticket_count
+FROM candidate_tickets f
+LEFT JOIN vane_support_demo.ticket_orders t ON f.ticket_id = t.ticket_id
+LEFT JOIN vane_support_demo.orders o ON t.order_id = o.order_id
+GROUP BY COALESCE(o.production_batch, '未关联到批次')
+ORDER BY candidate_ticket_count DESC, production_batch;
+```
+
+```bash
+mysql $MYSQL_ARGS < analysis.sql
+```
+
+如果三段录音都已写入，第一条查询中 T1024 应关联 O9001 / B202608，T1025 关联 O9002 / B202608，T1026 关联 O9003 / B202609。同一工单可能出现多个片段行；这些业务关系来自 schema.sql 的固定输入，与模型分类无关。
+
+第二条查询的 candidate_ticket_count 是 AI 分类为“无法启动”的候选工单数，实际数值取决于模型输出；没有该类别时返回空集。它不表示已确认故障数、设备数或故障率。正式业务审核与 confirmed 状态维护属于后续扩展，不是完成本教程的前提。
+
+## 7. 重跑与常见问题
+
+成功写入后，再次执行 prepare.py 会在 DUPLICATE KEY 表中追加数据。需要重新练习时，使用新的演示数据库名，同时替换 schema.sql、prepare.py、check.sql、search.sql 和 analysis.sql 中的 vane_support_demo，再重新建表和加工。只重新执行查询不会追加数据。
+
+Sink 按批次提交，整条流水线不具备跨批次事务。中途失败可能已有部分数据写入；如果结果显示提交状态未知，应记录返回的 Doris label 并核查对应 Load 状态，再决定后续操作。不要通过盲目重试判断是否成功。
+
+| 现象 | 检查方法 |
+|-|-|
+| 导入 Vane 或接口失败 | 确认正在使用示例虚拟环境，且在项目目录下运行；执行 uv pip show vane-ai 确认版本为 0.2.0，再执行导入检查 |
+| 首次运行停在模型加载 | 查看权重下载日志与网络、缓存目录和磁盘空间；确认两种本地模型均可下载 |
+| ai_prompt 鉴权或模型错误 | 检查 OPENAI_API_KEY 和 VANE_PROMPT_MODEL 是否已 export，以及该账号能否访问对应模型 |
+| Stream Load 重定向被拒绝或连接失败 | 检查 DORIS_HTTP_ENDPOINT、BE 的实际重定向主机、DORIS_BE_HOSTS 和 BE HTTP 网络可达性 |
+| 写入维度或字段类型错误 | 核对模型输出 384 维、ANN dim=384、vector_dimensions=384，以及 SELECT 与 destination_schema 的列顺序 |
+| 表中没有片段或工单数不足 | 检查录音是否可解码且有人声；清单 ID 与文件名是否一致；检查 ASR 是否返回空文本及写入错误 |
+| 检索为空 | 先运行 check.sql，核对 product_model 与 event_date 过滤范围；若添加了 MATCH_ANY，先移除该条件比较 |
+| 工单未关联到批次 | 核对 ticket_orders、orders 中的业务键；示例表只预置 T1024、T1025、T1026 三个工单 |
+
+完成标志：Doris 中有录音片段且向量维度为 384；可以直接执行 search.sql，以已有录音片段检索其他工单的相似反馈；可以从片段关联到订单和批次，并通过来源与时间位置回听。
+
+参考：[Vane 安装](/zh-CN/docs/data/quickstart/installation)；[Doris 向量索引使用指南](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/)。

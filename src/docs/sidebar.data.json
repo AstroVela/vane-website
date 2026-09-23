@@ -38,7 +38,8 @@
           { "slug": "tutorials/use-cases/enterprise-agent-evidence" },
           { "slug": "tutorials/use-cases/multimodal-training-data" },
           { "slug": "tutorials/use-cases/procurement-compliance-audit" },
-          { "slug": "tutorials/use-cases/web-text-deduplication" }
+          { "slug": "tutorials/use-cases/web-text-deduplication" },
+          { "slug": "tutorials/use-cases/audio-support-doris-search" }
         ]
       }
     ]

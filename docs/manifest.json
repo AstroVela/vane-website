@@ -180,6 +180,15 @@
       }
     },
     {
+      "slug": "tutorials/use-cases/audio-support-doris-search",
+      "title": "Vane + Doris Support Recording Search",
+      "source": "docs/data/tutorials/use-cases/audio-support-doris-search.mdx",
+      "route": "/docs/data/tutorials/use-cases/audio-support-doris-search",
+      "frontmatter": {
+        "title": "Vane + Doris Support Recording Search"
+      }
+    },
+    {
       "slug": "reference/udf",
       "title": "UDF reference",
       "source": "docs/data/reference/udf/index.mdx",
@@ -818,6 +827,11 @@
               "slug": "tutorials/use-cases/web-text-deduplication",
               "label": "Web Text Deduplication with Global LSH",
               "route": "/docs/data/tutorials/use-cases/web-text-deduplication"
+            },
+            {
+              "slug": "tutorials/use-cases/audio-support-doris-search",
+              "label": "Vane + Doris Support Recording Search",
+              "route": "/docs/data/tutorials/use-cases/audio-support-doris-search"
             }
           ]
         }

@@ -56,7 +56,7 @@ The scripts leave the Vane runner unset, so the installed package default applie
 
 ## Use cases
 
-These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding. Each one is a standalone project with its own pinned requirements; follow that project's setup instead of reusing the wheel-example environment above.
+These use cases combine multiple source systems, modality branches, or SQL-derived tables. Their pages focus on the core processing and decision path rather than operational scaffolding. Most are standalone projects with their own pinned requirements; follow that project's setup instead of reusing the wheel-example environment above. The audio-support Doris tutorial is the exception: it is self-contained, with its scripts inline in the page, and it targets Vane 0.2.0 because the Doris sink is not available in the 0.1.0 wheel referenced above.
 
 | Use case | What you will build | Default scenario |
 | --- | --- | --- |
@@ -65,6 +65,7 @@ These use cases combine multiple source systems, modality branches, or SQL-deriv
 | [Multimodal training data release](/docs/data/tutorials/use-cases/multimodal-training-data) | Process document, image, audio, and text branches into one typed release table and a reviewable rejection set | Five version-pinned, publicly sourced assets |
 | [Procurement compliance audit](/docs/data/tutorials/use-cases/procurement-compliance-audit) | Extract facts from evidence images, compare expert scores, recalculate the winner, and emit deterministic audit findings | One synthetic tender with two evidence images |
 | [Web text deduplication with global LSH](/docs/data/tutorials/use-cases/web-text-deduplication) | Generate global LSH candidates, verify them with exact Jaccard, form graph clusters, and retain representatives | 24 documents with duplicate groups and singletons |
+| [Vane + Doris support recording search](/docs/data/tutorials/use-cases/audio-support-doris-search) | Transcribe support recordings, extract candidate fault categories, embed segments, and retrieve similar feedback in Doris linked to orders and batches | Three sample WAV recordings plus a ticket manifest |
 
 ## Choosing an example
 
@@ -72,4 +73,4 @@ Start with Common Crawl or Red Pajamas for text and embedding workflows. The com
 
 ## Code provenance
 
-Every fenced code block on these pages is copied from its corresponding source project. The examples use files under `examples/` in the Vane `v0.1.0` tag; the use cases use their named directories in the `demo-scene` repository. The prose explains and connects those excerpts, while the runnable project remains the source of truth.
+Every fenced code block on the example pages and the demo-scene-backed use-case pages is copied from its corresponding source project. The examples use files under `examples/` in the Vane `v0.1.0` tag; those use cases use their named directories in the `demo-scene` repository. The audio-support Doris search tutorial ships its scripts inline, so the page itself is the source of truth for that workflow. Elsewhere, the prose explains and connects the excerpts, while the runnable project remains the source of truth.

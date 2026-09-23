@@ -21,6 +21,7 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/tutorials/use-cases/multimodal-training-data: Building a Multimodal Training Release.
 - /docs/data/tutorials/use-cases/procurement-compliance-audit: Procurement Compliance Audit.
 - /docs/data/tutorials/use-cases/web-text-deduplication: Web Text Deduplication with Global LSH.
+- /docs/data/tutorials/use-cases/audio-support-doris-search: Vane + Doris Support Recording Search.
 - /docs/data/reference/udf: UDF reference.
 - /docs/data/reference/udf/expression: Expression UDFs.
 - /docs/data/reference/udf/expression/vane-func: vane.func.

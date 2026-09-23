@@ -56,7 +56,7 @@ Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，�
 
 ## 用例
 
-这些用例会组合多个源系统、模态分支或 SQL 派生表。页面集中说明核心处理与决策路径，不展开运维脚手架。每个用例都是带有独立固定依赖的项目；请按对应项目的安装步骤操作，不要复用上面的 wheel 示例环境。
+这些用例会组合多个源系统、模态分支或 SQL 派生表。页面集中说明核心处理与决策路径，不展开运维脚手架。大多数用例都是带有独立固定依赖的项目；请按对应项目的安装步骤操作，不要复用上面的 wheel 示例环境。客服录音 Doris 教程是例外：它是自包含教程，脚本直接内联在页面中；该教程面向 Vane 0.2.0，因为上面引用的 0.1.0 wheel 不包含 Doris sink。
 
 | 用例 | 你将构建什么 | 默认场景 |
 | --- | --- | --- |
@@ -65,6 +65,7 @@ Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，�
 | [多模态训练数据发布集](/zh-CN/docs/data/tutorials/use-cases/multimodal-training-data) | 把文档、图像、音频和文本分支处理成统一的发布表与可审查的拒绝记录集 | 五个固定版本的公开来源资产 |
 | [采购合规审计](/zh-CN/docs/data/tutorials/use-cases/procurement-compliance-audit) | 从证据图像抽取事实、比较专家评分、重新计算中标方并生成确定性审计发现 | 一个包含两张证据图像的合成招标项目 |
 | [基于全局 LSH 的网页文本去重](/zh-CN/docs/data/tutorials/use-cases/web-text-deduplication) | 生成全局 LSH 候选、用精确 Jaccard 校验、形成图聚类并保留代表文档 | 24 篇包含重复组与单例的文档 |
+| [Vane + Doris 客服录音检索](/zh-CN/docs/data/tutorials/use-cases/audio-support-doris-search) | 转写客服录音、提取候选故障类别并生成向量，写入 Doris 后检索相似反馈并关联订单与批次 | 三段示例 WAV 录音与工单清单 |
 
 ## 如何选择
 
@@ -72,4 +73,4 @@ Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，�
 
 ## 代码来源
 
-这些页面中的每个代码块都复制自对应的源码项目。示例使用 Vane `v0.1.0` tag 下 `examples/` 目录中的文件，用例使用 `demo-scene` 仓库中同名目录下的文件。正文只负责解释和串联这些片段，可运行项目始终是最终依据。
+示例页和有 demo-scene 支撑的用例页中的每个代码块都复制自对应的源码项目。示例使用 Vane `v0.1.0` tag 下 `examples/` 目录中的文件，这些用例使用 `demo-scene` 仓库中同名目录下的文件。客服录音 Doris 教程的脚本直接内联在页面中，因此该工作流以页面本身为最终依据。正文只负责解释和串联这些片段，其他工作流仍以可运行项目为最终依据。

@@ -150,6 +150,9 @@ const exampleRunnerSources = [
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/multimodal-training-data.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/procurement-compliance-audit.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/web-text-deduplication.mdx',
+  // Self-contained tutorial whose code blocks are localized per locale; see the parity test below.
+  'docs/data/tutorials/use-cases/audio-support-doris-search.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/audio-support-doris-search.mdx',
 ].map((file) => readFileSync(file, 'utf8'))
 const tutorialOverviewSource = readFileSync('docs/data/tutorials/index.mdx', 'utf8')
 const chineseTutorialOverviewSource = readFileSync(
@@ -569,6 +572,32 @@ test('quickstart describes Ray as the default runner and deployment documents th
   for (const source of exampleRunnerSources) {
     assert.doesNotMatch(source, /vane\.configure\(runner="ray"\)/)
   }
+})
+
+test('audio-support Doris tutorial keeps its locale-specific code intentional', () => {
+  const audioSupportTutorialSources = [
+    readFileSync('docs/data/tutorials/use-cases/audio-support-doris-search.mdx', 'utf8'),
+    readFileSync(
+      'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/audio-support-doris-search.mdx',
+      'utf8',
+    ),
+  ]
+  const [english, chinese] = audioSupportTutorialSources
+
+  // Structure stays in sync even though the code blocks are localized by design.
+  assert.equal(sectionCount(chinese), sectionCount(english))
+
+  // Locale-specific ASR, text index parser, prompt, and category literals must not leak across editions.
+  assert.match(english, /language="en", beam_size=5/)
+  assert.doesNotMatch(english, /language="zh", beam_size=5/)
+  assert.match(chinese, /language="zh", beam_size=5/)
+  assert.doesNotMatch(chinese, /language="en", beam_size=5/)
+  assert.match(english, /"parser" = "english"/)
+  assert.match(chinese, /"parser" = "chinese"/)
+  assert.match(english, /MATCH_ANY 'indicator light'/)
+  assert.match(chinese, /MATCH_ANY '指示灯'/)
+  assert.match(english, /fault_category = 'cannot_start'/)
+  assert.match(chinese, /fault_category = '无法启动'/)
 })
 
 test('wheel-backed examples document sparse checkout and bounded commands', () => {

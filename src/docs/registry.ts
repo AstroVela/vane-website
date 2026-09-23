@@ -148,6 +148,11 @@ export const DOCS_PAGES = {
     title: 'Web Text Deduplication with Global LSH',
     titleZh: '基于全局 LSH 的网页文本去重',
   },
+  'tutorials/use-cases/audio-support-doris-search': {
+    source: 'docs/data/tutorials/use-cases/audio-support-doris-search.mdx',
+    title: 'Vane + Doris Support Recording Search',
+    titleZh: 'Vane + Doris 客服录音检索',
+  },
   'reference/udf': {
     source: 'docs/data/reference/udf/index.mdx',
     title: 'UDF reference',
