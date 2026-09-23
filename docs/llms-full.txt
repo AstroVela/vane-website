@@ -3644,13 +3644,13 @@ This is a self-contained tutorial: the recordings are provided as local WAV file
 
 ## 1. Prepare the Environment and Recordings
 
-This example runs in Bash and processes recordings locally on the CPU. It assumes that an Apache Doris 4.1.3 instance is accessible and that you have permission to create databases and tables and load data. Deploying Doris is outside the scope of this tutorial. Complete the environment checks in this section before creating the tables.
+This example runs in Bash and processes recordings locally on the CPU. It assumes that an Apache Doris 4.0.8 instance is accessible and that you have permission to create databases and tables and load data. Deploying Doris is outside the scope of this tutorial. Complete the environment checks in this section before creating the tables.
 
 | Component | Requirements |
 |-|-|
 | Python | Python 3.12 is recommended. Create a dedicated project directory for the example. |
 | Vane | Vane 0.2.0, using FILE/AUDIOFILE, the SQL functions ai_prompt/ai_embed, and DorisStreamLoadSink. |
-| Doris | Target version: 4.1.3. Requires a MySQL client and network access to the frontend (FE) query port, the HTTP ingestion port, and the backend (BE) HTTP endpoints. |
+| Doris | Target version: 4.0.8. Requires a MySQL client and network access to the frontend (FE) query port, the HTTP ingestion port, and the backend (BE) HTTP endpoints. |
 | Transcription and embedding models | Faster-Whisper small and paraphrase-multilingual-MiniLM-L12-v2. Model weights must be downloaded on the first run. |
 | Text classification service | The OpenAI provider. Prepare a text model ID available to your account and an OPENAI_API_KEY. Transcribed segments will be sent to this service. |
 
