@@ -4,13 +4,43 @@ title: Overview
 
 Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
 
+Start with the [Quickstart](quickstart/quickstart.mdx) to process local images with Vane, without a GPU, model API key, or external cluster.
+
 <DataArchitecture />
+
+## Native multimodal types
+
+File references and decoded values are distinct types that you can query and transform with SQL or Python:
+
+| Type | Meaning |
+| --- | --- |
+| `FILE` | Immutable file reference with location and metadata |
+| `IMAGEFILE`, `AUDIOFILE`, `VIDEOFILE` | References to encoded image, audio, and video files |
+| `IMAGE` | Decoded image pixels |
+| `TENSOR` | Numeric arrays, including audio waveforms |
+
+Use [built-in media functions](reference/multimodal-data/index.mdx) to inspect metadata, decode and resize images, resample audio, or extract video frames. Media functions use Python backends by default, with the corresponding `vane-ai[image]`, `vane-ai[audio]`, or `vane-ai[video]` dependencies. Optional native acceleration uses the experimental `native_media` extension and its separately installed provider wheel.
 
 ## Key features
 
-- **Multimodal-native processing** — Process images, video, audio, text, documents, events, sensor data, and tables through a unified type system. Dynamic batching and backpressure control handle variations in data size and computational cost.
-- **Python and SQL interfaces** — Build data and AI pipelines with DuckDB SQL or the Python Relation API.
-- **Built-in AI operations** — Invoke LLMs, generate embeddings, and run batch inference through OpenAI and Anthropic APIs or native vLLM integration. Prefix-aware bucketing improves vLLM prefix-cache hit rates and inference throughput.
+- **Python and SQL interfaces** — Build pipelines with DuckDB SQL or the Python Relation API, and extend them with [Python UDFs](concepts/udfs.mdx).
+- **Built-in AI operations** — [Invoke models and generate embeddings](concepts/ai-functions.mdx) with your chosen provider, alongside data transformations.
 - **Heterogeneous execution** — Overlap CPU, GPU, I/O, and model inference workloads through asynchronous scheduling.
-- **Local-to-cloud execution** — Run the same pipeline locally or across distributed Ray clusters, with a foundation for future edge-cloud coordination.
-- **Designed for production AI workloads** — Build multimodal training-data preprocessing pipelines and enterprise-scale batch inference workflows.
+- **Local and distributed execution** — Run pipelines locally or on [Ray clusters](deploy/deployment.mdx), with dynamic batching and backpressure control for varying data sizes and processing costs.
+
+## Connect your data
+
+| Integration | Supported operations |
+| --- | --- |
+| Lake table formats: [Iceberg](extensions/iceberg.mdx), [Paimon](extensions/paimon.mdx), [DuckLake](extensions/ducklake.mdx) | Distributed queries and writes |
+| Columnar formats: [Lance](extensions/lance.mdx), [Vortex](extensions/vortex.mdx) | Distributed queries and writes; Lance also supports vector and hybrid search |
+| Vector databases: [Milvus](extensions/milvus.mdx), [Qdrant](extensions/qdrant.mdx) | Distributed upserts of query results |
+| Analytical database: [Doris](extensions/doris.mdx) | Distributed Arrow batch writes |
+
+Lake and columnar format extensions are installed as provider packages released independently of `vane-ai`. Database sinks use their corresponding optional dependencies; follow the linked guides for setup and supported operations.
+
+## Next steps
+
+- [Run the Quickstart](quickstart/quickstart.mdx) — inspect, filter, and resize local images.
+- [Prepare multimodal training data](tutorials/use-cases/multimodal-training-data.mdx) — combine media processing and quality filters into a training-data release.
+- [Turn support audio into searchable records](tutorials/use-cases/audio-support-doris-search.mdx) — transcribe, classify, embed, and write results to Doris.

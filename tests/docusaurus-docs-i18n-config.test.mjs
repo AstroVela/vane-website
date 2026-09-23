@@ -377,11 +377,19 @@ test('Reference keeps English and Chinese pages in sync', () => {
   }
 })
 
-test('Quickstart input can cross the default Ray runner boundary', () => {
+test('Quickstart prepares the same local media inputs in both languages', () => {
   for (const source of [quickstartSource, chineseQuickstartSource]) {
-    assert.match(source, /documents\s*=\s*con\.values\(/)
-    assert.doesNotMatch(source, /CREATE TABLE documents/)
+    assert.match(source, /uv pip install 'vane-ai\[image\]'/)
+    assert.match(source, /Image\.new\([\s\S]*\.save\(/)
+    assert.match(source, /Path\("quickstart-images"\)\.resolve\(\)/)
+    assert.match(source, /vane\.from_files\(/)
+    assert.doesNotMatch(source, /CREATE TABLE documents|OPENAI_API_KEY/)
   }
+  assert.equal(
+    quickstartSource.match(/```python\n([\s\S]*?)```/)?.[1],
+    chineseQuickstartSource.match(/```python\n([\s\S]*?)```/)?.[1],
+    'translated Quickstart must run the same example',
+  )
 })
 
 test('OpenAI examples use a valid API root', () => {
@@ -508,7 +516,7 @@ test('AI Reference states the implemented execution contracts', () => {
   assert.match(chinesePrompt, /Prompt 初始化失败始终抛出/)
 })
 
-test('AI snippets use the v0.1 named-argument SQL surface', () => {
+test('AI snippets use the named-argument SQL surface', () => {
   for (const source of [
     quickstartSource,
     chineseQuickstartSource,
@@ -517,10 +525,8 @@ test('AI snippets use the v0.1 named-argument SQL surface', () => {
   ]) {
     assert.doesNotMatch(source, /ai_(?:prompt|embed)\(\s*[^,]+,\s*struct_pack\(/s)
   }
-  for (const source of [quickstartSource, chineseQuickstartSource]) {
-    assert.match(source, /uv pip install 'vane-ai\[openai\]'/)
-    assert.match(source, /options := struct_pack\(/)
-  }
+  assert.match(enterpriseAgentUseCaseSource, /ai_embed\([\s\S]*provider :=/)
+  assert.match(enterpriseAgentUseCaseSource, /options := struct_pack\(/)
 })
 
 test('documentation installation commands use uv and the base vane-ai package', () => {
@@ -563,7 +569,7 @@ test('installation uses uv for the base package and optional providers', () => {
 
 test('quickstart describes Ray as the default runner and deployment documents the local override', () => {
   assert.match(quickstartSource, /Ray is Vane's default runner/)
-  assert.match(chineseQuickstartSource, /Ray 是 Vane 的默认 runner/)
+  assert.match(chineseQuickstartSource, /Ray 是 Vane 的默认执行引擎/)
   assert.match(deploymentSources[0], /`ray` is the default/)
   assert.match(deploymentSources[1], /`ray` 是默认 runner/)
   for (const source of deploymentSources) {

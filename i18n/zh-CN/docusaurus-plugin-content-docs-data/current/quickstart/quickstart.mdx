@@ -3,129 +3,98 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇快速开始会让一个 Python 函数在 Vane SQL projection 中运行起来。必需路径使用内联数据并在本机运行，不需要外部 Ray 集群、GPU 或模型 provider 凭据。
+这篇快速开始使用 Vane 的原生文件和图像类型，将本地图片转换为缩略图。整个流程在本机运行，不需要外部 Ray 集群、GPU 或模型服务凭据。
 
-你将创建三行数据，把一个 Python 函数注册为 SQL alias，在 `SELECT` 中调用它，并看到结果。
+你将创建三张示例图片，读取元数据，按宽度筛选，再用 SQL 解码和缩放选中的图片。
 
-开始前，请先完成[安装指南](/zh-CN/docs/data/quickstart/installation)。
+开始前，请先完成[安装指南](/zh-CN/docs/data/quickstart/installation)。在同一环境中安装图像可选依赖，其中包含生成示例图片所需的 Pillow 和默认 Python 图像后端：
 
-## 运行第一个 SQL Expression UDF
-
-把下面的内容复制到一个 Python 文件并运行：
-
-```python
-import vane
-
-con = vane.connect()
-
-documents = con.values(
-    (
-        vane.lit("doc-001").alias("document_id"),
-        vane.lit("Signed claim form received.").alias("source_text"),
-    ),
-    (vane.lit("doc-002"), vane.lit("Invoice is missing approval metadata.")),
-    (vane.lit("doc-003"), vane.lit("Policy reference has expired.")),
-)
-
-
-def review_status(source_text):
-    text = str(source_text).lower()
-    if "missing" in text or "expired" in text:
-        return "needs_review"
-    return "ready"
-
-
-vane.attach_function(
-    review_status,
-    alias="review_status_sql",
-    connection=con,
-    parameters=["VARCHAR"],
-    return_dtype="VARCHAR",
-)
-
-reviewed = con.sql("""
-    SELECT
-        document_id,
-        source_text,
-        review_status_sql(source_text) AS review_status
-    FROM documents
-    ORDER BY document_id
-""")
-
-reviewed.show()
-vane.detach_function("review_status_sql", connection=con)
+```bash
+uv pip install 'vane-ai[image]'
 ```
 
-结果会保留原始列，并新增一个有类型的 `review_status` 列：
+## 运行第一个多模态查询
 
-| document_id | review_status |
-| --- | --- |
-| doc-001 | ready |
-| doc-002 | needs_review |
-| doc-003 | needs_review |
+将下面的内容保存为 `quickstart.py`，然后运行 `python quickstart.py`：
+
+```python
+from pathlib import Path
+
+from PIL import Image
+import vane
+
+# Create three local images; no downloads are needed.
+assets = Path("quickstart-images").resolve()
+assets.mkdir(exist_ok=True)
+for name, size, color in [
+    ("large", (640, 480), "navy"),
+    ("medium", (320, 240), "orange"),
+    ("small", (64, 64), "green"),
+]:
+    Image.new("RGB", size, color).save(assets / f"{name}.png")
+
+con = vane.connect()
+files = vane.from_files(
+    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
+    connection=con,
+)
+images = con.sql("SELECT image_file(file) AS source FROM files")
+metadata = con.sql("""
+    SELECT source, image_file_metadata(source) AS info
+    FROM images
+""")
+thumbnails = con.sql("""
+    SELECT info.width AS source_width, info.height AS source_height,
+           resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
+    FROM metadata
+    WHERE info.width >= 300
+""")
+con.sql("""
+    SELECT source_width, source_height,
+           image_width(thumbnail) AS width,
+           image_height(thumbnail) AS height,
+           typeof(thumbnail) AS image_type
+    FROM thumbnails
+    ORDER BY source_width DESC
+""").show()
+```
+
+64 × 64 的图片会被过滤掉，其余两张图片会转换为 224 × 224 的缩略图：
+
+| source_width | source_height | width | height | image_type |
+| --- | --- | --- | --- | --- |
+| 640 | 480 | 224 | 224 | `IMAGE` |
+| 320 | 240 | 224 | 224 | `IMAGE` |
 
 ## 刚才发生了什么
 
-- `vane.attach_function(...)` 把原始 Python callable 注册到 `con`。
-- `review_status_sql(...)` 成为可在 `SELECT` projection 中运行的 SQL Expression。
-- Expression 为每一输入行增加一个结果，因此 ID 和源文本仍在同一个 relation 中。
-- `show()` 物化惰性结果后，`vane.detach_function(...)` 移除了 alias。
+- `from_files(...)` 从本地路径创建了一个 `FILE` 列，`image_file(file)` 将每个文件引用转换为 `IMAGEFILE`。
+- `image_file_metadata(...)` 读取图片尺寸，无需解码完整的像素数组。SQL 筛选出宽度至少为 300 像素的图片。
+- `decode_image_file(...)` 将选中的引用解码为 `IMAGE` 值，`resize(...)` 生成固定尺寸的 RGB 图像。
+- `show()` 执行查询并展示尺寸和类型。`thumbnail` 列包含像素，`source` 列包含文件引用；查询不会保存新的图片文件。
 
-Callable 生命周期、batch 与基数行为以及 Relation 转换请继续阅读 [UDF 概念](/zh-CN/docs/data/concepts/udfs)。
+更多操作请参阅[文件函数](/zh-CN/docs/data/reference/multimodal-data/file)和[图像函数](/zh-CN/docs/data/reference/multimodal-data/image)。原生媒体加速是可选能力，本示例无需安装。
 
-## 可选：添加 AI Function
+## 可选：添加 Python 或 AI 处理
 
-这不是 Quickstart 的必需步骤。如果要试用 OpenAI，请在同一个环境中安装它的可选依赖，然后把凭据设置到 worker 环境中：
-
-```bash
-uv pip install 'vane-ai[openai]'
-export OPENAI_API_KEY="<your-key>"
-```
-
-然后使用 SQL Expression function `ai_prompt` 增加一个 AI 结果：
-
-```python
-with_ai = con.sql("""
-    SELECT
-        document_id,
-        ai_prompt(
-            source_text,
-            system_message := 'Write one short review note.',
-            provider := 'openai',
-            model := 'gpt-4o-mini',
-            options := struct_pack(
-                -- OpenAI-compatible provider 可按需配置：
-                -- base_url := 'https://api.example.com/v1',
-                -- use_chat_completions := true,
-                max_output_tokens := 64
-            )
-        ) AS review_note
-    FROM documents
-    ORDER BY document_id
-""")
-
-with_ai.show()
-```
-
-Provider 调用可能产生费用，并把数据发送到你的环境之外。第一次运行时请保持输入较小；构建更大的 workflow 前，请阅读 [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)。
+通过 [UDF](/zh-CN/docs/data/concepts/udfs) 添加自定义 Python 处理，或通过 [AI 函数](/zh-CN/docs/data/concepts/ai-functions) 接入模型推理。这些都可以在后续尝试；上面的图像查询不需要自定义函数或模型 API 密钥。
 
 ## 从本机 Ray 扩展到集群
 
-Ray 是 Vane 的默认 runner。保持 `RAY_ADDRESS` 未设置时，这篇快速开始会在当前机器启动 Ray runtime，不需要外部集群，也不需要显式配置 runner。
+Ray 是 Vane 的默认执行引擎。保持 `RAY_ADDRESS` 未设置时，这篇快速开始会在当前机器启动 Ray 运行时，不需要外部集群，也不需要显式配置执行引擎。
 
-要在集群上运行同一作业，请在 head 节点启用集群自动发现后启动它：
+要在集群上运行，先将本地示例路径替换为每个工作节点都能访问的文件，例如共享存储或对象存储中的文件，再在主节点启用集群自动发现后启动：
 
 ```bash
 RAY_ADDRESS=auto python quickstart.py
 ```
 
-SQL projection 和注册的 callable 可以保持不变。处理更大任务时，把内联 relation 替换为 Parquet 或对象存储等共享数据源。
-
-每个 Ray worker 都必须能够导入 UDF 及其依赖，并访问相同的数据、模型文件和工作所需凭据。在集群上运行前，请阅读[部署](/zh-CN/docs/data/deploy/deployment)。
+每个 Ray 工作节点都必须安装图像依赖，并能访问输入文件。只在主节点创建示例文件，不会让其他节点自动获得这些文件。在集群上运行前，请阅读[部署](/zh-CN/docs/data/deploy/deployment)。
 
 ## 下一步
 
+- [多模态数据](/zh-CN/docs/data/reference/multimodal-data)
 - [UDF 概念](/zh-CN/docs/data/concepts/udfs)
-- [AI Function 概念](/zh-CN/docs/data/concepts/ai-functions)
+- [AI 函数概念](/zh-CN/docs/data/concepts/ai-functions)
 - [教程](/zh-CN/docs/data/tutorials)
 - [部署](/zh-CN/docs/data/deploy/deployment)

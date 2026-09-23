@@ -9,16 +9,46 @@ Source: docs/data/index.mdx
 
 Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
 
+Start with the [Quickstart](quickstart/quickstart.mdx) to process local images with Vane, without a GPU, model API key, or external cluster.
+
 <DataArchitecture />
+
+## Native multimodal types
+
+File references and decoded values are distinct types that you can query and transform with SQL or Python:
+
+| Type | Meaning |
+| --- | --- |
+| `FILE` | Immutable file reference with location and metadata |
+| `IMAGEFILE`, `AUDIOFILE`, `VIDEOFILE` | References to encoded image, audio, and video files |
+| `IMAGE` | Decoded image pixels |
+| `TENSOR` | Numeric arrays, including audio waveforms |
+
+Use [built-in media functions](reference/multimodal-data/index.mdx) to inspect metadata, decode and resize images, resample audio, or extract video frames. Media functions use Python backends by default, with the corresponding `vane-ai[image]`, `vane-ai[audio]`, or `vane-ai[video]` dependencies. Optional native acceleration uses the experimental `native_media` extension and its separately installed provider wheel.
 
 ## Key features
 
-- **Multimodal-native processing** — Process images, video, audio, text, documents, events, sensor data, and tables through a unified type system. Dynamic batching and backpressure control handle variations in data size and computational cost.
-- **Python and SQL interfaces** — Build data and AI pipelines with DuckDB SQL or the Python Relation API.
-- **Built-in AI operations** — Invoke LLMs, generate embeddings, and run batch inference through OpenAI and Anthropic APIs or native vLLM integration. Prefix-aware bucketing improves vLLM prefix-cache hit rates and inference throughput.
+- **Python and SQL interfaces** — Build pipelines with DuckDB SQL or the Python Relation API, and extend them with [Python UDFs](concepts/udfs.mdx).
+- **Built-in AI operations** — [Invoke models and generate embeddings](concepts/ai-functions.mdx) with your chosen provider, alongside data transformations.
 - **Heterogeneous execution** — Overlap CPU, GPU, I/O, and model inference workloads through asynchronous scheduling.
-- **Local-to-cloud execution** — Run the same pipeline locally or across distributed Ray clusters, with a foundation for future edge-cloud coordination.
-- **Designed for production AI workloads** — Build multimodal training-data preprocessing pipelines and enterprise-scale batch inference workflows.
+- **Local and distributed execution** — Run pipelines locally or on [Ray clusters](deploy/deployment.mdx), with dynamic batching and backpressure control for varying data sizes and processing costs.
+
+## Connect your data
+
+| Integration | Supported operations |
+| --- | --- |
+| Lake table formats: [Iceberg](extensions/iceberg.mdx), [Paimon](extensions/paimon.mdx), [DuckLake](extensions/ducklake.mdx) | Distributed queries and writes |
+| Columnar formats: [Lance](extensions/lance.mdx), [Vortex](extensions/vortex.mdx) | Distributed queries and writes; Lance also supports vector and hybrid search |
+| Vector databases: [Milvus](extensions/milvus.mdx), [Qdrant](extensions/qdrant.mdx) | Distributed upserts of query results |
+| Analytical database: [Doris](extensions/doris.mdx) | Distributed Arrow batch writes |
+
+Lake and columnar format extensions are installed as provider packages released independently of `vane-ai`. Database sinks use their corresponding optional dependencies; follow the linked guides for setup and supported operations.
+
+## Next steps
+
+- [Run the Quickstart](quickstart/quickstart.mdx) — inspect, filter, and resize local images.
+- [Prepare multimodal training data](tutorials/use-cases/multimodal-training-data.mdx) — combine media processing and quality filters into a training-data release.
+- [Turn support audio into searchable records](tutorials/use-cases/audio-support-doris-search.mdx) — transcribe, classify, embed, and write results to Doris.
 
 ## Installation
 
@@ -82,128 +112,97 @@ Next: [Quickstart](/docs/data/quickstart/quickstart).
 Route: /docs/data/quickstart/quickstart
 Source: docs/data/quickstart/quickstart.mdx
 
-This quickstart gets one Python function running inside a Vane SQL projection. The required path uses inline data, runs on your machine, and needs no external Ray cluster, GPU, or model-provider credentials.
+This quickstart uses Vane's native file and image types to turn local images into thumbnails. It runs on your machine and needs no external Ray cluster, GPU, or model-provider credentials.
 
-You will create three rows, register a Python function as a SQL alias, call it from `SELECT`, and see the result.
+You will create three sample images, inspect their metadata, filter by width, and decode and resize the selected images with SQL.
 
-Before continuing, complete the [Installation guide](/docs/data/quickstart/installation).
+Before continuing, complete the [Installation guide](/docs/data/quickstart/installation). Install the image extra in the same environment; it includes Pillow for the sample images and the default Python image backend:
 
-## Run Your First SQL Expression UDF
-
-Copy this into a Python file and run it:
-
-```python
-import vane
-
-con = vane.connect()
-
-documents = con.values(
-    (
-        vane.lit("doc-001").alias("document_id"),
-        vane.lit("Signed claim form received.").alias("source_text"),
-    ),
-    (vane.lit("doc-002"), vane.lit("Invoice is missing approval metadata.")),
-    (vane.lit("doc-003"), vane.lit("Policy reference has expired.")),
-)
-
-
-def review_status(source_text):
-    text = str(source_text).lower()
-    if "missing" in text or "expired" in text:
-        return "needs_review"
-    return "ready"
-
-
-vane.attach_function(
-    review_status,
-    alias="review_status_sql",
-    connection=con,
-    parameters=["VARCHAR"],
-    return_dtype="VARCHAR",
-)
-
-reviewed = con.sql("""
-    SELECT
-        document_id,
-        source_text,
-        review_status_sql(source_text) AS review_status
-    FROM documents
-    ORDER BY document_id
-""")
-
-reviewed.show()
-vane.detach_function("review_status_sql", connection=con)
+```bash
+uv pip install 'vane-ai[image]'
 ```
 
-The result contains the original columns plus one typed `review_status` column:
+## Run Your First Multimodal Query
 
-| document_id | review_status |
-| --- | --- |
-| doc-001 | ready |
-| doc-002 | needs_review |
-| doc-003 | needs_review |
+Save this as `quickstart.py` and run `python quickstart.py`:
+
+```python
+from pathlib import Path
+
+from PIL import Image
+import vane
+
+# Create three local images; no downloads are needed.
+assets = Path("quickstart-images").resolve()
+assets.mkdir(exist_ok=True)
+for name, size, color in [
+    ("large", (640, 480), "navy"),
+    ("medium", (320, 240), "orange"),
+    ("small", (64, 64), "green"),
+]:
+    Image.new("RGB", size, color).save(assets / f"{name}.png")
+
+con = vane.connect()
+files = vane.from_files(
+    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
+    connection=con,
+)
+images = con.sql("SELECT image_file(file) AS source FROM files")
+metadata = con.sql("""
+    SELECT source, image_file_metadata(source) AS info
+    FROM images
+""")
+thumbnails = con.sql("""
+    SELECT info.width AS source_width, info.height AS source_height,
+           resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
+    FROM metadata
+    WHERE info.width >= 300
+""")
+con.sql("""
+    SELECT source_width, source_height,
+           image_width(thumbnail) AS width,
+           image_height(thumbnail) AS height,
+           typeof(thumbnail) AS image_type
+    FROM thumbnails
+    ORDER BY source_width DESC
+""").show()
+```
+
+The 64 × 64 image is filtered out. The two remaining images become 224 × 224 thumbnails:
+
+| source_width | source_height | width | height | image_type |
+| --- | --- | --- | --- | --- |
+| 640 | 480 | 224 | 224 | `IMAGE` |
+| 320 | 240 | 224 | 224 | `IMAGE` |
 
 ## What Just Happened
 
-- `vane.attach_function(...)` registered the raw Python callable on `con`.
-- `review_status_sql(...)` became a SQL Expression that could run in a `SELECT` projection.
-- The Expression added one result beside each input row, so IDs and source text stayed in the same relation.
-- `vane.detach_function(...)` removed the alias after the lazy result had been materialized by `show()`.
+- `from_files(...)` created a `FILE` column from the local paths; `image_file(file)` turned each reference into an `IMAGEFILE`.
+- `image_file_metadata(...)` read the encoded image's dimensions without decoding the full pixel array. SQL selected images at least 300 pixels wide.
+- `decode_image_file(...)` decoded the selected references into `IMAGE` values; `resize(...)` produced fixed-size RGB images.
+- `show()` ran the query and displayed dimensions and types. The `thumbnail` column holds pixels, while `source` holds a file reference. The query does not save new image files.
 
-For callable lifecycle, batch and cardinality behavior, and Relation transformations, continue with [UDF Concepts](/docs/data/concepts/udfs).
+See [File functions](/docs/data/reference/multimodal-data/file) and [Image functions](/docs/data/reference/multimodal-data/image) for more operations. Native media acceleration is optional and is not required for this example.
 
-## Optional: Add an AI Function
+## Optional: Add Python or AI Processing
 
-This is not required for the Quickstart. To try OpenAI, install its optional dependency in the same environment, then set credentials in the worker environment:
-
-```bash
-uv pip install 'vane-ai[openai]'
-export OPENAI_API_KEY="<your-key>"
-```
-
-Then add an AI result with the SQL Expression function `ai_prompt`:
-
-```python
-with_ai = con.sql("""
-    SELECT
-        document_id,
-        ai_prompt(
-            source_text,
-            system_message := 'Write one short review note.',
-            provider := 'openai',
-            model := 'gpt-4o-mini',
-            options := struct_pack(
-                -- Optional for OpenAI-compatible providers:
-                -- base_url := 'https://api.example.com/v1',
-                -- use_chat_completions := true,
-                max_output_tokens := 64
-            )
-        ) AS review_note
-    FROM documents
-    ORDER BY document_id
-""")
-
-with_ai.show()
-```
-
-Provider calls can incur cost and send data outside your environment. Keep the first input small and review [AI Function Concepts](/docs/data/concepts/ai-functions) before building a larger workflow.
+Use [UDFs](/docs/data/concepts/udfs) to add custom Python processing, or [AI Functions](/docs/data/concepts/ai-functions) to add model inference. These are separate next steps; the image query above needs neither a custom function nor a model API key.
 
 ## Scale from Local Ray to a Cluster
 
 Ray is Vane's default runner. With `RAY_ADDRESS` unset, this quickstart starts a Ray runtime on the current machine; no external cluster or explicit runner configuration is required.
 
-To run the same job on a cluster, launch it from the head node with cluster discovery enabled:
+To run on a cluster, first replace the local sample paths with files accessible to every worker, such as shared storage or object storage. Then launch from the head node with cluster discovery enabled:
 
 ```bash
 RAY_ADDRESS=auto python quickstart.py
 ```
 
-The SQL projection and registered callable can stay the same. For a larger job, replace the inline relation with a shared source such as Parquet or object storage.
-
-Every Ray worker must be able to import the UDF and its dependencies and access the same data, model files, and credentials required by its work. See [Deployment](/docs/data/deploy/deployment) before running on a cluster.
+Every Ray worker must have the image dependencies installed and access to the input files. Creating sample files on the head node alone does not make them available on other nodes. See [Deployment](/docs/data/deploy/deployment) before running on a cluster.
 
 ## Next Steps
 
+- [Multimodal Data](/docs/data/reference/multimodal-data)
 - [UDF Concepts](/docs/data/concepts/udfs)
 - [AI Function Concepts](/docs/data/concepts/ai-functions)
 - [Tutorials](/docs/data/tutorials)

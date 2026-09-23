@@ -10,9 +10,9 @@ const INPUTS = [
 ]
 
 const OUTPUTS = [
-  { title: 'insights', titleZh: '洞察', detail: 'structured signals and issues', detailZh: '结构化信号与问题' },
-  { title: 'evidence', titleZh: '证据', detail: 'document · rule · source URI', detailZh: '文档 · 规则 · 来源 URI' },
-  { title: 'recommendations', titleZh: '建议', detail: 'next action with rule context', detailZh: '带规则上下文的下一步行动' },
+  { title: 'records', titleZh: '记录', detail: 'text and model outputs', detailZh: '文本与模型输出' },
+  { title: 'references', titleZh: '来源', detail: 'business ID · URI · timestamps', detailZh: '业务 ID · URI · 时间戳' },
+  { title: 'embeddings', titleZh: '向量', detail: 'for retrieval and analytics', detailZh: '用于检索与分析' },
 ]
 
 function SourceVisual({ tone }: { tone: string }) {

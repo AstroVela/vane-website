@@ -9,23 +9,23 @@ import { pickLocale, useSiteLocale } from '../siteI18n'
 /* The pipeline as a convergent left-to-right flow; each inner array is one
    column, arrows are drawn between columns. */
 const PIPELINE_EN: string[][] = [
-  ['camera frames', 'LiDAR sweeps', 'radar returns', 'ego pose + calib'],
-  ['decode frames', 'load sweeps'],
-  ['time sync', 'ego-pose align'],
-  ['sensor projection'],
-  ['label + track', 'sample embed'],
+  ['IMAGEFILE', 'AUDIOFILE', 'VIDEOFILE', 'FILE'],
+  ['decode + resize', 'resample + frames'],
+  ['model labeling', 'embedding'],
+  ['filter + dedupe'],
+  ['Lance / Iceberg', 'Parquet files'],
 ]
 
 const PIPELINE_ZH: string[][] = [
-  ['camera frames', 'LiDAR sweeps', 'radar returns', 'ego pose + calib'],
-  ['解码 frames', '加载 sweeps'],
-  ['时间同步', 'ego-pose 对齐'],
-  ['传感器投影'],
-  ['标注 + 跟踪', '样本 embed'],
+  ['IMAGEFILE', 'AUDIOFILE', 'VIDEOFILE', 'FILE'],
+  ['解码与缩放', '重采样与抽帧'],
+  ['模型标注', '向量化'],
+  ['过滤与去重'],
+  ['Lance / Iceberg', 'Parquet 文件'],
 ]
 
-const PIPELINE_LABELS_EN = ['inputs', 'decode', 'align', 'fuse', 'package']
-const PIPELINE_LABELS_ZH = ['输入', '解码', '对齐', '融合', '打包']
+const PIPELINE_LABELS_EN = ['inputs', 'prepare', 'infer', 'select', 'write']
+const PIPELINE_LABELS_ZH = ['输入', '预处理', '推理', '筛选', '写入']
 
 type Lane = {
   key: 'traditional' | 'vane'
@@ -179,7 +179,7 @@ export default function TrainingDataFactoryAnimation() {
       title: 'Overlaps heterogeneous resources.',
       lead: 'Traditional pipelines create stage barriers and pipeline bubbles. Vane overlaps CPU, GPU, and I/O workloads through streaming execution and dynamic batching.',
       samePipeline: 'Same pipeline',
-      pipelineNote: 'Traditional and Vane run the same stages on one time scale; earlier completion means a shorter critical path.',
+      pipelineNote: 'Illustrative timing for the same stages; actual performance depends on the data, models, and hardware.',
       imageAlt: 'Camera frame at an urban intersection',
       caption: 'camera frame · ts 00:14.280',
       stagesAria: 'Multimodal training-data pipeline stages',
@@ -193,7 +193,7 @@ export default function TrainingDataFactoryAnimation() {
       title: '异构资源重叠执行。',
       lead: '传统流水线会形成阶段屏障和流水线气泡。Vane 通过流式执行与动态批处理，将 CPU、GPU 和 I/O 工作负载重叠调度。',
       samePipeline: '同一条流水线',
-      pipelineNote: 'Traditional 和 Vane 在同一时间尺度上运行相同阶段；越早完成表示关键路径越短。',
+      pipelineNote: '相同阶段的执行时序示意；实际性能取决于数据、模型与硬件。',
       imageAlt: '城市路口相机帧',
       caption: 'camera frame · ts 00:14.280',
       stagesAria: '多模态训练数据流水线阶段',

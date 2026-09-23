@@ -14,42 +14,33 @@ import { pickLocale, useSiteLocale } from '../siteI18n'
 import { TRAINING_DESIGN_PARTNER_MAILTO } from '../siteLinks'
 import { Link } from '../router'
 
-const PIPELINE_CODE = `import vane
+const PIPELINE_CODE = `from pathlib import Path
+
+import vane
 
 con = vane.connect()
-
-raw = con.sql("""
-    SELECT id, uri, media_type, content_hash
-    FROM read_parquet('s3://training-corpus/*.parquet')
-    WHERE split = 'train'
-""")
-
-def CaptionAndScore(table):
-    ...
-
-labeled = raw.map_batches(
-    CaptionAndScore,
-    schema=release_schema,
-    gpus=1,
+assets = Path("quickstart-images").resolve()
+files = vane.from_files(
+    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
+    connection=con,
 )
-labeled.to_table("labeled")
-
-release = con.sql("""
-    SELECT id, uri, caption, quality_score,
-           ai_embed(
-               caption,
-               provider := 'transformers',
-               model := 'sentence-transformers/all-MiniLM-L6-v2'
-           ) AS caption_embedding
-    FROM labeled
-    WHERE quality_score >= 0.8
-    QUALIFY row_number() OVER (
-        PARTITION BY content_hash
-        ORDER BY quality_score DESC
-    ) = 1
+images = con.sql("SELECT image_file(file) AS source FROM files")
+metadata = con.sql("""
+    SELECT source, image_file_metadata(source) AS info
+    FROM images
 """)
-
-release.write_parquet("s3://dataset-releases/mm-v42/part-00000.parquet")`
+samples = con.sql("""
+    SELECT source.url AS source_uri,
+           info.width AS source_width,
+           info.height AS source_height,
+           encode_image(
+               resize(decode_image_file(source, 'RGB'), 224, 224),
+               'PNG'
+           ) AS image_bytes
+    FROM metadata
+    WHERE info.width >= 300
+""")
+samples.write_parquet("training-image-samples.parquet")`
 
 function Divider() {
   return <div className="wrap"><div className="ddiv" /></div>
@@ -67,13 +58,13 @@ function TrainingHeroShape({ locale }: { locale: ReturnType<typeof useSiteLocale
   const copy = pickLocale(
     locale,
     {
-      aria: 'Five raw modalities — image, video, audio, text, and sensor — converging through the Vane engine into a versioned training-dataset release',
+      aria: 'Five raw modalities — image, video, audio, text, and sensor — converging through the Vane engine into prepared training data',
       ops: <>decode · caption<br />score · embed</>,
       source: 'raw · multimodal',
       release: 'dataset release',
     },
     {
-      aria: '五种原始模态：图像、视频、音频、文本和传感器，通过 Vane 引擎汇聚成带版本的训练数据集发布',
+      aria: '五种原始模态：图像、视频、音频、文本和传感器，通过 Vane 引擎汇聚成处理后的训练数据',
       ops: <>解码 · caption<br />评分 · embed</>,
       source: '原始 · 多模态',
       release: '数据集发布',
@@ -169,37 +160,39 @@ export default function TrainingUseCase() {
       ogDescription: 'Raw multimodal data to training-ready releases with one Ray-backed distributed pipeline.',
       eyebrow: 'Use Case · Multimodal Model Training',
       heading: 'From raw multimodal data to training-ready dataset releases.',
-      lead: 'A unified multimodal training data pipeline that transforms raw data into versioned, training-ready datasets with SQL processing, GPU-accelerated labeling, embedding, and scalable execution from local to Ray clusters.',
-      runPipeline: 'Run the pipeline',
+      lead: 'Use native file, image, audio, and video types to prepare training data with SQL and Python. Add model labeling, embedding, quality filters, and deduplication, then write to files or lake formats and scale from local execution to Ray clusters.',
+      runPipeline: 'Try the quickstart',
       requestDemo: 'Request a demo',
       why: 'Why Vane',
       faster: 'Faster pipelines, in far less code.',
-      performanceTitle: 'High Performance — Extreme throughput, maximum resource utilization',
-      performanceCost: "From data preparation to embedding, multimodal AI workloads are bottlenecked by pipeline efficiency. Vane maximizes end-to-end throughput.",
+      performanceTitle: 'Performance — Overlap CPU, GPU, and I/O work',
+      performanceCost: 'From data preparation to embedding, pipeline efficiency matters. Vane coordinates processing and data movement across heterogeneous resources.',
       seeBenchmarks: 'See the benchmarks',
       efficientTitle: 'Efficient heterogeneous execution',
       efficientCopy: 'Overlap CPU processing, GPU inference, data movement, and I/O asynchronously, enabling heterogeneous resources to work concurrently instead of waiting on each other.',
       streamingTitle: 'Streaming execution with backpressure & dynamic batching',
-      streamingCopy: 'Continuously process large-scale media and sensor data with adaptive batching and flow control, maximizing throughput while maintaining bounded memory usage.',
+      streamingCopy: 'Continuously process large-scale media and sensor data with adaptive batching and flow control, with backpressure to manage memory usage.',
       distributedTitle: 'Ray-Native distributed scaling',
-      distributedCopy: 'Execute petabyte-scale historical reprocessing as a unified scalable graph on Ray, replacing fragmented multi-system pipelines and long-running batch workflows.',
-      simplicityTitle: 'Simplicity — One engine, no glue code',
+      distributedCopy: 'Scale data preparation from a local runtime to a Ray cluster, with CPU, GPU, and memory requirements declared per processing stage.',
+      simplicityTitle: 'Simplicity — Native types, familiar interfaces',
       simplicityCost: 'Multimodal data workflows often require multiple systems and layers of orchestration. Vane unifies data processing, AI inference, and dataset preparation into a single execution graph.',
       readCode: 'Read the code',
-      oneEngineTitle: 'One engine, one graph',
-      oneEngineCopy: 'DuckDB-compatible SQL, Python UDFs, AI functions, and Ray execution in one unified pipeline.',
-      duckdbTitle: 'DuckDB-compatible API',
-      duckdbCopy: 'Low migration cost from existing Ray, Spark, or Daft pipelines.',
-      wholePipelineTitle: 'From raw data to release-ready datasets',
-      wholePipelineCopy: 'A complete pipeline in one readable graph — no glue code required.',
+      oneEngineTitle: 'Native multimodal processing',
+      oneEngineCopy: 'FILE, IMAGEFILE, AUDIOFILE, and VIDEOFILE carry file references. Built-in operations inspect metadata, decode and resize images, resample audio, and extract video frames.',
+      duckdbTitle: 'SQL and Python together',
+      duckdbCopy: 'Combine SQL quality filters and deduplication with your Python UDFs or AI functions for labeling and embedding, including GPU workloads.',
+      wholePipelineTitle: 'Connect training data storage',
+      wholePipelineCopy: 'Read and write Lance or Iceberg through separately installed providers, or export Parquet files as in the example below.',
       representative: 'Representative code',
-      codeTitle: 'The training-data release pipeline in one graph.',
-      codeLead: 'File selection, media decoding, GPU captioning or auto-labeling, quality filters, deduplication, embedding, and packaged output stay in one readable pipeline.',
+      codeTitle: 'Prepare uniform image samples with native types.',
+      codeLead: 'Use the three sample images created in the quickstart. Inspect their dimensions, keep images at least 300 pixels wide, and export two 224 × 224 PNG samples as bytes in Parquet. No model credentials or GPU are needed.',
       codeAria: 'Pipeline stages shown in the representative code',
-      codeSteps: ['SQL selection', 'Ray GPU UDF', 'SQL quality gate', 'Embedding + release'],
+      codeSteps: ['IMAGEFILE', 'Metadata filter', 'Decode + resize', 'PNG → Parquet'],
+      quickstart: 'Create the sample images',
+      storage: 'Storage providers:',
+      moreTutorials: 'Explore a training-data tutorial',
       ctaTitle: 'Build a reproducible multimodal training-data pipeline.',
       designPartner: 'Become a design partner',
-      readDocs: 'Read the docs',
     },
     {
       title: '多模态AI模型训练数据流水线 — Vane',
@@ -207,37 +200,39 @@ export default function TrainingUseCase() {
       ogDescription: '用一条 Ray 支撑的分布式流水线把原始多模态数据转换为可训练发布版本。',
       eyebrow: '用例 · 多模态模型训练',
       heading: '把原始多模态数据变成可发布的训练数据集',
-      lead: '通过一条统一的多模态训练数据流水线，以 SQL 处理、GPU 加速标注和 embedding 将原始数据转换为带版本、可直接训练的数据集，并从本地环境扩展到 Ray 集群。',
-      runPipeline: '运行流水线',
+      lead: '用原生文件、图像、音频和视频类型，通过 SQL 与 Python 准备训练数据。按需加入模型标注、向量化、质量过滤和去重，再写入文件或湖格式，并从本地执行扩展到 Ray 集群。',
+      runPipeline: '体验快速开始',
       requestDemo: '申请演示',
       why: '为什么选择 Vane',
       faster: '更高吞吐，更简洁的代码',
-      performanceTitle: '高性能：极高吞吐，最大化资源利用率',
-      performanceCost: '从数据准备到 embedding，多模态 AI 工作负载的核心瓶颈是流水线效率。Vane 最大化端到端吞吐。',
+      performanceTitle: '高性能：重叠执行 CPU、GPU 与 I/O 工作',
+      performanceCost: '从数据准备到向量化，流水线效率至关重要。Vane 协调异构资源上的计算与数据传输。',
       seeBenchmarks: '查看基准测试',
       efficientTitle: '异构执行，不让 GPU 空等',
       efficientCopy: '异步重叠 CPU 处理、GPU 推理、数据传输与 I/O，使异构资源并发工作，避免阶段间等待。',
       streamingTitle: '带背压与动态批处理的流式执行',
-      streamingCopy: '通过自适应批处理与流量控制，持续处理大规模媒体和传感器数据；在内存占用有界的前提下最大化吞吐。',
+      streamingCopy: '通过自适应批处理与流量控制，持续处理大规模媒体和传感器数据；通过背压管理内存占用。',
       distributedTitle: 'Ray 原生分布式扩展',
-      distributedCopy: '在 Ray 上将 PB 级历史数据重处理作为一张统一的可扩展执行图运行，替代割裂的多系统流水线和长周期批处理任务。',
-      simplicityTitle: '一套引擎，代码简单',
+      distributedCopy: '将数据准备从本地运行扩展到 Ray 集群，并为各处理阶段声明 CPU、GPU 和内存需求。',
+      simplicityTitle: '简单易用：原生类型，熟悉的接口',
       simplicityCost: '多模态数据工作流通常需要多套系统和多层编排。Vane 将数据处理、AI 推理与数据集准备统一到一张执行图中。',
       readCode: '阅读代码',
-      oneEngineTitle: '一个引擎，一张图',
-      oneEngineCopy: '在一条统一流水线中组合 DuckDB 兼容 SQL、Python UDF、AI 函数和 Ray 执行。',
-      duckdbTitle: 'DuckDB 兼容 API',
-      duckdbCopy: '从现有 Ray、Spark 或 Daft 流水线迁移成本低。',
-      wholePipelineTitle: '从原始数据到可发布数据集',
-      wholePipelineCopy: '完整流水线收敛为一张可读执行图，无需额外胶水代码。',
+      oneEngineTitle: '原生多模态处理',
+      oneEngineCopy: 'FILE、IMAGEFILE、AUDIOFILE 和 VIDEOFILE 承载文件引用。内置算子支持元数据检查、图像解码与缩放、音频重采样和视频抽帧。',
+      duckdbTitle: '组合使用 SQL 与 Python',
+      duckdbCopy: '用 SQL 做质量过滤与去重，结合自定义 Python UDF 或 AI 函数完成标注和向量化，并按需使用 GPU。',
+      wholePipelineTitle: '对接训练数据存储',
+      wholePipelineCopy: '通过单独安装的扩展读写 Lance 或 Iceberg，也可以像下方示例一样导出 Parquet 文件。',
       representative: '代表性代码',
-      codeTitle: '训练数据发布流水线',
-      codeLead: '文件选择、媒体解码、GPU caption/自动标注、质量过滤、去重、embedding 和发布打包都在同一条可读流水线里完成。',
+      codeTitle: '用原生类型准备统一尺寸的图像样本',
+      codeLead: '使用快速开始中生成的三张样例图片，检查尺寸、保留宽度至少 300 像素的图片，并将两张 224 × 224 的 PNG 样本以字节形式写入 Parquet。无需模型密钥或 GPU。',
       codeAria: '代表性代码中展示的流水线阶段',
-      codeSteps: ['SQL 选择', 'Ray GPU UDF', 'SQL 质量门', 'Embedding + 发布'],
+      codeSteps: ['IMAGEFILE', '元数据筛选', '解码与缩放', 'PNG → Parquet'],
+      quickstart: '创建样例图片',
+      storage: '存储扩展：',
+      moreTutorials: '探索训练数据教程',
       ctaTitle: '构建高效简单的多模态训练数据流水线',
       designPartner: '成为设计伙伴',
-      readDocs: '阅读文档',
     },
   )
   const brokenLinks = useBrokenLinks()
@@ -270,7 +265,7 @@ export default function TrainingUseCase() {
               {copy.lead}
             </p>
             <div className="training-hero-actions">
-              <Button solid to="/docs/data/tutorials/use-cases/multimodal-training-data" arrow>{copy.runPipeline}</Button>
+              <Button solid to="/docs/data/quickstart/quickstart" arrow>{copy.runPipeline}</Button>
               <Button href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>{copy.requestDemo}</Button>
             </div>
           </div>
@@ -348,12 +343,14 @@ export default function TrainingUseCase() {
               <p className="lead">
                 {copy.codeLead}
               </p>
+              <p><Link className="training-link" to="/docs/data/quickstart/quickstart">{copy.quickstart} →</Link></p>
+              <p>{copy.storage} <Link to="/docs/data/extensions/lance">Lance</Link> · <Link to="/docs/data/extensions/iceberg">Iceberg</Link></p>
               <div className="training-code-steps" aria-label={copy.codeAria}>
                 {copy.codeSteps.map((step) => <span key={step}>{step}</span>)}
               </div>
             </div>
             <div className="training-code-showcase">
-              <CodeWindow filename="training_data_release.py" code={PIPELINE_CODE} language="python" />
+              <CodeWindow filename="prepare_training_images.py" code={PIPELINE_CODE} language="python" />
             </div>
           </div>
         </div>
@@ -366,7 +363,7 @@ export default function TrainingUseCase() {
         <div className="wrap">
           <Cta title={copy.ctaTitle}>
             <Button solid href={TRAINING_DESIGN_PARTNER_MAILTO} arrow>{copy.designPartner}</Button>
-            <Button to="/docs/data/tutorials">{copy.readDocs}</Button>
+            <Button to="/docs/data/tutorials/use-cases/multimodal-training-data">{copy.moreTutorials}</Button>
           </Cta>
         </div>
       </section>
