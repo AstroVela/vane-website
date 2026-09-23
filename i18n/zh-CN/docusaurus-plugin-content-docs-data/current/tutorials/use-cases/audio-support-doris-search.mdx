@@ -433,7 +433,7 @@ SELECT q.ticket_id AS query_ticket_id,
        q.text AS query_text,
        f.ticket_id, f.segment_id, f.text, f.fault_category,
        f.source_uri, f.start_ms, f.end_ms,
-       l2_distance(f.embedding, q.embedding) AS distance
+       l2_distance_approximate(f.embedding, q.embedding) AS distance
 FROM vane_support_demo.feedback_segments f
 CROSS JOIN query_feedback q
 WHERE f.product_model = 'X1'
@@ -452,8 +452,6 @@ LIMIT 3;
 ```sql
   AND f.text MATCH_ANY '指示灯'
 ```
-
-这里使用 l2_distance 做精确距离计算，便于用表内样本向量直接完成小规模演示，不依赖 ANN 索引加速。关键词过滤会排除不匹配的候选，因此加上条件后可能返回空集。扩大数据规模后，应另行评估常量查询向量与 l2_distance_approximate 的 ANN 查询路径；本例不用于性能测试。
 
 函数说明：[Doris 向量搜索：精确距离与近似距离](https://doris.apache.org/docs/4.x/table-design/index/vector-index/overview/)。
 
