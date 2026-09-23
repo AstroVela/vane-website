@@ -8,7 +8,7 @@ title: Vane + Doris 客服录音检索
 
 处理顺序：录音与工单清单 → Vane 转写、分类、向量化 → Doris 写入检查 → 相似检索 → 订单与批次关联。
 
-本教程为自包含教程：录音以本地 WAV 文件提供，所有脚本都内联在下方各节中，无需额外的源码工程。
+本教程为自包含教程：录音以本地 WAV 文件提供，所有脚本都内联在下方各节中，无需额外的源码工程。由于本页录音为中文，代码使用中文 ASR、中文文本索引分词、中文提示词和中文分类取值；英文版页面使用对应的英文设置。
 
 ## 1. 准备环境与录音
 
@@ -24,17 +24,19 @@ title: Vane + Doris 客服录音检索
 
 ### 1.1 安装并检查依赖
 
+如果尚未安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，请先安装；其他环境方案见[安装指南](/zh-CN/docs/data/quickstart/installation)。
+
 ```bash
 mkdir -p ~/doris-vane-demo/recordings
 cd ~/doris-vane-demo
-python3.12 -m venv .venv
+uv venv --python 3.12
 source .venv/bin/activate
-python -m pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
-python -c "from vane import DorisStreamLoadSink, AudioFile, attach_function; print('API available')"
+uv pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
+python -c "from vane import DorisStreamLoadSink, attach_function; print('API available')"
 mysql --version
 ```
 
-看到 API available 后继续。可执行 python -m pip show vane-ai 确认安装版本为 0.2.0。导入检查只确认这些 Python 接口存在，完整兼容性仍需通过后续运行验证。
+看到 API available 后继续。可执行 uv pip show vane-ai 确认安装版本为 0.2.0。导入检查只确认这些 Python 接口存在，完整兼容性仍需通过后续运行验证。
 
 ### 1.2 准备三段中文录音
 
@@ -290,7 +292,7 @@ destination_schema 的列顺序与 pipeline.sql 的最终 SELECT 一致，向量
 
 ### 3.2 保存 pipeline.sql
 
-file(f.url, NULL, NULL, NULL, NULL) 构造文件引用，audio_file(...) 将其转换为 AUDIOFILE，转写 UDF 按批读取内容。ai_prompt 提取候选分类，normalize_fault 统一类别，ai_embed 为原始转写片段生成向量。所有记录的 review_status 初始为 pending；本教程的查询不依赖人工审核步骤。分类取值待确认由模型给出，与 review_status 列相互独立；后者在人工复核前始终为 pending。
+file(f.url, NULL, NULL, NULL, NULL) 构造文件引用，audio_file(...) 将其转换为 AUDIOFILE，转写 UDF 按批读取内容。ai_prompt 提取候选分类，normalize_fault 统一类别，ai_embed 为原始转写片段生成向量。所有记录的 review_status 初始为 pending；本教程的查询不依赖人工审核步骤。分类值「待确认」由模型给出，与 review_status 列相互独立；后者在人工复核前始终为 pending。
 
 ```sql
 -- 业务元数据决定工单、型号和日期；ticket_id 应唯一。
@@ -505,7 +507,7 @@ Sink 按批次提交，整条流水线不具备跨批次事务。中途失败可
 
 | 现象 | 检查方法 |
 |-|-|
-| 导入 Vane 或接口失败 | 确认正在使用示例虚拟环境，且在项目目录下运行；执行 python -m pip show vane-ai 确认版本为 0.2.0，再执行导入检查 |
+| 导入 Vane 或接口失败 | 确认正在使用示例虚拟环境，且在项目目录下运行；执行 uv pip show vane-ai 确认版本为 0.2.0，再执行导入检查 |
 | 首次运行停在模型加载 | 查看权重下载日志与网络、缓存目录和磁盘空间；确认两种本地模型均可下载 |
 | ai_prompt 鉴权或模型错误 | 检查 OPENAI_API_KEY 和 VANE_PROMPT_MODEL 是否已 export，以及该账号能否访问对应模型 |
 | Stream Load 重定向被拒绝或连接失败 | 检查 DORIS_HTTP_ENDPOINT、BE 的实际重定向主机、DORIS_BE_HOSTS 和 BE HTTP 网络可达性 |

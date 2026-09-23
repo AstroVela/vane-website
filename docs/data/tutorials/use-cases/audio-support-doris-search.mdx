@@ -8,7 +8,7 @@ The inputs are local WAV recordings and a support ticket manifest. The output is
 
 Processing flow: recordings and ticket manifest → transcription, classification, and embedding generation in Vane → verification of data loaded into Doris → similarity search → linkage to orders and production batches.
 
-This is a self-contained tutorial: the recordings are provided as local WAV files, and every script is inlined in the sections below, so no separate source project is required.
+This is a self-contained tutorial: the recordings are provided as local WAV files, and every script is inlined in the sections below, so no separate source project is required. Because the recordings are English, the code uses English ASR, an English text index parser, an English prompt, and English category values; the Chinese edition of this page uses the equivalent Chinese settings.
 
 ## 1. Prepare the Environment and Recordings
 
@@ -24,17 +24,19 @@ This example runs in Bash and processes recordings locally on the CPU. It assume
 
 ### 1.1 Install and Check Dependencies
 
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first if it is not already available; the [installation guide](/docs/data/quickstart/installation) covers other environment options.
+
 ```bash
 mkdir -p ~/doris-vane-demo/recordings
 cd ~/doris-vane-demo
-python3.12 -m venv .venv
+uv venv --python 3.12
 source .venv/bin/activate
-python -m pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
-python -c "from vane import DorisStreamLoadSink, AudioFile, attach_function; print('API available')"
+uv pip install "vane-ai[doris,openai,transformers]==0.2.0" faster-whisper
+python -c "from vane import DorisStreamLoadSink, attach_function; print('API available')"
 mysql --version
 ```
 
-Continue once API available appears. Run python -m pip show vane-ai to confirm that version 0.2.0 is installed. This import check only verifies that the Python interfaces exist; full compatibility must be verified by running the subsequent steps.
+Continue once API available appears. Run uv pip show vane-ai to confirm that version 0.2.0 is installed. This import check only verifies that the Python interfaces exist; full compatibility must be verified by running the subsequent steps.
 
 ### 1.2 Prepare Three English Recordings
 
@@ -336,8 +338,8 @@ transcripts AS (
 knowledge AS (
     -- AI interprets the business context and returns candidate classifications, not reviewed facts.
     SELECT *, ai_prompt(
-        'Extract the fault category from the support recording segment below. Return only a JSON object with key fault_category;'
-        || 'value must be one of: cannot_start, general_inquiry, other_fault, pending_review.'
+        'Extract the fault category from the support recording segment below. Return only a JSON object with key fault_category; '
+        || 'value must be one of: cannot_start, general_inquiry, other_fault, pending_review. '
         || 'Do not treat negated, hypothetical, or already-resolved descriptions as confirmed faults; use pending_review when evidence is insufficient. Segment: '
         || text,
 
@@ -506,7 +508,7 @@ The sink commits each batch separately; the pipeline does not provide a transact
 
 | Symptom | What to Check |
 |-|-|
-| Vane or API import fails | Confirm that the example virtual environment is active and that you are running from the project directory. Run python -m pip show vane-ai to confirm version 0.2.0, then repeat the import check. |
+| Vane or API import fails | Confirm that the example virtual environment is active and that you are running from the project directory. Run uv pip show vane-ai to confirm version 0.2.0, then repeat the import check. |
 | The first run appears stuck loading models | Check model-weight download logs, network connectivity, the cache directory, and available disk space. Confirm that both local models can be downloaded. |
 | ai_prompt authentication or model error | Check that OPENAI_API_KEY and VANE_PROMPT_MODEL have been exported and that the account can access the specified model. |
 | Stream Load redirect rejected or connection failed | Check DORIS_HTTP_ENDPOINT, the actual BE redirect host, DORIS_BE_HOSTS, and network access to the BE HTTP endpoint. |
