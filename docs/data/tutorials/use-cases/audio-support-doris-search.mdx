@@ -434,7 +434,7 @@ SELECT q.ticket_id AS query_ticket_id,
        q.text AS query_text,
        f.ticket_id, f.segment_id, f.text, f.fault_category,
        f.source_uri, f.start_ms, f.end_ms,
-       l2_distance(f.embedding, q.embedding) AS distance
+       l2_distance_approximate(f.embedding, q.embedding) AS distance
 FROM vane_support_demo.feedback_segments f
 CROSS JOIN query_feedback q
 WHERE f.product_model = 'X1'
@@ -453,8 +453,6 @@ To additionally require the candidate text to match “indicator light”, add t
 ```sql
   AND f.text MATCH_ANY 'indicator light'
 ```
-
-This example uses l2_distance to calculate exact distances, allowing a small-scale demonstration directly with a sample vector stored in the table without relying on ANN index acceleration. Keyword filtering excludes candidates that do not match, so adding the condition may produce an empty result. For larger datasets, separately evaluate the ANN query path using a constant query vector and l2_distance_approximate. This example is not intended as a performance benchmark.
 
 Function reference: [Doris Vector Search: Exact and Approximate Distances](https://doris.apache.org/docs/4.x/table-design/index/vector-index/overview/).
 
