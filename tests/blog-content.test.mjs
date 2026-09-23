@@ -42,6 +42,24 @@ const chineseProductReviewImagePath = `${productReviewImageDirectory}/pipeline-z
 const englishProductReviewImageUrl = '/img/blog/product-category-review/pipeline-en.png'
 const chineseProductReviewImageUrl = '/img/blog/product-category-review/pipeline-zh-cn.png'
 const productReviewImageSize = ['2350', '1000']
+const englishVoicePipelinePostPath = 'blog/2026-09-23-vane-data-jev-voice-pipeline.mdx'
+const chineseVoicePipelinePostPath =
+  'i18n/zh-CN/docusaurus-plugin-content-blog/2026-09-23-vane-data-jev-voice-pipeline.mdx'
+const voicePipelineImageDirectory = 'public/img/blog/vane-data-jev-voice-pipeline'
+const englishVoicePipelineImagePath = `${voicePipelineImageDirectory}/pipeline-en.png`
+const chineseVoicePipelineImagePath = `${voicePipelineImageDirectory}/pipeline-zh-cn.png`
+const englishVoicePipelineImageUrl =
+  '/img/blog/vane-data-jev-voice-pipeline/pipeline-en.png'
+const chineseVoicePipelineImageUrl =
+  '/img/blog/vane-data-jev-voice-pipeline/pipeline-zh-cn.png'
+const voicePipelineImageSize = ['2878', '1000']
+const englishJevCallImagePath = `${voicePipelineImageDirectory}/jev-call-en.png`
+const chineseJevCallImagePath = `${voicePipelineImageDirectory}/jev-call-zh-cn.png`
+const englishJevCallImageUrl =
+  '/img/blog/vane-data-jev-voice-pipeline/jev-call-en.png'
+const chineseJevCallImageUrl =
+  '/img/blog/vane-data-jev-voice-pipeline/jev-call-zh-cn.png'
+const jevCallImageSize = ['2160', '660']
 
 const configSource = readFileSync('docusaurus.config.ts', 'utf8')
 const routesSource = readFileSync('src/plugins/vaneRoutes.ts', 'utf8')
@@ -62,6 +80,8 @@ const englishMultimodalPost = readFileSync(englishMultimodalPostPath, 'utf8')
 const chineseMultimodalPost = readFileSync(chineseMultimodalPostPath, 'utf8')
 const englishProductReviewPost = readFileSync(englishProductReviewPostPath, 'utf8')
 const chineseProductReviewPost = readFileSync(chineseProductReviewPostPath, 'utf8')
+const englishVoicePipelinePost = readFileSync(englishVoicePipelinePostPath, 'utf8')
+const chineseVoicePipelinePost = readFileSync(chineseVoicePipelinePostPath, 'utf8')
 const chineseBlogOptions = JSON.parse(
   readFileSync('i18n/zh-CN/docusaurus-plugin-content-blog/options.json', 'utf8'),
 )
@@ -465,6 +485,150 @@ test('Product category review post keeps the Lance extension contract', () => {
 test('Product category review post code comments match each locale', () => {
   const englishComments = codeComments(englishProductReviewPost)
   const chineseComments = codeComments(chineseProductReviewPost)
+
+  assert.ok(englishComments.length > 0)
+  assert.equal(chineseComments.length, englishComments.length)
+  for (const comment of chineseComments) {
+    assert.match(comment, /\p{Script=Han}/u)
+  }
+})
+
+test('Voice pipeline post translations share explicit localized metadata', () => {
+  assert.equal(frontmatterValue(englishVoicePipelinePost, 'slug'), 'vane-data-jev-voice-pipeline')
+  assert.equal(
+    frontmatterValue(chineseVoicePipelinePost, 'slug'),
+    frontmatterValue(englishVoicePipelinePost, 'slug'),
+  )
+  assert.equal(
+    frontmatterValue(chineseVoicePipelinePost, 'date'),
+    frontmatterValue(englishVoicePipelinePost, 'date'),
+  )
+  assert.equal(
+    frontmatterValue(englishVoicePipelinePost, 'title'),
+    'Vane Data + Jev: Building an End-to-End Voice Analytics Pipeline',
+  )
+  assert.equal(
+    frontmatterValue(chineseVoicePipelinePost, 'title'),
+    'Vane Data + Jev：构建端到端智能语音分析 Pipeline',
+  )
+  assert.match(frontmatterValue(englishVoicePipelinePost, 'description'), /banking voice analytics pipeline/)
+  assert.match(frontmatterValue(chineseVoicePipelinePost, 'description'), /银行语音分析流程/)
+  for (const source of [englishVoicePipelinePost, chineseVoicePipelinePost]) {
+    const preview = source.split('<!-- truncate -->', 1)[0]
+    const previewBody = preview.replace(/^---\n[\s\S]*?\n---\n/, '')
+
+    assert.equal((source.match(/<!-- truncate -->/g) ?? []).length, 1)
+    assert.doesNotMatch(previewBody, /^# /m)
+    assert.doesNotMatch(previewBody, /<Callout(?:\s|>)/)
+    assert.match(previewBody.trim(), /^<p className="blog-body-lead">[\s\S]*<\/p>$/)
+  }
+})
+
+test('Voice pipeline post translations use localized in-article diagrams', () => {
+  const localizedPosts = [
+    {
+      source: englishVoicePipelinePost,
+      pipelinePath: englishVoicePipelineImagePath,
+      pipelineUrl: englishVoicePipelineImageUrl,
+      jevCallPath: englishJevCallImagePath,
+      jevCallUrl: englishJevCallImageUrl,
+    },
+    {
+      source: chineseVoicePipelinePost,
+      pipelinePath: chineseVoicePipelineImagePath,
+      pipelineUrl: chineseVoicePipelineImageUrl,
+      jevCallPath: chineseJevCallImagePath,
+      jevCallUrl: chineseJevCallImageUrl,
+    },
+  ]
+
+  for (const {source, pipelinePath, pipelineUrl, jevCallPath, jevCallUrl} of localizedPosts) {
+    const preview = source.split('<!-- truncate -->', 1)[0]
+    const previewBody = preview.replace(/^---\n[\s\S]*?\n---\n/, '')
+
+    assert.equal(existsSync(pipelinePath), true)
+    assert.equal(existsSync(jevCallPath), true)
+    for (const [imagePath, imageSize] of [
+      [pipelinePath, voicePipelineImageSize],
+      [jevCallPath, jevCallImageSize],
+    ]) {
+      const image = readFileSync(imagePath)
+
+      assert.equal(image.subarray(1, 4).toString('ascii'), 'PNG')
+      assert.equal(image.readUInt32BE(16), Number(imageSize[0]))
+      assert.equal(image.readUInt32BE(20), Number(imageSize[1]))
+    }
+
+    assert.equal(frontmatterValue(source, 'image'), pipelineUrl)
+    assert.match(source, /<img\s+className="dimg"/)
+    assert.match(source, /style=\{\{ width: '100%', height: 'auto' \}\}/)
+    assert.ok(source.includes(`src="${pipelineUrl}"`))
+    assert.ok(source.includes(`src="${jevCallUrl}"`))
+    assert.ok(source.includes(`width="${voicePipelineImageSize[0]}"`))
+    assert.ok(source.includes(`height="${voicePipelineImageSize[1]}"`))
+    assert.ok(source.includes(`width="${jevCallImageSize[0]}"`))
+    assert.ok(source.includes(`height="${jevCallImageSize[1]}"`))
+    assert.match(source, /loading="lazy"/)
+    assert.match(source, /decoding="async"/)
+    assert.equal(previewBody.includes(pipelineUrl), false)
+    assert.equal(previewBody.includes(jevCallUrl), false)
+  }
+})
+
+test('Voice pipeline post keeps the pipeline and Jev contracts', () => {
+  const localizedPosts = [
+    {
+      source: englishVoicePipelinePost,
+      calloutLabel: /label="Reading note"/,
+      installation: /\[installation guide\]\(\/docs\/data\/quickstart\/installation\)/,
+    },
+    {
+      source: chineseVoicePipelinePost,
+      calloutLabel: /label="阅读说明"/,
+      installation: /\[安装指南\]\(\/zh-CN\/docs\/data\/quickstart\/installation\)/,
+    },
+  ]
+
+  assert.equal(
+    fencedCode(englishVoicePipelinePost).length,
+    fencedCode(chineseVoicePipelinePost).length,
+  )
+  assert.equal(
+    (englishVoicePipelinePost.match(/^## /gm) ?? []).length,
+    (chineseVoicePipelinePost.match(/^## /gm) ?? []).length,
+  )
+  assert.equal(
+    (englishVoicePipelinePost.match(/^### /gm) ?? []).length,
+    (chineseVoicePipelinePost.match(/^### /gm) ?? []).length,
+  )
+
+  for (const {source, calloutLabel, installation} of localizedPosts) {
+    const blocks = fencedCode(source)
+
+    assert.match(source, calloutLabel)
+    assert.match(source, installation)
+    assert.match(source, /Relation\.jev/)
+    assert.match(source, /ai_jev/)
+    assert.match(source, /jev-1\.13\.0/)
+    assert.match(source, /faster-whisper-small/)
+    assert.match(source, /MInDS-14/)
+    assert.match(source, /banking_voice_pipeline\.py/)
+    assert.match(source, /0\.3\.0\.dev8/)
+    assert.match(source, /results\.parquet/)
+    assert.match(source, /review_required/)
+    assert.match(source, /demo-scene\/tree\/main\/banking-voice-pipeline/)
+    assert.equal(blocks.length, 11)
+    assert.equal((source.match(/^## /gm) ?? []).length, 10)
+    assert.equal((source.match(/^### /gm) ?? []).length, 8)
+    for (const block of blocks) {
+      assert.doesNotMatch(block, /VANE_RUNNER/)
+    }
+  }
+})
+
+test('Voice pipeline post code comments match each locale', () => {
+  const englishComments = codeComments(englishVoicePipelinePost)
+  const chineseComments = codeComments(chineseVoicePipelinePost)
 
   assert.ok(englishComments.length > 0)
   assert.equal(chineseComments.length, englishComments.length)
