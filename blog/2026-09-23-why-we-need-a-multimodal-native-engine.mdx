@@ -1,0 +1,136 @@
+---
+slug: why-we-need-a-multimodal-native-engine
+title: "Why We Need a Multimodal-Native Engine"
+description: Why multimodal pipelines need a multimodal-native engine, and how Vane Data unifies SQL, Python UDFs, and AI Functions into one dataflow as simple as warehouse ETL.
+date: 2026-09-23
+---
+
+<p className="blog-body-lead">Unlocking the value of multimodal data—from PDFs and images to audio and video—often requires multiple stages of parsing, transformation, model computation, and joining results with related data. This article explains why these pipelines need a multimodal-native engine and how Vane Data brings SQL, Python functions, and AI capabilities together in a unified dataflow, making multimodal data processing as simple as data warehouse ETL. Start with a single line, <code>import vane</code>, and build your first multimodal processing pipeline using the Python and SQL you already know.</p>
+
+<!-- truncate -->
+
+## 1. Databases Are Adding Multimodal Support. Why Do We Need a New Engine?
+
+### 1.1 Beyond Multimodal Search: Multimodal Computation
+
+Before a PDF can be retrieved through semantic search, it has typically undergone text extraction, chunking, and embedding generation. Before a product image can be filtered by attribute, a model has often already analyzed its content and linked the results to the corresponding product record. Storage and retrieval operate on the outputs of these processing steps.
+
+When discussing “multimodal support,” we therefore need to ask how far that support extends: where are files stored, how are they retrieved, and how is raw content transformed into usable data? These capabilities can coexist in a single system, but they address different problems. This article focuses on the computation involved in that transformation.
+
+### 1.2 From PDFs to Audio and Video, Every Modality Needs a Processing Pipeline
+
+Different data modalities share a similar processing structure: read the raw content, parse or split it, apply transformations and run models, organize and join the results, and finally store and use them.
+
+| Task | Typical Processing Pipeline |
+|-|-|
+| PDF knowledge base | Parse documents → Split into chunks → Generate embeddings → Write to an index |
+| Product image processing | Read images → Resize → Extract attributes → Join with product information |
+| Audio recording analysis | Decode audio → Transcribe → Extract key points → Store structured results |
+| Video processing | Extract frames and audio tracks → Analyze each modality → Align by timestamp → Consolidate results |
+
+The specific steps vary, but all require multiple operations to be organized into a dataflow. A model’s ability to understand content addresses only one stage of that process.
+
+### 1.3 Data Characteristics and Heterogeneous Resources Create Different Optimization Requirements
+
+Once files enter a processing pipeline, the computational workload, data volume, and resource requirements can all change substantially.
+
+1. **Computational cost varies across individual records.** A two-page text document and a scanned document with hundreds of pages each occupy a single row in a file manifest, yet the cost of reading, parsing, and interpreting them can differ greatly. If tasks are distributed evenly by file count, some workers quickly become idle while others are still processing long documents. Likewise, the number of rows in a batch is not enough to indicate its memory footprint or the amount of model computation it requires.
+2. **Data expands during processing.** A PDF becomes pages, pages become text chunks, and each chunk may produce structured fields and embeddings. This pattern, in which one input produces multiple outputs, is called fanout. The system must manage both the original files and the data continually generated along the way. Limiting the number of input files does not necessarily bound intermediate results.
+3. **Different stages require different resources.** File access depends on I/O; parsing and decoding consume CPU; local models may require GPUs; and remote APIs are subject to concurrency constraints and rate limits. A single concurrency strategy across all stages struggles to accommodate these differences. Accelerating one stage can also make the backlog at the next stage worse.
+
+An engine designed for these workloads needs execution controls that account for uneven computational costs, data expansion, and coordination across heterogeneous resources. Traditional database kernels were generally not designed for this class of workload.
+
+## 2. What Are the Challenges of Processing Multimodal Data Yourself in Python?
+
+### 2.1 Developers Must Handle Infrastructure Concerns Themselves
+
+It is easy to build an initial Python implementation that reads files, invokes models, and writes results. To keep it running reliably, developers must also take on three categories of work:
+
+1. **Data organization and flow control.** How should files be batched, how many should be processed concurrently, and how should results pass between stages? When a downstream model slows down, should upstream processing pause to prevent intermediate results from accumulating?
+2. **Resource scheduling and model lifecycle management.** How should CPU parsing, GPU inference, and remote calls work together? How can expensive models be loaded once and reused, connections be pooled, and concurrency and rate limits be managed?
+3. **Error handling and operational reliability.** When a record fails, which steps can be retried, which results should be retained, and how can duplicate external side effects be avoided? Each of these requires explicit rules.
+
+The business objective remains the same, but the script gradually takes on flow control, resource scheduling, instance lifecycle management, and failure recovery. **You are building an execution system around the pipeline.** This work continually affects feature development and becomes a long-term maintenance burden.
+
+### 2.2 Costs Accumulate as Pipelines Multiply and Business Requirements Change
+
+A script can be easy to get running on a small set of files, but developers still need to organize the data, connect processing stages, and handle the results. These costs grow as pipelines multiply and business requirements evolve:
+
+1. **Infrastructure is rebuilt for each new pipeline.** The second and third pipelines often require similar batching, queueing, and retry logic.
+2. **Local changes affect execution controls.** Replacing a model or adjusting a processing step may require reconfiguring batch sizes, concurrency, and resource allocation.
+3. **Debugging and tuning lack a consistent execution framework.** When each script manages its own execution, backlogs, resource waits, and failures must be investigated separately for each pipeline.
+
+## 3. Making Multimodal Data Processing as Simple as Data Warehouse ETL
+
+Vane Data is a multimodal-native data engine. It uses the following mechanisms to make multimodal data processing as simple as data warehouse ETL.
+
+### 3.1 Relation: A Consistent Representation for Inputs, Intermediate Results, and Final Outputs
+
+Vane Data organizes business identifiers, file references, parsed text, structured results, and embeddings through a Relation: a dataset with named, typed fields. Inputs, intermediate results, and final outputs can all use this same representation.
+
+When processing a PDF, document IDs and page numbers can be retained as the document is expanded into text chunks. After attributes are extracted from images, the results can be joined with business tables by product ID. Model outputs can therefore participate in further filtering, joins, and aggregation. Developers explicitly decide which linking fields to preserve during transformations, while the engine provides a consistent way to process them. Even after multiple stages of computation, the files remain part of the same business dataflow.
+
+### 3.2 Native Multimodal Types: Unified Access to Files, Images, Audio, and Video
+
+Vane Data’s File, ImageFile, AudioFile, and VideoFile types give file references explicit types, allowing them to participate in filtering and transformations. Constructing a reference does not require reading the file’s full contents. Files can remain in their existing storage, accessed through the appropriate connections and credentials and read as processing requires.
+
+### 3.3 SQL + UDF + AI Function: A Unified Way to Express Computation
+
+Whether an engine fits into an existing development workflow depends on whether existing business code can still be used. Vane Data provides three composable ways to express computation:
+
+1. **SQL: Organize data.** Express filtering, expansion, joins, and aggregation, allowing files, business fields, and processing results to participate in the same query.
+2. **Python UDFs: Reuse existing code.** Integrate parsing libraries and business rules, bringing existing Python functions into the data processing pipeline.
+3. **AI Functions: Integrate model computation.** Incorporate content understanding, generation, and embedding generation into the same dataflow so that model outputs can feed subsequent processing.
+
+SQL, Python UDFs, and AI Functions can form a single execution graph: the output of one step flows directly into the next, with source information and business fields carried alongside the data. Developers define parsing, model invocation, and result-processing logic; the engine coordinates execution and data transfer, reducing the glue code between steps.
+
+### 3.4 Integration with Existing Data Systems
+
+DataSink writes to Doris, Milvus, and Qdrant; lakehouse formats such as Lance, Iceberg, and Paimon are accessed through provider extensions, keeping storage choices open while making it easier to reuse existing data and downstream applications.
+
+## 4. What Execution Mechanisms Does a Multimodal Engine Need?
+
+### 4.1 Batch Control and Backpressure: Adapting to Data Size and Processing Speed
+
+When PDF parsing outpaces an embedding service, increasing parsing concurrency only makes the backlog worse. The engine needs to control both batch size and data flow:
+
+1. **Batch control: How much work to deliver at a time.** Organize batches according to content size and model constraints.
+2. **Backpressure: When to deliver more work.** Propagate downstream pressure upstream, pausing upstream production to bound in-flight data and intermediate results.
+
+Together, these mechanisms keep stages working in concert and prevent backlogs from exceeding available capacity.
+
+### 4.2 Parallelism Across Heterogeneous Resources: Coordinating I/O, CPUs, GPUs, and Model Services
+
+I/O, CPU work, GPU work, and remote calls can be pipelined across stages: the GPU runs inference on the previous batch, the CPU prepares the current batch, and I/O reads the next batch, reducing time spent waiting for resources.
+
+Through its execution backends and resource configuration, Vane Data allows these operations to overlap where possible and uses backpressure to coordinate stage throughput. Resources should be allocated around the bottleneck: once a remote API is rate-limited, adding CPU capacity cannot increase its throughput.
+
+### 4.3 Model Lifecycle Management: Reusing Model Instances and Connections
+
+Vane Data uses @vane.func to define functions and @vane.cls to express computations that require reusable instances. Once initialized, models and connections can serve multiple batches, reducing repeated setup overhead.
+
+Ray Tasks and Actors support task execution and instance reuse, respectively. The number of instances needs to be configured according to model size, device capacity, and target concurrency.
+
+### 4.4 Error Handling and Fault Tolerance: Managing Retries and Recovery
+
+Transient service failures can be retried after a delay, depending on the error type and retry policy. For corrupted or unprocessable files, the system needs an explicit policy to stop processing or isolate the affected files, avoiding futile retries or the propagation of bad data downstream.
+
+Vane Data provides task retries, execution diagnostics, and error-handling options for AI Functions. The scope of recovery depends on the execution path and configuration; application logic must still define the conditions under which operations can be safely replayed.
+
+## 5. From Local Execution to Distributed Processing with Ray
+
+Vane Data supports Local Runner for local and in-process execution, and Ray Runner for distributed execution on Ray.
+
+### 5.1 Ray Runner: Supporting Large-Scale Data Processing
+
+Ray Runner distributes processing tasks across worker nodes in a cluster, using CPUs and GPUs across multiple machines to process large datasets in parallel. Existing business functions and query logic can be reused while compute resources scale with data volume.
+
+### 5.2 Local Runner: A Multimodal Analysis Engine Embedded in an Agent
+
+Summaries, tags, and embeddings generated offline cannot anticipate every future question. For example, verifying fee provisions in a contract attachment may still require inspecting the original tables. Extracting every potentially useful piece of information in advance is expensive, so an agent needs to select relevant files or segments for the current task and parse and interpret them again.
+
+Local Runner supports local execution and in-process integration, allowing Vane Data to be embedded in applications as a Python library. Agents can invoke predefined pipelines to analyze the data relevant to their current task. The same capabilities are also available for local development.
+
+## 6. Multimodal File Processing Starts with import vane
+
+Whether you are processing a PDF, an image, or an audio clip, you can start directly with Vane Data. Add `import vane` to your Python code to organize file access, content processing, and model calls into a single dataflow, reuse familiar Python functions and SQL syntax, and run it locally. Follow the [Quickstart](/docs/data/quickstart/quickstart) to get your first pipeline running.
