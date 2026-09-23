@@ -2,11 +2,11 @@ import { useEffect, useRef } from 'react'
 import Box from './Box'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 
-/* Vane Data overview: multimodal inputs -> the Vane Data engine -> model-ready
-   outputs, over the shared Vane Core runtime panel. A Data-scoped companion to
-   PlatformArchitecture; it reuses the same card anatomy and the `.pa-core`
-   panel, and scales as one horizontal composition in a
-   narrow docs column. */
+/* Vane Data overview: multimodal inputs -> the Vane Data engine -> training data,
+   features, searchable records, and analytical results over the Vane Core runtime
+   panel. A Data-scoped companion to PlatformArchitecture; it reuses the same
+   card anatomy and the `.pa-core` panel, and scales as one horizontal
+   composition in a narrow docs column. */
 
 const DATA_ARCH_DESIGN_WIDTH = 760
 
