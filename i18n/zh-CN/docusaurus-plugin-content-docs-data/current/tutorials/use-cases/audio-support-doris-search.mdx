@@ -12,13 +12,13 @@ title: Vane + Doris 客服录音检索
 
 ## 1. 准备环境与录音
 
-本例面向 Bash 环境，使用本地 CPU 加工，前提是已有可连接的 Apache Doris 4.1.3 实例及建库、建表和写入权限。Doris 的部署不在本教程范围内。先完成本节的环境检查，再继续建表。
+本例面向 Bash 环境，使用本地 CPU 加工，前提是已有可连接的 Apache Doris 4.0.8 实例及建库、建表和写入权限。Doris 的部署不在本教程范围内。先完成本节的环境检查，再继续建表。
 
 | 组件 | 要求 |
 |-|-|
 | Python | 建议 3.12；请为该示例创建独立项目目录 |
 | Vane | Vane 0.2.0；使用 FILE/AUDIOFILE、SQL ai_prompt/ai_embed 和 DorisStreamLoadSink |
-| Doris | 目标版本 4.1.3；需要 MySQL 客户端及 FE 查询端口、HTTP 写入端口和 BE HTTP 的网络可达性 |
+| Doris | 目标版本 4.0.8；需要 MySQL 客户端及 FE 查询端口、HTTP 写入端口和 BE HTTP 的网络可达性 |
 | 转写与向量模型 | Faster-Whisper small；paraphrase-multilingual-MiniLM-L12-v2。首次运行需要下载权重 |
 | 文本分类服务 | OpenAI provider；准备账号可用的文本模型 ID 和 OPENAI_API_KEY。转写片段会发送到该服务 |
 
