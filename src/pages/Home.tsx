@@ -1,3 +1,4 @@
+import Head from '@docusaurus/Head'
 import useBrokenLinks from '@docusaurus/useBrokenLinks'
 import Nav from '../components/Nav'
 import Footer from '../components/Footer'
@@ -39,7 +40,7 @@ function homeBenchmarkValueLabel(seconds: number) {
 const SCENARIOS: Array<{
   title: string
   titleZh: string
-  status: 'Available now' | 'Coming soon'
+  status: 'Available now'
   statusZh: string
   summary: string
   summaryZh: string
@@ -53,53 +54,26 @@ const SCENARIOS: Array<{
     titleZh: '多模态训练数据流水线',
     status: 'Available now',
     statusZh: '现已可用',
-    summary: 'Turn images, video, audio, documents, tables, and sensor logs into filtered, labeled, deduplicated training dataset releases — with lineage and reproducible runs.',
-    summaryZh: '把图像、视频、音频、文档、表格和传感器日志加工成可发布、可追溯、可复现的训练数据集。',
+    summary: 'Read typed media and lake tables, then filter, label, and deduplicate data for multimodal model training.',
+    summaryZh: '读取类型化媒体和湖表，完成筛选、标注与去重，为多模态模型准备训练数据。',
     cta: 'Explore',
     ctaZh: '查看',
     href: '/solutions/training',
     icon: 'multimodal',
   },
   {
-    title: 'Enterprise Multimodal Agent',
-    titleZh: '企业多模态 Agent',
+    title: 'Data Infrastructure for Enterprise Agents',
+    titleZh: '企业 Agent 数据基础设施',
     status: 'Available now',
     statusZh: '现已可用',
-    summary: 'Turn PDFs, images, video, logs, forms, spreadsheets, and documents into auditable facts and agent-ready context — in SQL.',
-    summaryZh: '把 PDF、图片、视频、日志、表单等转化成可信可追溯的Agent决策',
+    summary: 'Process business files with SQL and model UDFs, then write structured records and embeddings to retrieval and analytics systems.',
+    summaryZh: '通过 SQL 和模型 UDF 处理业务文件，将结构化记录与 embedding 写入检索及分析系统。',
     cta: 'Explore',
     ctaZh: '查看',
     href: '/solutions/enterprise-agent',
     icon: 'retrieval',
   },
-  {
-    title: 'Embodied AI — RL post-training',
-    titleZh: '具身智能 — RL 后训练',
-    status: 'Coming soon',
-    statusZh: '即将推出',
-    summary: 'Clean and re-score rollout trajectories and reward shards at training speed — and reproduce any run.',
-    summaryZh: '以训练速度清洗和重新评分 rollout 轨迹与奖励分片，并可复现任意一次运行。',
-    cta: 'Join the waitlist',
-    ctaZh: '加入等待列表',
-    href: DESIGN_PARTNER_MAILTO,
-    icon: 'generation',
-  },
-  {
-    title: 'Edge AI Agent',
-    titleZh: '边缘 AI Agent',
-    status: 'Coming soon',
-    statusZh: '即将推出',
-    summary: 'Filter and preprocess multimodal data on the edge, with one semantics from device to cloud.',
-    summaryZh: '在边缘侧过滤并预处理多模态数据，让设备到云端保持同一套语义。',
-    cta: 'Join the waitlist',
-    ctaZh: '加入等待列表',
-    href: DESIGN_PARTNER_MAILTO,
-    icon: 'preprocessing',
-  },
 ]
-
-const FEATURED_SCENARIOS = SCENARIOS.filter((scenario) => scenario.status === 'Available now')
-const UPCOMING_SCENARIOS = SCENARIOS.filter((scenario) => scenario.status === 'Coming soon')
 
 function ScenarioCard({ scenario, locale }: { scenario: (typeof SCENARIOS)[number]; locale: ReturnType<typeof useSiteLocale> }) {
   return (
@@ -115,31 +89,29 @@ function ScenarioCard({ scenario, locale }: { scenario: (typeof SCENARIOS)[numbe
   )
 }
 
-function ScenarioSoonCard({ scenario, locale }: { scenario: (typeof SCENARIOS)[number]; locale: ReturnType<typeof useSiteLocale> }) {
-  return (
-    <Box as="a" href={scenario.href} flat className="scenario-soon-card">
-      <div className="scenario-soon-head">
-        <span className="ic"><PixelIcon name={scenario.icon} size={12} /></span>
-        <h3>{pickLocale(locale, scenario.title, scenario.titleZh)}</h3>
-        <span className="status-pill soon">{pickLocale(locale, scenario.status, scenario.statusZh)}</span>
-      </div>
-      <p>{pickLocale(locale, scenario.summary, scenario.summaryZh)}</p>
-      <span className="scenario-cta">{pickLocale(locale, scenario.cta, scenario.ctaZh)} <span className="ar">→</span></span>
-    </Box>
-  )
-}
-
 export default function Home() {
   const locale = useSiteLocale()
   const copy = pickLocale(
     locale,
     {
       heroTitle: 'High-performance, multimodal-native engine for AI workloads.',
-      heroLead: 'Unifies multimodal data, intelligence, and continuous learning with Python and SQL interfaces, seamlessly scaling from local environments to Ray clusters.',
+      heroLead: 'Process files, images, audio, and video natively with SQL and Python. Connect lake formats, vector databases, and analytics systems, and scale from your machine to Ray clusters.',
       getStarted: 'Get Started',
+      release: 'Vane 0.2.0 · What’s new',
+      capabilities: 'Native types & connections',
+      capabilitiesTitle: 'From media files to usable data.',
+      typesTitle: 'Keep media types throughout your pipeline',
+      typesCopy: 'FILE, IMAGEFILE, AUDIOFILE, and VIDEOFILE represent file references. Decode and transform media as IMAGE pixels and TENSOR values with built-in operators.',
+      typesNote: 'Python media extras provide the default backend; native_media acceleration is optional.',
+      typesLink: 'Explore multimodal types',
+      connectionsTitle: 'Connect your data stack',
+      connectionsCopy: 'Lake and columnar providers: Iceberg, Paimon, DuckLake, Lance, and Vortex. Distributed upserts to Milvus and Qdrant; Arrow batch writes to Doris.',
+      connectionsNote: 'Lake and columnar providers are installed separately.',
+      connectionsLink: 'Explore data connections',
+      heroExample: 'Run the image quickstart',
       chooseWorkload: 'Choose your workload',
       useCases: 'Use Cases',
-      workloadsTitle: 'Four real-world AI workloads.',
+      workloadsTitle: 'Two real-world AI workloads.',
       workloadsLead: 'From multimodal model training to enterprise data pipelines, real-world AI runs on diverse data. Pick the pipeline that matches your workload.',
       benchmarks: 'Benchmarks',
       proofTitle: 'Multimodal inference benchmarks',
@@ -172,11 +144,23 @@ export default function Home() {
     },
     {
       heroTitle: '面向 AI 工作负载的高性能、多模态原生引擎',
-      heroLead: '通过 Python 和 SQL 接口统一多模态数据处理、智能计算与持续学习，并从本地环境无缝扩展到 Ray 集群。',
+      heroLead: '用 SQL 和 Python 原生处理文件、图像、音频与视频，连接湖格式、向量数据库和分析系统，并从本机扩展到 Ray 集群。',
       getStarted: '开始使用',
+      release: 'Vane 0.2.0 · 版本更新',
+      capabilities: '原生类型与数据对接',
+      capabilitiesTitle: '从媒体文件到可用数据',
+      typesTitle: '在流水线中保留媒体类型',
+      typesCopy: 'FILE、IMAGEFILE、AUDIOFILE 和 VIDEOFILE 表示文件引用。通过内置算子解码与变换，将媒体处理为 IMAGE 像素和 TENSOR 值。',
+      typesNote: 'Python 媒体依赖提供默认后端，native_media 加速扩展可按需安装。',
+      typesLink: '了解多模态类型',
+      connectionsTitle: '连接现有数据系统',
+      connectionsCopy: '湖格式与列式格式：Iceberg、Paimon、DuckLake、Lance、Vortex。向 Milvus、Qdrant 分布式 upsert，向 Doris 写入 Arrow 批次。',
+      connectionsNote: '湖格式与列式格式的 provider 需单独安装。',
+      connectionsLink: '了解数据对接',
+      heroExample: '运行图像快速入门示例',
       chooseWorkload: '选择你的工作负载',
       useCases: '用例',
-      workloadsTitle: '多模态 AI 场景',
+      workloadsTitle: '两类多模态 AI 场景',
       workloadsLead: '从多模态模型训练到企业数据流水线，真实 AI 工作负载运行在多样化数据之上。选择与你的工作负载匹配的流水线。',
       benchmarks: '基准测试',
       proofTitle: '多模态推理基准测试',
@@ -214,6 +198,12 @@ export default function Home() {
 
   return (
     <>
+      <Head>
+        <title>{copy.heroTitle} | Vane</title>
+        <meta name="description" content={copy.heroLead} />
+        <meta property="og:title" content={`${copy.heroTitle} | Vane`} />
+        <meta property="og:description" content={copy.heroLead} />
+      </Head>
       <Nav ctaReveal />
       <a id="top" />
 
@@ -221,7 +211,7 @@ export default function Home() {
       <section className="hero">
         <div className="wrap hero-grid home-hero-grid">
           <div>
-            <Eyebrow style={{ marginBottom: 20 }}>Vane</Eyebrow>
+            <Eyebrow style={{ marginBottom: 20 }}><Link to="/release-notes/v0.2.0">{copy.release}</Link></Eyebrow>
             <h1 className="h1 hero-h1">
               {copy.heroTitle}
             </h1>
@@ -229,7 +219,7 @@ export default function Home() {
               {copy.heroLead}
             </p>
             <div style={{ display: 'flex', gap: 20, marginTop: 34, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Button solid to="/docs" arrow>{copy.getStarted}</Button>
+              <Button solid to="/docs/data/quickstart/quickstart" arrow>{copy.getStarted}</Button>
               <Link to="#scenarios" className="hero-textlink">
                 {copy.chooseWorkload} <span className="ar">→</span>
               </Link>
@@ -241,11 +231,35 @@ export default function Home() {
           </div>
           <div className="home-hero-code">
             <HomeHeroExecution />
+            <Link to="/docs/data/quickstart/quickstart" className="scenario-cta">{copy.heroExample} <span className="ar">→</span></Link>
           </div>
         </div>
       </section>
 
-      {/* FOUR SCENARIOS */}
+      <section className="section" style={{ paddingTop: 40 }}>
+        <div className="wrap">
+          <div className="shead">
+            <Eyebrow>{copy.capabilities}</Eyebrow>
+            <h2 className="h2">{copy.capabilitiesTitle}</h2>
+          </div>
+          <div className="scenario-grid">
+            <Box as={Link} to="/docs/data/reference/multimodal-data" className="scenario-card">
+              <h3>{copy.typesTitle}</h3>
+              <p>{copy.typesCopy}</p>
+              <p style={{ marginTop: 12 }}>{copy.typesNote}</p>
+              <span className="scenario-cta">{copy.typesLink} <span className="ar">→</span></span>
+            </Box>
+            <Box as={Link} to="/docs/data/extensions" className="scenario-card">
+              <h3>{copy.connectionsTitle}</h3>
+              <p>{copy.connectionsCopy}</p>
+              <p style={{ marginTop: 12 }}>{copy.connectionsNote}</p>
+              <span className="scenario-cta">{copy.connectionsLink} <span className="ar">→</span></span>
+            </Box>
+          </div>
+        </div>
+      </section>
+
+      {/* USE CASES */}
       <section className="section" id="scenarios" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <div className="shead" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 36 }}>
@@ -258,13 +272,8 @@ export default function Home() {
             </div>
           </div>
           <div className="scenario-grid">
-            {FEATURED_SCENARIOS.map((scenario) => (
+            {SCENARIOS.map((scenario) => (
               <ScenarioCard scenario={scenario} locale={locale} key={scenario.title} />
-            ))}
-          </div>
-          <div className="scenario-soon-grid">
-            {UPCOMING_SCENARIOS.map((scenario) => (
-              <ScenarioSoonCard scenario={scenario} locale={locale} key={scenario.title} />
             ))}
           </div>
         </div>

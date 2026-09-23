@@ -4,13 +4,43 @@ title: 概览
 
 Vane Data 是面向 AI 工作负载的高性能、多模态原生数据引擎。它基于 DuckDB 分支构建，在核心执行引擎之上扩展原生多模态处理能力，并提供统一的本地与分布式执行框架。
 
+从[快速开始](quickstart/quickstart.mdx)入手，用 Vane 处理本地图片，无需 GPU、模型 API 密钥或外部集群。
+
 <DataArchitecture />
+
+## 原生多模态类型
+
+文件引用与解码后的数据使用不同的类型，都可以通过 SQL 或 Python 查询和转换：
+
+| 类型 | 含义 |
+| --- | --- |
+| `FILE` | 包含位置和元数据的不可变文件引用 |
+| `IMAGEFILE`、`AUDIOFILE`、`VIDEOFILE` | 编码后的图像、音频和视频文件引用 |
+| `IMAGE` | 解码后的图像像素 |
+| `TENSOR` | 数值数组，包括音频波形 |
+
+使用[内置媒体函数](reference/multimodal-data/index.mdx)查看元数据、解码和缩放图像、重采样音频或提取视频帧。媒体函数默认使用 Python 后端，需安装对应的 `vane-ai[image]`、`vane-ai[audio]` 或 `vane-ai[video]` 依赖。可选的原生加速由实验性的 `native_media` 扩展提供，需要单独安装其 provider wheel。
 
 ## 核心能力
 
-- **多模态原生处理** — 通过统一类型系统处理图像、视频、音频、文本、文档、事件、传感器数据和表格。动态批处理与背压控制可适应数据规模和计算开销的波动。
-- **Python 与 SQL 接口** — 使用 DuckDB SQL 或 Python Relation API 构建数据与 AI 流水线。
-- **内置 AI 算子** — 通过 OpenAI 和 Anthropic API 或原生 vLLM 集成调用 LLM、生成 embedding 并执行批量推理。基于前缀感知的分桶可提升 vLLM 前缀缓存命中率与推理吞吐。
+- **Python 与 SQL 接口** — 使用 DuckDB SQL 或 Python Relation API 构建流水线，并通过 [Python UDF](concepts/udfs.mdx) 扩展处理逻辑。
+- **内置 AI 算子** — 在数据转换过程中，通过所选模型服务[调用模型和生成 embedding](concepts/ai-functions.mdx)。
 - **异构执行** — 通过异步调度重叠 CPU、GPU、I/O 与模型推理工作负载。
-- **本地到云端的一致执行** — 同一条流水线既可在本地运行，也可扩展到分布式 Ray 集群，并为后续云边协同提供基础。
-- **专为生产级 AI 工作负载设计** — 构建多模态训练数据预处理流水线与企业级大规模批量推理工作流。
+- **本地与分布式执行** — 在本地或 [Ray 集群](deploy/deployment.mdx)上运行流水线，通过动态批处理与背压控制适应数据规模和处理开销的变化。
+
+## 连接现有数据系统
+
+| 对接类型 | 支持的操作 |
+| --- | --- |
+| 湖表格式：[Iceberg](extensions/iceberg.mdx)、[Paimon](extensions/paimon.mdx)、[DuckLake](extensions/ducklake.mdx) | 分布式查询与写入 |
+| 列式格式：[Lance](extensions/lance.mdx)、[Vortex](extensions/vortex.mdx) | 分布式查询与写入；Lance 还支持向量搜索和混合搜索 |
+| 向量数据库：[Milvus](extensions/milvus.mdx)、[Qdrant](extensions/qdrant.mdx) | 将查询结果分布式写入或更新（upsert） |
+| 分析数据库：[Doris](extensions/doris.mdx) | 分布式 Arrow 批量写入 |
+
+湖表和列式格式扩展通过独立于 `vane-ai` 发布的 provider 包安装。数据库写入使用各自的可选依赖；安装配置与支持的操作请参阅对应指南。
+
+## 下一步
+
+- [运行快速开始示例](quickstart/quickstart.mdx) — 查看、筛选和缩放本地图片。
+- [准备多模态训练数据](tutorials/use-cases/multimodal-training-data.mdx) — 组合媒体处理与质量筛选，产出待发布的训练数据。
+- [将客服录音转为可检索记录](tutorials/use-cases/audio-support-doris-search.mdx) — 转写、分类、生成 embedding，并将结果写入 Doris。

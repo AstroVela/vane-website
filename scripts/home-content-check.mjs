@@ -12,27 +12,7 @@ assert.ok(existsSync(heroExecutionPath), 'HomeHeroExecution component should exi
 
 const heroExecution = readFileSync(heroExecutionPath, 'utf8')
 const heroPipelineCode = heroExecution.match(/const HERO_PIPELINE_CODE = `([\s\S]*?)`/)?.[1]
-const expectedHeroPipelineCode = `import vane
-vane.configure(runner="ray")
-con = vane.connect()
-
-assets = con.sql("""
-    SELECT asset_id, uri, media_type
-    FROM read_parquet('s3://raw-assets/*.parquet')
-    WHERE media_type IN ('image', 'video', 'audio')
-""")
-
-features = assets.map_batches(
-    DecodeAndInfer,  # user UDF; 1 model load/actor
-    schema=feature_schema,  # explicit user schema
-    gpus=1,
-    actor_number=4,
-)
-
-features.write_parquet("s3://model-ready/features/")`
-
 assert.ok(heroPipelineCode, 'Hero pipeline code should be extractable')
-assert.equal(heroPipelineCode, expectedHeroPipelineCode, 'Hero pipeline code should remain unchanged')
 assert.ok(
   heroPipelineCode.split('\n').every((line) => line.length <= 52),
   'Hero pipeline code should fit the code window without horizontal scrolling',
@@ -51,16 +31,20 @@ assert.match(home, /<HomeHeroExecution \/>/)
 assert.doesNotMatch(home, /const HERO_CODE = `/)
 assert.doesNotMatch(home, /heroCodeLocal|heroCodeRay|embed_documents\.py/)
 
-assert.match(heroExecution, /vane\.configure\(runner="ray"\)/)
-assert.match(heroExecution, /map_batches\(/)
-assert.match(heroExecution, /gpus=1/)
-assert.match(heroExecution, /actor_number=4/)
-assert.match(heroExecution, /write_parquet/)
-assert.match(heroExecution, /'image', 'video', 'audio'/)
-assert.match(heroExecution, /DecodeAndInfer/)
-assert.match(heroExecution, /user UDF/)
-assert.match(heroExecution, /1 model load\/actor/)
-assert.match(heroExecution, /explicit user schema/)
+assert.match(heroPipelineCode, /image_file\(/)
+assert.match(heroPipelineCode, /image_file_metadata\(source\)\.width/)
+assert.match(heroPipelineCode, /decode_image_file\(source, 'RGB'\)/)
+assert.match(heroPipelineCode, /resize\(/)
+assert.match(heroPipelineCode, /\.show\(\)/)
+assert.doesNotMatch(heroPipelineCode, /DecodeAndInfer|feature_schema/)
+assert.match(home, /to="\/docs\/data\/quickstart\/quickstart"/)
+assert.match(home, /release-notes\/v0\.2\.0/)
+for (const type of ['FILE', 'IMAGEFILE', 'AUDIOFILE', 'VIDEOFILE', 'IMAGE', 'TENSOR']) {
+  assert.ok(home.includes(type), `Home should introduce ${type}`)
+}
+for (const connection of ['Iceberg', 'Paimon', 'DuckLake', 'Lance', 'Vortex', 'Milvus', 'Qdrant', 'Doris']) {
+  assert.ok(home.includes(connection), `Home should name ${connection}`)
+}
 assert.match(heroExecution, /showHeader=\{false\}/)
 assert.doesNotMatch(heroExecution, /headerMeta=/)
 assert.doesNotMatch(heroExecution, /afterCode=/)

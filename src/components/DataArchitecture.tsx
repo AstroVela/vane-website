@@ -2,11 +2,11 @@ import { useEffect, useRef } from 'react'
 import Box from './Box'
 import { pickLocale, useSiteLocale } from '../siteI18n'
 
-/* Vane Data overview: multimodal inputs -> the Vane Data engine -> model-ready
-   outputs, over the shared Vane Core runtime panel. A Data-scoped companion to
-   PlatformArchitecture; it reuses the same card anatomy and the `.pa-core`
-   panel (identical content), and scales as one horizontal composition in a
-   narrow docs column. */
+/* Vane Data overview: multimodal inputs -> the Vane Data engine -> training data,
+   features, searchable records, and analytical results over the Vane Core runtime
+   panel. A Data-scoped companion to PlatformArchitecture; it reuses the same
+   card anatomy and the `.pa-core` panel, and scales as one horizontal
+   composition in a narrow docs column. */
 
 const DATA_ARCH_DESIGN_WIDTH = 760
 
@@ -45,10 +45,10 @@ const INPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
 ]
 
 const OUTPUTS: Array<{ icon: IconName; label: string; labelZh: string }> = [
-  { icon: 'cube', label: 'Model-ready Multimodal Assets', labelZh: '可直接送入模型的多模态资产' },
-  { icon: 'folder', label: 'Grounded Context Packages', labelZh: '带来源依据的上下文包' },
-  { icon: 'list', label: 'Agent Actions & Recommendations', labelZh: 'Agent 行动建议' },
-  { icon: 'loop', label: 'Trajectory & Learning Updates', labelZh: '轨迹与学习更新' },
+  { icon: 'cube', label: 'Training Data', labelZh: '训练数据' },
+  { icon: 'folder', label: 'Features & Embeddings', labelZh: '特征与 Embedding' },
+  { icon: 'list', label: 'Searchable Records', labelZh: '可检索记录' },
+  { icon: 'loop', label: 'Analytical Results', labelZh: '分析结果' },
 ]
 
 const STAGES = [
@@ -64,20 +64,20 @@ const CAPABILITIES: Array<{ icon: IconName; title: string; titleZh: string; art:
   { icon: 'model', title: 'Native Multimodal Data Model', titleZh: '原生多模态数据模型', art: 'modalities' },
   { icon: 'graph', title: 'Compute + Inference Operator Graph', titleZh: '计算 + 推理算子图', art: 'operators' },
   { icon: 'chip', title: 'Parallel CPU-GPU-IO Execution', titleZh: '并行 CPU-GPU-IO 执行', art: 'compute' },
-  { icon: 'cloud', title: 'Edge-to-Cloud Deployment', titleZh: '云边一体部署', art: 'edge' },
+  { icon: 'cloud', title: 'Local & Ray Execution', titleZh: '本地与 Ray 执行', art: 'edge' },
 ]
 
 const CORE_FEATURES: Array<{ title: string; titleZh: string; copy: string; copyZh: string; icon: IconName }> = [
   {
     title: 'Unified Multimodal Data Type',
     titleZh: '统一的多模态数据语义',
-    copy: 'Sensors, metadata, lineage, and model artifacts under one execution semantics.',
-    copyZh: '传感器、元数据、血缘和 model artifacts 放在同一套执行语义下。',
+    copy: 'File references, decoded images, and tensors in SQL and Python.',
+    copyZh: '通过 SQL 和 Python 处理文件引用、解码后的图像与张量。',
     icon: 'layers',
   },
   {
     title: 'Streaming + Backpressure + Dynamic Batching',
-    titleZh: 'streaming、backpressure 与 dynamic batching',
+    titleZh: '流式执行、背压与动态批处理',
     copy: 'Continuous flow for large objects with adaptive batching and pressure control.',
     copyZh: '大对象持续流动，批量大小随压力自动调整。',
     icon: 'stream',
@@ -86,14 +86,14 @@ const CORE_FEATURES: Array<{ title: string; titleZh: string; copy: string; copyZ
     title: 'Overlapped Heterogeneous Execution',
     titleZh: '异构执行重叠调度',
     copy: 'CPU, GPU, IO, and model inference overlap through asynchronous scheduling.',
-    copyZh: 'CPU、GPU、IO 和模型推理通过 async scheduling 重叠执行。',
+    copyZh: 'CPU、GPU、IO 和模型推理通过异步调度重叠执行。',
     icon: 'chip',
   },
   {
-    title: 'Edge-Cloud Coordination',
-    titleZh: '云边协同',
-    copy: 'The same pipeline runs across local devices and Ray clusters.',
-    copyZh: '同一条流水线可跨本地设备和 Ray 集群运行。',
+    title: 'Local & Distributed Execution',
+    titleZh: '本地与分布式执行',
+    copy: 'Run pipelines locally or on distributed Ray clusters.',
+    copyZh: '在本地或分布式 Ray 集群上运行流水线。',
     icon: 'cloud',
   },
 ]
@@ -384,8 +384,8 @@ export default function DataArchitecture() {
     {
       inputs: '多模态输入',
       outputs: '输出 / 结果',
-      local: 'local runtime',
-      ray: 'Ray Runtime',
+      local: '本地运行时',
+      ray: 'Ray 运行时',
     },
   )
 
