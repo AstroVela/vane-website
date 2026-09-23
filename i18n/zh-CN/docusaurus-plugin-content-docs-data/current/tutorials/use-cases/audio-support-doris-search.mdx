@@ -1,5 +1,5 @@
 ---
-title: Vane + Doris 加工客服录音并检索与分析
+title: Vane + Doris 客服录音检索
 ---
 
 本教程使用 Vane 将中文客服录音转写为文本片段，提取候选故障类别并生成向量，再通过 Stream Load 写入 Apache Doris。随后在 Doris 中按产品型号和日期检索相似反馈，并将录音片段关联到订单和生产批次。
@@ -8,13 +8,15 @@ title: Vane + Doris 加工客服录音并检索与分析
 
 处理顺序：录音与工单清单 → Vane 转写、分类、向量化 → Doris 写入检查 → 相似检索 → 订单与批次关联。
 
+本教程为自包含教程：录音以本地 WAV 文件提供，所有脚本都内联在下方各节中，无需额外的源码工程。
+
 ## 1. 准备环境与录音
 
 本例面向 Bash 环境，使用本地 CPU 加工，前提是已有可连接的 Apache Doris 4.1.3 实例及建库、建表和写入权限。Doris 的部署不在本教程范围内。先完成本节的环境检查，再继续建表。
 
 | 组件 | 要求 |
 |-|-|
-| Python | 建议 3.12；示例目录放在 Vane 源码仓库之外 |
+| Python | 建议 3.12；请为该示例创建独立项目目录 |
 | Vane | Vane 0.2.0；使用 FILE/AUDIOFILE、SQL ai_prompt/ai_embed 和 DorisStreamLoadSink |
 | Doris | 目标版本 4.1.3；需要 MySQL 客户端及 FE 查询端口、HTTP 写入端口和 BE HTTP 的网络可达性 |
 | 转写与向量模型 | Faster-Whisper small；paraphrase-multilingual-MiniLM-L12-v2。首次运行需要下载权重 |
@@ -36,7 +38,7 @@ mysql --version
 
 ### 1.2 准备三段中文录音
 
-准备三段简短、清晰的中文 WAV 录音，分别保存为下表中的文件名。可用录音工具读出建议文本后导出 WAV；不要仅修改其他音频格式的扩展名。本教程未附音频下载包，因此这些录音需要自行准备。
+准备三段简短、清晰的中文 WAV 录音，分别保存到 `recordings/` 下并按下表命名。可直接下载示例文件（[T1024](/tutorials/audio-support-doris-search/zh/T1024.wav)、[T1025](/tutorials/audio-support-doris-search/zh/T1025.wav)、[T1026](/tutorials/audio-support-doris-search/zh/T1026.wav)），也可用录音工具读出建议文本后导出 WAV；不要仅修改其他音频格式的扩展名。录音请保持中文。
 
 | 文件 | 建议录制文本 |
 |-|-|
@@ -85,11 +87,13 @@ read -r -s -p 'OpenAI API key: ' OPENAI_API_KEY
 export OPENAI_API_KEY
 read -r -p '可用的文本模型 ID: ' VANE_PROMPT_MODEL
 export VANE_PROMPT_MODEL
+# 一次性打包连接参数；-p 仍会在每次执行时提示输入密码。
+export MYSQL_ARGS="--default-character-set=utf8mb4 -h $DORIS_HOST -P $DORIS_QUERY_PORT -u $DORIS_USER -p"
 
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SELECT VERSION(); SHOW BACKENDS;'
+mysql $MYSQL_ARGS -e 'SELECT VERSION(); SHOW BACKENDS;'
 ```
 
-检查 Doris 版本及 BE 的存活状态。DORIS_BE_HOSTS 填写 FE 重定向所用的真实 BE 主机名或 IP，多个用逗号分隔，不含端口；运行机器必须能访问对应 BE HTTP 地址。后续 mysql 命令中的 -p 会另外提示输入 Doris 密码，Python 写入脚本从环境变量读取密码。
+检查 Doris 版本及 BE 的存活状态。DORIS_BE_HOSTS 填写 FE 重定向所用的真实 BE 主机名或 IP，多个用逗号分隔，不含端口；运行机器必须能访问对应 BE HTTP 地址。后续命令复用 MYSQL_ARGS 中的连接参数；其中的 -p 会在每次执行时提示输入 Doris 密码，Python 写入脚本从环境变量读取密码。
 
 ## 2. 在 Doris 中创建表和索引
 
@@ -121,7 +125,6 @@ DUPLICATE KEY(ticket_id, segment_id)
 DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
 PROPERTIES("replication_num" = "1");
 
-
 CREATE TABLE vane_support_demo.ticket_orders (
     ticket_id VARCHAR(64) NOT NULL,
     order_id VARCHAR(64)
@@ -147,8 +150,8 @@ INSERT INTO vane_support_demo.orders VALUES
 text 的倒排索引用于可选关键词过滤，embedding 的 ANN 索引用于向量排序。向量列、Sink 与模型统一使用 384 维浮点数组。event_date 使用 YYYYMMDD 整数，与当前 Sink 接收的 Arrow 类型对应。业务关系示例假定一个工单对应一个订单、一个订单对应一个生产批次。
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < schema.sql
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SHOW TABLES FROM vane_support_demo;'
+mysql $MYSQL_ARGS < schema.sql
+mysql $MYSQL_ARGS -e 'SHOW TABLES FROM vane_support_demo;'
 ```
 
 应能看到 feedback_segments、ticket_orders、orders 三张表。如果建表失败，先解决错误再运行加工脚本。
@@ -204,8 +207,6 @@ class SpeechRecognizer:
         return pa.array(out, type=pa.string())
 
 
-
-
 @vane.func(return_dtype="VARCHAR", name="normalize_fault")
 def normalize_fault(raw: str) -> str:
     # 确定性规则：验证模型 JSON 和枚举，不把模型判断升级成人工确认。
@@ -227,7 +228,6 @@ def normalize_fault(raw: str) -> str:
 def sql_literal(value: str) -> str:
     # 模型名进入 SQL 常量前转义单引号；API Key 始终从环境变量读取。
     return "'" + value.replace("'", "''") + "'"
-
 
 
 def main():
@@ -290,7 +290,7 @@ destination_schema 的列顺序与 pipeline.sql 的最终 SELECT 一致，向量
 
 ### 3.2 保存 pipeline.sql
 
-file(f.url, NULL, NULL, NULL, NULL) 构造文件引用，audio_file(...) 将其转换为 AUDIOFILE，转写 UDF 按批读取内容。ai_prompt 提取候选分类，normalize_fault 统一类别，ai_embed 为原始转写片段生成向量。所有记录的 review_status 初始为 pending；本教程的查询不依赖人工审核步骤。
+file(f.url, NULL, NULL, NULL, NULL) 构造文件引用，audio_file(...) 将其转换为 AUDIOFILE，转写 UDF 按批读取内容。ai_prompt 提取候选分类，normalize_fault 统一类别，ai_embed 为原始转写片段生成向量。所有记录的 review_status 初始为 pending；本教程的查询不依赖人工审核步骤。分类取值待确认由模型给出，与 review_status 列相互独立；后者在人工复核前始终为 pending。
 
 ```sql
 -- 业务元数据决定工单、型号和日期；ticket_id 应唯一。
@@ -311,7 +311,7 @@ WITH manifest AS (
            -- FILE → AUDIOFILE，交给 SQL 中的有状态转写 UDF。
            audio_file(source_file) AS audio
     FROM files
-), 
+),
 transcripts AS (
     SELECT ticket_id, product_model, event_date,
            audio.url AS source_uri,
@@ -332,7 +332,7 @@ transcripts AS (
     FROM expanded
     -- 空片段不进入后续模型调用。
     WHERE length(trim(segment.text)) > 0
-), 
+),
 knowledge AS (
     -- AI 负责理解业务表述；返回的是候选分类，不是已审核事实。
     SELECT *, ai_prompt(
@@ -397,7 +397,7 @@ HAVING COUNT(*) > 1;
 ```
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < check.sql
+mysql $MYSQL_ARGS < check.sql
 ```
 
 有非空转写时，segment_count 应大于 0，min_dimension 和 max_dimension 均应为 384。三段录音都成功产生非空转写时，ticket_count 应为 3；片段总数可以超过 3。最后一条重复检查应返回 0 行。分类可能为无法启动、正常咨询、其他故障或待确认，review_status 应为 pending。
@@ -490,7 +490,7 @@ ORDER BY candidate_ticket_count DESC, production_batch;
 ```
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < analysis.sql
+mysql $MYSQL_ARGS < analysis.sql
 ```
 
 如果三段录音都已写入，第一条查询中 T1024 应关联 O9001 / B202608，T1025 关联 O9002 / B202608，T1026 关联 O9003 / B202609。同一工单可能出现多个片段行；这些业务关系来自 schema.sql 的固定输入，与模型分类无关。
@@ -505,7 +505,7 @@ Sink 按批次提交，整条流水线不具备跨批次事务。中途失败可
 
 | 现象 | 检查方法 |
 |-|-|
-| 导入 Vane 或接口失败 | 确认正在使用示例虚拟环境、目录位于源码仓库之外；执行 python -m pip show vane-ai 确认版本为 0.2.0，再执行导入检查 |
+| 导入 Vane 或接口失败 | 确认正在使用示例虚拟环境，且在项目目录下运行；执行 python -m pip show vane-ai 确认版本为 0.2.0，再执行导入检查 |
 | 首次运行停在模型加载 | 查看权重下载日志与网络、缓存目录和磁盘空间；确认两种本地模型均可下载 |
 | ai_prompt 鉴权或模型错误 | 检查 OPENAI_API_KEY 和 VANE_PROMPT_MODEL 是否已 export，以及该账号能否访问对应模型 |
 | Stream Load 重定向被拒绝或连接失败 | 检查 DORIS_HTTP_ENDPOINT、BE 的实际重定向主机、DORIS_BE_HOSTS 和 BE HTTP 网络可达性 |
@@ -516,4 +516,4 @@ Sink 按批次提交，整条流水线不具备跨批次事务。中途失败可
 
 完成标志：Doris 中有录音片段且向量维度为 384；可以直接执行 search.sql，以已有录音片段检索其他工单的相似反馈；可以从片段关联到订单和批次，并通过来源与时间位置回听。
 
-参考：[Vane 构建安装说明](https://github.com/astrovela/vane/blob/3e2bdde3cc9b9d38ab61ae225d7c65c7195fe695/DEVELOPMENT.md)；[Doris 向量索引使用指南](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/)。
+参考：[Vane 安装](/zh-CN/docs/data/quickstart/installation)；[Doris 向量索引使用指南](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/)。

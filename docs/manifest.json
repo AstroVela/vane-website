@@ -181,11 +181,11 @@
     },
     {
       "slug": "tutorials/use-cases/audio-support-doris-search",
-      "title": "Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback",
+      "title": "Vane + Doris Support Recording Search",
       "source": "docs/data/tutorials/use-cases/audio-support-doris-search.mdx",
       "route": "/docs/data/tutorials/use-cases/audio-support-doris-search",
       "frontmatter": {
-        "title": "Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback"
+        "title": "Vane + Doris Support Recording Search"
       }
     },
     {
@@ -830,7 +830,7 @@
             },
             {
               "slug": "tutorials/use-cases/audio-support-doris-search",
-              "label": "Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback",
+              "label": "Vane + Doris Support Recording Search",
               "route": "/docs/data/tutorials/use-cases/audio-support-doris-search"
             }
           ]

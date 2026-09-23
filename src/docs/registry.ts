@@ -150,8 +150,8 @@ export const DOCS_PAGES = {
   },
   'tutorials/use-cases/audio-support-doris-search': {
     source: 'docs/data/tutorials/use-cases/audio-support-doris-search.mdx',
-    title: 'Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback',
-    titleZh: 'Vane + Doris 加工客服录音并检索与分析',
+    title: 'Vane + Doris Support Recording Search',
+    titleZh: 'Vane + Doris 客服录音检索',
   },
   'reference/udf': {
     source: 'docs/data/reference/udf/index.mdx',

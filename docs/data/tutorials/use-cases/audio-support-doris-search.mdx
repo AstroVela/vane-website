@@ -1,5 +1,5 @@
 ---
-title: "Vane + Doris: Processing Customer Support Recordings and Retrieving Similar Feedback"
+title: Vane + Doris Support Recording Search
 ---
 
 This tutorial uses Vane to transcribe English customer support recordings into text segments, extract candidate fault categories, and generate embeddings, then load the results into Apache Doris using Stream Load. You will then retrieve similar feedback in Doris using product model and date filters, and link recording segments to orders and production batches.
@@ -8,13 +8,15 @@ The inputs are local WAV recordings and a support ticket manifest. The output is
 
 Processing flow: recordings and ticket manifest → transcription, classification, and embedding generation in Vane → verification of data loaded into Doris → similarity search → linkage to orders and production batches.
 
+This is a self-contained tutorial: the recordings are provided as local WAV files, and every script is inlined in the sections below, so no separate source project is required.
+
 ## 1. Prepare the Environment and Recordings
 
 This example runs in Bash and processes recordings locally on the CPU. It assumes that an Apache Doris 4.1.3 instance is accessible and that you have permission to create databases and tables and load data. Deploying Doris is outside the scope of this tutorial. Complete the environment checks in this section before creating the tables.
 
 | Component | Requirements |
 |-|-|
-| Python | Python 3.12 is recommended. Place the example directory outside the Vane source repository. |
+| Python | Python 3.12 is recommended. Create a dedicated project directory for the example. |
 | Vane | Vane 0.2.0, using FILE/AUDIOFILE, the SQL functions ai_prompt/ai_embed, and DorisStreamLoadSink. |
 | Doris | Target version: 4.1.3. Requires a MySQL client and network access to the frontend (FE) query port, the HTTP ingestion port, and the backend (BE) HTTP endpoints. |
 | Transcription and embedding models | Faster-Whisper small and paraphrase-multilingual-MiniLM-L12-v2. Model weights must be downloaded on the first run. |
@@ -36,7 +38,7 @@ Continue once API available appears. Run python -m pip show vane-ai to confirm t
 
 ### 1.2 Prepare Three English Recordings
 
-Prepare three short, clear English WAV recordings and save them with the filenames shown below. You can read the suggested English scripts into a recording tool and export them as WAV files; do not simply change the extension of files in another audio format. This tutorial does not include downloadable audio files, so you must prepare the recordings yourself. Record the scripts as written; the recordings should remain in English.
+Prepare three short, clear English WAV recordings and save them under `recordings/` with the filenames shown below. Download the sample files ([T1024](/tutorials/audio-support-doris-search/en/T1024.wav), [T1025](/tutorials/audio-support-doris-search/en/T1025.wav), [T1026](/tutorials/audio-support-doris-search/en/T1026.wav)), or record the suggested scripts yourself with a recording tool and export them as WAV; do not simply change the extension of files in another audio format. Keep the recordings in English.
 
 | File | Suggested Recording Script (English) |
 |-|-|
@@ -85,11 +87,13 @@ read -r -s -p 'OpenAI API key: ' OPENAI_API_KEY
 export OPENAI_API_KEY
 read -r -p 'Available text model ID: ' VANE_PROMPT_MODEL
 export VANE_PROMPT_MODEL
+# Bundle the connection flags once; -p still prompts for the password each time.
+export MYSQL_ARGS="--default-character-set=utf8mb4 -h $DORIS_HOST -P $DORIS_QUERY_PORT -u $DORIS_USER -p"
 
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SELECT VERSION(); SHOW BACKENDS;'
+mysql $MYSQL_ARGS -e 'SELECT VERSION(); SHOW BACKENDS;'
 ```
 
-Check the Doris version and whether the BEs are alive. Set DORIS_BE_HOSTS to the actual BE hostnames or IP addresses used in FE redirects, separated by commas and without port numbers. The machine running the example must be able to reach the corresponding BE HTTP endpoints. The -p option in subsequent mysql commands prompts separately for the Doris password; the Python ingestion script reads it from the environment variable.
+Check the Doris version and whether the BEs are alive. Set DORIS_BE_HOSTS to the actual BE hostnames or IP addresses used in FE redirects, separated by commas and without port numbers. The machine running the example must be able to reach the corresponding BE HTTP endpoints. MYSQL_ARGS bundles the connection flags used by the remaining commands; its -p option prompts separately for the Doris password each time, and the Python ingestion script reads the password from the environment variable.
 
 ## 2. Create Tables and Indexes in Doris
 
@@ -121,7 +125,6 @@ DUPLICATE KEY(ticket_id, segment_id)
 DISTRIBUTED BY HASH(ticket_id) BUCKETS 1
 PROPERTIES("replication_num" = "1");
 
-
 CREATE TABLE vane_support_demo.ticket_orders (
     ticket_id VARCHAR(64) NOT NULL,
     order_id VARCHAR(64)
@@ -147,8 +150,8 @@ INSERT INTO vane_support_demo.orders VALUES
 The inverted index on text supports optional keyword filtering, while the approximate nearest neighbor (ANN) index on embedding supports vector ranking. The vector column, sink, and model all use 384-dimensional floating-point arrays. event_date is an integer in YYYYMMDD format, matching the Arrow type accepted by the current sink. The sample business relationships assume that each ticket maps to one order and each order maps to one production batch.
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < schema.sql
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p -e 'SHOW TABLES FROM vane_support_demo;'
+mysql $MYSQL_ARGS < schema.sql
+mysql $MYSQL_ARGS -e 'SHOW TABLES FROM vane_support_demo;'
 ```
 
 You should see three tables: feedback_segments, ticket_orders, and orders. If table creation fails, resolve the error before running the processing script.
@@ -204,8 +207,6 @@ class SpeechRecognizer:
         return pa.array(out, type=pa.string())
 
 
-
-
 @vane.func(return_dtype="VARCHAR", name="normalize_fault")
 def normalize_fault(raw: str) -> str:
     # Deterministic validation of model JSON and allowed values; model judgments are not human confirmations.
@@ -224,11 +225,9 @@ def normalize_fault(raw: str) -> str:
     return value if value in {"cannot_start", "general_inquiry", "other_fault", "pending_review"} else "pending_review"
 
 
-
 def sql_literal(value: str) -> str:
     # Escape single quotes before inserting the model name into a SQL literal; always read the API key from the environment.
     return "'" + value.replace("'", "''") + "'"
-
 
 
 def main():
@@ -291,7 +290,7 @@ The column order in destination_schema matches the final SELECT in pipeline.sql,
 
 ### 3.2 Save pipeline.sql
 
-file(f.url, NULL, NULL, NULL, NULL) constructs a file reference. audio_file(...) converts the reference to AUDIOFILE, and the transcription UDF reads the content in batches. ai_prompt extracts candidate classifications, normalize_fault normalizes the category values, and ai_embed generates embeddings for the original transcript segments. All records initially have review_status set to pending. The queries in this tutorial do not require a manual review step. The English prompt and category literals match the English recordings. The prompt asks the model to return only a JSON object with a fault_category value from the allowed categories, avoid treating negated, hypothetical, or resolved faults as confirmed faults, and use pending_review when evidence is insufficient.
+file(f.url, NULL, NULL, NULL, NULL) constructs a file reference. audio_file(...) converts the reference to AUDIOFILE, and the transcription UDF reads the content in batches. ai_prompt extracts candidate classifications, normalize_fault normalizes the category values, and ai_embed generates embeddings for the original transcript segments. All records initially have review_status set to pending. The queries in this tutorial do not require a manual review step. The English prompt and category literals match the English recordings. The prompt asks the model to return only a JSON object with a fault_category value from the allowed categories, avoid treating negated, hypothetical, or resolved faults as confirmed faults, and use pending_review when evidence is insufficient. The category value pending_review is chosen by the model; it is separate from the review_status column, which stays pending until a person reviews the row.
 
 ```sql
 -- Business metadata supplies the ticket, product model, and date; ticket_id must be unique.
@@ -312,7 +311,7 @@ WITH manifest AS (
            -- Convert FILE to AUDIOFILE for the stateful transcription UDF in SQL.
            audio_file(source_file) AS audio
     FROM files
-), 
+),
 transcripts AS (
     SELECT ticket_id, product_model, event_date,
            audio.url AS source_uri,
@@ -333,7 +332,7 @@ transcripts AS (
     FROM expanded
     -- Exclude empty segments from subsequent model calls.
     WHERE length(trim(segment.text)) > 0
-), 
+),
 knowledge AS (
     -- AI interprets the business context and returns candidate classifications, not reviewed facts.
     SELECT *, ai_prompt(
@@ -399,7 +398,7 @@ HAVING COUNT(*) > 1;
 ```
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < check.sql
+mysql $MYSQL_ARGS < check.sql
 ```
 
 If nonempty transcripts are produced, segment_count should be greater than 0, and both min_dimension and max_dimension should be 384. If all three recordings successfully produce nonempty transcripts, ticket_count should be 3; the total segment count may exceed 3. The final duplicate check should return 0 rows. Possible category values are cannot_start (“Unable to start”), general_inquiry (“General inquiry”), other_fault (“Other fault”), and pending_review (“To be confirmed”). review_status should be pending.
@@ -492,7 +491,7 @@ ORDER BY candidate_ticket_count DESC, production_batch;
 ```
 
 ```bash
-mysql --default-character-set=utf8mb4 -h "$DORIS_HOST" -P "$DORIS_QUERY_PORT" -u "$DORIS_USER" -p < analysis.sql
+mysql $MYSQL_ARGS < analysis.sql
 ```
 
 If all three recordings have been loaded, the first query should link T1024 to O9001 / B202608, T1025 to O9002 / B202608, and T1026 to O9003 / B202609. A ticket may appear in multiple segment rows. These business relationships come from the fixed inputs in schema.sql and are independent of the model's classifications.
@@ -507,7 +506,7 @@ The sink commits each batch separately; the pipeline does not provide a transact
 
 | Symptom | What to Check |
 |-|-|
-| Vane or API import fails | Confirm that the example virtual environment is active and that the directory is outside the source repository. Run python -m pip show vane-ai to confirm version 0.2.0, then repeat the import check. |
+| Vane or API import fails | Confirm that the example virtual environment is active and that you are running from the project directory. Run python -m pip show vane-ai to confirm version 0.2.0, then repeat the import check. |
 | The first run appears stuck loading models | Check model-weight download logs, network connectivity, the cache directory, and available disk space. Confirm that both local models can be downloaded. |
 | ai_prompt authentication or model error | Check that OPENAI_API_KEY and VANE_PROMPT_MODEL have been exported and that the account can access the specified model. |
 | Stream Load redirect rejected or connection failed | Check DORIS_HTTP_ENDPOINT, the actual BE redirect host, DORIS_BE_HOSTS, and network access to the BE HTTP endpoint. |
@@ -518,4 +517,4 @@ The sink commits each batch separately; the pipeline does not provide a transact
 
 Completion criteria: Doris contains recording segments with 384-dimensional embeddings; search.sql can be executed directly to retrieve similar feedback from other tickets using an existing recording segment; and segments can be linked to orders and production batches and replayed using their source references and timestamps.
 
-References: [Vane Build and Installation Instructions](https://github.com/astrovela/vane/blob/3e2bdde3cc9b9d38ab61ae225d7c65c7195fe695/DEVELOPMENT.md); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
+References: [Vane installation](/docs/data/quickstart/installation); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
