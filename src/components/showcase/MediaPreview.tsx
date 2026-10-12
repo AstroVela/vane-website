@@ -1,4 +1,4 @@
-import {useEffect, useId, useRef, useState, type CSSProperties} from 'react'
+import {useCallback, useEffect, useId, useRef, useState, type CSSProperties} from 'react'
 import {PlayIcon, PauseIcon, SpeakerLoudIcon, SpeakerOffIcon, ZoomInIcon, Cross2Icon, ReloadIcon} from '@radix-ui/react-icons'
 import useBaseUrl from '@docusaurus/useBaseUrl'
 import {useSiteLocale} from '../../siteI18n'
@@ -10,7 +10,7 @@ import {useMediaPlayback} from './MediaPlaybackProvider'
 type Request = {epoch: number; locator: Locator}
 type Props = {
   asset: ShowcaseAsset; selected?: string; preview?: string; request?: Request; epoch: number
-  initialPosition: number; autoPreview: boolean; visible: boolean
+  initialPosition: number; loadEnabled: boolean; autoPreview: boolean; visible: boolean
   onProgress: (position: number) => void; onInteract: () => void
   onAudible: (audible: boolean) => void; onModal: (open: boolean) => void
 }
@@ -35,7 +35,7 @@ export function ImageModal({src, alt, regions, onClose}: {src: string; alt: stri
   </dialog>
 }
 
-export default function MediaPreview({asset, selected, preview, request, epoch, initialPosition, autoPreview, visible, onProgress, onInteract, onAudible, onModal}: Props) {
+export default function MediaPreview({asset, selected, preview, request, epoch, initialPosition, loadEnabled, autoPreview, visible, onProgress, onInteract, onAudible, onModal}: Props) {
   const locale = useSiteLocale(), playback = useMediaPlayback(), id = useId()
   const mediaRef = useRef<HTMLMediaElement | null>(null)
   const pending = useRef<Request | undefined>(undefined)
@@ -54,6 +54,17 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
   const [buffering, setBuffering] = useState(false)
   const [retry, setRetry] = useState(0)
   const src = useBaseUrl(asset.url), poster = useBaseUrl(asset.posterUrl ?? '')
+  const baseUrl = useBaseUrl('/')
+  const setMedia = useCallback((media: HTMLMediaElement | null) => {mediaRef.current = media}, [])
+  const loadSource = useCallback(() => {
+    const media = mediaRef.current
+    if (!media || media.hasAttribute('src')) return
+    const displayWidth = Math.min(media.clientWidth, media.clientHeight * (asset.width ?? 1) / (asset.height ?? 1))
+    const targetWidth = displayWidth * window.devicePixelRatio
+    const variant = asset.previews?.find(p => p.width >= targetWidth) ?? asset.previews?.at(-1)
+    media.src = variant ? baseUrl + variant.url.replace(/^\//, '') : src
+    media.load()
+  }, [asset, baseUrl, src])
   const t = (en: string, zh: string) => locale === 'en' ? en : zh
   const duration = asset.duration ?? 0
   const selectedInsight = showcaseInsights.find(i => i.id === (preview ?? selected))
@@ -64,8 +75,21 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
   useEffect(() => {
     const media = mediaRef.current
     if (!media) return
-    return playback.register(id, media)
+    const unregister = playback.register(id, media)
+    return () => {unregister(); media.removeAttribute('src'); media.load()}
   }, [id, playback])
+  useEffect(() => {
+    if (!loadEnabled || !visible || asset.kind === 'image') return
+    // Let the selected type and first screen paint before starting media requests.
+    let frame = 0, idle = 0, timer = 0
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        if (typeof window.requestIdleCallback === 'function') idle = window.requestIdleCallback(loadSource, {timeout: 1200})
+        else timer = window.setTimeout(loadSource, 100)
+      })
+    })
+    return () => {cancelAnimationFrame(frame); if (idle) window.cancelIdleCallback(idle); clearTimeout(timer)}
+  }, [asset.kind, loadEnabled, loadSource, visible])
   useEffect(() => {
     const media = mediaRef.current
     if (!media) return
@@ -85,7 +109,9 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
 
   useEffect(() => {
     const media = mediaRef.current
-    if (!request || request.locator.kind !== 'time' || !media || media.readyState < 1) return
+    if (!request || request.locator.kind !== 'time' || !media) return
+    loadSource()
+    if (media.readyState < 1) return
     const requestedEpoch = request.epoch
     media.currentTime = request.locator.start
     resumePosition.current = request.locator.start
@@ -97,13 +123,13 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
       if (!success) setPlaying(false)
     })
     return () => {retired = true}
-  }, [id, playback, ready, request])
+  }, [id, loadSource, playback, ready, request])
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const media = mediaRef.current
       if (imageRef.current?.complete && !imageRef.current.naturalWidth || media?.error) setFailed(true)
-      if (media && media.readyState >= 1) {media.currentTime = resumePosition.current; setPosition(media.currentTime); setReady(true)}
+      if (media && media.readyState >= 1) {if (Math.abs(media.currentTime - resumePosition.current) > .025) media.currentTime = resumePosition.current; setPosition(media.currentTime); setReady(true)}
     })
     return () => cancelAnimationFrame(frame)
   }, [retry])
@@ -112,7 +138,8 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
     const media = mediaRef.current
     if (!media) return
     const target = pending.current?.locator
-    media.currentTime = target?.kind === 'time' ? target.start : Math.min(resumePosition.current, Math.max(0, media.duration - .05))
+    const nextPosition = target?.kind === 'time' ? target.start : Math.min(resumePosition.current, Math.max(0, media.duration - .05))
+    if (Math.abs(media.currentTime - nextPosition) > .025) media.currentTime = nextPosition
     setPosition(media.currentTime)
     setReady(true)
   }
@@ -130,13 +157,16 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
     if (!media) return
     onInteract()
     if (!media.paused) {playback.pause(id, true); return}
+    loadSource()
     if (media.ended) media.currentTime = 0
     void playback.play(id, 'manual')
   }
   const seek = (value: number) => {
     onInteract(); clipEnd.current = undefined; setClipCompleted(false)
     const media = mediaRef.current
-    if (!media || !Number.isFinite(media.duration)) return
+    if (!media) return
+    loadSource()
+    if (!Number.isFinite(media.duration)) {resumePosition.current = value; setPosition(value); onProgress(value); return}
     media.currentTime = Math.min(value, media.duration); resumePosition.current = media.currentTime; setPosition(media.currentTime); onProgress(media.currentTime)
   }
   const toggleSound = () => {
@@ -147,7 +177,7 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
   }
   const openImage = () => {onInteract(); playback.pauseAll(); setEnlarged(true); onModal(true)}
   const currentCaption = showcaseInsights.find(i => i.locators.some(l => l.kind === 'time' && l.assetId === asset.id && position >= l.start && position < l.end))
-  const shared = {src, preload: 'metadata' as const, ref: (media: HTMLMediaElement | null) => {mediaRef.current = media}, onLoadedMetadata: onMetadata,
+  const shared = {preload: 'metadata' as const, ref: setMedia, onLoadedMetadata: onMetadata,
     onPlay: () => {setPlaying(true); setClipCompleted(false); onAudible(asset.kind === 'audio' || !mediaRef.current?.muted)},
     onPause: () => {setPlaying(false); onAudible(false); playback.stopped(id)}, onTimeUpdate: updateTime,
     onWaiting: () => setBuffering(true), onCanPlay: () => setBuffering(false),

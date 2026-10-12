@@ -24,6 +24,14 @@ for (const asset of assets) {
   const metadata = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_name,width,height', '-of', 'json', 'public' + asset.url]))
   if (asset.kind !== 'image') assert.ok(Math.abs(Number(metadata.format.duration) - asset.duration) < .15)
   if (asset.kind === 'video') assert.ok(metadata.streams.some(s => s.codec_name === 'h264'))
+  for (const preview of asset.previews ?? []) {
+    assert.ok(existsSync('public' + preview.url))
+    const info = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_name,width,height', '-of', 'json', 'public' + preview.url]))
+    assert.ok(Math.abs(Number(info.format.duration) - asset.duration) < .15)
+    assert.ok(info.streams.some(s => s.codec_name === 'h264' && s.width === preview.width && s.height === preview.height))
+    const audioHash = file => execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:a:0', '-c:a', 'copy', '-f', 'hash', '-hash', 'sha256', '-'], {encoding: 'utf8'}).trim()
+    assert.equal(audioHash('public' + preview.url), audioHash('public' + asset.url), 'Preview must preserve the original audio')
+  }
   if (asset.kind === 'image') assert.ok(metadata.streams.some(s => s.width === asset.width && s.height === asset.height))
   if (asset.kind === 'audio') {assert.ok(metadata.streams.some(s => s.codec_name === 'aac')); assert.equal(asset.waveform.length, 96); assert.ok(asset.waveform.every(h => h > 0 && h <= 1))}
 }

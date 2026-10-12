@@ -12,6 +12,10 @@ npm run preview:local
 
 Open `http://127.0.0.1:4328` or `/zh-CN`. The server creates `.local-data/demo.sqlite` automatically, persists submissions and sends no email. Copy `.env.example` to `.env.local` to change the port, database path or retention. Docusaurus development alone has no Demo API and shows the form's unavailable state.
 
+`npm run build` prepares Brotli and gzip versions of text assets. The Node service negotiates compression in local and production modes. Content-hashed scripts, styles, fonts and showcase media are cached for one year; HTML revalidates on each visit, and other assets cache for one hour. Content changes use new media filenames. Demo API responses remain uncached. Videos keep native HTTP byte-range delivery and fast-start MP4 indexes; they are not gzip-compressed.
+
+The showcase initially renders its heading, understanding and poster. After resolving the selected media type and painting the first screen, the visible player loads during idle time. Manual playback or an evidence click can start loading immediately. Video previews use 360/480-pixel derivatives chosen for the displayed size and pixel density; both retain the complete timeline and original AAC audio track. Full-resolution sources and derivation checksums remain in the media manifest.
+
 ## Production
 
 Run the Node service behind your HTTPS reverse proxy. Set `NODE_ENV=production`, `DEMO_SITE_URL` to the public origin, and `DEMO_DB_PATH` to a persistent local disk. Verify a sender with Resend and configure `DEMO_FROM`, `RESEND_API_KEY` and a random `DEMO_RATE_LIMIT_SECRET`. `DEMO_TO` defaults to `pulse@astrovela.ai` and is server configuration. Keys never enter the browser bundle or Git.

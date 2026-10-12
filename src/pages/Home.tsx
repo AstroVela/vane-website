@@ -22,8 +22,8 @@ export default function Home() {
     hero.current?.scrollIntoView({block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'})
     hero.current?.querySelector<HTMLElement>('.showcase-stage')?.focus({preventScroll: true})
   }
-  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.webp')
-  const image = useBaseUrl('/showcase/marketing/comp_005-image.webp')
+  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.45b2669dc293.webp')
+  const image = useBaseUrl('/showcase/marketing/comp_005-image.b3187abe73e8.webp')
   return <MarketingLayout title={t('Multimodal context for AI', '让多模态资料成为 AI 可用的上下文')} description={t('Understand videos, images and audio. Find useful content and inspect its source with Vane Context. Build media pipelines with open source Vane Data.', '理解视频、图片与音频，定位可用信息并核对原始依据。通过 Vane Context 接入应用，或使用开源 Vane Data 构建处理流水线。')}>
     <section className="context-home-hero" ref={hero}><div className="wrap"><HeroShowcase onController={register} /></div></section>
     <section className="section marketing-section capability-section"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('Understand the content.', '理解内容，')}<br />{t('Find what matters. Inspect the source.', '找到所需信息，核对每一处依据。')}</h2></div>

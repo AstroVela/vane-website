@@ -19,7 +19,7 @@ const databasePath=resolve(process.env.DEMO_DB_PATH??'.local-data/demo.sqlite')
 process.umask(0o077)
 const database=new SQLiteDemoDatabase(databasePath)
 const env:Env={
-  ASSETS:staticAssets(process.env.WEBSITE_BUILD_DIR??'build',production),DEMO_DB:database,DEMO_MODE:production?'production':'local',
+  ASSETS:staticAssets(process.env.WEBSITE_BUILD_DIR??'build'),DEMO_DB:database,DEMO_MODE:production?'production':'local',
   DEMO_RETENTION_DAYS:process.env.DEMO_RETENTION_DAYS??'90',RESEND_API_KEY:process.env.RESEND_API_KEY,
   DEMO_FROM:process.env.DEMO_FROM,DEMO_TO:process.env.DEMO_TO??'pulse@astrovela.ai',DEMO_RATE_LIMIT_SECRET:process.env.DEMO_RATE_LIMIT_SECRET,
 }

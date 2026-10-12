@@ -3,7 +3,7 @@
   "assets": [
     {
       "sourceId": "comp_001",
-      "file": "comp_001-video.mp4",
+      "file": "comp_001-video.d6e511e9ab24.mp4",
       "source": "competitor/comp_001/video.mp4",
       "derivation": "Full video; H.264/AAC transcode, unchanged timeline",
       "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
@@ -28,7 +28,7 @@
     },
     {
       "sourceId": "comp_001",
-      "file": "comp_001-poster.webp",
+      "file": "comp_001-poster.45b2669dc293.webp",
       "source": "competitor/comp_001/video.mp4",
       "derivation": "Decoded frame at 2 seconds",
       "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
@@ -48,7 +48,7 @@
     },
     {
       "sourceId": "comp_005",
-      "file": "comp_005-image.webp",
+      "file": "comp_005-image.b3187abe73e8.webp",
       "source": "competitor/comp_005/video.mp4",
       "derivation": "First decoded frame; full original image",
       "sourceSha256": "f9a229d4f419e7e21c4bcc9832e0770c43855e5f8d02476c0f53bfad04e552be",
@@ -68,7 +68,7 @@
     },
     {
       "sourceId": "comp_008",
-      "file": "comp_008-audio.m4a",
+      "file": "comp_008-audio.bde3f1654c99.m4a",
       "source": "competitor/comp_008/video.mp4",
       "derivation": "Original complete AAC audio track; remux only",
       "sourceSha256": "a24a266af072e181d6c668dd7abe560f9dfc4c1da7db5fd14b7010a7f5d720ea",
@@ -83,6 +83,56 @@
         ],
         "format": {
           "duration": "14.789002"
+        }
+      }
+    },
+    {
+      "sourceId": "comp_001",
+      "file": "comp_001-preview-360.f4d47ff971a3.mp4",
+      "source": "competitor/comp_001/video.mp4",
+      "derivation": "Full-timeline 360x640 H.264 preview; original AAC copied without re-encoding; fast-start index; keyframes every 2 seconds",
+      "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
+      "sha256": "f4d47ff971a3158818f35379420d56e756005f7982ac3fb6f0fcd90eff9bf31d",
+      "bytes": 1222203,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 360,
+            "height": 640
+          },
+          {
+            "codec_name": "aac"
+          }
+        ],
+        "format": {
+          "duration": "21.805011"
+        }
+      }
+    },
+    {
+      "sourceId": "comp_001",
+      "file": "comp_001-preview-480.82ffe06af783.mp4",
+      "source": "competitor/comp_001/video.mp4",
+      "derivation": "Full-timeline 480x854 H.264 preview; original AAC copied without re-encoding; fast-start index; keyframes every 2 seconds",
+      "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
+      "sha256": "82ffe06af783a5a99cfc20e27e750fc817e0f296f8227116b755afaff19d0e17",
+      "bytes": 1503009,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 480,
+            "height": 854
+          },
+          {
+            "codec_name": "aac"
+          }
+        ],
+        "format": {
+          "duration": "21.805011"
         }
       }
     }

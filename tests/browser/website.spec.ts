@@ -37,6 +37,44 @@ test('deep links and language switching preserve the selected medium', async ({p
   await page.reload(); await expect(page.locator('.media-preview')).toHaveAttribute('data-modality', 'image')
   await page.goto('/?media=invalid'); await expect(page.locator('.hero-experience')).toHaveAttribute('data-media', 'video')
 })
+test('image and audio deep links do not download video, and the HTML leaves video loading to the visible player', async ({page, request}) => {
+  const html = await (await request.get('/')).text()
+  const videoTag = html.match(/<video\b[^>]*>/)?.[0]
+  expect(videoTag).toBeDefined()
+  expect(videoTag).not.toMatch(/\ssrc=/)
+  const videos: string[] = []
+  page.on('request', req => {if (new URL(req.url()).pathname.endsWith('.mp4')) videos.push(req.url())})
+  for (const media of ['image','audio']) {
+    await page.goto('/?media=' + media)
+    await expect(page.locator('.hero-experience')).toHaveAttribute('data-media', media)
+    await page.waitForTimeout(500)
+  }
+  expect(videos).toEqual([])
+})
+test('preview size follows pixel density and repeat visits reuse compressed static assets', async ({page, context}) => {
+  const headers: Record<string, string>[] = []
+  page.on('response', response => {if (/\/main\.[\w]+\.js$/.test(response.url())) headers.push(response.headers())})
+  await page.goto('/')
+  await expect.poll(() => page.locator('video').getAttribute('src')).toMatch(/comp_001-preview-360\.[\da-f]+\.mp4$/)
+  expect(headers[0]['content-encoding']).toMatch(/br|gzip/)
+  expect(headers[0]['cache-control']).toContain('immutable')
+  const repeat = await context.newPage()
+  await repeat.emulateMedia({reducedMotion: 'reduce'})
+  await repeat.goto('/?media=image')
+  await expect(repeat.locator('.hero-experience')).toHaveAttribute('data-media', 'image')
+  const cached = await repeat.evaluate(() => performance.getEntriesByType('resource').filter(e => /\/main\.[\w]+\.js$|\/styles\.[\w]+\.css$/.test(e.name)).map(e => (e as PerformanceResourceTiming).transferSize))
+  expect(cached).toHaveLength(2)
+  expect(cached).toEqual([0,0])
+  await repeat.close()
+})
+test('higher pixel density uses the larger lightweight preview', async ({browser}) => {
+  const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 3, reducedMotion: 'reduce'})
+  const page = await context.newPage()
+  try {
+    await page.goto(process.env.WEBSITE_TEST_URL ?? 'http://127.0.0.1:4328')
+    await expect.poll(() => page.locator('video').getAttribute('src')).toMatch(/comp_001-preview-480\.[\da-f]+\.mp4$/)
+  } finally {await context.close()}
+})
 test('image understanding highlights original regions and enlargement preserves them', async ({page}) => {
   await page.goto('/?media=image')
   await expect(page.locator('.image-region')).toHaveCount(0)
@@ -94,7 +132,7 @@ test('automatic rotation synchronizes types; sound and manual interaction stop i
   expect(await page.locator('video,audio').evaluateAll(els => els.filter(e => !(e as HTMLMediaElement).paused).length)).toBeLessThanOrEqual(1)
 })
 test('a failed media request keeps the understanding and another type usable', async ({page}) => {
-  await page.route('**/comp_001-video.mp4', route => route.abort())
+  await page.route('**/comp_001-*.mp4', route => route.abort())
   await page.goto('/')
   await expect(page.locator('.media-error')).toBeVisible()
   await expect(page.locator('.showcase-summary')).toContainText('campsite')

@@ -8,13 +8,14 @@ const media = '/showcase/marketing/'
 export const showcaseAssets: ShowcaseAsset[] = [
   {id: 'comp_001', kind: 'video', title: l('A drink at the campsite', '露营饮品视频'),
     alt: l('A portable blender on an outdoor camping table, with drink preparation and blending.', '户外露营桌上的便携搅拌机，展示倒入饮料与搅拌过程。'),
-    url: media + 'comp_001-video.mp4', posterUrl: media + 'comp_001-poster.webp', width: 720, height: 1280, duration: 21.802},
+    url: media + 'comp_001-video.d6e511e9ab24.mp4', posterUrl: media + 'comp_001-poster.45b2669dc293.webp', width: 720, height: 1280, duration: 21.802,
+    previews: [{url: media + 'comp_001-preview-360.f4d47ff971a3.mp4', width: 360, height: 640}, {url: media + 'comp_001-preview-480.82ffe06af783.mp4', width: 480, height: 854}]},
   {id: 'comp_005', kind: 'image', title: l('Ingredients in the kitchen', '饮品制作图片'),
     alt: l('The first original frame: a nutribullet cup, strawberries, banana and powder, with the text Aardbeien + Chocolade smoothie.', '原始首帧：nutribullet 搅拌杯、草莓、香蕉和粉末，画面文字为 Aardbeien + Chocolade smoothie。'),
-    url: media + 'comp_005-image.webp', width: 576, height: 1024},
+    url: media + 'comp_005-image.b3187abe73e8.webp', width: 576, height: 1024},
   {id: 'comp_008', kind: 'audio', title: l('The product in the narrator’s words', '产品广告旁白'),
     alt: l('Original English advertising narration about a portable bottle blender.', '便携式搅拌机的原始英文广告旁白。'),
-    url: media + 'comp_008-audio.m4a', duration: 14.789, waveform},
+    url: media + 'comp_008-audio.bde3f1654c99.m4a', duration: 14.789, waveform},
 ]
 export const imageRegions = regions
 const videoLocators = (id: string) => videoEvidence.filter(e => e.id === id).map(e => ({kind: 'time' as const, assetId: e.assetId, start: e.start, end: e.end}))

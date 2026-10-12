@@ -7,6 +7,7 @@ export type Locator =
 export type ShowcaseAsset = {
   id: string; kind: MediaKind; title: Localized; alt: Localized
   url: string; posterUrl?: string; width?: number; height?: number
+  previews?: {url: string; width: number; height: number}[]
   duration?: number; waveform?: number[]
 }
 export type ImageRegion = {id: string; assetId: string; x: number; y: number; width: number; height: number}

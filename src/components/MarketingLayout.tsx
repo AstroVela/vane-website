@@ -17,7 +17,7 @@ export default function MarketingLayout({title, description, data = false, noInd
       <title>{title} | Vane</title><meta name="description" content={description} />
       <meta property="og:title" content={title + ' | Vane'} /><meta property="og:description" content={description} />
       <meta property="og:type" content="website" /><meta property="og:url" content={canonical} />
-      <meta property="og:image" content={new URL('/showcase/marketing/comp_001-poster.webp', siteConfig.url).href} />
+      <meta property="og:image" content={new URL('/showcase/marketing/comp_001-poster.45b2669dc293.webp', siteConfig.url).href} />
       <meta property="og:locale" content={locale === 'en' ? 'en_US' : 'zh_CN'} />
       <link rel="canonical" href={canonical} />
       <link rel="alternate" hrefLang="en" href={new URL(path, siteConfig.url).href} />

@@ -88,7 +88,7 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
     <div className={'showcase-stage stage-' + showcase.kind} ref={stageRef} id={id + '-panel'} role="tabpanel" aria-labelledby={id + '-' + showcase.kind} tabIndex={0}>
       <div className="stage-heading"><span>{asset.title[locale]}</span><span>{t('Understanding & evidence', '理解与依据')}</span></div>
       <div className={'stage-content content-' + showcase.kind} key={showcase.kind}>
-        <MediaPreview asset={asset} epoch={state.selectionEpoch} request={request} selected={selected} preview={hoveredInsight} initialPosition={positions.get(asset.id) ?? 0} autoPreview={withCopy && state.rotationMode === 'auto'} visible={state.visible} onProgress={onProgress} onInteract={onInteract} onAudible={onAudible} onModal={onModal} />
+        <MediaPreview asset={asset} epoch={state.selectionEpoch} request={request} selected={selected} preview={hoveredInsight} initialPosition={positions.get(asset.id) ?? 0} loadEnabled={rotationReady} autoPreview={withCopy && state.rotationMode === 'auto'} visible={state.visible} onProgress={onProgress} onInteract={onInteract} onAudible={onAudible} onModal={onModal} />
         <div className="insight-list"><p className="showcase-summary">{showcase.summary[locale]}</p>{showcase.insightIds.map(insightId => {
           const insight = insightFor(insightId)
           return <button type="button" key={insight.id} className={'insight-item' + (selected === insight.id ? ' selected' : '')} aria-pressed={selected === insight.id} onClick={() => select(showcase.kind, insight.id)}

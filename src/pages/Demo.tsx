@@ -16,7 +16,7 @@ type Availability = {state:'loading' | 'ready' | 'unavailable'; retention:number
 export default function Demo() {
   const locale = useSiteLocale()
   const {search} = useLocation()
-  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.webp')
+  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.45b2669dc293.webp')
   const query = new URLSearchParams(search)
   const source = demoSources.includes(query.get('source') as typeof demoSources[number]) ? query.get('source')! : 'direct'
   const scenario = demoScenarios.includes(query.get('scenario') as typeof demoScenarios[number]) ? query.get('scenario')! : ''
