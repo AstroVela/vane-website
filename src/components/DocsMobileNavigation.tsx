@@ -20,7 +20,7 @@ export default function DocsMobileNavigation({ path, sidebar }: DocsMobileNaviga
   const closeRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
-  const product = path.includes('/docs/data') ? PRODUCTS.data : null
+  const product = path.includes('/docs/context') ? PRODUCTS.context : path.includes('/docs/data') ? PRODUCTS.data : null
   const copy = pickLocale(
     locale,
     {

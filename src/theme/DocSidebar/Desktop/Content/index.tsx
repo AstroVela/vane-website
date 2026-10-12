@@ -18,11 +18,11 @@ export default function DocSidebarDesktopContent({
   sidebar,
   className,
 }: DocSidebarDesktopContentProps) {
-  if (!path.includes('/docs/data')) {
+  if (!path.includes('/docs/data') && !path.includes('/docs/context')) {
     return <OriginalContent path={path} sidebar={sidebar} className={className} />
   }
 
-  const product = PRODUCTS.data
+  const product = path.includes('/docs/context') ? PRODUCTS.context : PRODUCTS.data
 
   return (
     <nav

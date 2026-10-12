@@ -1,6 +1,7 @@
 import type {ClientModule} from '@docusaurus/types'
 import './index.css'
 import './pages.css'
+import './marketing.css'
 import { decodeHash, prefersReducedMotion, scrollToHash } from './scrollToHash'
 
 export const onRouteDidUpdate: NonNullable<ClientModule['onRouteDidUpdate']> = ({

@@ -35,10 +35,31 @@ jobs:
           npm run docs:lint
           npm run docs:manifest:check
           npm run docs:llms:check
+          npm run docs:context:check
       - name: Basic content checks
         run: |
           npm run home:content:check
           npm run training:content:check
           npm run enterprise:content:check
           npm run solutions:content:check
+          npm run showcase:check
       - run: npm run build
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser acceptance
+        run: |
+          npm run preview:local > /tmp/vane-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:4328/api/demo-status; then break; fi
+            sleep 1
+          done
+          npm run test:browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-evidence
+          path: .tmp-visual-check/
+          if-no-files-found: ignore

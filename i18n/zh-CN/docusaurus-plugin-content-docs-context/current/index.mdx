@@ -1,0 +1,31 @@
+---
+title: 接入概览
+slug: /
+description: 为应用和 Agent 提供商业版多模态上下文服务。
+---
+
+Vane Context 检索并分析视频、音频、图片、文档和文本，保留指向原始内容的引用，通过 HTTP、SDK 和 MCP 向应用与 Agent 提供资料。
+
+## 开始接入
+
+1. [预约产品演示](/zh-CN/demo?source=developer)，说明业务场景与资料类型。
+2. 与团队确定服务部署、来源访问和模型配置，商业交付提供服务凭证与 SDK 接入包。
+3. 先读取实际服务能力，再选择摄取通道和分析模式。
+4. 接入资料库，检索证据，分析选中的部分，在应用中使用返回的引用。
+
+```bash
+curl "$CONTEXT_URL/v1/capabilities" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN"
+```
+
+能力响应描述实际配置的模型与功能。支持某种资料类型，并不表示它的所有通道和分析模式都已启用。
+
+## 选择入口
+
+- [多模态摄取](./ingestion.mdx)：来源、处理通道与资料准备。
+- [检索](./search.mdx)：文本、图片与组合查询。
+- [分析与异步任务](./analysis.mdx)：结构化输出与长任务。
+- [证据与引用](./references.mdx)：时间窗、页码和来源标识。
+- [API、SDK 与 MCP](./integration.mdx)：应用与 Agent 接入方式。
+
+Vane Context 是商业产品，官网展台展示预设案例。开源数据引擎请查看 [Vane Data](/zh-CN/products/data)。

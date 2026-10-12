@@ -1,0 +1,37 @@
+---
+title: Search
+description: Find relevant multimodal evidence and retain its source references.
+---
+
+## Start with text
+
+```bash
+curl "$CONTEXT_URL/v1/search" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": "product-media",
+    "query": "show the blending steps",
+    "top_k": 3
+  }'
+```
+
+Every hit carries its evidence identity and source locator. Keep those identities when requesting a follow-up analysis.
+
+## Select a retrieval method
+
+| Backend | Use it for |
+| --- | --- |
+| `vector` | Semantic text or paired image search with configured profiles |
+| `lexical` | Full-text terms in textual content, speech or OCR |
+| `hybrid` | Combine semantic candidates with lexical matches |
+| `temporal` | Align explicit video channel conditions in time |
+| Configured backend | Specialized retrieval advertised by capabilities |
+
+Image queries require a compatible paired embedding profile. Composed image/text queries use the advertised video visual contract; arbitrary combinations are not interchangeable.
+
+Narrow the scope with asset IDs, typed metadata filters, modalities or channels. Where supported, constrain document pages, video time or audio windows. Multiple embedding profiles can contribute candidates; rank fusion and optional reranking determine final ordering.
+
+Scores describe retrieval ranking, not the certainty of a factual conclusion. Backend scores have different meanings. Follow the returned cursor unchanged for stable pagination; start a new search after cursor expiry. Group by asset when a screen should show source files instead of individual matches.
+
+Next: [analyze selected evidence](./analysis.mdx).

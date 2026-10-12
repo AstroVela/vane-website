@@ -1,0 +1,38 @@
+---
+title: API, SDK and MCP
+description: Connect applications and existing agents to Vane Context.
+---
+
+## Connection options
+
+| Interface | Typical integration |
+| --- | --- |
+| HTTP | Any application that can send authenticated JSON requests |
+| Python SDK | Python applications, upload helpers and job watchers |
+| TypeScript SDK | Typed web/server applications, SSE and resumable uploads |
+| MCP | Existing agents that call discovered Context tools |
+
+Service credentials and SDK delivery are arranged with the team. Keep API credentials on the server or in the agent's protected configuration. Do not bundle them into public frontend JavaScript.
+
+```typescript
+import {VaneContext} from '@astrovela/vane-context'
+
+const client = new VaneContext({baseUrl: serviceUrl, apiKey: token})
+const found = await client.search({
+  collection: 'product-media',
+  query: 'show the blending steps',
+  top_k: 3,
+})
+```
+
+## Agent usage
+
+An agent discovers the configured service's capabilities and authorized collections, then uses search and analysis tools. For example, `context_search` accepts a request with the same search fields; `context_analyze` takes selected inputs and an idempotency key. The agent decides how the returned information contributes to its task.
+
+Retain job IDs and evidence identities in agent memory. Reconnect to unfinished work, continue from a returned cursor, and inspect source references when more detail is needed. A retry should not create a duplicate ingestion or analysis request.
+
+## Agree on an operating setup
+
+Discuss media volumes, source access, models, job handling, deployment and the application surface during integration. Supported combinations are determined by the delivered service configuration. Public examples introduce the contracts; they are not an online service endpoint.
+
+[Request Demo](/demo?source=developer) · [Vane Data documentation](/docs/data)

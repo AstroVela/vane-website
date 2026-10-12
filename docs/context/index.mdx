@@ -1,0 +1,31 @@
+---
+title: Overview
+slug: /
+description: Commercial multimodal context for applications and agents.
+---
+
+Vane Context finds and analyzes information in video, audio, images, documents and text. It returns evidence with references to the original content, through HTTP, SDK or MCP.
+
+## Start an integration
+
+1. [Request a product demonstration](/demo?source=developer). Describe your use case and media types.
+2. Agree on service deployment, source access and model configuration with the team. Service credentials and SDK packages are supplied through commercial delivery.
+3. Read the deployed service's capabilities before selecting ingestion channels or analysis modes.
+4. Ingest a collection, search for relevant evidence, and analyze the selected parts. Use returned citations in your application.
+
+```bash
+curl "$CONTEXT_URL/v1/capabilities" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN"
+```
+
+The service's capability response describes its actual configured models and supported features. A listed media type does not imply that every channel or analysis mode is enabled.
+
+## Choose a starting point
+
+- [Media ingestion](./ingestion.mdx): source inputs, media channels and preparation.
+- [Search](./search.mdx): text, image and combined retrieval.
+- [Analysis and jobs](./analysis.mdx): structured output and asynchronous processing.
+- [Evidence and references](./references.mdx): time windows, pages and source identity.
+- [API, SDK and MCP](./integration.mdx): connection patterns for applications and agents.
+
+Vane Context is a commercial product. The website showcases bundled examples. For the open source data engine, see [Vane Data](/products/data).

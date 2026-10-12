@@ -1,0 +1,89 @@
+{
+  "product": "context",
+  "pages": [
+    {
+      "locale": "en",
+      "slug": "index",
+      "title": "Overview",
+      "route": "/docs/context",
+      "source": "docs/context/index.mdx"
+    },
+    {
+      "locale": "en",
+      "slug": "ingestion",
+      "title": "Media ingestion",
+      "route": "/docs/context/ingestion",
+      "source": "docs/context/ingestion.mdx"
+    },
+    {
+      "locale": "en",
+      "slug": "search",
+      "title": "Search",
+      "route": "/docs/context/search",
+      "source": "docs/context/search.mdx"
+    },
+    {
+      "locale": "en",
+      "slug": "analysis",
+      "title": "Analysis and jobs",
+      "route": "/docs/context/analysis",
+      "source": "docs/context/analysis.mdx"
+    },
+    {
+      "locale": "en",
+      "slug": "references",
+      "title": "Evidence and references",
+      "route": "/docs/context/references",
+      "source": "docs/context/references.mdx"
+    },
+    {
+      "locale": "en",
+      "slug": "integration",
+      "title": "API, SDK and MCP",
+      "route": "/docs/context/integration",
+      "source": "docs/context/integration.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "index",
+      "title": "接入概览",
+      "route": "/zh-CN/docs/context",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/index.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "ingestion",
+      "title": "多模态摄取",
+      "route": "/zh-CN/docs/context/ingestion",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/ingestion.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "search",
+      "title": "检索",
+      "route": "/zh-CN/docs/context/search",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/search.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "analysis",
+      "title": "分析与异步任务",
+      "route": "/zh-CN/docs/context/analysis",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/analysis.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "references",
+      "title": "证据与引用",
+      "route": "/zh-CN/docs/context/references",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/references.mdx"
+    },
+    {
+      "locale": "zh-CN",
+      "slug": "integration",
+      "title": "API、SDK 与 MCP",
+      "route": "/zh-CN/docs/context/integration",
+      "source": "i18n/zh-CN/docusaurus-plugin-content-docs-context/current/integration.mdx"
+    }
+  ]
+}

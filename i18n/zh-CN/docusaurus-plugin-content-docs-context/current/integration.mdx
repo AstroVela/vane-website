@@ -1,0 +1,38 @@
+---
+title: API、SDK 与 MCP
+description: 将应用和已有 Agent 接入 Vane Context。
+---
+
+## 接入方式
+
+| 接口 | 常见应用 |
+| --- | --- |
+| HTTP | 能发送认证 JSON 请求的应用 |
+| Python SDK | Python 应用、上传辅助与任务监听 |
+| TypeScript SDK | 类型化 Web / 服务端应用、SSE 与可续传上传 |
+| MCP | 使用已发现 Context 工具的现有 Agent |
+
+服务凭证与 SDK 通过团队商业交付获得。API 凭证应保存在服务端或 Agent 的受保护配置中，不应进入公开前端 JavaScript。
+
+```typescript
+import {VaneContext} from '@astrovela/vane-context'
+
+const client = new VaneContext({baseUrl: serviceUrl, apiKey: token})
+const found = await client.search({
+  collection: 'product-media',
+  query: 'show the blending steps',
+  top_k: 3,
+})
+```
+
+## Agent 使用方式
+
+Agent 读取实际服务能力与授权资料库，再使用检索、分析工具。例如 `context_search` 接收相同检索字段的请求，`context_analyze` 接收所选输入及幂等标识。资料如何进入整体任务，由业务 Agent 决定。
+
+将任务与证据标识保存在 Agent 工作记忆中。未完成任务读取同一任务，翻页沿用返回游标，需要细节时读取来源引用。重试不应重复创建摄取或分析任务。
+
+## 确定运行方案
+
+接入时一起确定资料规模、来源访问、模型、任务处理、部署与应用呈现。可用组合由交付服务的配置决定。公开示例用于说明契约，不是在线体验地址。
+
+[预约演示](/zh-CN/demo?source=developer) · [Vane Data 文档](/zh-CN/docs/data)

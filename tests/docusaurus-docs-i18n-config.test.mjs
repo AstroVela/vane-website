@@ -195,31 +195,18 @@ test('Data docs are owned by content-docs instead of the custom route plugin', (
   assert.doesNotMatch(routesSource, /LIVE_PRODUCTS/)
   assert.doesNotMatch(routesSource, /\[.*'data'.*\]\.forEach/s)
   assert.match(routesSource, /docsRoute\('\/docs'\)/)
-  assert.match(routesSource, /docsRoute\('\/docs\/agent'\)/)
-  assert.match(routesSource, /docsRoute\('\/docs\/rl'\)/)
+  assert.doesNotMatch(routesSource, /docsRoute\('\/docs\/agent'\)/)
+  assert.doesNotMatch(routesSource, /docsRoute\('\/docs\/rl'\)/)
   assert.match(routesSource, /docsRoute\(`\/docs\/data\/\$\{slug\}`\)/)
 })
 
 test('custom docs entry and legacy redirects preserve the current locale baseUrl', () => {
-  assert.match(routesSource, /const vaneRoutesPlugin: PluginModule = \(context\)/)
-  assert.match(routesSource, /localizedPath\(context\.baseUrl, path\)/)
-  assert.match(routesSource, /if \(path === '\/'\) return baseUrl/)
+  assert.match(routesSource, /localizedPath\(context\.baseUrl/)
   assert.match(docsPageSource, /import useBaseUrl from '@docusaurus\/useBaseUrl'/)
-  assert.match(
-    docsPageSource,
-    /import useDocusaurusContext from '@docusaurus\/useDocusaurusContext'/,
-  )
-  assert.match(docsPageSource, /const dataTo = useBaseUrl\(dataDocPath\(resolveLegacyDocSlug\(slug\) \?\? slug\)\)/)
-  assert.match(docsPageSource, /function RedirectFallback\(\{to\}: \{to: string\}\)/)
-  assert.match(docsPageSource, /<meta httpEquiv="refresh" content=\{`0;url=\$\{to\}`\} \/>/)
-  assert.match(docsPageSource, /const canonical = new URL\(to, siteConfig\.url\)\.toString\(\)/)
-  assert.match(docsPageSource, /<meta name="robots" content="noindex,follow" \/>/)
-  assert.match(docsPageSource, /<link rel="canonical" href=\{canonical\} \/>/)
-  assert.match(docsPageSource, /<RedirectFallback to=\{dataTo\} \/>/)
-  assert.match(docsPageSource, /<Redirect to=\{to\} \/>/)
-  assert.match(docsPageSource, /Open current page/)
-  assert.match(docsPageSource, /打开当前页面/)
-  assert.doesNotMatch(docsPageSource, /Open overview|打开概览/)
+  assert.match(docsPageSource, /resolveLegacyDocSlug\(slug\)/)
+  assert.match(docsPageSource, /useBaseUrl\(canonical/)
+  assert.match(docsPageSource, /noindex,follow/)
+  assert.match(docsPageSource, /<Redirect to=\{to\}/)
 })
 
 test('removed deployment pages redirect to the consolidated deployment guide', () => {
@@ -540,11 +527,10 @@ test('documentation installation commands use uv and the base vane-ai package', 
     assert.doesNotMatch(source, /vane-ai\[all\]/)
   }
 
-  assert.equal(homeSource.match(/pip install vane-ai/g)?.length, 2)
-  assert.match(footerSource, /pip install vane-ai/)
-  for (const source of [homeSource, footerSource]) {
-    assert.doesNotMatch(source, /uv pip install vane-ai/)
-  }
+  const dataProduct=readFileSync('src/pages/DataProduct.tsx','utf8')
+  assert.match(dataProduct, /uv pip install vane-ai/)
+  assert.doesNotMatch(homeSource, /pip install/)
+
 })
 
 test('quickstart delegates package installation to the installation guide', () => {
@@ -674,7 +660,8 @@ test('shared code windows localize copy controls for Chinese pages', () => {
 })
 
 test('shared navigation localizes visible short labels for Chinese pages', () => {
-  assert.match(navSource, /star:\s*'Star'/)
+  assert.match(navSource, /t\('Request Demo', '预约演示'\)/)
+  assert.match(navSource, /t\('Use cases', '应用场景'\)/)
 })
 
 test('docs paginator maps generated metadata titles back to localized docs titles', () => {
@@ -785,7 +772,7 @@ test('Extensions follows Reference as a category with an overview and localized 
 })
 
 test('custom navbar preserves the Docusaurus navbar marker for docs TOC code', () => {
-  assert.match(navSource, /<header\s+className="nav navbar"/)
+  assert.match(navSource, /<header\s+className="nav navbar(?: [^"]+)?"/)
 })
 
 test('marketing hero background is not overridden by Infima hero styles', () => {

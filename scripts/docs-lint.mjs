@@ -18,7 +18,7 @@ import {
 } from './docs-utils.mjs'
 
 const root = process.cwd()
-const docsDir = path.join(root, 'docs')
+const docsDir = path.join(root, 'docs/data')
 const i18nDocsDir = path.join(root, 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current')
 const registryPath = path.join(root, 'src/docs/registry.ts')
 const sidebarPath = path.join(root, 'src/docs/sidebar.data.json')

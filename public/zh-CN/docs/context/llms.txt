@@ -1,0 +1,200 @@
+# Vane Context integration documentation
+
+Commercial product. Service credentials and packages are provided through commercial delivery.
+
+## 接入概览
+
+Route: /zh-CN/docs/context
+
+Vane Context 检索并分析视频、音频、图片、文档和文本，保留指向原始内容的引用，通过 HTTP、SDK 和 MCP 向应用与 Agent 提供资料。
+
+## 开始接入
+
+1. [预约产品演示](/zh-CN/demo?source=developer)，说明业务场景与资料类型。
+2. 与团队确定服务部署、来源访问和模型配置，商业交付提供服务凭证与 SDK 接入包。
+3. 先读取实际服务能力，再选择摄取通道和分析模式。
+4. 接入资料库，检索证据，分析选中的部分，在应用中使用返回的引用。
+
+```bash
+curl "$CONTEXT_URL/v1/capabilities" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN"
+```
+
+能力响应描述实际配置的模型与功能。支持某种资料类型，并不表示它的所有通道和分析模式都已启用。
+
+## 选择入口
+
+- [多模态摄取](./ingestion.mdx)：来源、处理通道与资料准备。
+- [检索](./search.mdx)：文本、图片与组合查询。
+- [分析与异步任务](./analysis.mdx)：结构化输出与长任务。
+- [证据与引用](./references.mdx)：时间窗、页码和来源标识。
+- [API、SDK 与 MCP](./integration.mdx)：应用与 Agent 接入方式。
+
+Vane Context 是商业产品，官网展台展示预设案例。开源数据引擎请查看 [Vane Data](/zh-CN/products/data)。
+
+## 多模态摄取
+
+Route: /zh-CN/docs/context/ingestion
+
+## 按资料类型选择通道
+
+| 输入 | 可用处理通道 | 典型结果 |
+| --- | --- | --- |
+| 文本 / 记录 | 内容 | 文本摘录与类型化元数据 |
+| 图片 | 视觉、OCR | 匹配图片与识别文字 |
+| 视频 | 视觉、语音、OCR、声音 | 帧、片段、转写与声音时间窗 |
+| 音频 | 语音、声音 | 带时间定位的转写和声音窗口 |
+| PDF | 内容、OCR | 页文本、识别文字与页面引用 |
+
+选择应用真正需要的通道。视觉检索需要视觉向量模型，语音需要 ASR，声音检索需要声音向量模型，OCR 和分析分别需要对应提供方。以 `/v1/capabilities` 返回的实际组合和限制为准。
+
+## 提供来源
+
+可以提交内联文本或记录、上传媒体、使用大文件可续传上传，或导入允许访问的远程 HTTPS 文件。上传和导入之后使用服务管理的资源标识，客户端传入服务器路径不构成文件访问授权。
+
+1. 准备来源与元数据。
+2. 使用稳定的幂等标识提交摄取。
+3. 保存返回的摄取任务和资产标识。
+4. 等任务就绪后，再使用已发布的证据。
+5. 连接中断时读取同一任务，避免重复提交。
+
+单项与批量摄取共享媒体契约；批次最多 32 项，分别跟踪每项结果。摄取产生来源证据，后续分析可以产生具有独立来源说明的生成知识，详见[证据与引用](./references.mdx)。
+
+## 检索
+
+Route: /zh-CN/docs/context/search
+
+## 从文本查询开始
+
+```bash
+curl "$CONTEXT_URL/v1/search" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": "product-media",
+    "query": "show the blending steps",
+    "top_k": 3
+  }'
+```
+
+每个命中结果带有证据标识与来源定位，后续分析应保留并使用这些标识。
+
+## 选择检索方式
+
+| 后端 | 适用情况 |
+| --- | --- |
+| `vector` | 使用已配置的向量模型进行语义文本或配对图片检索 |
+| `lexical` | 在文本内容、语音转写或 OCR 中查找关键词 |
+| `hybrid` | 合并语义候选与全文匹配 |
+| `temporal` | 将多个视频通道的条件按时间对齐 |
+| 已配置专用后端 | 使用能力响应中公布的专用检索能力 |
+
+图片查询需要兼容的配对向量模型，图文组合遵循视频视觉查询契约，各种模态和通道并不能任意组合。
+
+使用资产标识、类型化元数据、模态或通道缩小范围。服务支持时可指定文档页码、视频或音频时间窗。多向量配置分别召回候选，再经排序融合和可选重排得到最终结果。
+
+分数描述检索排序，不表示事实结论的确定性；不同后端分数含义不同。稳定翻页时原样使用返回游标，过期后重新检索。希望按文件显示结果时选择资产分组。
+
+下一步：[分析选中的证据](./analysis.mdx)。
+
+## 分析与异步任务
+
+Route: /zh-CN/docs/context/analysis
+
+## 分析检索结果
+
+输入可以引用证据、资产、视频区间、文档页或内联来源。指令说明应用需要的信息，可选 JSON Schema 约束输出结构。
+
+```python
+from vane_context import AnalyzeRequest, EvidenceRef
+
+if found.hits:
+    answer = client.analyze(AnalyzeRequest(
+        collection="product-media",
+        inputs=[EvidenceRef(id=found.hits[0].evidence.id)],
+        instruction="List the operating steps and cite their sources.",
+        include_media=False,
+    ))
+    print(answer.output, answer.citations)
+```
+
+这个示例分析已存文本或描述。需要核对原始媒体时启用媒体输入，并选择支持的模式：视频采样帧、含音轨片段或原视频；文档文本或页面图片；音频转写或原音频。只看帧的模型无法验证语音内容，模式必须与实际模型能力一致。
+
+## 让长任务可恢复
+
+通过 `POST /v1/analyze/jobs` 提交异步分析，并提供幂等标识。保存返回的任务 ID，读取同一任务的状态与最终结果。SDK watcher 和 SSE 可跟踪进展，并按事件标识恢复，让应用重新连接时不重复调用模型。
+
+批量分析分别记录每项结果。取消是协作式的，已执行的工作不会撤销。`unknown` 表示尚不能确认完成情况，应先恢复原任务再考虑重新提交。
+
+输出结构与引用会经过程序校验，但这不等于全部生成内容都已经事实核对。应用应保留[原始依据](./references.mdx)，让用户能够检查。
+
+## 证据与引用
+
+Route: /zh-CN/docs/context/references
+
+## 理解来源定位
+
+| 证据 | 来源位置 |
+| --- | --- |
+| 视频帧 | 帧时间戳 |
+| 视频片段 | 起止时间 |
+| 语音 / 音频 | 音频时间窗 |
+| 文档 | 页码 |
+| OCR | 文字偏移及对应图片、视频帧或页面 |
+| 声音 | 声音窗口 |
+
+证据标识属于一个资料库和来源资产。把返回标识原样传给分析，不要编造标识或换成无关的资料库。分析引用会与被接受的输入范围进行核验。
+
+## 区分来源证据与生成知识
+
+来源证据记录内容来自哪里；模型生成的描述与分析是派生内容，应保留它使用了哪些来源。应用应同时展示两者，不能把生成表述当成原文引述。
+
+例如，“杯体容量为 500 毫升”可以引用说明书第 2 页和产品介绍录音，用户打开页面或播放对应窗口就能核对。
+
+## 在应用中提供核对入口
+
+1. 每条事实旁保留资料库、资产和证据标识。
+2. 将引用呈现为视频 / 音频时间窗、文档页码或图片。
+3. 点击后在对应位置打开原始来源。
+4. 保留当前结果选择，并提供返回入口。
+5. 来源无法访问时保留标识，明确说明访问失败。
+
+资产版本、权限或删除会影响后续访问。引用是来源指针，不是永久访问授权，应遵循实际服务的版本和访问契约。
+
+## API、SDK 与 MCP
+
+Route: /zh-CN/docs/context/integration
+
+## 接入方式
+
+| 接口 | 常见应用 |
+| --- | --- |
+| HTTP | 能发送认证 JSON 请求的应用 |
+| Python SDK | Python 应用、上传辅助与任务监听 |
+| TypeScript SDK | 类型化 Web / 服务端应用、SSE 与可续传上传 |
+| MCP | 使用已发现 Context 工具的现有 Agent |
+
+服务凭证与 SDK 通过团队商业交付获得。API 凭证应保存在服务端或 Agent 的受保护配置中，不应进入公开前端 JavaScript。
+
+```typescript
+import {VaneContext} from '@astrovela/vane-context'
+
+const client = new VaneContext({baseUrl: serviceUrl, apiKey: token})
+const found = await client.search({
+  collection: 'product-media',
+  query: 'show the blending steps',
+  top_k: 3,
+})
+```
+
+## Agent 使用方式
+
+Agent 读取实际服务能力与授权资料库，再使用检索、分析工具。例如 `context_search` 接收相同检索字段的请求，`context_analyze` 接收所选输入及幂等标识。资料如何进入整体任务，由业务 Agent 决定。
+
+将任务与证据标识保存在 Agent 工作记忆中。未完成任务读取同一任务，翻页沿用返回游标，需要细节时读取来源引用。重试不应重复创建摄取或分析任务。
+
+## 确定运行方案
+
+接入时一起确定资料规模、来源访问、模型、任务处理、部署与应用呈现。可用组合由交付服务的配置决定。公开示例用于说明契约，不是在线体验地址。
+
+[预约演示](/zh-CN/demo?source=developer) · [Vane Data 文档](/zh-CN/docs/data)

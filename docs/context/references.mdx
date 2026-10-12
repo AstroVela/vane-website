@@ -1,0 +1,33 @@
+---
+title: Evidence and references
+description: Keep generated analysis connected to inspectable source content.
+---
+
+## Read the locator
+
+| Evidence | Source location |
+| --- | --- |
+| Video frame | Frame timestamp |
+| Video clip | Start and end time |
+| Speech / audio | Audio time window |
+| Document | Page number |
+| OCR | Text offset plus associated image, frame or page |
+| Sound | Sound window |
+
+An evidence identity belongs to a collection and a source asset. Pass the returned identity into analysis; do not invent IDs or substitute an unrelated collection. Analysis citations are checked against the accepted inputs.
+
+## Separate source evidence from generated knowledge
+
+Source evidence records where content came from. Model-generated descriptions or analysis are derived content, with references to the source evidence they used. Keep both visible in your application rather than presenting generated wording as an original quote.
+
+For example, a conclusion that the blending cup holds 500 ml can cite a specification on PDF page 2 and an audio briefing. The user can open the page or play the recorded window to verify it.
+
+## Build an inspectable interface
+
+1. Keep collection, asset and evidence identifiers alongside each returned fact.
+2. Render a citation as a video/audio time range, document page or image.
+3. On selection, open the referenced source at that location.
+4. Preserve the user's result selection and provide a way back.
+5. If the source is inaccessible, retain the identity and show the access failure clearly.
+
+Asset revisions, permissions and deletion can affect later access. A stored citation is a source reference, not a permanent grant of access. Follow the deployed service's revision and access contracts.

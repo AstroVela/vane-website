@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from '../router'
 import { cx } from './cx'
 import { PRODUCT_ORDER, PRODUCTS } from '../docs/products'
+import {CONTEXT_DOCS} from '../docs/context'
 import {
   DEFAULT_DOC_SLUG,
   DOCS_PAGES,
@@ -39,6 +40,10 @@ function buildIndex(locale: SiteLocale): SearchItem[] {
 
   for (const pid of PRODUCT_ORDER) {
     const product = PRODUCTS[pid]
+    if (pid === 'context') {
+      items.push(...CONTEXT_DOCS.map(doc => ({title:locale === 'zh-CN' ? doc.titleZh : doc.title, group:locale === 'zh-CN' ? '接入文档' : 'Integration',product:product.name,path:'/docs/context' + (doc.slug ? '/' + doc.slug : '')})))
+      continue
+    }
     if (product.status !== 'live' || !product.sidebar) continue
     addEntries(pid, product.name, product.sidebar, [])
   }

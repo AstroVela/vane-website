@@ -2,103 +2,30 @@ import {Redirect} from '@docusaurus/router'
 import Head from '@docusaurus/Head'
 import useBaseUrl from '@docusaurus/useBaseUrl'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
-import Nav from '../components/Nav'
-import ComingSoon from './ComingSoon'
-import ProductGlyph from '../docs/ProductGlyph'
-import {Link, useRouter} from '../router'
-import { pickLocale, useSiteLocale } from '../siteI18n'
-import {
-  DEFAULT_PRODUCT,
-  PRODUCTS,
-  isProductId,
-  type ProductId,
-} from '../docs/products'
+import MarketingLayout from '../components/MarketingLayout'
+import Box from '../components/Box'
+import Button from '../components/Button'
+import Eyebrow from '../components/Eyebrow'
+import {Link,useRouter} from '../router'
+import {useSiteLocale} from '../siteI18n'
 import {resolveLegacyDocSlug} from '../docs/legacySlugs'
+import {GITHUB_URL} from '../siteLinks'
 
-function dataDocPath(slug?: string) {
-  return slug && slug !== 'index' ? `/docs/data/${slug}` : '/docs/data'
+function RedirectFallback({to}: {to:string}) {
+  const locale=useSiteLocale(),{siteConfig}=useDocusaurusContext()
+  return <><Head><meta httpEquiv="refresh" content={`0;url=${to}`}/><meta name="robots" content="noindex,follow"/><link rel="canonical" href={new URL(to,siteConfig.url).href}/></Head><main className="doc"><h1>{locale==='en'?'Opening the current Vane Data documentation.':'正在打开当前 Vane Data 文档。'}</h1><Link to={to}>{locale==='en'?'Open current page':'打开当前页面'}</Link></main><Redirect to={to}/></>
 }
-
-function parseDocsPath(path: string): {product: ProductId; slug?: string} {
-  const normalizedPath = path.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
-  const segs = normalizedPath.replace(/^\/docs\/?/, '').split('/').filter(Boolean)
-  if (segs.length === 0) return {product: DEFAULT_PRODUCT}
-  if (isProductId(segs[0])) return {product: segs[0], slug: segs.slice(1).join('/')}
-  return {product: DEFAULT_PRODUCT, slug: segs.join('/')}
-}
-
-function RedirectFallback({to}: {to: string}) {
-  const locale = useSiteLocale()
-  const {siteConfig} = useDocusaurusContext()
-  const canonical = new URL(to, siteConfig.url).toString()
-  const copy = pickLocale(
-    locale,
-    {
-      title: 'Vane Data Docs',
-      heading: 'Opening the current Vane Data documentation.',
-      body: 'You are being redirected to the current documentation page.',
-      action: 'Open current page',
-    },
-    {
-      title: 'Vane Data 文档',
-      heading: '正在打开当前 Vane Data 文档。',
-      body: '页面会跳转到当前文档页面。',
-      action: '打开当前页面',
-    },
-  )
-
-  return (
-    <>
-      <Head>
-        <title>{copy.title}</title>
-        <meta httpEquiv="refresh" content={`0;url=${to}`} />
-        <meta name="robots" content="noindex,follow" />
-        <link rel="canonical" href={canonical} />
-      </Head>
-      <Nav withCta={false} />
-      <main className="doc">
-        <h1 className="dh">{copy.heading}</h1>
-        <p>{copy.body}</p>
-        <p>
-          <Link className="dlink" to={to}>{copy.action}</Link>
-        </p>
-      </main>
-      <Redirect to={to} />
-    </>
-  )
-}
-
 export default function Docs() {
-  const locale = useSiteLocale()
-  const {path} = useRouter()
-  const {product, slug} = parseDocsPath(path)
-  const prod = PRODUCTS[product]
-  const dataTo = useBaseUrl(dataDocPath(resolveLegacyDocSlug(slug) ?? slug))
-
-  if (product === 'data') {
-    return <RedirectFallback to={dataTo} />
-  }
-
-  return (
-    <>
-      <Nav withCta={false} />
-      <div className="docs">
-        <nav className="side side-soon">
-          <div className="prod">
-            <span className="prod-ic">
-              <ProductGlyph id={product} size={15} />
-            </span>
-            <div>
-              <div className="prod-name">{prod.name}</div>
-              <div className="prod-status">{pickLocale(locale, 'In development', '开发中')}</div>
-            </div>
-          </div>
-        </nav>
-        <main className="doc">
-          <ComingSoon product={prod} />
-        </main>
-        <aside className="toc" aria-hidden="true" />
-      </div>
-    </>
-  )
+  const locale=useSiteLocale(),{path}=useRouter(),t=(en:string,zh:string)=>locale==='en'?en:zh
+  const normalized=path.replace(/^\/zh-CN(?=\/|$)/,'').replace(/\/$/,'')
+  const slug=normalized.replace(/^\/docs\/(data\/)?/,'')
+  const canonical=resolveLegacyDocSlug(slug)??slug
+  const to=useBaseUrl(canonical==='index'?'/docs/data':'/docs/data/'+canonical)
+  if(normalized!=='/docs') return <RedirectFallback to={to}/>
+  return <MarketingLayout title={t('Developer resources','开发者资源')} description={t('Start with the open source Vane Data engine or explore commercial Vane Context integration.','开始使用开源 Vane Data 引擎，或了解商业版 Vane Context 接入。')}>
+    <section className="docs-product-intro"><div className="wrap"><Eyebrow>{t('DEVELOPERS','开发者')}</Eyebrow><h1 className="h1">{t('Build with Vane.','用 Vane 构建。')}</h1><p className="lead">{t('Choose the product that fits your application.','选择适合你应用的产品。')}</p><div className="marketing-two-grid">
+      <Box className="product-card"><span className="product-badge">{t('Commercial','商业产品')}</span><h3>Vane Context</h3><p>{t('Search, analyze and reference multimodal evidence through API, SDK or MCP.','通过 API、SDK 和 MCP 检索、分析和引用多模态资料。')}</p><div className="marketing-actions"><Button solid to="/docs/context">{t('Integration overview','接入概览')}</Button><Link to="/demo?source=developer">{t('Request Demo','预约演示')} →</Link></div></Box>
+      <Box className="product-card"><span className="product-badge">{t('Open source · Apache-2.0','开源 · Apache-2.0')}</span><h3>Vane Data</h3><p>{t('Install the engine, run an example and build SQL + Python media pipelines.','安装引擎、运行示例，构建 SQL + Python 媒体处理流水线。')}</p><div className="marketing-actions"><Button solid to="/docs/data/quickstart/quickstart">{t('Quickstart','快速入门')}</Button><Link to="/docs/data/tutorials">{t('Examples','示例')}</Link><a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a></div></Box>
+    </div></div></section>
+  </MarketingLayout>
 }

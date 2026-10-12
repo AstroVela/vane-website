@@ -2,7 +2,7 @@ import type {Config} from '@docusaurus/types'
 
 const config = {
   title: 'Vane',
-  tagline: 'DuckDB-compatible pipelines for AI workloads',
+  tagline: 'Multimodal data. Usable context.',
   favicon: 'favicon.svg',
   url: process.env.SITE_URL ?? 'https://vane.astrovela.ai',
   baseUrl: '/',
@@ -70,6 +70,17 @@ const config = {
       },
     ],
     [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'context',
+        path: 'docs/context',
+        routeBasePath: 'docs/context',
+        sidebarPath: require.resolve('./sidebars.context.ts'),
+        showLastUpdateAuthor: false,
+        showLastUpdateTime: false,
+      },
+    ],
+    [
       '@docusaurus/plugin-content-blog',
       {
         path: 'blog',
@@ -100,6 +111,7 @@ const config = {
       },
     ],
     require.resolve('./src/plugins/vaneRoutes.ts'),
+    ['@docusaurus/plugin-sitemap', {ignorePatterns:['/solutions/enterprise-agent','/zh-CN/solutions/enterprise-agent','/docs/agent','/docs/rl','/zh-CN/docs/agent','/zh-CN/docs/rl']}],
   ],
   themes: ['@docusaurus/theme-classic'],
   themeConfig: {

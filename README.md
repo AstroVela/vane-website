@@ -1,18 +1,26 @@
 # Vane site
 
-Marketing and documentation site for **Vane** — a DuckDB-compatible engine for
-multimodal data pipelines on Ray. Built with React 19 + Docusaurus, with the
-documentation and blog authored in MDX and rendered through the site's existing UI.
+Bilingual marketing and documentation site for two products:
+
+- **Vane Context**: a commercial multimodal context service. The website presents
+  illustrative results and accepts demo requests; it does not run live analysis.
+- **Vane Data**: the Apache-2.0 open source data engine. Installation, examples,
+  benchmarks, engineering articles, and release notes remain available.
+
+Built with React 19 and Docusaurus. A small Node server serves the generated site
+and saves demo requests in an embedded SQLite file.
 
 ## Tech stack
 
 - **React 19** + **Docusaurus 3** (Docusaurus docs and blog plugins plus custom marketing routes)
 - **MDX** for documentation and blog content, rendered with the site's custom MDX components
 - **ESLint** (flat config in `eslint.config.ts`)
+- **Node 24** and its built-in **SQLite** module for demo request reception
+- **Playwright** for browser acceptance checks
 
 ## Getting started
 
-Prerequisites: **Node 20.19+** (or 22.12+) and npm.
+Prerequisites: **Node 24+** and npm.
 
 ```bash
 npm install        # install dependencies
@@ -20,13 +28,17 @@ npm run dev        # start the bilingual dev server (http://localhost:3000)
 npm run dev:en     # start the English locale Docusaurus server only
 npm run dev:zh-CN  # start the Chinese locale Docusaurus server only
 npm run build      # production build to build/
-npm run preview    # serve the production build locally
+npm run preview    # build both locales and serve http://127.0.0.1:4328
+npm run preview:local # serve an existing build with SQLite (no email in local mode)
 npm run lint       # run ESLint
 npm run docs:lint  # check docs registry, sidebar, links, headings, and code fences
 npm run docs:manifest        # regenerate docs/manifest.json
 npm run docs:manifest:check  # verify docs/manifest.json is current
 npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
 npm run docs:llms:check      # verify generated LLM docs files are current
+npm run docs:context:check   # verify bilingual Context documentation artifacts
+npm run showcase:check       # verify media, locators, and result references
+npm test                     # unit and SQLite service tests
 ```
 
 The default `npm run dev` command starts one Docusaurus server per locale with
@@ -44,7 +56,8 @@ src/
   plugins/
     vaneRoutes.ts      Docusaurus route registration for public pages
   router.tsx           compatibility Link/useRouter helpers over Docusaurus routing
-  pages/               Home, UseCases, Benchmarks, Docs
+  pages/               product, scenario, demo, and resource pages
+  content/             localized products, scenarios, and showcase definitions
   components/          shared UI (Nav, Footer, CodeWindow, …)
   docs/
     registry.ts        docs metadata registry and public doc slug ordering
@@ -52,6 +65,7 @@ src/
   index.css, pages.css global styles and design tokens
 
 docs/
+  context/             commercial integration guides (independent docs plugin)
   data/
     index.mdx          docs home and audience-based entry points
     quickstart/        product intro, installation, SQL and Python quickstarts
@@ -71,9 +85,46 @@ i18n/
   zh-CN/
     docusaurus-plugin-content-blog/
       YYYY-MM-DD-slug.mdx  Chinese blog post translations
+    docusaurus-plugin-content-docs-context/
+      current/         Chinese Context guides
     docusaurus-plugin-content-docs-data/
       current/         Chinese docs mirror using the same English slugs
 ```
+
+## Marketing pages and demo reception
+
+- `/` and `/zh-CN`: interactive media results, analysis, and source references.
+- `/products/context` and `/products/data`: product-specific capabilities and actions.
+- `/solutions`: scenarios linked to the appropriate product.
+- `/demo`: durable request receipt, validation, and safe retries.
+- `/docs/context`: six bilingual commercial integration guides.
+- `/docs/data`: existing open source documentation.
+
+Marketing copy and showcase definitions live in `src/content/`. Media assets and
+creation details live in `public/showcase/v1/` ([provenance](public/showcase/v1/PROVENANCE.md)).
+Examples represent an authored ideal result; they are not customer records or live
+service outputs. Query parameters remember the chosen task and result. Citation
+previews retain that selection. Only one video or audio element can play at a time.
+
+The preview stores requests at `.local-data/demo.sqlite`, which is ignored by Git.
+SQLite runs inside the website Node process and has no separate process or port.
+Local mode never sends email. The Docusaurus development servers serve pages only;
+use the Node preview to test form reception. Deployment configuration, notification
+retries, retention, reverse proxy settings, and backups are described in
+[server/README.md](server/README.md). Keep the SQLite path on persistent storage in
+production. `npm run deploy:static` remains available for static hosting; that mode
+requires a separately routed request API before the form can accept submissions.
+
+For browser checks, build and start the local preview, then run:
+
+```bash
+npx playwright install chromium
+npm run test:browser
+```
+
+Screenshots and failure traces are saved under `.tmp-visual-check/` and ignored by
+Git. The browser suite covers both languages, mobile navigation, all four media
+types, citation return behavior, request persistence, and response-loss retries.
 
 ## Authoring documentation
 
@@ -197,4 +248,5 @@ artifacts and candidates out of the Vane Data runtime version list.
 
 ## License
 
-Licensed under the [Apache License 2.0](./LICENSE).
+Website source is licensed under the [Apache License 2.0](./LICENSE). This does
+not grant a license to the separate commercial Vane Context product.

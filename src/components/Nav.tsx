@@ -1,489 +1,105 @@
-import { useEffect, useRef, useState } from 'react'
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
-import { useLocation } from '@docusaurus/router'
-import { Link } from '../router'
-import { cx } from './cx'
+import {useEffect, useRef, useState} from 'react'
+import {useLocation} from '@docusaurus/router'
+import {Link} from '../router'
+import {pickLocale, useSiteLocale} from '../siteI18n'
+import {marketingProducts} from '../content/products'
+import {GITHUB_URL} from '../siteLinks'
 import Mark from './Mark'
-import ProductGlyph from '../docs/ProductGlyph'
-import { OPEN_DOCS_MOBILE_NAV_EVENT } from '../docs/mobileNavigation'
 import CommandPalette from './CommandPalette'
-import { PRODUCT_ORDER, PRODUCTS, productTagline } from '../docs/products'
-import { pickLocale, useSiteLocale } from '../siteI18n'
-import { useGitHubStars } from './useGitHubStars'
-import { DISCORD_URL, GITHUB_REPO, GITHUB_URL } from '../siteLinks'
+import {OPEN_DOCS_MOBILE_NAV_EVENT} from '../docs/mobileNavigation'
 
-function GitHubIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
-    </svg>
-  )
-}
-
-function DiscordIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-    </svg>
-  )
-}
-
-function DocsSidebarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="11" height="11" rx="1" />
-      <path d="M6 2.5v11M8.5 5.2H11M8.5 8H11M8.5 10.8H11" />
-    </svg>
-  )
-}
-
-/* Pixel data-pipeline mark: two ink stage squares joined by a gray pipe,
-   ending in an ink output arrow. */
-function PipelineIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden="true">
-      <rect x="0" y="6" width="4" height="4" fill="#15171E" />
-      <rect x="5" y="7" width="2" height="2" fill="#9BA0AB" />
-      <rect x="8" y="6" width="4" height="4" fill="#15171E" />
-      <path d="M13 6 L16 8 L13 10 Z" fill="#15171E" />
-    </svg>
-  )
-}
-
-/* Pixel robot head: gray antenna tip + ink stem, ink head, two paper eyes,
-   gray mouth bar. */
-function AgentIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden="true">
-      <rect x="7" y="0" width="2" height="1" fill="#9BA0AB" />
-      <rect x="7" y="1" width="2" height="2" fill="#15171E" />
-      <rect x="3" y="3" width="10" height="10" fill="#15171E" />
-      <rect x="5" y="6" width="2" height="2" fill="#FBFAF6" />
-      <rect x="9" y="6" width="2" height="2" fill="#FBFAF6" />
-      <rect x="6" y="10" width="4" height="1" fill="#9BA0AB" />
-    </svg>
-  )
-}
-
-/* Sticky nav. On the Home page the Get-Started CTA is hidden on the first
-   screen and fades in past 460px of scroll (`ctaReveal`); on other marketing
-   pages it's always visible. Docs pages opt out entirely via `withCta={false}`. */
-type NavProps = {
-  ctaReveal?: boolean
-  ctaTo?: string
-  ctaHref?: string
-  /** Show the docs search trigger in the nav (docs pages only). */
-  withSearch?: boolean
-  /** Render the Get-Started CTA. On by default; docs pages opt out. */
-  withCta?: boolean
-}
-
-export default function Nav({
-  ctaReveal = false,
-  ctaTo = '/docs',
-  ctaHref,
-  withSearch = false,
-  withCta = true,
-}: NavProps) {
+type NavProps = {data?: boolean; ctaReveal?: boolean; ctaTo?: string; ctaHref?: string; withSearch?: boolean; withCta?: boolean}
+export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, withCta = true}: NavProps) {
   const locale = useSiteLocale()
-  const {
-    i18n: { currentLocale },
-  } = useDocusaurusContext()
-  const { pathname } = useLocation()
-  const localePath =
-    currentLocale === 'zh-CN'
-      ? pathname.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
-      : `/zh-CN${pathname === '/' ? '' : pathname}`
-  const localeLabel = currentLocale === 'zh-CN' ? 'EN' : '中文'
-  const switchLocale = () => {
-    window.location.assign(localePath)
-  }
-  const [show, setShow] = useState(false)
-  const [mmOpen, setMmOpen] = useState(false) // Use Cases mega-menu
-  const [dOpen, setDOpen] = useState(false) // Docs product mega-menu
-  const [rOpen, setROpen] = useState(false) // Resources dropdown
-  const [mobOpen, setMobOpen] = useState(false) // mobile slide-down menu
-  const [cmdkOpen, setCmdkOpen] = useState(false) // docs ⌘K command palette
+  const {pathname, search, hash} = useLocation()
+  const [menu, setMenu] = useState<string | null>(null)
+  const [mobile, setMobile] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const navRef = useRef<HTMLElement>(null)
-  const stars = useGitHubStars(GITHUB_REPO)
-
+  const mobileTrigger = useRef<HTMLButtonElement>(null)
+  const mobilePanel = useRef<HTMLDivElement>(null)
+  const mobileDialog = useRef<HTMLDialogElement>(null)
+  const t = (en: string, zh: string) => pickLocale(locale, en, zh)
+  const isData = data || pathname.includes('/docs/data')
+  const path = pathname.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
+  const localePath = (locale === 'en' ? '/zh-CN' + (path === '/' ? '' : path) : path) + search + hash
+  const close = () => {setMenu(null); setMobile(false)}
   useEffect(() => {
-    if (!ctaReveal) return undefined
-    const onScroll = () => {
-      const y = window.scrollY || document.documentElement.scrollTop
-      setShow(y > 460)
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [ctaReveal])
-
-  // Close all menus on Escape or a click/tap outside the nav.
-  useEffect(() => {
-    if (!mmOpen && !dOpen && !rOpen && !mobOpen) return undefined
-    const closeAll = () => {
-      setMmOpen(false)
-      setDOpen(false)
-      setROpen(false)
-      setMobOpen(false)
-    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeAll()
-    }
-    const onDown = (e: MouseEvent) => {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) closeAll()
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onDown)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onDown)
-    }
-  }, [mmOpen, dOpen, rOpen, mobOpen])
-
-  // ⌘K / Ctrl+K toggles the docs command palette (docs pages only).
-  useEffect(() => {
-    if (!withSearch) return undefined
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setCmdkOpen((v) => !v)
+      if (e.key === 'Escape' && (mobile || menu)) {
+        const trigger = mobile ? mobileTrigger.current : navRef.current?.querySelector<HTMLButtonElement>(`[aria-controls="nav-${menu}"]`)
+        setMenu(null); setMobile(false); trigger?.focus()
       }
+      if (withSearch && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {e.preventDefault(); setSearchOpen(v => !v)}
+
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [withSearch])
-
-  const copy = pickLocale(
-    locale,
-    {
-      getStarted: 'Get Started',
-      solutions: 'Solutions',
-      trainingTitle: 'Multimodal Data Pipeline',
-      trainingDesc: 'Prepare multimodal data for training — large-scale SQL + Python UDF preprocessing.',
-      trainingMeta: 'For Training · Data / ML teams →',
-      agentTitle: 'Enterprise Multimodal Agent',
-      agentDesc: 'Multimodal agents for the enterprise — a production-grade data backend.',
-      agentMeta: 'For Enterprise · Platform / App teams →',
-      benchmarks: 'Benchmarks',
-      docs: 'Docs',
-      platform: 'Vane platform',
-      soon: 'SOON',
-      resources: 'Resources',
-      blog: 'Blog',
-      releaseNotes: 'Release Notes',
-      searchDocs: 'Search the docs',
-      openDocsNavigation: 'Open documentation navigation',
-      joinDiscord: 'Join our Discord',
-      star: 'Star',
-      contact: 'Contact us',
-      closeMenu: 'Close menu',
-      openMenu: 'Open menu',
-      mobileTraining: 'Autonomous Driving / Physical AI',
-    },
-    {
-      getStarted: '开始使用',
-      solutions: '解决方案',
-      trainingTitle: '多模态数据流水线',
-      trainingDesc: '用 SQL、Python UDF 和 Ray 处理大规模多模态训练数据。',
-      trainingMeta: '面向训练 · 数据 / ML 团队 →',
-      agentTitle: '企业多模态Agent',
-      agentDesc: '把 PDF、图片、视频、日志、表单等转化成可信可追溯的Agent决策',
-      agentMeta: '面向企业 · 平台 / 应用团队 →',
-      benchmarks: '基准测试',
-      docs: '文档',
-      platform: 'Vane 平台',
-      soon: '即将推出',
-      resources: '资源',
-      blog: '博客',
-      releaseNotes: '发布说明',
-      searchDocs: '搜索文档',
-      openDocsNavigation: '打开文档导航',
-      joinDiscord: '加入我们的 Discord',
-      star: 'Star',
-      contact: '联系我们',
-      closeMenu: '关闭菜单',
-      openMenu: '打开菜单',
-      mobileTraining: '自动驾驶 / Physical AI',
-    },
-  )
-  const ctaClass = cx('btn btn-solid btn-sm', ctaReveal && 'nav-cta', ctaReveal && show && 'show')
-  const ctaInner = (
-    <>
-      {copy.getStarted} <span className="ar">→</span>
-    </>
-  )
-
-  return (
-    <>
-    <header className="nav navbar" ref={navRef}>
+    const onDown = (e: PointerEvent) => {if (!navRef.current?.contains(e.target as Node)) setMenu(null)}
+    document.addEventListener('keydown', onKey); document.addEventListener('pointerdown', onDown)
+    return () => {document.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onDown)}
+  }, [mobile, menu, withSearch])
+  useEffect(() => {
+    if (!mobile) return
+    const previousOverflow = document.body.style.overflow
+    const trigger=mobileTrigger.current
+    const dialog=mobileDialog.current
+    dialog?.showModal()
+    document.body.style.overflow = 'hidden'
+    mobilePanel.current?.querySelector<HTMLElement>('button, a')?.focus()
+    return () => {dialog?.close(); document.body.style.overflow = previousOverflow; trigger?.focus()}
+  }, [mobile])
+  const developers = [
+    {to: '/docs/data', name: t('Vane Data docs', 'Vane Data 文档')},
+    {to: '/docs/data/tutorials', name: t('Vane Data examples', 'Vane Data 代码示例')},
+    {to: GITHUB_URL, name: 'Vane Data GitHub ↗'},
+    {to: '/docs/context', name: t('Vane Context integration', 'Vane Context 接入概览')},
+  ]
+  const resources = [
+    {to: '/blog', name: t('Articles', '技术文章')}, {to: '/benchmarks', name: t('Data benchmarks', 'Data 基准测试')},
+    {to: '/release-notes', name: t('Data releases', 'Data 版本更新')}, {to: '/contact', name: t('Contact', '联系')},
+  ]
+  const dropdown = (id: string, label: string, items: {to: string; name: string; description?: string}[]) =>
+    <div className="nav-dd" onMouseEnter={() => setMenu(id)} onMouseLeave={() => setMenu(null)}>
+      <button className="ddt" type="button" aria-expanded={menu === id} aria-controls={'nav-' + id} onClick={() => setMenu(id)}>{label}<span className="caret" aria-hidden="true">▾</span></button>
+      {menu === id && <div className="dd-pan res-pan" id={'nav-' + id}><div className="dd-card site-nav-dropdown">{items.map(item =>
+        item.to.startsWith('https:') ? <a key={item.to} href={item.to} target="_blank" rel="noreferrer" onClick={close}>{item.name}</a> :
+        <Link key={item.to} to={item.to} onClick={close}><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</Link>
+      )}</div></div>}
+    </div>
+  const productLinks = marketingProducts.map(p => ({to: p.path, name: p.name, description: p.badge[locale] + ' · ' + p.description[locale]}))
+  return <>
+    <header className="nav navbar site-nav" ref={navRef}>
       <div className="wrap nav-in">
-        <Link className="brand" to="/">
-          <Mark size={24} />
-          <span className="wm">vane</span>
-        </Link>
-        <nav className="nav-links">
-          <div
-            className={cx('nav-dd', mmOpen && 'open')}
-            onMouseEnter={() => setMmOpen(true)}
-            onMouseLeave={() => setMmOpen(false)}
-          >
-            <button
-              type="button"
-              className="ddt"
-              aria-expanded={mmOpen}
-              onClick={() => setMmOpen((v) => !v)}
-            >
-              {copy.solutions}
-              <span className="caret">▾</span>
-            </button>
-            {mmOpen && (
-              <div className="dd-pan mega-pan">
-                <div className="dd-card mega">
-                  <div className="mega-grid">
-                    <Link className="mega-it" to="/solutions/training" onClick={() => setMmOpen(false)}>
-                      <span className="ic">
-                        <PipelineIcon />
-                      </span>
-                      <span>
-                        <span className="mt">{copy.trainingTitle}</span>
-                        <span className="md">
-                          {copy.trainingDesc}
-                        </span>
-                        <span className="mg">{copy.trainingMeta}</span>
-                      </span>
-                    </Link>
-                    <Link className="mega-it" to="/solutions/enterprise-agent" onClick={() => setMmOpen(false)}>
-                      <span className="ic">
-                        <AgentIcon />
-                      </span>
-                      <span>
-                        <span className="mt">{copy.agentTitle}</span>
-                        <span className="md">
-                          {copy.agentDesc}
-                        </span>
-                        <span className="mg">{copy.agentMeta}</span>
-                      </span>
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <Link to="/benchmarks">{copy.benchmarks}</Link>
-
-          <div
-            className={cx('nav-dd', dOpen && 'open')}
-            onMouseEnter={() => setDOpen(true)}
-            onMouseLeave={() => setDOpen(false)}
-          >
-            <button
-              type="button"
-              className="ddt"
-              aria-expanded={dOpen}
-              onClick={() => setDOpen((v) => !v)}
-            >
-              {copy.docs}
-              <span className="caret">▾</span>
-            </button>
-            {dOpen && (
-              <div className="dd-pan mega-pan">
-                <div className="dd-card prod-menu">
-                  <div className="prod-menu-eyebrow">{copy.platform}</div>
-                  {PRODUCT_ORDER.map((id) => {
-                    const p = PRODUCTS[id]
-                    const soon = p.status === 'soon'
-                    return (
-                      <Link
-                        className={cx('mega-it', soon && 'muted')}
-                        to={`/docs/${id}`}
-                        key={id}
-                        onClick={() => setDOpen(false)}
-                      >
-                        <span className="ic">
-                          <ProductGlyph id={id} size={15} />
-                        </span>
-                        <span>
-                          <span className="mt">
-                            {p.name}
-                            {soon && <span className="soon-pill">{copy.soon}</span>}
-                          </span>
-                          <span className="md">{productTagline(p, locale)}</span>
-                        </span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div
-            className={cx('nav-dd', rOpen && 'open')}
-            onMouseEnter={() => setROpen(true)}
-            onMouseLeave={() => setROpen(false)}
-          >
-            <button
-              type="button"
-              className="ddt"
-              aria-expanded={rOpen}
-              onClick={() => setROpen((v) => !v)}
-            >
-              {copy.resources}
-              <span className="caret">▾</span>
-            </button>
-            {rOpen && (
-              <div className="dd-pan res-pan">
-                <div className="dd-card ddrop">
-                  <Link to="/blog" onClick={() => setROpen(false)}>
-                    {copy.blog} <span className="ar">→</span>
-                  </Link>
-                  <Link
-                    to="/release-notes"
-                    onClick={() => setROpen(false)}
-                  >
-                    {copy.releaseNotes} <span className="ar">→</span>
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
+        <Link className="brand" to="/"><Mark size={26} /><span className="wm">vane</span></Link>
+        <nav className="nav-links" aria-label={t('Main navigation', '主导航')}>
+          {dropdown('products', t('Products', '产品'), productLinks)}
+          <Link to="/solutions">{t('Use cases', '应用场景')}</Link>
+          {dropdown('developers', t('Developers', '开发者'), developers)}
+          {dropdown('resources', t('Resources', '资源'), resources)}
         </nav>
         <div className="nav-right">
-          {withSearch && (
-            <button
-              type="button"
-              className="nav-search"
-              aria-label={copy.searchDocs}
-              aria-keyshortcuts="Meta+K Control+K"
-              onClick={() => setCmdkOpen(true)}
-            >
-              <span className="si">⌕</span>
-              <span className="sl">{copy.searchDocs}</span>
-              <span className="kbd">⌘K</span>
-            </button>
-          )}
-          <a className="nav-discord" href={DISCORD_URL} target="_blank" rel="noreferrer" aria-label={copy.joinDiscord}>
-            <DiscordIcon />
-          </a>
-          <a className="ghp" href={GITHUB_URL} target="_blank" rel="noreferrer">
-            <GitHubIcon />
-            <span>{copy.star}</span>
-            {stars && <b>{stars}</b>}
-          </a>
-          <Link className="nav-contact" to="/contact">{copy.contact}</Link>
-          <button type="button" className="nav-locale" onClick={switchLocale}>{localeLabel}</button>
-          {withCta &&
-            (ctaHref ? (
-              <a className={ctaClass} href={ctaHref}>
-                {ctaInner}
-              </a>
-            ) : (
-              <Link className={ctaClass} to={ctaTo}>
-                {ctaInner}
-              </Link>
-            ))}
-          {withSearch && (
-            <button
-              type="button"
-              className="nav-docs-menu"
-              aria-label={copy.openDocsNavigation}
-              aria-controls="docs-mobile-navigation"
-              aria-haspopup="dialog"
-              title={copy.openDocsNavigation}
-              onClick={() => window.dispatchEvent(new Event(OPEN_DOCS_MOBILE_NAV_EVENT))}
-            >
-              <DocsSidebarIcon />
-            </button>
-          )}
-          <button
-            type="button"
-            className={cx('nav-burger', mobOpen && 'open')}
-            aria-label={mobOpen ? copy.closeMenu : copy.openMenu}
-            aria-expanded={mobOpen}
-            onClick={() => setMobOpen((v) => !v)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
+          {withSearch && <><button type="button" className="nav-docs-menu" aria-label={t('Open documentation navigation', '打开文档导航')} aria-controls="docs-mobile-navigation" onClick={() => window.dispatchEvent(new Event(OPEN_DOCS_MOBILE_NAV_EVENT))}>☷</button>
+            <button type="button" className="nav-search" onClick={() => setSearchOpen(true)} aria-label={t('Search docs', '搜索文档')}><span>⌕</span><span className="sl">{t('Search', '搜索')}</span><span className="kbd">⌘ K</span></button></>}
+          <a className="nav-locale" href={localePath} lang={locale === 'en' ? 'zh-CN' : 'en'}>{locale === 'en' ? '中文' : 'EN'}</a>
+          {withCta && (ctaHref ? <a className="btn btn-solid btn-sm nav-main-cta" href={ctaHref}>{t('Start using', '开始使用')} →</a> :
+            <Link className="btn btn-solid btn-sm nav-main-cta" to={ctaTo ?? (isData ? '/docs/data/quickstart/quickstart' : '/demo?source=nav')}>{isData ? t('Start using', '开始使用') : t('Request Demo', '预约演示')} →</Link>)}
+          <button ref={mobileTrigger} className="site-menu-toggle" type="button" aria-expanded={mobile} aria-controls="site-mobile-navigation" aria-label={t('Open menu', '打开菜单')} onClick={() => setMobile(true)}>☰</button>
         </div>
       </div>
-      {mobOpen && (
-        <div className="mobile-menu">
-          <div className="wrap">
-            <div className="mob-sec">
-              <Link className="mob-head" to="/solutions" onClick={() => setMobOpen(false)}>
-                {copy.solutions}
-              </Link>
-              <Link className="mob-sub" to="/solutions/training" onClick={() => setMobOpen(false)}>
-                {copy.mobileTraining}
-              </Link>
-              <Link
-                className="mob-sub"
-                to="/solutions/enterprise-agent"
-                onClick={() => setMobOpen(false)}
-              >
-                {copy.agentTitle}
-              </Link>
-            </div>
-            <div className="mob-sec">
-              <Link className="mob-head" to="/benchmarks" onClick={() => setMobOpen(false)}>
-                {copy.benchmarks}
-              </Link>
-            </div>
-            <div className="mob-sec">
-              <span className="mob-label">{copy.docs}</span>
-              {PRODUCT_ORDER.map((id) => {
-                const p = PRODUCTS[id]
-                const soon = p.status === 'soon'
-                return (
-                  <Link
-                    className="mob-sub"
-                    to={`/docs/${id}`}
-                    key={id}
-                    onClick={() => setMobOpen(false)}
-                  >
-                    {p.name}
-                    {soon && <span className="soon-pill">{copy.soon}</span>}
-                  </Link>
-                )
-              })}
-            </div>
-            <div className="mob-sec">
-              <span className="mob-label">{copy.resources}</span>
-              <Link className="mob-sub" to="/blog" onClick={() => setMobOpen(false)}>
-                {copy.blog}
-              </Link>
-              <Link className="mob-sub" to="/contact" onClick={() => setMobOpen(false)}>
-                {copy.contact}
-              </Link>
-              <Link
-                className="mob-sub"
-                to="/release-notes"
-                onClick={() => setMobOpen(false)}
-              >
-                {copy.releaseNotes}
-              </Link>
-            </div>
-            <div className="mob-sec">
-              <button
-                type="button"
-                className="mob-sub mob-sub-button"
-                onClick={() => {
-                  setMobOpen(false)
-                  switchLocale()
-                }}
-              >
-                {localeLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {mobile && <dialog ref={mobileDialog} className="site-mobile-backdrop" aria-label={t('Navigation', '导航')} onCancel={e=>{e.preventDefault();close()}} onClick={e=>{if(e.target===e.currentTarget)close()}}><div ref={mobilePanel} id="site-mobile-navigation" className="site-mobile-panel" onKeyDown={e=>{
+          if(e.key!=='Tab')return
+          const items=Array.from(mobilePanel.current?.querySelectorAll<HTMLElement>('a,button')??[]).filter(el=>el.getClientRects().length>0)
+          const first=items[0],last=items.at(-1)
+          if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}
+          else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}
+        }}>
+        <button type="button" className="site-mobile-close" onClick={close}>{t('Close', '关闭')} ×</button>
+        <h3>{t('Products', '产品')}</h3>{productLinks.map(p => <Link to={p.to} key={p.to} onClick={close}><strong>{p.name}</strong><small>{p.description}</small></Link>)}
+        <Link to="/solutions" onClick={close}>{t('Use cases', '应用场景')} →</Link>
+        <h3>{t('Developers', '开发者')}</h3>{developers.map(p => p.to.startsWith('https:') ? <a href={p.to} key={p.to} target="_blank" rel="noreferrer">{p.name}</a> : <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
+        <h3>{t('Resources', '资源')}</h3>{resources.map(p => <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
+        <Link to="/demo?source=nav" className="btn btn-solid" onClick={close}>{t('Request Demo', '预约演示')} →</Link>
+      </div></dialog>}
     </header>
-    {withSearch && cmdkOpen && <CommandPalette onClose={() => setCmdkOpen(false)} />}
-    </>
-  )
+    {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}
+  </>
 }

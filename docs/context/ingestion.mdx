@@ -1,0 +1,30 @@
+---
+title: Media ingestion
+description: Prepare media as searchable evidence.
+---
+
+## Choose channels by media type
+
+| Input | Available processing channels | Typical evidence |
+| --- | --- | --- |
+| Text / records | Content | Text excerpts and typed metadata |
+| Image | Visual, OCR | Matching images and recognized text |
+| Video | Visual, speech, OCR, sound | Frames, clips, transcripts and sound windows |
+| Audio | Speech, sound | Timestamped transcripts and sound windows |
+| PDF | Content, OCR | Page text, recognized text and page references |
+
+Select only the channels relevant to your application. Visual search needs a configured visual embedding profile; speech needs ASR; sound retrieval needs a sound embedding model. OCR and analysis require their corresponding configured providers. Read `/v1/capabilities` for the deployed service's combinations and limits.
+
+## Provide a source
+
+Use inline text or records, upload media, use resumable upload sessions for large files, or submit an allowed remote HTTPS import. Imported and uploaded resources have service-owned identifiers. Server paths supplied by a client are not source access permissions.
+
+1. Prepare the source and metadata.
+2. Submit ingestion with a stable idempotency key.
+3. Store the returned ingestion job and asset identifiers.
+4. Wait for the job to become ready before relying on its published evidence.
+5. On a connection interruption, read the same job instead of creating another request.
+
+Single-item and batch ingestion share the media contracts. Batch requests contain at most 32 items; track each item's result independently.
+
+The configured models determine which channels can be built. Ingestion produces source evidence; a later analysis can produce generated knowledge with its own provenance. See [evidence and references](./references.mdx).

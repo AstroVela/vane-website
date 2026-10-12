@@ -1,0 +1,31 @@
+---
+title: Analysis and jobs
+description: Analyze selected sources with a structured output and validated citations.
+---
+
+## Analyze a search result
+
+Inputs may reference evidence, an asset, a video interval, document pages or an inline source. The instruction states the information your application needs. An optional JSON Schema constrains the output shape.
+
+```python
+from vane_context import AnalyzeRequest, EvidenceRef
+
+if found.hits:
+    answer = client.analyze(AnalyzeRequest(
+        collection="product-media",
+        inputs=[EvidenceRef(id=found.hits[0].evidence.id)],
+        instruction="List the operating steps and cite their sources.",
+        include_media=False,
+    ))
+    print(answer.output, answer.citations)
+```
+
+This example analyzes stored text or descriptions. To inspect the original media, enable media inputs and select a supported mode: sampled video frames, a clip with audio, or the source video; text or page images for documents; transcript or source for audio. A frame-only model cannot verify a spoken instruction. The selected mode must match the configured model capabilities.
+
+## Keep long work recoverable
+
+Submit long analyses through `POST /v1/analyze/jobs` with an idempotency key. Save the returned job ID, read that same job's status, and retrieve its final result. SDK watchers and SSE can follow progress and resume from event IDs. This lets the application reconnect without repeating a model request.
+
+Batch analysis tracks independent items. Cancellation is cooperative: work that has already executed is not undone. An `unknown` job state means that completion is not established; recover the existing job before resubmitting.
+
+Output schema validation and citation validation are service checks. They do not establish that every generated statement is factually correct. Applications should expose [the original evidence](./references.mdx) for verification.

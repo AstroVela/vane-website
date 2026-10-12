@@ -1,0 +1,202 @@
+# Vane Context integration documentation
+
+Commercial product. Service credentials and packages are provided through commercial delivery.
+
+## Overview
+
+Route: /docs/context
+
+Vane Context finds and analyzes information in video, audio, images, documents and text. It returns evidence with references to the original content, through HTTP, SDK or MCP.
+
+## Start an integration
+
+1. [Request a product demonstration](/demo?source=developer). Describe your use case and media types.
+2. Agree on service deployment, source access and model configuration with the team. Service credentials and SDK packages are supplied through commercial delivery.
+3. Read the deployed service's capabilities before selecting ingestion channels or analysis modes.
+4. Ingest a collection, search for relevant evidence, and analyze the selected parts. Use returned citations in your application.
+
+```bash
+curl "$CONTEXT_URL/v1/capabilities" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN"
+```
+
+The service's capability response describes its actual configured models and supported features. A listed media type does not imply that every channel or analysis mode is enabled.
+
+## Choose a starting point
+
+- [Media ingestion](./ingestion.mdx): source inputs, media channels and preparation.
+- [Search](./search.mdx): text, image and combined retrieval.
+- [Analysis and jobs](./analysis.mdx): structured output and asynchronous processing.
+- [Evidence and references](./references.mdx): time windows, pages and source identity.
+- [API, SDK and MCP](./integration.mdx): connection patterns for applications and agents.
+
+Vane Context is a commercial product. The website showcases bundled examples. For the open source data engine, see [Vane Data](/products/data).
+
+## Media ingestion
+
+Route: /docs/context/ingestion
+
+## Choose channels by media type
+
+| Input | Available processing channels | Typical evidence |
+| --- | --- | --- |
+| Text / records | Content | Text excerpts and typed metadata |
+| Image | Visual, OCR | Matching images and recognized text |
+| Video | Visual, speech, OCR, sound | Frames, clips, transcripts and sound windows |
+| Audio | Speech, sound | Timestamped transcripts and sound windows |
+| PDF | Content, OCR | Page text, recognized text and page references |
+
+Select only the channels relevant to your application. Visual search needs a configured visual embedding profile; speech needs ASR; sound retrieval needs a sound embedding model. OCR and analysis require their corresponding configured providers. Read `/v1/capabilities` for the deployed service's combinations and limits.
+
+## Provide a source
+
+Use inline text or records, upload media, use resumable upload sessions for large files, or submit an allowed remote HTTPS import. Imported and uploaded resources have service-owned identifiers. Server paths supplied by a client are not source access permissions.
+
+1. Prepare the source and metadata.
+2. Submit ingestion with a stable idempotency key.
+3. Store the returned ingestion job and asset identifiers.
+4. Wait for the job to become ready before relying on its published evidence.
+5. On a connection interruption, read the same job instead of creating another request.
+
+Single-item and batch ingestion share the media contracts. Batch requests contain at most 32 items; track each item's result independently.
+
+The configured models determine which channels can be built. Ingestion produces source evidence; a later analysis can produce generated knowledge with its own provenance. See [evidence and references](./references.mdx).
+
+## Search
+
+Route: /docs/context/search
+
+## Start with text
+
+```bash
+curl "$CONTEXT_URL/v1/search" \
+  -H "Authorization: Bearer $CONTEXT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": "product-media",
+    "query": "show the blending steps",
+    "top_k": 3
+  }'
+```
+
+Every hit carries its evidence identity and source locator. Keep those identities when requesting a follow-up analysis.
+
+## Select a retrieval method
+
+| Backend | Use it for |
+| --- | --- |
+| `vector` | Semantic text or paired image search with configured profiles |
+| `lexical` | Full-text terms in textual content, speech or OCR |
+| `hybrid` | Combine semantic candidates with lexical matches |
+| `temporal` | Align explicit video channel conditions in time |
+| Configured backend | Specialized retrieval advertised by capabilities |
+
+Image queries require a compatible paired embedding profile. Composed image/text queries use the advertised video visual contract; arbitrary combinations are not interchangeable.
+
+Narrow the scope with asset IDs, typed metadata filters, modalities or channels. Where supported, constrain document pages, video time or audio windows. Multiple embedding profiles can contribute candidates; rank fusion and optional reranking determine final ordering.
+
+Scores describe retrieval ranking, not the certainty of a factual conclusion. Backend scores have different meanings. Follow the returned cursor unchanged for stable pagination; start a new search after cursor expiry. Group by asset when a screen should show source files instead of individual matches.
+
+Next: [analyze selected evidence](./analysis.mdx).
+
+## Analysis and jobs
+
+Route: /docs/context/analysis
+
+## Analyze a search result
+
+Inputs may reference evidence, an asset, a video interval, document pages or an inline source. The instruction states the information your application needs. An optional JSON Schema constrains the output shape.
+
+```python
+from vane_context import AnalyzeRequest, EvidenceRef
+
+if found.hits:
+    answer = client.analyze(AnalyzeRequest(
+        collection="product-media",
+        inputs=[EvidenceRef(id=found.hits[0].evidence.id)],
+        instruction="List the operating steps and cite their sources.",
+        include_media=False,
+    ))
+    print(answer.output, answer.citations)
+```
+
+This example analyzes stored text or descriptions. To inspect the original media, enable media inputs and select a supported mode: sampled video frames, a clip with audio, or the source video; text or page images for documents; transcript or source for audio. A frame-only model cannot verify a spoken instruction. The selected mode must match the configured model capabilities.
+
+## Keep long work recoverable
+
+Submit long analyses through `POST /v1/analyze/jobs` with an idempotency key. Save the returned job ID, read that same job's status, and retrieve its final result. SDK watchers and SSE can follow progress and resume from event IDs. This lets the application reconnect without repeating a model request.
+
+Batch analysis tracks independent items. Cancellation is cooperative: work that has already executed is not undone. An `unknown` job state means that completion is not established; recover the existing job before resubmitting.
+
+Output schema validation and citation validation are service checks. They do not establish that every generated statement is factually correct. Applications should expose [the original evidence](./references.mdx) for verification.
+
+## Evidence and references
+
+Route: /docs/context/references
+
+## Read the locator
+
+| Evidence | Source location |
+| --- | --- |
+| Video frame | Frame timestamp |
+| Video clip | Start and end time |
+| Speech / audio | Audio time window |
+| Document | Page number |
+| OCR | Text offset plus associated image, frame or page |
+| Sound | Sound window |
+
+An evidence identity belongs to a collection and a source asset. Pass the returned identity into analysis; do not invent IDs or substitute an unrelated collection. Analysis citations are checked against the accepted inputs.
+
+## Separate source evidence from generated knowledge
+
+Source evidence records where content came from. Model-generated descriptions or analysis are derived content, with references to the source evidence they used. Keep both visible in your application rather than presenting generated wording as an original quote.
+
+For example, a conclusion that the blending cup holds 500 ml can cite a specification on PDF page 2 and an audio briefing. The user can open the page or play the recorded window to verify it.
+
+## Build an inspectable interface
+
+1. Keep collection, asset and evidence identifiers alongside each returned fact.
+2. Render a citation as a video/audio time range, document page or image.
+3. On selection, open the referenced source at that location.
+4. Preserve the user's result selection and provide a way back.
+5. If the source is inaccessible, retain the identity and show the access failure clearly.
+
+Asset revisions, permissions and deletion can affect later access. A stored citation is a source reference, not a permanent grant of access. Follow the deployed service's revision and access contracts.
+
+## API, SDK and MCP
+
+Route: /docs/context/integration
+
+## Connection options
+
+| Interface | Typical integration |
+| --- | --- |
+| HTTP | Any application that can send authenticated JSON requests |
+| Python SDK | Python applications, upload helpers and job watchers |
+| TypeScript SDK | Typed web/server applications, SSE and resumable uploads |
+| MCP | Existing agents that call discovered Context tools |
+
+Service credentials and SDK delivery are arranged with the team. Keep API credentials on the server or in the agent's protected configuration. Do not bundle them into public frontend JavaScript.
+
+```typescript
+import {VaneContext} from '@astrovela/vane-context'
+
+const client = new VaneContext({baseUrl: serviceUrl, apiKey: token})
+const found = await client.search({
+  collection: 'product-media',
+  query: 'show the blending steps',
+  top_k: 3,
+})
+```
+
+## Agent usage
+
+An agent discovers the configured service's capabilities and authorized collections, then uses search and analysis tools. For example, `context_search` accepts a request with the same search fields; `context_analyze` takes selected inputs and an idempotency key. The agent decides how the returned information contributes to its task.
+
+Retain job IDs and evidence identities in agent memory. Reconnect to unfinished work, continue from a returned cursor, and inspect source references when more detail is needed. A retry should not create a duplicate ingestion or analysis request.
+
+## Agree on an operating setup
+
+Discuss media volumes, source access, models, job handling, deployment and the application surface during integration. Supported combinations are determined by the delivered service configuration. Public examples introduce the contracts; they are not an online service endpoint.
+
+[Request Demo](/demo?source=developer) · [Vane Data documentation](/docs/data)

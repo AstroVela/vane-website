@@ -1,0 +1,31 @@
+---
+title: 分析与异步任务
+description: 分析相关来源，返回结构化输出和校验后的引用。
+---
+
+## 分析检索结果
+
+输入可以引用证据、资产、视频区间、文档页或内联来源。指令说明应用需要的信息，可选 JSON Schema 约束输出结构。
+
+```python
+from vane_context import AnalyzeRequest, EvidenceRef
+
+if found.hits:
+    answer = client.analyze(AnalyzeRequest(
+        collection="product-media",
+        inputs=[EvidenceRef(id=found.hits[0].evidence.id)],
+        instruction="List the operating steps and cite their sources.",
+        include_media=False,
+    ))
+    print(answer.output, answer.citations)
+```
+
+这个示例分析已存文本或描述。需要核对原始媒体时启用媒体输入，并选择支持的模式：视频采样帧、含音轨片段或原视频；文档文本或页面图片；音频转写或原音频。只看帧的模型无法验证语音内容，模式必须与实际模型能力一致。
+
+## 让长任务可恢复
+
+通过 `POST /v1/analyze/jobs` 提交异步分析，并提供幂等标识。保存返回的任务 ID，读取同一任务的状态与最终结果。SDK watcher 和 SSE 可跟踪进展，并按事件标识恢复，让应用重新连接时不重复调用模型。
+
+批量分析分别记录每项结果。取消是协作式的，已执行的工作不会撤销。`unknown` 表示尚不能确认完成情况，应先恢复原任务再考虑重新提交。
+
+输出结构与引用会经过程序校验，但这不等于全部生成内容都已经事实核对。应用应保留[原始依据](./references.mdx)，让用户能够检查。
