@@ -1,3 +1,5 @@
+import '@fontsource-variable/space-grotesk'
+import '@fontsource-variable/jetbrains-mono'
 import type {ClientModule} from '@docusaurus/types'
 import './index.css'
 import './pages.css'

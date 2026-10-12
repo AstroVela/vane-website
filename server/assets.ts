@@ -1,7 +1,7 @@
 import {createReadStream,statSync} from 'node:fs'
 import {resolve,sep} from 'node:path'
 import {Readable} from 'node:stream'
-const mime:Record<string,string>={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',json:'application/json; charset=utf-8',txt:'text/plain; charset=utf-8',md:'text/plain; charset=utf-8',svg:'image/svg+xml',png:'image/png',jpg:'image/jpeg',webp:'image/webp',mp4:'video/mp4',wav:'audio/wav',pdf:'application/pdf',woff:'font/woff',woff2:'font/woff2',ico:'image/x-icon',xml:'application/xml; charset=utf-8'}
+const mime:Record<string,string>={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',json:'application/json; charset=utf-8',txt:'text/plain; charset=utf-8',md:'text/plain; charset=utf-8',svg:'image/svg+xml',png:'image/png',jpg:'image/jpeg',webp:'image/webp',mp4:'video/mp4',wav:'audio/wav',m4a:'audio/mp4',pdf:'application/pdf',woff:'font/woff',woff2:'font/woff2',ico:'image/x-icon',xml:'application/xml; charset=utf-8'}
 function isFile(filename:string) {try{return statSync(filename).isFile()}catch{return false}}
 export function staticAssets(directory:string,production=false) {
   const root=resolve(directory)

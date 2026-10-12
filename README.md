@@ -62,7 +62,8 @@ src/
   docs/
     registry.ts        docs metadata registry and public doc slug ordering
     sidebar.data.json  Vane Data docs grouping / ordering
-  index.css, pages.css global styles and design tokens
+  index.css, pages.css shared styles and design tokens
+  marketing.css       warm-paper marketing layouts and responsive media showcase
 
 docs/
   context/             commercial integration guides (independent docs plugin)
@@ -93,6 +94,12 @@ i18n/
 
 ## Marketing pages and demo reception
 
+The [approved website design](https://ocnq8kyde63e.feishu.cn/wiki/PYbEw8ePzig9AQkBtQnccjT7nIb)
+uses a warm light theme, one clay accent, 4px corners, and self-hosted Space Grotesk
+and JetBrains Mono. Design variance / motion / density follow the agreed 8 / 5 / 3
+direction: asymmetric page layouts, synchronized media transitions, and open space.
+Reduced motion and mobile viewing use manual media switching by default.
+
 - `/` and `/zh-CN`: interactive media results, analysis, and source references.
 - `/products/context` and `/products/data`: product-specific capabilities and actions.
 - `/solutions`: scenarios linked to the appropriate product.
@@ -101,10 +108,11 @@ i18n/
 - `/docs/data`: existing open source documentation.
 
 Marketing copy and showcase definitions live in `src/content/`. Media assets and
-creation details live in `public/showcase/v1/` ([provenance](public/showcase/v1/PROVENANCE.md)).
+source details live in `public/showcase/marketing/` ([media manifest](public/showcase/marketing/media-manifest.json)).
 Examples represent an authored ideal result; they are not customer records or live
-service outputs. Query parameters remember the chosen task and result. Citation
-previews retain that selection. Only one video or audio element can play at a time.
+service outputs. `?media=video|image|audio` remembers the selected medium and
+freezes automatic rotation. The headline and media switch together; clicking
+evidence plays a bounded clip or highlights the original image region. Only one video or audio element can play at a time.
 
 The preview stores requests at `.local-data/demo.sqlite`, which is ignored by Git.
 SQLite runs inside the website Node process and has no separate process or port.
@@ -123,8 +131,8 @@ npm run test:browser
 ```
 
 Screenshots and failure traces are saved under `.tmp-visual-check/` and ignored by
-Git. The browser suite covers both languages, mobile navigation, all four media
-types, citation return behavior, request persistence, and response-loss retries.
+Git. The browser suite covers both languages, mobile navigation, the three real media
+types, source localization, rotation and playback state, request persistence, and response-loss retries.
 
 ## Authoring documentation
 

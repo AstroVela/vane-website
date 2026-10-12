@@ -1,13 +1,28 @@
-export type ShowcaseState = {scenarioId:string; selections:Record<string,string>; analysisOpen:boolean; referenceId?:string; referenceImageOpen:boolean}
-export type ShowcaseAction = {type:'scenario';id:string} | {type:'result';id:string} | {type:'analysis'} | {type:'reference';id?:string} | {type:'image';open:boolean} | {type:'initialize';scenario:string;result?:string}
-export function initialShowcaseState(scenarioId='usage-demo'):ShowcaseState {return {scenarioId,selections:{},analysisOpen:false,referenceImageOpen:false}}
-export function showcaseReducer(state:ShowcaseState,action:ShowcaseAction):ShowcaseState {
-  switch(action.type) {
-    case 'scenario': return {...state,scenarioId:action.id,analysisOpen:false,referenceId:undefined,referenceImageOpen:false}
-    case 'result': return {...state,selections:{...state.selections,[state.scenarioId]:action.id},referenceId:undefined}
-    case 'analysis': return {...state,analysisOpen:!state.analysisOpen}
-    case 'reference': return {...state,referenceId:action.id}
-    case 'image': return {...state,referenceImageOpen:action.open}
-    case 'initialize': return {...state,scenarioId:action.scenario,selections:action.result?{[action.scenario]:action.result}:{}}
+import type {MediaKind} from '../../content/types'
+export const mediaKinds: MediaKind[] = ['video', 'image', 'audio']
+export type HeroState = {
+  activeMedia: MediaKind; rotationMode: 'auto' | 'manual'; selectedInsight: Partial<Record<MediaKind, string>>
+  selectionEpoch: number; requestedInsight?: string; hovered: boolean; focusWithin: boolean; visible: boolean
+  documentVisible: boolean; modalOpen: boolean; audible: boolean
+}
+export type HeroAction =
+  | {type: 'select'; media: MediaKind; insight?: string; manual?: boolean}
+  | {type: 'rotate'} | {type: 'mode'; mode: 'auto' | 'manual'}
+  | {type: 'environment'; values: Partial<Pick<HeroState, 'hovered' | 'focusWithin' | 'visible' | 'documentVisible' | 'modalOpen' | 'audible'>>}
+export function initialHeroState(media: MediaKind = 'video', auto = true): HeroState {
+  return {activeMedia: media, rotationMode: auto ? 'auto' : 'manual', selectedInsight: {}, selectionEpoch: 0,
+    hovered: false, focusWithin: false, visible: false, documentVisible: true, modalOpen: false, audible: false}
+}
+export function canRotate(state: HeroState) {
+  return state.rotationMode === 'auto' && state.visible && state.documentVisible && !state.hovered && !state.focusWithin && !state.modalOpen && !state.audible
+}
+export function heroReducer(state: HeroState, action: HeroAction): HeroState {
+  switch (action.type) {
+    case 'select': return {...state, activeMedia: action.media, selectionEpoch: state.selectionEpoch + 1,
+      rotationMode: action.manual === false ? state.rotationMode : 'manual', audible: false, modalOpen: false, requestedInsight: action.insight,
+      selectedInsight: action.insight ? {...state.selectedInsight, [action.media]: action.insight} : state.selectedInsight}
+    case 'rotate': return canRotate(state) ? {...state, activeMedia: mediaKinds[(mediaKinds.indexOf(state.activeMedia) + 1) % mediaKinds.length], selectionEpoch: state.selectionEpoch + 1, audible: false, requestedInsight: undefined} : state
+    case 'mode': return {...state, rotationMode: action.mode}
+    case 'environment': return Object.entries(action.values).some(([key, value]) => state[key as keyof HeroState] !== value) ? {...state, ...action.values} : state
   }
 }

@@ -1,24 +1,20 @@
 export type Localized = {en: string; 'zh-CN': string}
 export const l = (en: string, zh: string): Localized => ({en, 'zh-CN': zh})
-export type Modality = 'video' | 'image' | 'audio' | 'pdf'
+export type MediaKind = 'video' | 'image' | 'audio'
 export type Locator =
-  | {kind: 'time_range'; startMs: number; endMs: number}
-  | {kind: 'pdf_page'; page: number}
-  | {kind: 'image'}
+  | {kind: 'time'; assetId: string; start: number; end: number}
+  | {kind: 'image'; assetId: string; regionIds: string[]}
 export type ShowcaseAsset = {
-  id: string; modality: Modality; title: Localized; alt: Localized
-  previewUrl: string; originalUrl?: string; posterUrl: string
-  posterFrames?: {startMs:number;url:string}[]
-  durationMs?: number; pageCount?: number; pageImages?: Record<number, string>
-  sourceStartMs?: number; transcript?: Localized; waveform?: number[]
-  attribution: Localized; provenance: 'authored-example'; sourceUrl?: string
+  id: string; kind: MediaKind; title: Localized; alt: Localized
+  url: string; posterUrl?: string; width?: number; height?: number
+  duration?: number; waveform?: number[]
 }
-export type ShowcaseReference = {id: string; assetId: string; locator: Locator; label: Localized; excerpt?: Localized}
-export type ShowcaseResult = {
-  id: string; assetId: string; locator: Locator; title: Localized; summary: Localized
-  analysis: {text: Localized; referenceIds: string[]}[]; referenceIds: string[]
+export type ImageRegion = {id: string; assetId: string; x: number; y: number; width: number; height: number}
+export type Insight = {
+  id: string; title: Localized; explanation: Localized; locators: Locator[]
+  sourceExcerpt?: {language: string; text: string}; translation?: Localized
 }
-export type ShowcaseScenario = {
-  id: string; label: Localized; question: Localized; defaultResultId: string
-  referenceImageAssetId?: string; results: ShowcaseResult[]; solutionSlug: string
+export type Showcase = {
+  kind: MediaKind; assetId: string; headlineWord: Localized; label: Localized
+  subtitle: Localized; summary: Localized; insightIds: string[]
 }

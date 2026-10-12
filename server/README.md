@@ -48,4 +48,4 @@ Back up the database using SQLite's backup tooling or stop the service before co
 
 Run typecheck, lint, unit tests, content/document checks, build, then `npm run test:browser` against the running preview. Browser acceptance writes designated local test rows, never sends email, and saves screenshots under `.tmp-visual-check`.
 
-Marketing content lives in `src/content`. Form validation is shared in `src/demoContract.ts`. Media files and image prompts are documented in [PROVENANCE.md](../public/showcase/v1/PROVENANCE.md). Showcase results are authored examples of ideal capability, not live retrieval results or customer benchmarks.
+Marketing content lives in `src/content`. Form validation is shared in `src/demoContract.ts`. Media source checksums, derivations and codecs are documented in [media-manifest.json](../public/showcase/marketing/media-manifest.json). Showcase results are authored examples of ideal capability, not live retrieval results or customer benchmarks.

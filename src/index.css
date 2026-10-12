@@ -1,48 +1,26 @@
-/* ============================================================
-   VANE × turbopuffer-style — monospace, ink-on-paper, boxy,
-   dotted offset shadows. Near-monochrome; the only color is the
-   low-saturation code syntax theme + the grayscale logo mark.
-   Source of truth: design_handoff_vane_turbopuffer/designs/tp.css
-   ============================================================ */
+/* Shared Vane brand and document layout. Marketing rules live in marketing.css. */
 :root {
-  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-  /* Role-based aliases (AIE-style abstraction): name the *role*, not the face.
-     All three map to the mono stack today — the design is deliberately all-mono.
-     If a display or reading face is ever introduced, change it here only. */
+  --mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* Proportional text for reading; mono for code and technical values. */
   --font-mono: var(--mono);
-  --font-body: var(--mono);
-  /* Display tier (marketing headlines only): a proportional grotesk that
-     contrasts the mono body — Space Grotesk is the proportional sibling of a
-     monospace, so it reads "designed" without leaving the technical register.
-     Falls back to the mono stack if the webfont fails. Applied only to
-     .h1/.h2/.hero-h1 — small headings & all UI/code stay mono. */
-  --font-display: 'Space Grotesk', var(--mono);
-  /* System-label tier (the highlight 亮点): a dot-matrix bitmap face for the
-     uppercase micro-labels that annotate the page. Its glyphs are built from
-     the same dots as the 象界 perception-grid background — so the labels and
-     the substrate share one material. This borrows AIE's *pixel idea* but
-     re-roots its meaning: here pixels = 象 (perception nodes) / 像素, the atomic
-     unit of multimodal data — not retro-terminal nostalgia. Silkscreen is built
-     for small sizes (legible where VT323 would smear). Falls back to mono. */
-  --font-pixel: 'Silkscreen', var(--mono);
+  --font-body: 'Space Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: var(--font-body);
+  --font-pixel: var(--font-body);
   --paper: #F4F3ED;       /* warm off-white page */
   --paper-2: #FBFAF6;     /* card surface */
   --paper-3: #ECEAE1;     /* inset / stripe */
   --ink: #15171E;         /* near-black navy ink */
   --ink-2: #23262F;       /* body / secondary text — darkened for comfortable long-form reading */
-  --ink-3: #6E717C;       /* muted */
-  --line: #15171E;        /* strong (card) borders */
-  --line-2: #CFCDC2;      /* soft hairlines */
+  --ink-3: #62656D;       /* muted */
+  --line: #D7D4CA;        /* strong (card) borders */
+  --line-2: #D7D4CA;      /* soft hairlines */
   --accent: #9A5638;      /* the single warm, low-saturation accent (links) */
   --accent-strong: #7E4329; /* accent, deepened for hover */
   --green: #15171E;       /* monochrome: folded to ink */
   --green-ink:#15171E;
-  --r: 2px;
-  --r-lg: 2px;
-  /* Content width: stays at the spec'd 1180px on laptops (≤1440px viewports),
-     then grows fluidly on large screens so the side gutters share the extra
-     width instead of ballooning — capped at 1440px. */
-  --wrap-max: clamp(1180px, calc(1180px + (100vw - 1440px) * 0.5), 1440px);
+  --r: 4px;
+  --r-lg: 4px;
+  --wrap-max: 1368px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -53,21 +31,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  /* "象界" substrate — a coordinate world (界) carrying faint perception
-     nodes (象), bounded by a soft edge vignette. All ≤6% ink, monochrome;
-     deliberately recedes so it never competes with the text. */
-  background-image:
-    /* 界 — bounded world: gentle edge fade, keeps the center clean & focused */
-    radial-gradient(ellipse 108% 108% at 50% 34%, transparent 58%, rgba(21,23,30,0.03) 100%),
-    /* 象 — perception nodes suspended in the centre of each grid cell */
-    radial-gradient(rgba(21,23,30,0.06) 1px, transparent 1.7px),
-    /* 界 — engineering coordinate grid */
-    linear-gradient(to right, rgba(21,23,30,0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(21,23,30,0.045) 1px, transparent 1px);
-  background-size: 100% 100%, 88px 88px, 88px 88px, 88px 88px;
-  background-position: 50% 50%, 43px 43px, -1px -1px, -1px -1px;
-  background-attachment: fixed, scroll, scroll, scroll;
-  background-repeat: no-repeat, repeat, repeat, repeat;
 }
 ::selection { background: var(--ink); color: var(--paper); }
 a { color: inherit; }

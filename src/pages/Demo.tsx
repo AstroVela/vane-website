@@ -1,8 +1,8 @@
+import useBaseUrl from '@docusaurus/useBaseUrl'
 import {useEffect, useRef, useState, type FormEvent} from 'react'
 import {useLocation} from '@docusaurus/router'
 import MarketingLayout from '../components/MarketingLayout'
 import Box from '../components/Box'
-import Eyebrow from '../components/Eyebrow'
 import Button from '../components/Button'
 import {Link} from '../router'
 import {useSiteLocale} from '../siteI18n'
@@ -16,11 +16,12 @@ type Availability = {state:'loading' | 'ready' | 'unavailable'; retention:number
 export default function Demo() {
   const locale = useSiteLocale()
   const {search} = useLocation()
+  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.webp')
   const query = new URLSearchParams(search)
   const source = demoSources.includes(query.get('source') as typeof demoSources[number]) ? query.get('source')! : 'direct'
   const scenario = demoScenarios.includes(query.get('scenario') as typeof demoScenarios[number]) ? query.get('scenario')! : ''
   const solution = solutions.find(s => s.id === scenario)
-  const [form, setForm] = useState(() => ({...empty, need: solution?.need[locale] ?? ''}))
+  const [form, setForm] = useState(() => ({...empty, need: solution?.need[locale] ?? '', modalities: ['video','image','audio'].includes(query.get('media') ?? '') ? [query.get('media')!] : []}))
   const [errors, setErrors] = useState<Partial<Record<DemoField, FieldError>>>({})
   const [availability, setAvailability] = useState<Availability>({state:'loading',retention:90})
   const [submitting, setSubmitting] = useState(false)
@@ -83,7 +84,7 @@ export default function Demo() {
   }
   return <MarketingLayout noIndex={Boolean(received)} title={t('Request a Vane Context demo','预约 Vane Context 演示')} description={t('Discuss your multimodal data, applications and agents with the Vane team.', '与 Vane 团队一起评估多模态资料、应用和 Agent 的接入。')}>
     <section className="section demo-page"><div className="wrap demo-grid">
-      <div className="demo-description"><Eyebrow>VANE CONTEXT / DEMO</Eyebrow><h1 className="h1">{t('See it working', '看看它如何处理')}<br/>{t('with your use case.', '你的多模态资料。')}</h1><p className="lead">{t('Tell us what you want to build. We will discuss your data and arrange a product demonstration.', '说说你想完成什么。我们会进一步了解资料与需求，并安排产品演示。')}</p><ul className="demo-benefits"><li>{t('Find the understanding capabilities that fit your media.', '确认适合资料的理解能力。')}</li><li>{t('See search, analysis and source references in action.', '了解检索、分析与引用的实际表现。')}</li><li>{t('Plan integration, models and deployment together.', '讨论应用接入、模型与部署要求。')}</li></ul><img className="demo-product-image" src="/showcase/v1/product-catalog.webp" alt={t('Illustrative product media used in the showcase.', '展台使用的示例产品素材。')}/><p className="marketing-note">{t('No files or credentials are needed for this form.', '申请表无需提交文件或模型凭证。')}</p></div>
+      <div className="demo-description"><h1 className="h1">{t('See it working', '看看它如何处理')}<br/>{t('with your use case.', '你的多模态资料。')}</h1><p className="lead">{t('Tell us what you want to build. We will discuss your data and arrange a product demonstration.', '说说你想完成什么。我们会进一步了解资料与需求，并安排产品演示。')}</p><ul className="demo-benefits"><li>{t('Find the understanding capabilities that fit your media.', '确认适合资料的理解能力。')}</li><li>{t('See search, analysis and source references in action.', '了解检索、分析与引用的实际表现。')}</li><li>{t('Plan integration, models and deployment together.', '讨论应用接入、模型与部署要求。')}</li></ul><img className="demo-product-image" src={poster} alt={t('The original camping drink video used in the showcase.', '展台使用的原始露营饮品视频。')}/><p className="marketing-note">{t('No files or credentials are needed for this form.', '申请表无需提交文件或模型凭证。')}</p></div>
       <Box className="demo-form-card">
         {received ? <div className="demo-received" role="status"><span className="receipt-check">✓</span><h2>{t('Your request is received.', '申请已收到。')}</h2><p>{t('We will contact you at the email you provided to learn more and arrange a demonstration.', '我们会通过所填邮箱联系你，进一步了解需求并安排演示。')}</p><div className="receipt-id">{t('Request number', '申请编号')}<code>{received}</code></div><p className="marketing-note">{t('This confirms receipt of your request; a meeting time will be agreed separately.', '这里确认的是申请接收，具体演示时间会后续沟通。')}</p><Button to="/products/context">{t('Back to Vane Context', '返回 Vane Context')}</Button><button className="text-button" type="button" onClick={()=>{setReceived(''); attempt.current=null; try{sessionStorage.removeItem('vane-demo-received')}catch{/* no storage */}}}>{t('Submit another request','提交另一份申请')}</button></div> :
         <form ref={formRef} noValidate onSubmit={onSubmit}><h2>{t('Tell us about your use case.', '先说说你的场景。')}</h2>

@@ -1,17 +1,12 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-const read=p=>readFileSync(p,'utf8')
-const home=read('src/pages/Home.tsx'),products=read('src/content/products.ts'),nav=read('src/components/Nav.tsx'),footer=read('src/components/Footer.tsx')
-assert.match(home,/<HeroShowcase\/>/)
-assert.match(home,/Make your multimodal data/);assert.match(home,/让 AI 理解你的/)
-assert.match(home,/\/demo\?source=home/)
-assert.match(home,/\/products\/data/)
-assert.match(products,/Commercial/);assert.match(products,/Apache-2\.0/)
-assert.match(nav,/marketingProducts\.map/)
-for(const source of [home,nav,footer])assert.doesNotMatch(source,/Vane Agent|Vane RL|\/products\/architecture|\/docs\/agent|\/docs\/rl|Try free/)
-assert.match(footer,/Vane Data · Apache-2\.0/)
-assert.match(home,/BENCHMARK_RESULTS\.map/)
-const data=read('src/pages/DataProduct.tsx')
-assert.match(data,/<HomeHeroExecution\/>/);assert.match(data,/quickstart\/quickstart/)
-assert.match(data,/GITHUB_URL/)
-console.log('Home and product boundary checks passed.')
+import {createJiti} from 'jiti'
+const {marketingProducts} = createJiti(import.meta.url)('../src/content/products.ts')
+assert.deepEqual(marketingProducts.map(p => p.id), ['context', 'data'])
+assert.equal(marketingProducts[0].actionPath, '/demo?source=product-context')
+assert.equal(marketingProducts[1].actionPath, '/docs/data/quickstart/quickstart')
+for (const path of ['src/pages/Home.tsx', 'src/components/Nav.tsx', 'src/components/Footer.tsx']) {
+  const content = readFileSync(path, 'utf8')
+  assert.doesNotMatch(content, /Try free|\/products\/architecture|\/docs\/agent|\/docs\/rl/)
+}
+console.log('Home boundary checked: Context commercial demo, Data self-service, two products and stable routes.')

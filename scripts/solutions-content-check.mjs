@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
-const data=readFileSync('src/content/solutions.ts','utf8'),page=readFileSync('src/pages/UseCases.tsx','utf8'),detail=readFileSync('src/pages/SolutionDetail.tsx','utf8')
-for(const id of ['video-research','audio-evidence','product-verification','training'])assert.ok(data.includes("id: '"+id+"'"),'Missing scenario '+id)
-assert.match(page,/setProduct/)
-assert.match(page,/s\.product===product/)
-assert.match(detail,/HeroShowcase/)
-assert.match(detail,/\/demo\?source=solution&scenario=/)
-assert.match(detail,/initialResult=\{solution\.id==='audio-evidence'/)
-assert.doesNotMatch(detail,/vaneSourceFileUrl|Try free|Upload your file/)
-console.log('Solutions checked: 3 Context scenarios, Data training, product filters and commercial demo links.')
+import {existsSync} from 'node:fs'
+import {createJiti} from 'jiti'
+const {solutions} = createJiti(import.meta.url)('../src/content/solutions.ts')
+assert.deepEqual(solutions.map(s => s.id), ['video-research', 'audio-evidence', 'product-verification', 'training'])
+for (const solution of solutions) {
+  assert.ok(solution.title.en && solution.title['zh-CN'] && solution.summary.en && solution.summary['zh-CN'])
+  assert.ok(existsSync('public' + solution.poster), 'Missing solution media')
+  if (solution.product === 'context') {assert.ok(['video', 'audio', 'image'].includes(solution.media)); assert.ok(solution.need.en && solution.need['zh-CN'])}
+}
+console.log('Solutions checked: one featured marketing use case, retained image/audio paths and Data training.')

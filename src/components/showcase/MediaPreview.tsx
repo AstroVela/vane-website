@@ -1,43 +1,66 @@
 import {useEffect, useId, useRef, useState, type CSSProperties} from 'react'
+import {PlayIcon, PauseIcon, SpeakerLoudIcon, SpeakerOffIcon, ZoomInIcon, Cross2Icon, ReloadIcon} from '@radix-ui/react-icons'
 import useBaseUrl from '@docusaurus/useBaseUrl'
 import {useSiteLocale} from '../../siteI18n'
-import type {Locator, ShowcaseAsset} from '../../content/types'
-import {formatTime, sourceTime, posterFor} from './locator'
+import type {ImageRegion, Locator, ShowcaseAsset} from '../../content/types'
+import {imageRegions, showcaseInsights} from '../../content/showcases'
+import {formatTime} from './locator'
 import {useMediaPlayback} from './MediaPlaybackProvider'
 
-export function ImageModal({src, alt, onClose}: {src: string; alt: string; onClose: () => void}) {
+type Request = {epoch: number; locator: Locator}
+type Props = {
+  asset: ShowcaseAsset; selected?: string; preview?: string; request?: Request; epoch: number
+  initialPosition: number; autoPreview: boolean; visible: boolean
+  onProgress: (position: number) => void; onInteract: () => void
+  onAudible: (audible: boolean) => void; onModal: (open: boolean) => void
+}
+
+function RegionOverlay({regions}: {regions: ImageRegion[]}) {
+  return <span className="image-regions" aria-hidden="true">{regions.map(r => <span key={r.id} className="image-region" style={{left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.width * 100}%`, height: `${r.height * 100}%`}} />)}</span>
+}
+export function ImageModal({src, alt, regions, onClose}: {src: string; alt: string; regions: ImageRegion[]; onClose: () => void}) {
   const ref = useRef<HTMLDialogElement>(null)
   const locale = useSiteLocale()
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null
-    ref.current?.showModal()
+    const dialog = ref.current
+    dialog?.showModal()
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => {document.body.style.overflow = overflow; trigger?.focus()}
+    return () => {dialog?.close(); document.body.style.overflow = overflow; trigger?.focus({preventScroll: true})}
   }, [])
-  return <dialog className="media-modal" ref={ref} aria-label={alt} onCancel={e => {e.preventDefault(); onClose()}} onClick={e => {if (e.target === e.currentTarget) onClose()}}>
-    <button className="media-modal-close" type="button" onClick={onClose} autoFocus>{locale === 'en' ? 'Close' : '关闭'} ×</button>
-    <img src={src} alt={alt} />
+  return <dialog ref={ref} className="media-modal" aria-label={alt} onCancel={e => {e.preventDefault(); onClose()}} onClick={e => {if (e.target === e.currentTarget) onClose()}}>
+    <button type="button" className="media-modal-close" onClick={onClose} autoFocus><Cross2Icon aria-hidden="true" />{locale === 'en' ? 'Close' : '关闭'}</button>
+    <div className="modal-image"><img src={src} alt={alt} /><RegionOverlay regions={regions} /></div>
   </dialog>
 }
-export default function MediaPreview({asset, locator, autoPreview = false}: {asset: ShowcaseAsset; locator: Locator; autoPreview?: boolean}) {
-  const locale = useSiteLocale()
-  const playback = useMediaPlayback()
-  const id = useId()
-  const mediaRef = useRef<HTMLVideoElement & HTMLAudioElement>(null)
+
+export default function MediaPreview({asset, selected, preview, request, epoch, initialPosition, autoPreview, visible, onProgress, onInteract, onAudible, onModal}: Props) {
+  const locale = useSiteLocale(), playback = useMediaPlayback(), id = useId()
+  const mediaRef = useRef<HTMLMediaElement | null>(null)
+  const pending = useRef<Request | undefined>(undefined)
+  const currentEpoch = useRef(epoch)
+  const clipEnd = useRef<number | undefined>(undefined)
+  const resumePosition = useRef(initialPosition)
+  const progressRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const [position, setPosition] = useState(initialPosition)
   const [playing, setPlaying] = useState(false)
+  const [muted, setMuted] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [ready, setReady] = useState(asset.kind === 'image')
   const [enlarged, setEnlarged] = useState(false)
-  const [position, setPosition] = useState(0)
+  const [clipCompleted, setClipCompleted] = useState(false)
+  const [buffering, setBuffering] = useState(false)
   const [retry, setRetry] = useState(0)
-  const mediaUrl = useBaseUrl(asset.previewUrl)
-  const poster = useBaseUrl(posterFor(asset,locator))
-  const pageUrl = useBaseUrl(locator.kind === 'pdf_page' ? asset.pageImages?.[locator.page] ?? asset.posterUrl : asset.posterUrl)
+  const src = useBaseUrl(asset.url), poster = useBaseUrl(asset.posterUrl ?? '')
   const t = (en: string, zh: string) => locale === 'en' ? en : zh
-  const start = locator.kind === 'time_range' ? sourceTime(asset, locator.startMs) : 0
-  const end = locator.kind === 'time_range' ? sourceTime(asset, locator.endMs) : (asset.durationMs ?? 0) / 1000
-  const duration = Math.max(0, end - start)
+  const duration = asset.duration ?? 0
+  const selectedInsight = showcaseInsights.find(i => i.id === (preview ?? selected))
+  const regionIds = selectedInsight?.locators.flatMap(l => l.kind === 'image' ? l.regionIds : []) ?? []
+  const regions = imageRegions.filter(r => r.assetId === asset.id && regionIds.includes(r.id))
+
+  useEffect(() => {currentEpoch.current = epoch; pending.current = request}, [epoch, request])
   useEffect(() => {
     const media = mediaRef.current
     if (!media) return
@@ -45,65 +68,112 @@ export default function MediaPreview({asset, locator, autoPreview = false}: {ass
   }, [id, playback])
   useEffect(() => {
     const media = mediaRef.current
-    if (!media || asset.modality !== 'video' || !autoPreview) return
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const dataSaver = (navigator as Navigator & {connection?: {saveData: boolean}}).connection?.saveData
-    let visible = false
+    if (!media) return
     const update = () => {
-      if (visible && !document.hidden && !motion.matches && !dataSaver) {if (!playback.isManual(id)) {media.muted = true; void playback.play(id, 'auto')}}
-      else playback.pause(id)
+      const motion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const saveData = (navigator as Navigator & {connection?: {saveData: boolean}}).connection?.saveData
+      if (!visible || document.hidden) {playback.pause(id); onAudible(false)}
+      else if (autoPreview && asset.kind === 'video' && !motion && !saveData && media.readyState >= 1) {
+        media.muted = true
+        void playback.play(id, 'auto')
+      }
     }
-    const observer = new IntersectionObserver(entries => {visible = entries[0].isIntersecting; update()}, {threshold: .3})
-    observer.observe(media)
+    update()
     document.addEventListener('visibilitychange', update)
-    motion.addEventListener('change', update)
-    return () => {observer.disconnect(); document.removeEventListener('visibilitychange', update); motion.removeEventListener('change', update); playback.pause(id)}
-  }, [asset.modality, autoPreview, id, playback])
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [asset.kind, autoPreview, id, onAudible, playback, ready, visible])
+
   useEffect(() => {
-    // A static HTML resource can fail before React hydrates and attaches onError.
-    const frame=requestAnimationFrame(()=>{
-      const image=imageRef.current
-      if(mediaRef.current?.error || image?.complete && !image.naturalWidth) setFailed(true)
+    const media = mediaRef.current
+    if (!request || request.locator.kind !== 'time' || !media || media.readyState < 1) return
+    const requestedEpoch = request.epoch
+    media.currentTime = request.locator.start
+    resumePosition.current = request.locator.start
+    clipEnd.current = request.locator.end
+    pending.current = undefined
+    let retired = false
+    void playback.play(id, 'manual').then(success => {
+      if (retired || currentEpoch.current !== requestedEpoch) return
+      if (!success) setPlaying(false)
     })
-    return ()=>cancelAnimationFrame(frame)
+    return () => {retired = true}
+  }, [id, playback, ready, request])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const media = mediaRef.current
+      if (imageRef.current?.complete && !imageRef.current.naturalWidth || media?.error) setFailed(true)
+      if (media && media.readyState >= 1) {media.currentTime = resumePosition.current; setPosition(media.currentTime); setReady(true)}
+    })
+    return () => cancelAnimationFrame(frame)
   }, [retry])
-  const initialize = () => {
+
+  const onMetadata = () => {
     const media = mediaRef.current
     if (!media) return
-    if (start >= 0 && start < media.duration && end <= media.duration + .15) {media.currentTime = start; setPosition(0)}
-    else setFailed(true)
+    const target = pending.current?.locator
+    media.currentTime = target?.kind === 'time' ? target.start : Math.min(resumePosition.current, Math.max(0, media.duration - .05))
+    setPosition(media.currentTime)
+    setReady(true)
   }
-  const toggle = () => {
+  const updateTime = () => {
     const media = mediaRef.current
     if (!media) return
+    const current = media.currentTime
+    resumePosition.current = current
+    setPosition(current); onProgress(current)
+    progressRef.current?.style.setProperty('--progress', `${current / duration * 100}%`)
+    if (clipEnd.current !== undefined && current >= clipEnd.current - .025) {playback.pause(id, true); clipEnd.current = undefined; setClipCompleted(true)}
+  }
+  const play = () => {
+    const media = mediaRef.current
+    if (!media) return
+    onInteract()
     if (!media.paused) {playback.pause(id, true); return}
-    if (media.currentTime < start || media.currentTime >= end - .05) media.currentTime = start
-    media.muted = asset.modality === 'video'
+    if (media.ended) media.currentTime = 0
     void playback.play(id, 'manual')
   }
-  const timeUpdate = () => {
+  const seek = (value: number) => {
+    onInteract(); clipEnd.current = undefined; setClipCompleted(false)
+    const media = mediaRef.current
+    if (!media || !Number.isFinite(media.duration)) return
+    media.currentTime = Math.min(value, media.duration); resumePosition.current = media.currentTime; setPosition(media.currentTime); onProgress(media.currentTime)
+  }
+  const toggleSound = () => {
+    onInteract()
     const media = mediaRef.current
     if (!media) return
-    setPosition(Math.max(0, media.currentTime - start))
-    if (media.currentTime >= end - .025) {
-      if (asset.modality === 'video' && !playback.isManual(id)) media.currentTime = start
-      else {playback.pause(id, true); media.currentTime = start}
-    }
+    media.muted = !media.muted; setMuted(media.muted); onAudible(!media.muted && !media.paused)
   }
-  const sharedMedia = {ref: mediaRef, src: mediaUrl, preload: 'metadata' as const, onLoadedMetadata: initialize,
-    onPlay: () => setPlaying(true), onPause: () => {setPlaying(false); playback.stopped(id)}, onTimeUpdate: timeUpdate, onError: () => setFailed(true)}
-  return <div className={'media-preview media-' + asset.modality} data-modality={asset.modality}>
-    {asset.modality === 'video' && <video {...sharedMedia} poster={poster} playsInline muted aria-label={asset.alt[locale]} />}
-    {asset.modality === 'audio' && <div className="audio-stage"><span className="audio-stage-eyebrow">{t('AUDIO EXCERPT', '音频片段')}</span>
-      <div className="waveform" aria-hidden="true">{(asset.waveform ?? []).map((height, i) => <i key={i} style={{'--height': height + '%', opacity: duration > 0 && i / (asset.waveform?.length ?? 1) < position / duration ? 1 : .35} as CSSProperties} />)}</div>
-      <h3>{asset.title[locale]}</h3><p>{asset.transcript?.[locale]}</p><audio {...sharedMedia} aria-label={asset.alt[locale]} />
+  const openImage = () => {onInteract(); playback.pauseAll(); setEnlarged(true); onModal(true)}
+  const currentCaption = showcaseInsights.find(i => i.locators.some(l => l.kind === 'time' && l.assetId === asset.id && position >= l.start && position < l.end))
+  const shared = {src, preload: 'metadata' as const, ref: (media: HTMLMediaElement | null) => {mediaRef.current = media}, onLoadedMetadata: onMetadata,
+    onPlay: () => {setPlaying(true); setClipCompleted(false); onAudible(asset.kind === 'audio' || !mediaRef.current?.muted)},
+    onPause: () => {setPlaying(false); onAudible(false); playback.stopped(id)}, onTimeUpdate: updateTime,
+    onWaiting: () => setBuffering(true), onCanPlay: () => setBuffering(false),
+    onError: () => setFailed(true), onEnded: () => {setPlaying(false); onAudible(false)}}
+  return <div className={'media-preview media-' + asset.kind} data-modality={asset.kind}>
+    {asset.kind === 'video' && <div className="portrait-media"><video {...shared} poster={poster} muted playsInline aria-label={asset.alt[locale]} /></div>}
+    {asset.kind === 'image' && <div className="portrait-media"><button className={'image-stage-button' + (regions.length ? ' has-region' : '')} type="button" onClick={openImage} aria-label={t('Enlarge image', '放大图片')}>
+      <img ref={imageRef} key={retry} src={src} width={asset.width} height={asset.height} alt={asset.alt[locale]} onError={() => setFailed(true)} fetchPriority="high" />
+      <RegionOverlay regions={regions} />
+    </button><button type="button" className="image-enlarge" onClick={openImage}><ZoomInIcon aria-hidden="true" />{t('Enlarge image', '放大图片')}</button></div>}
+    {asset.kind === 'audio' && <div className="audio-stage">
+      <div className="waveform" ref={progressRef} style={{'--progress': `${position / duration * 100}%`} as CSSProperties}>
+        {(asset.waveform ?? []).map((amplitude, i) => <span aria-hidden="true" key={i} style={{'--height': `${amplitude * 100}%`, color: i / (asset.waveform?.length ?? 1) <= position / duration ? 'var(--accent)' : 'var(--line-2)'} as CSSProperties} />)}
+        <input className="waveform-seek" type="range" min={0} max={duration} step={.05} value={Math.min(position, duration)} onChange={e => seek(Number(e.target.value))} aria-label={t('Waveform playback position', '波形播放进度')} />
+      </div>
+      <p className="audio-prompt">{clipCompleted ? <button className="continue-media" type="button" onClick={play}>{t('Continue listening', '继续聆听')}<span aria-hidden="true"> →</span></button> : t('Listen to the exact words behind each insight.', '听听每项理解对应的原话。')}</p><audio {...shared} aria-label={asset.alt[locale]} />
     </div>}
-    {(asset.modality === 'image' || asset.modality === 'pdf') && <button type="button" className="image-stage-button" onClick={() => {playback.pauseAll(); setEnlarged(true)}} aria-label={t('Enlarge image', '放大查看')}><img ref={imageRef} key={retry} src={asset.modality === 'pdf' ? pageUrl : mediaUrl} onError={()=>setFailed(true)} alt={asset.alt[locale]} fetchPriority="high"/><span className="enlarge-hint">↗ {t('Enlarge', '放大查看')}</span></button>}
-    {failed && <div className="media-error" role="status"><span>{t('Media is temporarily unavailable. You can still read the analysis.', '媒体暂时无法播放，仍可阅读分析内容。')}</span><button type="button" onClick={() => {setFailed(false); setRetry(n=>n+1); mediaRef.current?.load()}}>{t('Retry', '重试')}</button></div>}
-    {(asset.modality === 'video' || asset.modality === 'audio') && <div className="media-controls">
-      <button type="button" onClick={toggle} aria-label={playing ? t('Pause', '暂停') : t('Play excerpt', '播放片段')}>{playing ? 'Ⅱ' : '▶'}</button>
-      <span>{formatTime(position * 1000)}</span><input type="range" min={0} max={duration} step={.05} value={Math.min(position, duration)} aria-label={t('Excerpt progress', '片段进度')} onChange={e => {const value = Number(e.target.value); if (mediaRef.current) mediaRef.current.currentTime = start + value; setPosition(value)}}/><span>{formatTime(duration * 1000)}</span>
+    {asset.kind !== 'image' && <div className="media-controls">
+      <button type="button" onClick={play} aria-label={playing ? t('Pause', '暂停') : t('Play', '播放')}>{playing ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}</button>
+      <span className="media-time">{formatTime(position)}</span>
+      <input type="range" min={0} max={duration} step={.05} value={Math.min(position, duration)} onChange={e => seek(Number(e.target.value))} aria-label={t('Playback position', '播放进度')} />
+      <span className="media-time">{formatTime(duration)}</span>
+      {asset.kind === 'video' && <button type="button" onClick={toggleSound} aria-label={muted ? t('Enable sound', '开启声音') : t('Mute', '静音')}>{muted ? <SpeakerOffIcon aria-hidden="true" /> : <SpeakerLoudIcon aria-hidden="true" />}</button>}
     </div>}
-    {enlarged && <ImageModal src={asset.modality === 'pdf' ? pageUrl : mediaUrl} alt={asset.alt[locale]} onClose={() => setEnlarged(false)} />}
+    {asset.kind === 'video' && <p className="current-caption">{clipCompleted ? <button type="button" className="continue-media" onClick={play}>{t('Continue watching', '继续观看')}<span aria-hidden="true"> →</span></button> : !ready || buffering && playing ? t('Loading media…', '正在加载素材…') : currentCaption?.title[locale] ?? t('Watch the original footage.', '观看原始视频。')}</p>}
+    {failed && <div className="media-error" role="status"><p>{t('Unable to load this media. The understanding is still available.', '素材暂时无法加载，仍可阅读理解结果。')}</p><button type="button" onClick={() => {setFailed(false); setRetry(v => v + 1); mediaRef.current?.load()}}><ReloadIcon aria-hidden="true" />{t('Retry', '重试')}</button></div>}
+    {enlarged && <ImageModal src={src} alt={asset.alt[locale]} regions={regions} onClose={() => {setEnlarged(false); onModal(false)}} />}
   </div>
 }

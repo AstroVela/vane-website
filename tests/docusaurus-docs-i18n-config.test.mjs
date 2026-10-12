@@ -528,7 +528,7 @@ test('documentation installation commands use uv and the base vane-ai package', 
   }
 
   const dataProduct=readFileSync('src/pages/DataProduct.tsx','utf8')
-  assert.match(dataProduct, /uv pip install vane-ai/)
+  assert.match(dataProduct, /uv pip install 'vane-ai\[image\]'/)
   assert.doesNotMatch(homeSource, /pip install/)
 
 })
