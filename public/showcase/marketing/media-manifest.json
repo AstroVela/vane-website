@@ -1,0 +1,90 @@
+{
+  "collection": "marketing",
+  "assets": [
+    {
+      "sourceId": "comp_001",
+      "file": "comp_001-video.mp4",
+      "source": "/home/zhuwei/tmp/video-agent-demo/raw/ads/competitor/comp_001/video.mp4",
+      "derivation": "Full video; H.264/AAC transcode, unchanged timeline",
+      "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
+      "sha256": "d6e511e9ab2492d87f94ae4cb83e749483e1f0ea6cc8eb756955be7373ac9275",
+      "bytes": 5319472,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 720,
+            "height": 1280
+          },
+          {
+            "codec_name": "aac"
+          }
+        ],
+        "format": {
+          "duration": "21.805011"
+        }
+      }
+    },
+    {
+      "sourceId": "comp_001",
+      "file": "comp_001-poster.webp",
+      "source": "/home/zhuwei/tmp/video-agent-demo/raw/ads/competitor/comp_001/video.mp4",
+      "derivation": "Decoded frame at 2 seconds",
+      "sourceSha256": "a160596b65b28f57263697c64b3854f30c72b0ca4982e05289b8bf5623a007fe",
+      "sha256": "45b2669dc293218ea0b0b45b8d220ed64f1dcc8962e9b5f1efbaae1351ab2a5e",
+      "bytes": 83032,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "webp",
+            "width": 720,
+            "height": 1280
+          }
+        ],
+        "format": {}
+      }
+    },
+    {
+      "sourceId": "comp_005",
+      "file": "comp_005-image.webp",
+      "source": "/home/zhuwei/tmp/video-agent-demo/raw/ads/competitor/comp_005/video.mp4",
+      "derivation": "First decoded frame; full original image",
+      "sourceSha256": "f9a229d4f419e7e21c4bcc9832e0770c43855e5f8d02476c0f53bfad04e552be",
+      "sha256": "b3187abe73e80a666d147d84b5949f9cb5c0b7dc44f03bb97caa339d2352b53d",
+      "bytes": 73954,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "webp",
+            "width": 576,
+            "height": 1024
+          }
+        ],
+        "format": {}
+      }
+    },
+    {
+      "sourceId": "comp_008",
+      "file": "comp_008-audio.m4a",
+      "source": "/home/zhuwei/tmp/video-agent-demo/raw/ads/competitor/comp_008/video.mp4",
+      "derivation": "Original complete AAC audio track; remux only",
+      "sourceSha256": "a24a266af072e181d6c668dd7abe560f9dfc4c1da7db5fd14b7010a7f5d720ea",
+      "sha256": "bde3f1654c99992bdc5c5c1d729455ecc568e27d05398f7849e1e67753a81259",
+      "bytes": 62206,
+      "metadata": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "aac"
+          }
+        ],
+        "format": {
+          "duration": "14.789002"
+        }
+      }
+    }
+  ]
+}
