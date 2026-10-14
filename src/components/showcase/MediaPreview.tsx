@@ -177,18 +177,21 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
   }
   const openImage = () => {onInteract(); playback.pauseAll(); setEnlarged(true); onModal(true)}
   const currentCaption = showcaseInsights.find(i => i.locators.some(l => l.kind === 'time' && l.assetId === asset.id && position >= l.start && position < l.end))
+  const audioInsight = currentCaption?.sourceExcerpt ? currentCaption : selectedInsight?.sourceExcerpt ? selectedInsight : showcaseInsights.find(i => i.locators.some(l => l.assetId === asset.id) && i.sourceExcerpt)
+  const loadingMedia = !failed && ((!ready && (loadEnabled || Boolean(request) || playing)) || buffering && playing)
   const shared = {preload: 'metadata' as const, ref: setMedia, onLoadedMetadata: onMetadata,
     onPlay: () => {setPlaying(true); setClipCompleted(false); onAudible(asset.kind === 'audio' || !mediaRef.current?.muted)},
     onPause: () => {setPlaying(false); onAudible(false); playback.stopped(id)}, onTimeUpdate: updateTime,
     onWaiting: () => setBuffering(true), onCanPlay: () => setBuffering(false),
     onError: () => setFailed(true), onEnded: () => {setPlaying(false); onAudible(false)}}
   return <div className={'media-preview media-' + asset.kind} data-modality={asset.kind}>
-    {asset.kind === 'video' && <div className="portrait-media"><video {...shared} poster={poster} muted playsInline aria-label={asset.alt[locale]} /></div>}
-    {asset.kind === 'image' && <div className="portrait-media"><button className={'image-stage-button' + (regions.length ? ' has-region' : '')} type="button" onClick={openImage} aria-label={t('Enlarge image', '放大图片')}>
+    {asset.kind === 'video' && <div className="portrait-media focus-frame"><video {...shared} poster={poster} muted playsInline aria-label={asset.alt[locale]} /></div>}
+    {asset.kind === 'image' && <><div className="portrait-media focus-frame"><button className={'image-stage-button' + (regions.length ? ' has-region' : '')} type="button" onClick={openImage} aria-label={t('Enlarge image', '放大图片')}>
       <img ref={imageRef} key={retry} src={src} width={asset.width} height={asset.height} alt={asset.alt[locale]} onError={() => setFailed(true)} fetchPriority="high" />
       <RegionOverlay regions={regions} />
-    </button><button type="button" className="image-enlarge" onClick={openImage}><ZoomInIcon aria-hidden="true" />{t('Enlarge image', '放大图片')}</button></div>}
-    {asset.kind === 'audio' && <div className="audio-stage">
+    </button></div><button type="button" className="image-enlarge" onClick={openImage}><ZoomInIcon aria-hidden="true" />{t('Enlarge image', '放大图片')}</button></>}
+    {asset.kind === 'audio' && <div className="audio-stage focus-frame">
+      <div className="audio-transcript"><p className="audio-original" lang={audioInsight?.sourceExcerpt?.language}>“{audioInsight?.sourceExcerpt?.text}”</p>{locale === 'zh-CN' && <p className="audio-translation">{audioInsight?.translation?.[locale]}</p>}</div>
       <div className="waveform" ref={progressRef} style={{'--progress': `${position / duration * 100}%`} as CSSProperties}>
         {(asset.waveform ?? []).map((amplitude, i) => <span aria-hidden="true" key={i} style={{'--height': `${amplitude * 100}%`, color: i / (asset.waveform?.length ?? 1) <= position / duration ? 'var(--accent)' : 'var(--line-2)'} as CSSProperties} />)}
         <input className="waveform-seek" type="range" min={0} max={duration} step={.05} value={Math.min(position, duration)} onChange={e => seek(Number(e.target.value))} aria-label={t('Waveform playback position', '波形播放进度')} />
@@ -202,7 +205,7 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
       <span className="media-time">{formatTime(duration)}</span>
       {asset.kind === 'video' && <button type="button" onClick={toggleSound} aria-label={muted ? t('Enable sound', '开启声音') : t('Mute', '静音')}>{muted ? <SpeakerOffIcon aria-hidden="true" /> : <SpeakerLoudIcon aria-hidden="true" />}</button>}
     </div>}
-    {asset.kind === 'video' && <p className="current-caption">{clipCompleted ? <button type="button" className="continue-media" onClick={play}>{t('Continue watching', '继续观看')}<span aria-hidden="true"> →</span></button> : !ready || buffering && playing ? t('Loading media…', '正在加载素材…') : currentCaption?.title[locale] ?? t('Watch the original footage.', '观看原始视频。')}</p>}
+    {asset.kind === 'video' && <p className="current-caption">{clipCompleted ? <button type="button" className="continue-media" onClick={play}>{t('Continue watching', '继续观看')}<span aria-hidden="true"> →</span></button> : loadingMedia ? t('Loading media…', '正在加载素材…') : currentCaption?.title[locale] ?? t('Watch the original footage.', '观看原始视频。')}</p>}
     {failed && <div className="media-error" role="status"><p>{t('Unable to load this media. The understanding is still available.', '素材暂时无法加载，仍可阅读理解结果。')}</p><button type="button" onClick={() => {setFailed(false); setRetry(v => v + 1); mediaRef.current?.load()}}><ReloadIcon aria-hidden="true" />{t('Retry', '重试')}</button></div>}
     {enlarged && <ImageModal src={src} alt={asset.alt[locale]} regions={regions} onClose={() => {setEnlarged(false); onModal(false)}} />}
   </div>

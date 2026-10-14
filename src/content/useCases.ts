@@ -1,0 +1,103 @@
+import {l, type Localized} from './types'
+
+export type UseCaseId = 'meeting-intelligence' | 'customer-support' | 'equipment-diagnosis' | 'personal-work' | 'marketing-campaigns' | 'commerce-sales'
+export type AgentUseCase = {
+  id: UseCaseId; name: Localized; agent: string; title: Localized; summary: Localized; task: Localized
+  audience: Localized; sources: Localized[]; modalities: string[]; outputs: Localized[]; action: Localized
+  reuse: Localized; update: Localized; integration: Localized; need: Localized
+}
+export const agentUseCases: AgentUseCase[] = [
+  {
+    id: 'meeting-intelligence', name: l('Meeting intelligence', '会议智能'), agent: 'Meeting Intelligence Agent',
+    title: l('Know the story behind the conversation.', '会上提到的每件事，都有背景可查。'),
+    summary: l('Connect a remark to past decisions, customer records and the exact words behind a commitment.', '把一句发言与历史决策、客户记录和承诺原话联系起来，为会议 Agent 补齐背景。'),
+    task: l('“Use the plan we agreed last time.” Which plan, and what did we actually commit to?', '“沿用上次讨论的方案。”上次具体承诺了什么？'),
+    audience: l('Teams building meeting assistants and customer-facing copilots.', '面向会议助手、客户协作与企业办公 Agent 的开发团队。'),
+    sources: [l('Meeting audio & transcripts', '会议音频与转写'), l('Shared screens & chat', '共享画面与聊天'), l('CRM, email & earlier meetings', 'CRM、邮件与历史会议')],
+    modalities: ['audio','image','text'],
+    outputs: [l('The project, people and decision behind a reference.', '指代对应的项目、人员与历史决策。'), l('Commitments, open questions and conflicting records.', '已承诺的内容、待确认事项与记录间的差异。'), l('Original statements with dates and source references.', '带日期与来源定位的原始发言和记录。')],
+    action: l('Your meeting agent updates the notes, surfaces the missing context and suggests a follow-up question.', '会议 Agent 更新纪要、提示相关背景，并在合适的时候提出追问。'),
+    reuse: l('The next account meeting can retrieve source-backed decisions already prepared, within the same authorization scope.', '下次讨论同一客户时，可在授权范围内检索已有决策依据，减少重复翻阅历史会议。'),
+    update: l('When a new message changes a commitment, inspect the new source and make its date and version visible.', '新邮件改变了承诺时，补充理解新来源，并明确显示日期与版本。'),
+    integration: l('Your meeting application supplies new transcript segments, screen captures or chat events. Connect the authorized project history for background lookup.', '会议应用传入新增转写、画面或聊天事件；连接授权的项目历史资料，按讨论内容补充背景。'),
+    need: l('We are building a meeting agent that connects live conversation to prior meetings, CRM and email, with dated source evidence.', '我们希望建设会议 Agent，把新增讨论与历史会议、CRM、邮件关联，获得带时间和来源的背景资料。'),
+  },
+  {
+    id: 'customer-support', name: l('Customer support', '客服问题解决'), agent: 'Customer Support Resolution Agent',
+    title: l('Understand the case. Resolve the right problem.', '先弄清发生了什么，再决定如何解决。'),
+    summary: l('Bring customer messages, order events and delivery evidence into one case your agent can act on.', '把客户描述、订单事件和配送证据整理为清晰的案件状态，让 Agent 有据可依。'),
+    task: l('The shipment says delivered. The customer says it never arrived. What needs checking?', '物流显示已签收，客户却说没有收到。还需要核实什么？'),
+    audience: l('Teams building service agents for retail, logistics and customer operations.', '面向零售、物流与客户运营领域的客服 Agent 开发团队。'),
+    sources: [l('Messages & call recordings', '客户消息与通话录音'), l('Orders, tracking & delivery photos', '订单、物流与配送照片'), l('Policies & past cases', '售后政策与历史案例')],
+    modalities: ['text','image','audio'],
+    outputs: [l('A case timeline linked to the right customer and order.', '对应正确客户与订单的事件时间线。'), l('Confirmed facts, unresolved contradictions and missing evidence.', '已知事实、尚未解释的矛盾与证据缺口。'), l('Applicable policies, with the relevant source passages.', '适用政策及对应原文。')],
+    action: l('Your support agent investigates the remaining gap, then uses its business tools to refund, replace or escalate.', '客服 Agent 继续调查缺口，再通过业务工具执行退款、补发或升级处理。'),
+    reuse: l('Reuse current policy knowledge across authorized cases. Keep each customer’s private case context scoped to its own access rules.', '在授权案件间复用有效的政策知识；客户私有案件背景按各自权限使用。'),
+    update: l('Refresh the case when tracking or customer evidence changes, without treating an old delivery status as current.', '物流或客户证据更新后，刷新案件状态，明确区分历史记录与最新事实。'),
+    integration: l('Pass the customer’s report and permitted identifiers. Your existing order, logistics and support systems supply the authorized records.', '传入客户描述和允许使用的业务标识，从已有订单、物流和客服系统提供授权记录。'),
+    need: l('We want a support agent to reconstruct case timelines from customer messages, orders, delivery evidence and policies.', '我们希望客服 Agent 能结合客户描述、订单、配送证据与政策，重建案件状态并核对矛盾。'),
+  },
+  {
+    id: 'equipment-diagnosis', name: l('Equipment diagnosis', '设备诊断'), agent: 'Equipment Diagnosis Agent',
+    title: l('One incident. Every signal in context.', '把异响、画面和报警，对齐到同一次异常。'),
+    summary: l('Connect observations across video, sound and operating records so your agent can investigate the cause.', '关联视频、声音和运行记录中的观测，帮助 Agent 调查异常原因。'),
+    task: l('An unusual sound came before the alarm. What else changed at the same time?', '报警前出现了异响，同一时间还有什么变化？'),
+    audience: l('Teams building maintenance assistants and industrial diagnosis agents.', '面向设备运维、工业诊断与维修辅助 Agent 的开发团队。'),
+    sources: [l('Equipment video & sound', '设备视频与声音'), l('Sensor & alarm records', '传感器与报警记录'), l('Service history & manuals', '维修历史与设备手册')],
+    modalities: ['video','audio','text','pdf'],
+    outputs: [l('Time-aligned observations around the anomaly.', '异常前后、按时间对齐的多模态观测。'), l('Evidence supporting or weakening each hypothesis.', '支持或削弱故障假设的具体依据。'), l('Relevant maintenance history and observations still needed.', '相关维修历史与仍需补充的观测。')],
+    action: l('Your diagnosis agent compares hypotheses and proposes the next inspection or maintenance action.', '诊断 Agent 比较故障假设，提出下一步检查与维修建议。'),
+    reuse: l('Previously understood service records and source observations remain searchable for later authorized investigations.', '已理解的维修记录与来源观测可供后续授权调查检索使用。'),
+    update: l('A new symptom can trigger analysis of a specific recording window while keeping earlier evidence traceable.', '新症状需要更多信息时，定向分析相关录制区间，并保留此前证据的来源。'),
+    integration: l('Provide equipment identifiers, timestamps and permitted recordings. Align source clocks and connect existing operating records.', '提供设备标识、时间戳与授权录制资料，对齐来源时钟，并接入已有运行记录。'),
+    need: l('We are building a diagnosis agent that aligns equipment video, sound, sensor readings and maintenance evidence.', '我们希望诊断 Agent 能对齐设备视频、声音、传感器和维修依据，持续调查异常原因。'),
+  },
+  {
+    id: 'personal-work', name: l('Personal work', '个人工作与创作'), agent: 'Personal Work Agent',
+    title: l('Your next idea starts with what you already know.', '下一次创作，用得上你过去的积累。'),
+    summary: l('Bring relevant ideas, explicit preferences and reusable assets from a person’s authorized work into the current task.', '把授权作品中的相关观点、明确偏好和可复用素材，带入当前任务。'),
+    task: l('Prepare a script on this topic, using my usual voice and relevant past work.', '用我一贯的表达方式，结合过去的作品准备一份脚本。'),
+    audience: l('Developers of personal assistants, creator tools and individual workspaces.', '面向个人助手、创作工具与个人工作空间的开发团队。'),
+    sources: [l('Past writing, video & audio', '历史文章、视频与音频'), l('Notes & explicit preferences', '笔记与明确偏好'), l('Reusable content assets', '可复用内容资产')],
+    modalities: ['text','video','audio','image'],
+    outputs: [l('Relevant viewpoints with their original context.', '与当前主题相关、保留原始语境的观点。'), l('Expression patterns supported by past work.', '有历史作品依据的表达特点。'), l('Reusable material and task-specific constraints.', '可复用素材与本次任务的具体限制。')],
+    action: l('Your work agent plans, writes and edits the new piece, then incorporates the user’s feedback.', '工作 Agent 规划、创作和编辑新作品，再根据用户反馈继续迭代。'),
+    reuse: l('Use already prepared source knowledge across later tasks without rereading an entire personal archive.', '后续任务复用已有来源知识，减少反复阅读整个个人资料库。'),
+    update: l('New work and explicit feedback can update the available context, with their source and scope preserved.', '新增作品和明确反馈进入可用背景，并保留来源与适用范围。'),
+    integration: l('Connect the user’s authorized archive and pass the current brief. Keep personal preferences and private sources within that user’s scope.', '接入用户授权的作品库并传入当前任务，个人偏好与私有来源限定在对应用户的范围内。'),
+    need: l('We want a work agent to retrieve a user’s authorized ideas, writing preferences and creative assets with source references.', '我们希望工作 Agent 能调用用户授权的观点、表达偏好和创作资产，并保留出处。'),
+  },
+  {
+    id: 'marketing-campaigns', name: l('Marketing campaigns', '营销策划与创作'), agent: 'Marketing Campaign Agent',
+    title: l('Give the next creative brief something to build on.', '让每次创作，都有素材和事实可借鉴。'),
+    summary: l('Turn product knowledge, past campaigns and multimodal assets into grounded material for your creative agent.', '把产品知识、历史 Campaign 和多模态素材，整理成创作 Agent 可以使用的资料。'),
+    task: l('Prepare source material for a camping-themed portable blender video.', '为便携搅拌机的露营主题视频，准备可借鉴的创作资料。'),
+    audience: l('Teams building campaign agents, creative tools and brand content systems.', '面向营销 Agent、创作工具与品牌内容系统的开发团队。'),
+    sources: [l('Product facts & brand guidelines', '产品事实与品牌规范'), l('Advertising video, imagery & narration', '广告视频、图片与旁白'), l('Research & campaign records', '研究资料与投放记录')],
+    modalities: ['video','image','audio','text'],
+    outputs: [l('Relevant scenes, opening ideas and exact source clips.', '相关场景、开场参考与准确的素材片段。'), l('Usable product facts and limits on what can be claimed.', '可使用的产品事实与表达限制。'), l('Performance evidence when matching campaign data is available.', '具备对应投放数据时，可核验的表现依据。')],
+    action: l('Your marketing agent creates the strategy and assets, publishes through its business tools and uses campaign results to iterate.', '营销 Agent 制定策略、生成内容，通过业务工具投放，并结合效果继续迭代。'),
+    reuse: l('The next brief can retrieve valid observations from the same asset library. New questions only need additional understanding where there is a gap.', '下一份 Brief 可以检索同一素材库中仍有效的理解，新问题只在缺口处补充分析。'),
+    update: l('Bring new campaign results into the context with their time range and measurement definitions.', '新的投放结果进入背景时，保留统计时间范围与指标口径。'),
+    integration: l('Connect brand material and media, then add permitted market research and campaign records. Your agent supplies the audience and creative constraints.', '接入品牌资料与素材，再补充授权的市场研究和投放记录；Agent 传入目标人群与创作要求。'),
+    need: l('We want a marketing agent to use brand facts, historical creative and campaign evidence, with reusable source-backed context.', '我们希望营销 Agent 能使用品牌事实、历史创意与投放依据，持续复用带来源的上下文。'),
+  },
+  {
+    id: 'commerce-sales', name: l('Commerce sales', '商品导购'), agent: 'Commerce Sales Agent',
+    title: l('Better recommendations start with better product context.', '推荐之前，把商品事实与需求对齐。'),
+    summary: l('Give shopping agents relevant product facts, visual evidence and timely records for the decision at hand.', '围绕当前购买决策，为导购 Agent 提供商品事实、视觉依据和带时间的业务记录。'),
+    task: l('Find a portable blender for business trips that is easy to clean.', '帮我选一款适合出差携带、容易清洗的搅拌机。'),
+    audience: l('Teams building shopping assistants and product recommendation agents.', '面向购物助手、商品推荐与销售 Agent 的开发团队。'),
+    sources: [l('Specifications, images & demonstrations', '规格、图片与演示视频'), l('Reviews & user preferences', '评价与用户偏好'), l('Current prices & stock records', '价格与库存记录')],
+    modalities: ['text','image','video'],
+    outputs: [l('Candidates compared against the user’s actual requirements.', '按用户实际需求比较的候选商品。'), l('Evidence for claims such as portable or easy to clean.', '支持便携、易清洗等判断的依据。'), l('Unanswered requirements and the age of business records.', '尚未明确的需求，以及业务记录的时间信息。')],
+    action: l('Your sales agent asks the remaining question, explains the trade-offs and uses the commerce system to complete the purchase.', '导购 Agent 补问关键条件、解释取舍，再通过交易系统完成购买。'),
+    reuse: l('Reuse durable product knowledge across authorized requests while checking volatile business records separately.', '在授权请求间复用稳定的商品知识，同时核对容易变化的业务记录。'),
+    update: l('Refresh price and stock from their connected sources, and show when the values were observed.', '从接入来源刷新价格与库存，并显示对应的观察时间。'),
+    integration: l('Supply the user’s explicit needs and permitted profile context. Connect product assets and the business sources for price and availability.', '传入用户的明确需求与授权偏好背景，接入商品资料及价格、可售状态的业务来源。'),
+    need: l('We want a shopping agent to compare product facts, media and user needs, with source evidence and fresh business records.', '我们希望导购 Agent 能结合商品事实、媒体资料与用户需求，给出有依据的比较，并核对最新业务记录。'),
+  },
+]
+
+export const casePagePath = (id: UseCaseId) => '/solutions/' + id
+export const caseDemoPath = (id: UseCaseId) => '/demo?source=solution&scenario=' + id

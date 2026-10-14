@@ -160,6 +160,7 @@ export default function Benchmarks() {
       explore: '浏览用例',
     },
   )
+  const t = (en: string, zh: string) => locale === 'en' ? en : zh
   return (
     <>
       <Head>
@@ -175,6 +176,7 @@ export default function Benchmarks() {
         <div className="wrap">
           <Eyebrow>{copy.eyebrow}</Eyebrow>
           <h1 className="h1">{copy.heading}</h1>
+          <p className="lead benchmark-purpose">{t('Measure end-to-end processing on the same recorded machine. Compare complete workloads, with batch-size tuning and execution limits visible.', '在同一台已记录的机器上，衡量完整处理流程的端到端耗时。一起查看工作负载、批次调优与运行限制。')}</p>
           <p className="lead">
             {copy.leadPrefix}{copy.leadSeparator}
             <a className="benchmark-workflow-link" href={BENCHMARK_WORKFLOW_URL} target="_blank" rel="noreferrer">{copy.leadLink}</a>
@@ -198,6 +200,13 @@ export default function Benchmarks() {
             {BENCHMARK_ENVIRONMENT.gpuMemoryModified ? ` (${copy.modifiedVram})` : ''} ·{' '}
             {BENCHMARK_ENVIRONMENT.gpuMemoryGb} GB {copy.gpuMemory}
           </p>
+          <div className="benchmark-takeaways" aria-label={t('Tuned runtime comparison with Ray Data', '调优后相对 Ray Data 的耗时对比')}>
+            {BENCHMARK_RESULTS.map(result => {
+              const change = runtimeChangePercent(result.vaneSeconds, result.rayDataSeconds)
+              return <div key={result.id}><span>{copy.workloads[result.id]}</span><strong>{Math.abs(change).toFixed(1)}% <small>{change < 0 ? copy.lowerChange : copy.higherChange}</small></strong><p>Vane Data {formatSeconds(result.vaneSeconds)} / Ray Data {formatSeconds(result.rayDataSeconds)}</p></div>
+            })}
+          </div>
+          <div className="benchmark-reading-guide"><h3>{t('What these results tell you', '这些结果说明什么')}</h3><p>{t('Document, image and audio runs were faster than Ray Data in this setup; video was slower. These are pipeline timings, not measurements of model accuracy, context quality or token savings.', '在这个配置下，文档、图像和音频耗时低于 Ray Data，视频耗时更高。这些数据衡量流水线执行耗时，不衡量模型准确率、上下文质量或 Token 节省。')}</p><p>{t('The primary results use the recorded batch-size tuning for each engine. The default-batch results below show the same environment before that tuning. OOM means the workload did not complete within this machine’s available memory.', '主要结果使用各引擎记录的 batch size 调优配置；下方保留同一环境中的默认批次结果。OOM 表示任务在该机器可用内存下未完成。')}</p></div>
           <Box flat className="home-benchmark-chart benchmark-tuned-chart">
             <div className="azt">{copy.elapsedTime}</div>
             <div className="home-chart-meta">

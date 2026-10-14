@@ -46,13 +46,13 @@ export const showcaseInsights: Insight[] = [
 ]
 export const showcases: Showcase[] = [
   {kind: 'video', assetId: 'comp_001', label: l('Video', '视频'), headlineWord: l('videos', '视频'),
-    subtitle: l('Understand scenes and actions. Find the relevant moments.', '看懂场景与动作，定位值得使用的片段。'),
+    subtitle: l('Find relevant scenes. Give your agent useful clips and original evidence.', '定位相关场景，按需理解关键动作，为 Agent 提供可用片段与原始依据。'),
     summary: l('A drink comes together at the campsite: pour the ingredients, then start blending.', '露营场景中的饮品制作：倒入饮料、加入冰块，随后启动搅拌。'), insightIds: ['ingredients', 'blending', 'camping']},
   {kind: 'image', assetId: 'comp_005', label: l('Images', '图片'), headlineWord: l('images', '图片'),
-    subtitle: l('Understand objects, scenes and text. Inspect the source image.', '理解物体、场景与文字，定位画面中的依据。'),
+    subtitle: l('Extract objects and text. Give your agent findings it can verify in the original.', '提取可用的画面细节与文字，为 Agent 提供能回到原图核验的理解。'),
     summary: l('A kitchen scene with a blender cup, ingredients and a strawberry + chocolate smoothie caption.', '搅拌杯与饮品食材的厨房场景，画面文字说明草莓与巧克力奶昔。'), insightIds: ['cup', 'food', 'caption']},
   {kind: 'audio', assetId: 'comp_008', label: l('Audio', '音频'), headlineWord: l('audio', '音频'),
-    subtitle: l('Understand what is said. Listen to the source.', '听懂内容与表达，定位每一句话的出处。'),
+    subtitle: l('Find key statements. Give your agent original words and precise time references.', '找到关键表达，理解语音内容，为 Agent 提供原话与准确的时间引用。'),
     summary: l('The advertising narrator describes portability, making smoothies anywhere and a morning routine.', '广告旁白中的产品表达：便携、随时制作奶昔，以及日常早餐场景。'), insightIds: ['portable', 'morning']},
 ]
 export function showcaseFor(kind: string) {return showcases.find(s => s.kind === kind) ?? showcases[0]}

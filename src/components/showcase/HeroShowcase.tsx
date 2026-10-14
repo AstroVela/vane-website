@@ -26,6 +26,7 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
   const tabsRef = useRef<HTMLDivElement>(null)
   const showcase = showcaseFor(state.activeMedia), asset = assetFor(showcase.assetId)
   const selected = state.selectedInsight[state.activeMedia]
+  const featured = selected ?? showcase.insightIds[0]
   const request = useMemo(() => state.requestedInsight ? {epoch: state.selectionEpoch, locator: insightFor(state.requestedInsight).locators[0]} : undefined, [state.requestedInsight, state.selectionEpoch])
   const t = (en: string, zh: string) => locale === 'en' ? en : zh
   const onAudible = useCallback((audible: boolean) => dispatch({type: 'environment', values: {audible}}), [])
@@ -39,6 +40,8 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
     if (readQuery) {
       const url = new URL(window.location.href)
       url.searchParams.set('media', kind)
+      if (insight) url.searchParams.set('insight', insight)
+      else url.searchParams.delete('insight')
       history.replace({pathname: url.pathname, search: url.search, hash: url.hash, state: history.location.state})
     }
     setAnnounce(showcaseFor(kind).label[locale])
@@ -49,7 +52,10 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
     const frame = requestAnimationFrame(() => {
       const query = new URLSearchParams(window.location.search)
       const media = query.get('media')
-      if (readQuery && mediaKinds.includes(media as MediaKind)) dispatch({type: 'select', media: media as MediaKind})
+      if (readQuery && mediaKinds.includes(media as MediaKind)) {
+        const insight = query.get('insight')
+        dispatch({type: 'select', media: media as MediaKind, insight: insight && showcaseFor(media!).insightIds.includes(insight) ? insight : undefined})
+      }
       if (!autoRotate || window.innerWidth < 768 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) dispatch({type: 'mode', mode: 'manual'})
       setRotationReady(true)
     })
@@ -77,21 +83,24 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
       const next = e.key === 'ArrowRight' ? (i + 1) % 3 : e.key === 'ArrowLeft' ? (i + 2) % 3 : e.key === 'Home' ? 0 : e.key === 'End' ? 2 : -1
       if (next >= 0) {e.preventDefault(); select(mediaKinds[next]); tabsRef.current?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus()}
     }}><Icon aria-hidden="true" />{s.label[locale]}</button>
-  })}</div>{withCopy && <button type="button" className="rotation-control" onClick={() => dispatch({type: 'mode', mode: state.rotationMode === 'auto' ? 'manual' : 'auto'})} aria-label={state.rotationMode === 'auto' ? t('Pause switching', '暂停切换') : t('Enable automatic switching', '自动切换')}>{state.rotationMode === 'auto' ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}</button>}</div>
+  })}</div>{withCopy && <button type="button" className="rotation-control" onClick={() => {
+    // Explicitly resuming rotation also resumes it for keyboard users while this control retains focus.
+    if (state.rotationMode === 'manual') dispatch({type: 'environment', values: {focusWithin: false}})
+    dispatch({type: 'mode', mode: state.rotationMode === 'auto' ? 'manual' : 'auto'})
+  }} aria-label={state.rotationMode === 'auto' ? t('Pause switching', '暂停切换') : t('Enable automatic switching', '自动切换')}>{state.rotationMode === 'auto' ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}</button>}</div>
   return <div className={'hero-experience' + (withCopy ? ' with-hero-copy' : ' inline-showcase')} data-media={state.activeMedia} data-rotation={state.rotationMode}
-    onMouseEnter={() => dispatch({type: 'environment', values: {hovered: true}})} onMouseLeave={() => dispatch({type: 'environment', values: {hovered: false}})}
     onFocusCapture={e => dispatch({type: 'environment', values: {focusWithin: (e.target as HTMLElement).matches(':focus-visible')}})} onBlurCapture={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dispatch({type: 'environment', values: {focusWithin: false}})}}>
-    {withCopy ? <div className="hero-copy"><h1 className="h1">{locale === 'en' ? <>Turn your <span key={showcase.kind}>{showcase.headlineWord[locale]}</span>,<br />into context for AI.</> : <>把你的「<span key={showcase.kind}>{showcase.headlineWord[locale]}</span>」，<br />变成 AI 可用的上下文。</>}</h1>
+    {withCopy ? <div className="hero-copy"><span className="hero-product-name">Vane Context</span><h1 className="h1">{locale === 'en' ? <>Your <span key={showcase.kind}>{showcase.headlineWord[locale]}</span>.<br />Context for AI.</> : <>让「<span key={showcase.kind}>{showcase.headlineWord[locale]}</span>」成为<br />AI 可用的上下文。</>}</h1>
       <p className="lead hero-subtitle" key={showcase.kind}>{showcase.subtitle[locale]}</p>{types}
       <div className="marketing-actions"><Button solid to={'/demo?source=home&media=' + state.activeMedia} arrow onClick={() => track('context_demo_click', {product: 'context', locale, media: state.activeMedia})}>{t('Request Demo', '预约演示')}</Button><Link to="/products/context">{t('Explore Vane Context', '了解 Vane Context')}<ArrowRightIcon aria-hidden="true" /></Link></div>
     </div> : types}
     <div className={'showcase-stage stage-' + showcase.kind} ref={stageRef} id={id + '-panel'} role="tabpanel" aria-labelledby={id + '-' + showcase.kind} tabIndex={0}>
-      <div className="stage-heading"><span>{asset.title[locale]}</span><span>{t('Understanding & evidence', '理解与依据')}</span></div>
+      <div className="stage-heading"><span>{asset.title[locale]}</span><span>{t('Understanding, with evidence', '理解，有据可查')}</span></div>
       <div className={'stage-content content-' + showcase.kind} key={showcase.kind}>
         <MediaPreview asset={asset} epoch={state.selectionEpoch} request={request} selected={selected} preview={hoveredInsight} initialPosition={positions.get(asset.id) ?? 0} loadEnabled={rotationReady} autoPreview={withCopy && state.rotationMode === 'auto'} visible={state.visible} onProgress={onProgress} onInteract={onInteract} onAudible={onAudible} onModal={onModal} />
         <div className="insight-list"><p className="showcase-summary">{showcase.summary[locale]}</p>{showcase.insightIds.map(insightId => {
           const insight = insightFor(insightId)
-          return <button type="button" key={insight.id} className={'insight-item' + (selected === insight.id ? ' selected' : '')} aria-pressed={selected === insight.id} onClick={() => select(showcase.kind, insight.id)}
+          return <button type="button" key={insight.id} className={'insight-item' + (selected === insight.id ? ' selected' : '') + (featured === insight.id ? ' featured' : '')} aria-pressed={selected === insight.id} onClick={() => select(showcase.kind, insight.id)}
             onMouseEnter={() => {if (showcase.kind === 'image') setHoveredInsight(insight.id)}} onMouseLeave={() => setHoveredInsight(undefined)} onFocus={() => {if (showcase.kind === 'image') setHoveredInsight(insight.id)}} onBlur={() => setHoveredInsight(undefined)}>
             <span className="insight-title">{insight.title[locale]}</span><span className="insight-explanation">{insight.explanation[locale]}</span>
             {insight.sourceExcerpt && <span className="source-quote" lang={insight.sourceExcerpt.language}>“{insight.sourceExcerpt.text}”</span>}

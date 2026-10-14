@@ -4,6 +4,7 @@ import { test } from 'node:test'
 
 const dataSource = readFileSync('src/benchmarkData.ts', 'utf8')
 const homeSource = readFileSync('src/pages/Home.tsx', 'utf8')
+const dataProductSource = readFileSync('src/pages/DataProduct.tsx', 'utf8')
 const benchmarkPageSource = readFileSync('src/pages/Benchmarks.tsx', 'utf8')
 const benchmarkScopeNoteSource = readFileSync('src/components/BenchmarkScopeNote.tsx', 'utf8')
 const trainingSource = readFileSync('src/pages/TrainingUseCase.tsx', 'utf8')
@@ -36,28 +37,28 @@ test('benchmark data source records the supplied default batch-size results sepa
   assert.doesNotMatch(dataSource, /daftSeconds: (?:8651)/)
 })
 
-test('home and benchmark pages consume the shared source instead of duplicating results', () => {
-  assert.match(homeSource, /from '\.\.\/benchmarkData'/)
-  assert.match(homeSource, /BENCHMARK_RESULTS\.map/)
+test('Data product and benchmark pages consume the shared source instead of duplicating results', () => {
+  assert.match(dataProductSource, /from '\.\.\/benchmarkData'/)
+  assert.match(dataProductSource, /BENCHMARK_RESULTS\.map/)
   assert.match(benchmarkPageSource, /from '\.\.\/benchmarkData'/)
   assert.match(benchmarkPageSource, /BENCHMARK_RESULTS\.map/)
   assert.match(benchmarkPageSource, /DEFAULT_BATCH_BENCHMARK_RESULTS\.map/)
 })
 
-test('home summarizes Data measurements and links to the full methodology', () => {
-  assert.match(homeSource, /className="data-proof"/)
+test('Data product summarizes measurements and home links to the full methodology', () => {
+  assert.match(dataProductSource, /className="data-benchmark-table"/)
+  assert.match(dataProductSource, /to="\/benchmarks"/)
   assert.match(homeSource, /Published benchmark/)
   assert.match(homeSource, /to="\/benchmarks"/)
-  const dataProduct=readFileSync('src/pages/DataProduct.tsx','utf8')
-  assert.match(dataProduct, /BENCHMARK_RESULTS\.map/)
-  assert.match(dataProduct, /BENCHMARK_ENVIRONMENT\.gpuMemoryGb/)
-  assert.match(dataProduct, /modified VRAM/)
-  assert.match(dataProduct, /<BenchmarkScopeNote locale=\{locale\}/)
+  assert.match(dataProductSource, /BENCHMARK_RESULTS\.map/)
+  assert.match(dataProductSource, /BENCHMARK_ENVIRONMENT\.gpuMemoryGb/)
+  assert.match(dataProductSource, /modified VRAM/)
+  assert.match(dataProductSource, /<BenchmarkScopeNote locale=\{locale\}/)
   assert.match(benchmarkScopeNoteSource, /we have not reproduced the original benchmark's full cluster-scale setup/)
 })
 
 test('benchmark surfaces remove the placeholder performance claims', () => {
-  const benchmarkSurfaces = `${homeSource}\n${benchmarkPageSource}\n${trainingSource}`
+  const benchmarkSurfaces = `${homeSource}\n${dataProductSource}\n${benchmarkPageSource}\n${trainingSource}`
 
   assert.doesNotMatch(benchmarkSurfaces, /vLLM batch inference/)
   assert.doesNotMatch(benchmarkSurfaces, /66K rows/)

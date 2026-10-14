@@ -4,6 +4,7 @@ import {useHistory, useLocation} from '@docusaurus/router'
 import {Link} from '../router'
 import {pickLocale, useSiteLocale} from '../siteI18n'
 import {marketingProducts} from '../content/products'
+import {agentUseCases, casePagePath} from '../content/useCases'
 import {GITHUB_URL} from '../siteLinks'
 import Mark from './Mark'
 import CommandPalette from './CommandPalette'
@@ -71,13 +72,14 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
       )}</div></div>}
     </div>
   const productLinks = marketingProducts.map(p => ({to: p.path, name: p.name, description: p.badge[locale] + ' · ' + p.description[locale]}))
+  const useCaseLinks = [{to: '/solutions', name: t('All use cases', '全部应用场景')}, ...agentUseCases.map(item => ({to: casePagePath(item.id), name: item.name[locale]}))]
   return <>
     <header className="nav navbar site-nav" ref={navRef}>
       <div className="wrap nav-in">
         <Link className="brand" to="/"><Mark size={26} /><span className="wm">vane</span></Link>
         <nav className="nav-links" aria-label={t('Main navigation', '主导航')}>
           {dropdown('products', t('Products', '产品'), productLinks)}
-          <Link to="/solutions">{t('Use cases', '应用场景')}</Link>
+          {dropdown('use-cases', t('Use cases', '应用场景'), useCaseLinks)}
           {dropdown('developers', t('Developers', '开发者'), developers)}
           {dropdown('resources', t('Resources', '资源'), resources)}
         </nav>
@@ -99,10 +101,10 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
         }}>
         <button type="button" className="site-mobile-close" onClick={close}><Cross2Icon aria-hidden="true" />{t('Close', '关闭')}</button>
         <h3>{t('Products', '产品')}</h3>{productLinks.map(p => <Link to={p.to} key={p.to} onClick={close}><strong>{p.name}</strong><small>{p.description}</small></Link>)}
-        <Link to="/solutions" onClick={close}>{t('Use cases', '应用场景')} →</Link>
+        <h3>{t('Use cases', '应用场景')}</h3>{useCaseLinks.map(item => <Link to={item.to} key={item.to} onClick={close}>{item.name}</Link>)}
         <h3>{t('Developers', '开发者')}</h3>{developers.map(p => p.to.startsWith('https:') ? <a href={p.to} key={p.to} target="_blank" rel="noreferrer">{p.name}</a> : <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
         <h3>{t('Resources', '资源')}</h3>{resources.map(p => <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
-        <Link to="/demo?source=nav" className="btn btn-solid" onClick={close}>{t('Request Demo', '预约演示')} →</Link>
+        <Link to={ctaTo ?? '/demo?source=nav'} className="btn btn-solid" onClick={close}>{t('Request Demo', '预约演示')} →</Link>
       </div></dialog>}
     </header>
     {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}

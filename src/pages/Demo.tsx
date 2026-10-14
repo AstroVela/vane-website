@@ -9,6 +9,7 @@ import {useSiteLocale} from '../siteI18n'
 import {CONTACT_EMAIL, CONTACT_MAILTO} from '../siteLinks'
 import {demoBusinessIdentity, demoModalities, demoScenarios, demoSources, validateDemo, type DemoField, type DemoPayload, type FieldError} from '../demoContract'
 import {solutions} from '../content/solutions'
+import {agentUseCases} from '../content/useCases'
 import {track} from '../analytics'
 
 const empty = {name:'',email:'',company:'',need:'',notes:'',modalities:[] as string[]}
@@ -16,12 +17,13 @@ type Availability = {state:'loading' | 'ready' | 'unavailable'; retention:number
 export default function Demo() {
   const locale = useSiteLocale()
   const {search} = useLocation()
-  const poster = useBaseUrl('/showcase/marketing/comp_001-poster.45b2669dc293.webp')
+  const poster = useBaseUrl('/showcase/marketing/comp_005-image.b3187abe73e8.webp')
   const query = new URLSearchParams(search)
   const source = demoSources.includes(query.get('source') as typeof demoSources[number]) ? query.get('source')! : 'direct'
   const scenario = demoScenarios.includes(query.get('scenario') as typeof demoScenarios[number]) ? query.get('scenario')! : ''
   const solution = solutions.find(s => s.id === scenario)
-  const [form, setForm] = useState(() => ({...empty, need: solution?.need[locale] ?? '', modalities: ['video','image','audio'].includes(query.get('media') ?? '') ? [query.get('media')!] : []}))
+  const agentCase = agentUseCases.find(s => s.id === scenario)
+  const [form, setForm] = useState(() => ({...empty, need: agentCase?.need[locale] ?? solution?.need[locale] ?? '', modalities: ['video','image','audio'].includes(query.get('media') ?? '') ? [query.get('media')!] : [...agentCase?.modalities ?? []]}))
   const [errors, setErrors] = useState<Partial<Record<DemoField, FieldError>>>({})
   const [availability, setAvailability] = useState<Availability>({state:'loading',retention:90})
   const [submitting, setSubmitting] = useState(false)
@@ -84,10 +86,11 @@ export default function Demo() {
   }
   return <MarketingLayout noIndex={Boolean(received)} title={t('Request a Vane Context demo','预约 Vane Context 演示')} description={t('Discuss your multimodal data, applications and agents with the Vane team.', '与 Vane 团队一起评估多模态资料、应用和 Agent 的接入。')}>
     <section className="section demo-page"><div className="wrap demo-grid">
-      <div className="demo-description"><h1 className="h1">{t('See it working', '看看它如何处理')}<br/>{t('with your use case.', '你的多模态资料。')}</h1><p className="lead">{t('Tell us what you want to build. We will discuss your data and arrange a product demonstration.', '说说你想完成什么。我们会进一步了解资料与需求，并安排产品演示。')}</p><ul className="demo-benefits"><li>{t('Find the understanding capabilities that fit your media.', '确认适合资料的理解能力。')}</li><li>{t('See search, analysis and source references in action.', '了解检索、分析与引用的实际表现。')}</li><li>{t('Plan integration, models and deployment together.', '讨论应用接入、模型与部署要求。')}</li></ul><img className="demo-product-image" src={poster} alt={t('The original camping drink video used in the showcase.', '展台使用的原始露营饮品视频。')}/><p className="marketing-note">{t('No files or credentials are needed for this form.', '申请表无需提交文件或模型凭证。')}</p></div>
+      <div className="demo-description"><h1 className="h1">{t('See it working', '看看它如何处理')}<br/>{t('with your use case.', '你的多模态资料。')}</h1><p className="lead">{t('Tell us what you want to build. We will discuss your data and arrange a product demonstration.', '说说你想完成什么。我们会进一步了解资料与需求，并安排产品演示。')}</p><ul className="demo-benefits"><li>{t('See the material your agent can use, with original evidence.', '看看 Agent 能获得哪些可用资料与原始依据。')}</li><li>{t('Discuss on-demand processing, knowledge reuse and ongoing costs.', '评估按需处理、知识复用与持续使用成本。')}</li><li>{t('Plan a practical integration with your data, models and applications.', '结合已有数据、模型与应用，确定可落地的接入方式。')}</li></ul><div className="demo-evidence"><div className="demo-evidence-image focus-frame"><img src={poster} width={576} height={1024} alt={t('Ingredients and a blender on a kitchen counter.', '厨房台面上的食材与搅拌杯。')} loading="lazy" /></div><div><span className="evidence-link">{t('From image to insight', '从画面到理解')}</span><p>{t('Objects. Words. Meaning.', '物体、文字与含义。')}<br />{t('All connected to the source.', '每一项，都有原始依据。')}</p><Link to="/products/context">{t('Explore Vane Context', '了解 Vane Context')} →</Link></div></div><p className="marketing-note">{t('No files or credentials are needed for this form.', '申请表无需提交文件或模型凭证。')}</p></div>
       <Box className="demo-form-card">
         {received ? <div className="demo-received" role="status"><span className="receipt-check">✓</span><h2>{t('Your request is received.', '申请已收到。')}</h2><p>{t('We will contact you at the email you provided to learn more and arrange a demonstration.', '我们会通过所填邮箱联系你，进一步了解需求并安排演示。')}</p><div className="receipt-id">{t('Request number', '申请编号')}<code>{received}</code></div><p className="marketing-note">{t('This confirms receipt of your request; a meeting time will be agreed separately.', '这里确认的是申请接收，具体演示时间会后续沟通。')}</p><Button to="/products/context">{t('Back to Vane Context', '返回 Vane Context')}</Button><button className="text-button" type="button" onClick={()=>{setReceived(''); attempt.current=null; try{sessionStorage.removeItem('vane-demo-received')}catch{/* no storage */}}}>{t('Submit another request','提交另一份申请')}</button></div> :
         <form ref={formRef} noValidate onSubmit={onSubmit}><h2>{t('Tell us about your use case.', '先说说你的场景。')}</h2>
+          {agentCase && <p className="demo-selected-case">{t('Demo focus: ', '演示场景：')}{agentCase.name[locale]}</p>}
           <fieldset disabled={submitting}>
             <div className="demo-field-row">{(['name','email'] as const).map(field=><label className="demo-field" key={field}><span id={'demo-label-'+field}>{label[field]} *</span><input aria-labelledby={'demo-label-'+field} name={field} type={field === 'email' ? 'email':'text'} autoComplete={field} value={form[field]} maxLength={field === 'email'?254:80} required aria-invalid={Boolean(errors[field])} aria-describedby={errors[field]?'error-'+field:undefined} onChange={e=>change(field,e.target.value)}/>{errors[field]&&<small id={'error-'+field} className="field-error">{message(field)}</small>}</label>)}</div>
             <label className="demo-field"><span id="demo-label-company">{label.company} *</span><input aria-labelledby="demo-label-company" name="company" autoComplete="organization" value={form.company} maxLength={160} required aria-invalid={Boolean(errors.company)} aria-describedby={errors.company?'error-company':undefined} onChange={e=>change('company',e.target.value)} placeholder={t('Company, team or independent project','公司、团队或个人项目')}/>{errors.company&&<small id="error-company" className="field-error">{message('company')}</small>}</label>

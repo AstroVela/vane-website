@@ -39,9 +39,9 @@ const sql = `SELECT info.width AS source_width, info.height AS source_height,
 FROM metadata
 WHERE info.width >= 300;`
 export default function HomeHeroExecution() {
-  const [active, setActive] = useState('Python'), locale = useSiteLocale()
+  const [active, setActive] = useState('SQL'), locale = useSiteLocale()
   const t = (en: string, zh: string) => locale === 'en' ? en : zh
-  return <div className="data-example"><div className="marketing-tabs" role="group" aria-label={t('Quickstart language', '快速入门语言')}>{['Python', 'SQL'].map(key => <button key={key} type="button" aria-pressed={active === key} onClick={() => setActive(key)}>{key}</button>)}</div>
+  return <div className="data-example focus-frame"><div className="marketing-tabs" role="group" aria-label={t('Quickstart language', '快速入门语言')}>{['Python', 'SQL'].map(key => <button key={key} type="button" aria-pressed={active === key} onClick={() => setActive(key)}>{key}</button>)}</div>
     <CodeWindow key={active} filename={active === 'Python' ? 'quickstart.py' : 'thumbnail.sql'} language={active.toLowerCase()} code={active === 'Python' ? python : sql} />
     <p className="marketing-note">{active === 'Python' ? t('Complete runnable example. Creates its own sample images; no model credentials required.', '完整可运行示例，自带样本图片，无需模型凭证。') : t('SQL excerpt. Uses the metadata relation created by the Python example.', 'SQL 片段，使用 Python 示例创建的 metadata 关系。')}</p>
     <div className="quickstart-output"><span>{t('Output', '输出')}</span><table><thead><tr><th>{t('Source', '原图')}</th><th>{t('Thumbnail', '缩略图')}</th><th>{t('Type', '类型')}</th></tr></thead><tbody><tr><td>640 × 480</td><td>224 × 224</td><td>IMAGE</td></tr><tr><td>320 × 240</td><td>224 × 224</td><td>IMAGE</td></tr></tbody></table></div>

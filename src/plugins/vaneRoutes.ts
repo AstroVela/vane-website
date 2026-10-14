@@ -1,5 +1,6 @@
 import type {PluginModule} from '@docusaurus/types'
 import {LEGACY_DOC_SLUG_LIST} from '../docs/legacySlugs'
+import {agentUseCases} from '../content/useCases'
 function localizedPath(baseUrl:string,path:string) {
   return path==='/' ? baseUrl : '/'+[baseUrl,path].join('/').split('/').filter(Boolean).join('/')
 }
@@ -11,6 +12,7 @@ const vaneRoutesPlugin:PluginModule=context=>({
     route('/products/context','ContextProduct')
     route('/products/data','DataProduct')
     route('/solutions','UseCases')
+    for(const scenario of agentUseCases) route('/solutions/'+scenario.id,'AgentUseCase')
     route('/solutions/training','TrainingUseCase')
     for(const slug of ['video-research','audio-evidence','product-verification']) route('/solutions/'+slug,'SolutionDetail')
     route('/solutions/enterprise-agent','EnterpriseRedirect')

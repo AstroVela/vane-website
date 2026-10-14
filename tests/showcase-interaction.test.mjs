@@ -35,10 +35,10 @@ test('selecting evidence stops rotation; returning to a type remembers selection
   assert.equal(state.selectedInsight.video, 'blending'); assert.equal(state.requestedInsight, undefined)
   assert.ok(state.selectionEpoch > epoch); assert.equal(canRotate(state), false)
 })
-test('rotation is suspended by hover, focus, modal, audible media and hidden documents', () => {
+test('rotation is suspended by focus, modal, audible media and hidden documents', () => {
   const ready = {...initialHeroState(), visible: true}
   assert.equal(canRotate(ready), true)
-  for (const values of [{hovered: true}, {focusWithin: true}, {modalOpen: true}, {audible: true}, {visible: false}, {documentVisible: false}]) {
+  for (const values of [{focusWithin: true}, {modalOpen: true}, {audible: true}, {visible: false}, {documentVisible: false}]) {
     const blocked = heroReducer(ready, {type: 'environment', values})
     assert.equal(canRotate(blocked), false); assert.equal(heroReducer(blocked, {type: 'rotate'}).activeMedia, 'video')
   }

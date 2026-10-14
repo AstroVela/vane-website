@@ -1,6 +1,6 @@
 export const demoModalities = ['video', 'audio', 'image', 'pdf', 'text'] as const
 export const demoSources = ['home', 'nav', 'footer', 'product-context', 'solution', 'developer', 'contact', 'direct'] as const
-export const demoScenarios = ['usage-demo', 'image-match', 'document-evidence', 'video-research', 'audio-evidence', 'product-verification'] as const
+export const demoScenarios = ['usage-demo', 'image-match', 'document-evidence', 'video-research', 'audio-evidence', 'product-verification', 'meeting-intelligence', 'customer-support', 'equipment-diagnosis', 'personal-work', 'marketing-campaigns', 'commerce-sales'] as const
 export type DemoField = 'name' | 'email' | 'company' | 'need' | 'notes' | 'modalities'
 export type DemoPayload = {name: string; email: string; company: string; need: string; notes: string; modalities: string[]; locale: 'en' | 'zh-CN'; source: string; scenario: string}
 export type FieldError = 'required' | 'too_long' | 'invalid'
