@@ -8,6 +8,7 @@ import Footer from './Footer'
 import {useSiteLocale} from '../siteI18n'
 import '../useCases.css'
 import '../contextShowcase.css'
+import '../productPages.css'
 export default function MarketingLayout({title, description, data = false, noIndex = false, ctaTo, children}: PropsWithChildren<{title: string; description: string; data?: boolean; noIndex?: boolean; ctaTo?: string}>) {
   const main = useRef<HTMLElement>(null)
   useEffect(() => {

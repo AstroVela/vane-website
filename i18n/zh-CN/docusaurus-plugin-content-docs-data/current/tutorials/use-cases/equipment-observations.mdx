@@ -1,0 +1,71 @@
+---
+title: 用原生类型与 AI 构建设备观测
+description: 使用原生媒体类型、UDF、AI Function 与 SQL，构建可检索的设备观测。
+---
+
+本案例对应 [Vane Data 产品页](/products/data#processing) 中的五个 Tab。默认流程读取设备文档与巡检录音，保留来源定位，提取结构化观测，并把检索结果关联到设备台账。图片与视频算子可以作为使用同一引擎的扩展输入。
+
+## 安装与配置
+
+使用支持 `ai_prompt` 原生 FILE 输入的 Vane 构建，并安装匹配的 [Lance 扩展](/docs/data/extensions/lance)。这个案例与 0.1.0 快速入门分开。安装模型 Provider 需要的包，以及 `faster-whisper`、`pyarrow` 和 `pylance`。各 Worker 的模型缓存需要能够读取语音识别模型。
+
+下载 <a href="/examples/equipment_observations.py">完整 equipment_observations.py</a>，在 Vane 源码目录之外运行，确保导入的是已安装的软件包。
+
+```bash
+pip install 'vane-ai[google,openai,audio]' faster-whisper pyarrow pylance
+export VANE_PROMPT_PROVIDER=google
+export VANE_PROMPT_MODEL='<支持 PDF 的模型>'
+export VANE_EMBEDDING_PROVIDER=openai
+export VANE_EMBEDDING_MODEL='<支持 1024 维的向量模型>'
+export VANE_ASR_MODEL=small
+export VANE_FACTORY_ID=factory_a
+export VANE_PERMISSION_SCOPE=maintenance
+export VANE_OBSERVATIONS_PATH=./asset_observations.lance
+```
+
+按 Provider 文档设置凭证环境变量。这里由 Google 处理文档输入，OpenAI 生成文本向量；模型名称根据实际部署明确填写，模型和端点需要支持所选输入与向量维度。
+
+## 准备来源与业务记录
+
+在脚本旁保存 `manifest.csv` 和 `assets.csv`，文件路径填写 Worker 可以读取的真实文档与音频。本地路径与已配置的对象存储路径均可。
+
+```csv
+factory_id,asset_id,permission_scope,quality_status,source_kind,source_url
+factory_a,A-017,maintenance,draft,document,/absolute/path/to/A-017/manual.pdf
+factory_a,A-017,maintenance,draft,audio,/absolute/path/to/A-017/inspection.wav
+```
+
+```csv
+factory_id,asset_id,permission_scope,line_id,model
+factory_a,A-017,maintenance,Line 03,Motor M-240
+```
+
+工厂、设备标识与权限范围来自可信的来源映射。`quality_status` 是业务审核状态，核验来源后将其从 `draft` 改为 `approved`，检索会排除尚未审核的记录。模型置信度筛选不会自动完成业务审核。
+
+来源需要明确事件时间，才能进入按时间筛选的观测结果；未知时间、没有依据的事实或低置信度内容会被排除。默认文档引用指向完整文件，接入分页解析器后可以保留页码与字符位置。音频引用使用 ASR 返回的真实片段时间。
+
+## 五类机制如何配合
+
+| 机制 | 脚本具体做什么 | 保留的结果 |
+| --- | --- | --- |
+| 原生类型 | `to_file` 保留文档引用，`audio_file` 为 UDF 提供有类型的音频 | 来源地址与业务标识 |
+| 自定义函数 | `@vane.func` 统一振动单位，`@vane.cls` 复用语音模型 | 数值测量与带时间的转写片段 |
+| 结构化理解 | 两类来源通过 `ai_prompt` 使用同一个固定 JSON Schema | 带事实、置信度与原文的原生 STRUCT |
+| 向量化 | SQL 展开字段、转换时间，再调用 `ai_embed` | 业务字段与来源位置旁的 `FLOAT[1024]` |
+| 检索与关联 | Lance 混合检索约束范围与质量，再关联设备台账 | 按设备组织的排序依据 |
+
+完整脚本包含导入、两类 UDF 注册、输出 Schema、中间 Relation、Lance 写入、全文和标量索引创建、查询向量，以及最终 SQL。预处理与查询共用向量配置，小样例使用精确向量搜索；更大数据集可再创建 ANN 索引。
+
+图片与视频可按产品页代码接入同一连接，具体见 [图片](/docs/data/reference/multimodal-data/image)、[音频](/docs/data/reference/multimodal-data/audio) 和 [视频](/docs/data/reference/multimodal-data/video) 参考。筛选并解码图片、重采样音频或读取视频相关窗口；增加模型理解分支时，继续使用同一观测 Schema 并保留原始定位。
+
+## 运行与核对
+
+```bash
+python equipment_observations.py
+```
+
+脚本写入 `asset_observations.lance`，显示设备依据，并输出 `equipment_evidence.parquet`。再次独立运行时选择新的输出路径，脚本不会覆盖已有数据集。
+
+核对原始测量、标准化振动速度、事件时间、原文、来源定位和向量类型。查询使用当前授权参数，台账限定在同一范围内。匹配分数用于检索排序，不能当作诊断置信度；来源、时间、审核或相关性条件不匹配时，空结果也是合理结果。
+
+[Python UDF](/docs/data/concepts/udfs) · [AI Function](/docs/data/concepts/ai-functions) · [Lance 配置](/docs/data/extensions/lance)

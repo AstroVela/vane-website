@@ -80,8 +80,10 @@ test('marketing evidence plays the selected source and releases playback when sw
   await page.keyboard.press('Escape')
 })
 
-test('homepage explorer mounts one scenario and the navigation exposes all six pages', async ({page}) => {
+test('home links to six solutions and the Context explorer mounts one scenario at a time', async ({page}) => {
   await page.goto('/zh-CN/')
+  await expect(page.locator('.solution-delivery .arrow-link')).toHaveAttribute('href','/zh-CN/solutions')
+  await page.goto('/zh-CN/products/context#solutions')
   const explorer=page.locator('.case-explorer')
   await expect(explorer.locator('.case-experience')).toHaveCount(1)
   await expect(explorer.locator('.case-experience')).toHaveAttribute('data-case','marketing-campaigns')

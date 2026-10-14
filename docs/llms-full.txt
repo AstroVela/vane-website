@@ -946,6 +946,8 @@ These use cases combine multiple source systems, modality branches, or SQL-deriv
 
 ## Choosing an example
 
+For the native-type, UDF, AI Function and hybrid-query sequence shown on the product page, follow [Equipment observations with native types and AI](/docs/data/tutorials/use-cases/equipment-observations). It includes the complete preparation script and the source mapping contract.
+
 Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and Basic Prompt show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
 
 ## Code provenance
@@ -4149,6 +4151,78 @@ The sink commits each batch separately; the pipeline does not provide a transact
 Completion criteria: Doris contains recording segments with 384-dimensional embeddings; search.sql can be executed directly to retrieve similar feedback from other tickets using an existing recording segment; and segments can be linked to orders and production batches and replayed using their source references and timestamps.
 
 References: [Vane installation](/docs/data/quickstart/installation); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
+
+## Equipment Observations with Native Types and AI
+
+Route: /docs/data/tutorials/use-cases/equipment-observations
+Source: docs/data/tutorials/use-cases/equipment-observations.mdx
+
+This is the complete companion to the five examples on the [Vane Data product page](/products/data#processing). The default pipeline combines equipment documents and inspection recordings, preserves their source locations, extracts typed observations and joins the searchable result to an equipment register. Image and video operators are additional input preparation examples using the same engine.
+
+## Install and configure
+
+Use a Vane build that supports native FILE inputs to `ai_prompt`, with the matching [Lance extension](/docs/data/extensions/lance) installed. This example is separate from the 0.1.0 quickstart. Install the packages needed for your model providers, plus `faster-whisper`, `pyarrow` and `pylance`. The speech model must be available in each worker's model cache.
+
+Download [equipment_observations.py](/examples/equipment_observations.py). Run it outside a Vane source checkout so it imports the installed package.
+
+```bash
+pip install 'vane-ai[google,openai,audio]' faster-whisper pyarrow pylance
+export VANE_PROMPT_PROVIDER=google
+export VANE_PROMPT_MODEL='<PDF-capable-model>'
+export VANE_EMBEDDING_PROVIDER=openai
+export VANE_EMBEDDING_MODEL='<model-supporting-1024-dimensions>'
+export VANE_ASR_MODEL=small
+export VANE_FACTORY_ID=factory_a
+export VANE_PERMISSION_SCOPE=maintenance
+export VANE_OBSERVATIONS_PATH=./asset_observations.lance
+```
+
+Set the providers' credential environment variables according to their documentation. Google handles the document inputs in this configuration; OpenAI produces text embeddings. Model names are explicit choices in your environment. A compatible endpoint must support the selected media and vector dimension.
+
+## Prepare source and business records
+
+Save `manifest.csv` and `assets.csv` beside the script. Use real document and audio paths that your worker can read. Local paths and configured object-store paths are both possible.
+
+```csv
+factory_id,asset_id,permission_scope,quality_status,source_kind,source_url
+factory_a,A-017,maintenance,draft,document,/absolute/path/to/A-017/manual.pdf
+factory_a,A-017,maintenance,draft,audio,/absolute/path/to/A-017/inspection.wav
+```
+
+```csv
+factory_id,asset_id,permission_scope,line_id,model
+factory_a,A-017,maintenance,Line 03,Motor M-240
+```
+
+The factory, equipment identifier and permission scope come from trusted source mapping. `quality_status` belongs to a business review process. Change a source's `draft` state to `approved` after checking it; the query deliberately excludes unapproved material. A model confidence filter does not approve the record.
+
+Sources need to state an event time if they are to pass the dated-observation filter. Unknown time, unsupported facts or low-confidence output do not become a result merely to fill the example. The default document locator points to the complete file; a page parser can supply more precise page and character locations. Audio locators use the real segment timestamps returned by ASR.
+
+## Follow the five mechanisms
+
+| Mechanism | What the script does | Preserved result |
+| --- | --- | --- |
+| Native types | `to_file` retains the document reference; `audio_file` supplies typed audio to the UDF | Source URL and business identifiers |
+| Custom functions | `@vane.func` normalizes vibration units; `@vane.cls` reuses the speech model | Numeric measurement and timed transcript segments |
+| Structured understanding | `ai_prompt` uses a fixed JSON Schema for document and transcript branches | Native STRUCT with facts, confidence and source wording |
+| Embeddings | SQL expands fields, casts event time and calls `ai_embed` | `FLOAT[1024]` alongside fields and source locations |
+| Search and joins | Lance hybrid search applies scope and quality filters, then joins the equipment register | Ranked evidence grouped by equipment |
+
+The script includes imports, the two UDF registrations, the full output Schema, intermediate Relations, Lance persistence, full-text and scalar index creation, query embedding and the final SQL. Query and preparation share the embedding configuration. Small samples use exact vector search; create an ANN index when the dataset warrants one.
+
+To prepare images or video in the same connection, use the native-type examples on the product page and the [image](/docs/data/reference/multimodal-data/image), [audio](/docs/data/reference/multimodal-data/audio) and [video](/docs/data/reference/multimodal-data/video) references. Decode suitable images, resample audio or sample the relevant video window. Additional model branches should use the same observation Schema and keep their original locators.
+
+## Run and inspect
+
+```bash
+python equipment_observations.py
+```
+
+The script writes `asset_observations.lance`, prints the equipment evidence and writes `equipment_evidence.parquet`. It refuses to overwrite an existing dataset; select a new output path for another standalone run.
+
+Inspect the original measurement, normalized velocity, event time, source quote, locator and vector type. Search uses the current authorization inputs and joins only equipment in that scope. Match scores rank retrieval results; they are not diagnostic confidence. An empty result can be correct when the source, time, approval or relevance filters do not match.
+
+[Python UDFs](/docs/data/concepts/udfs) · [AI Functions](/docs/data/concepts/ai-functions) · [Lance setup](/docs/data/extensions/lance)
 
 ## UDF reference
 

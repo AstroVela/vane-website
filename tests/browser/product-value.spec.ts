@@ -2,20 +2,26 @@ import {test, expect} from '@playwright/test'
 
 test.beforeEach(async ({page}) => {await page.emulateMedia({reducedMotion: 'reduce'})})
 
-test('data example connects the original image, structured fields and query in both languages', async ({page}) => {
-  for (const [prefix, source, record, query] of [['', 'Source', 'Structured result', 'Query'], ['/zh-CN', '原始文件', '结构化结果', '查询使用']]) {
+test('equipment example connects native types, UDFs, structured output and business queries in both languages', async ({page}) => {
+  for (const [prefix, udf, understanding, embeddings, query] of [['', 'Custom functions', 'Structured understanding', 'Embeddings', 'Search & joins'], ['/zh-CN', '自定义函数', '结构化理解', '向量化', '检索与关联']]) {
     await page.goto(prefix + '/products/data')
-    const example = page.locator('.data-flow')
-    await expect(example.locator('dd')).toContainText(['comp_005', 'blender cup', 'kitchen', 'Aardbeien + Chocolade smoothie'])
-    await example.getByRole('button', {name: source, exact: true}).click()
-    await expect(example.locator('.data-source-view img')).toBeVisible()
-    await example.getByRole('button', {name: query, exact: true}).click()
-    await expect(example.locator('.data-query-view')).toContainText("WHERE scene = 'kitchen'")
-    await expect(example.locator('.data-query-result')).toContainText('comp_005')
-    await example.getByRole('button', {name: record, exact: true}).click()
-    await expect(example.locator('dd').last()).toHaveText('Aardbeien + Chocolade smoothie')
+    const example = page.locator('.etl-explorer')
+    for (const name of ['File','ImageFile','AudioFile','VideoFile']) {
+      await example.getByRole('button', {name, exact: true}).click()
+      await expect(example.locator('.etl-result dd').first()).toContainText(name.toUpperCase())
+    }
+    await example.getByRole('tab', {name: udf, exact: true}).click()
+    await expect(example.locator('.etl-code pre').first()).toContainText('@vane.func')
+    await example.locator('.etl-variants button').last().click()
+    await expect(example.locator('.etl-code pre').first()).toContainText('@vane.cls')
+    await example.getByRole('tab', {name: understanding, exact: true}).click()
+    await expect(example.locator('.etl-code pre').first()).toContainText('return_format := $observation_schema')
+    await example.getByRole('tab', {name: embeddings, exact: true}).click()
+    await expect(example.locator('.etl-result')).toContainText('FLOAT[1024]')
+    await example.getByRole('tab', {name: query, exact: true}).click()
+    await expect(example.locator('.etl-code pre').first()).toContainText('JOIN events s USING (asset_id)')
     await example.getByRole('link').click()
-    await expect(page).toHaveURL(new RegExp(prefix + '/blog/from-files-to-queryable-data'))
+    await expect(page).toHaveURL(new RegExp(prefix + '/docs/data/tutorials/use-cases/equipment-observations'))
     await expect(page.locator('h1')).toBeVisible()
   }
 })
@@ -31,9 +37,9 @@ test('new value sections fit narrow screens and benchmark comparisons keep slowe
       await story.getByRole('button', {name:'后续任务',exact:true}).click()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     }
-    const example = page.locator('.data-flow')
+    const example = page.locator('.etl-explorer')
     if (await example.count()) {
-      await example.getByRole('button', {name:'查询使用',exact:true}).click()
+      await example.getByRole('tab', {name:'检索与关联',exact:true}).click()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     }
   }

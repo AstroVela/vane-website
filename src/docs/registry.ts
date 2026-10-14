@@ -153,6 +153,11 @@ export const DOCS_PAGES = {
     title: 'Vane + Doris Support Recording Search',
     titleZh: 'Vane + Doris 客服录音检索',
   },
+  'tutorials/use-cases/equipment-observations': {
+    source: 'docs/data/tutorials/use-cases/equipment-observations.mdx',
+    title: 'Equipment Observations with Native Types and AI',
+    titleZh: '用原生类型与 AI 构建设备观测',
+  },
   'reference/udf': {
     source: 'docs/data/reference/udf/index.mdx',
     title: 'UDF reference',

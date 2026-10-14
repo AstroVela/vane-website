@@ -191,6 +191,24 @@ const found = await client.search({
 
 ## Agent usage
 
+### Data spaces, tools and the Agent Skill
+
+For a product-managed connection, select authorized data spaces in connection management, copy its MCP endpoint and token, and install the supplied `vanecontext-skill.zip`. The package contains `SKILL.md`, tool references and a version manifest. Built-in agents receive the same Skill automatically.
+
+The Skill guides the business agent to state its task, existing facts and constraints. For a cross-source investigation, `prepare_context` returns a durable task ID; read the same task with `get_context_task` until the final context is ready. Inspect a returned reference with `read_evidence`. Direct tools include `discover_sources`, `inspect_source`, `search_knowledge` and `query_data` when the business agent owns the investigation.
+
+```json
+{
+  "task": "Prepare material for a camping video script",
+  "background": "Use approved product facts and the brand guidelines",
+  "request_key": "camping-script-01"
+}
+```
+
+Keep the same request key for a retry and the task ID for continuation. Endpoint permissions determine the available tools and source scope. The business agent uses the returned findings and citations to continue its own creative or business work.
+
+### Service-level search and analysis
+
 An agent discovers the configured service's capabilities and authorized collections, then uses search and analysis tools. For example, `context_search` accepts a request with the same search fields; `context_analyze` takes selected inputs and an idempotency key. The agent decides how the returned information contributes to its task.
 
 Retain job IDs and evidence identities in agent memory. Reconnect to unfinished work, continue from a returned cursor, and inspect source references when more detail is needed. A retry should not create a duplicate ingestion or analysis request.

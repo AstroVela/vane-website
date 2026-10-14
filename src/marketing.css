@@ -207,10 +207,8 @@
 .marketing-main .term-copy { min-height:36px; font-size:14px; padding:6px 12px; border:0; background:none; }
 .marketing-main pre.code { padding:20px; font-size:14px; line-height:1.7; overflow:auto; }
 .marketing-main .marketing-note { font-size:14px; line-height:1.6; }
-.integration-example { max-width:900px; min-width:0; }
 .integration-layout { display:grid; grid-template-columns:minmax(0,.75fr) minmax(0,1fr); gap:32px 72px; align-items:center; }
 .integration-layout .data-proof { grid-column:1 / -1; margin-top:12px; }
-.integration-example > a { display:inline-flex; align-items:center; min-height:44px; color:var(--accent-strong); }
 .data-proof { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:48px; margin-top:64px; padding-top:32px; border-top:1px solid var(--line-2); }
 .data-proof strong { font-size:20px; }
 .data-proof p { font-size:16px; }
@@ -606,29 +604,6 @@
 .engine-value-list h3 { margin:0 0 12px; }
 .engine-value-list p { margin:0; font-size:16px; }
 .engine-value-list > a { align-self:flex-start; }
-.data-flow { min-width:0; background:var(--paper-3); padding:28px; border-radius:8px; }
-.data-flow-heading { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-bottom:22px; }
-.data-flow-heading strong { font-size:18px; }
-.data-flow-heading > span { font-size:12px; color:var(--ink-3); flex:none; }
-.data-flow .marketing-tabs { margin:0 0 20px; gap:6px; }
-.data-flow .marketing-tabs button { padding:10px 12px; font-size:14px; }
-.data-flow-panel { min-height:290px; }
-.data-source-view,.data-record-view { display:grid; grid-template-columns:132px minmax(0,1fr); gap:26px; align-items:center; min-height:290px; }
-.data-flow-panel img { width:100%; height:auto; border-radius:5px; }
-.data-source-view p { font-size:16px; }
-.data-source-view .value-label { margin-top:24px; font-size:12px; }
-.data-record-view dl { display:flex; flex-direction:column; gap:16px; margin:0; min-width:0; }
-.data-record-view dt { font-family:var(--mono); font-size:13px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-.data-record-view dt span { font-size:10px; color:var(--ink-3); }
-.data-record-view dd { margin:4px 0 0; font-size:16px; line-height:1.4; overflow-wrap:anywhere; }
-.data-flow .marketing-note { font-size:12px; margin:20px 0 0; }
-.data-flow > .arrow-link { font-size:14px; margin-top:8px; }
-.data-query-view { min-width:0; }
-.data-query-view .term { margin:0; }
-.data-query-view pre { font-size:13px; padding:22px; white-space:pre-wrap; }
-.data-query-result { padding:18px 0 0; }
-.data-query-result strong { display:block; margin-top:6px; font-size:16px; }
-.data-query-result p { margin:8px 0 0; font-size:15px; }
 .home-engine-section .data-proof { margin-top:52px; padding-top:36px; }
 .data-proof > div > strong { font-size:22px; }
 .data-proof .marketing-note { font-size:12px; }
@@ -677,17 +652,12 @@
   .reuse-content { gap:28px; padding:28px; }
   .reuse-source { grid-template-columns:110px minmax(0,1fr); gap:20px; }
   .engine-story-layout,.data-start-layout { gap:40px; }
-  .data-source-view,.data-record-view { grid-template-columns:100px minmax(0,1fr); gap:20px; }
-  .data-flow { padding:24px; }
-  .data-flow-heading { flex-wrap:wrap; gap:8px; }
   .context-costs,.execution-benefits { gap:32px 40px; }
   .data-pipeline-steps { gap:20px; }
   .data-pipeline-steps > div { padding:22px; }
 }
 @media(max-width:959px) {
   .engine-story-layout,.data-start-layout { grid-template-columns:minmax(0,1fr); gap:40px; }
-  .data-flow-panel { min-height:260px; }
-  .data-source-view,.data-record-view { grid-template-columns:130px minmax(0,1fr); gap:32px; min-height:260px; }
   .engine-value-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reuse-content { grid-template-columns:1fr; gap:32px; }
   .reuse-request h3 { max-width:none; min-height:0; }
@@ -712,21 +682,6 @@
   .reuse-request h3 { font-size:23px; }
   .value-footnotes { gap:20px; }
   .value-footnotes p { margin-top:6px; font-size:14px; }
-  .data-flow { margin:8px; padding:20px; }
-  .data-flow-heading { gap:8px; margin-bottom:18px; }
-  .data-flow-heading strong { font-size:17px; }
-  .data-flow .marketing-tabs { gap:4px; flex-wrap:wrap; }
-  .data-flow .marketing-tabs button { padding:10px; font-size:12px; }
-  .data-source-view,.data-record-view { grid-template-columns:82px minmax(0,1fr); gap:18px; min-height:270px; }
-  .data-source-view h3 { font-size:19px; }
-  .data-source-view p { font-size:14px; }
-  .data-source-view .value-label { font-size:11px; margin-top:14px; }
-  .data-record-view dd { font-size:14px; }
-  .data-record-view dt { font-size:12px; gap:5px; }
-  .data-record-view dt span { font-size:9px; }
-  .data-flow-panel { min-height:290px; }
-  .data-query-view pre { padding:18px; font-size:11px; }
-  .data-flow > .arrow-link { font-size:12px; }
   .proof-comparisons { gap:22px; }
   .proof-comparisons strong { font-size:27px; }
   .delivery-request { display:block; padding:20px; }
@@ -742,8 +697,6 @@
   .benchmark-reading-guide { padding:22px; }
 }
 @media(max-width:359px) {
-  .data-flow { padding:16px; }
-  .data-record-view { gap:12px; grid-template-columns:70px minmax(0,1fr); }
   .reuse-source { grid-template-columns:1fr; }
   .reuse-source img { max-width:120px; }
 }
