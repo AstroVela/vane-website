@@ -1,17 +1,16 @@
-import {useId, useState} from 'react'
-import useBaseUrl from '@docusaurus/useBaseUrl'
-import FeatureTabs from './FeatureTabs'
 import {useSiteLocale} from '../siteI18n'
 
 export default function ProductManagement() {
-  const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh, id = useId()
-  const [topic, setTopic] = useState('verify')
+  const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
   const topics = [
-    {id: 'verify', label: t('Verify understanding', '核验理解'), image: 'data-space', title: t('Read knowledge alongside its original evidence.', '阅读知识，对照原始依据。'), body: t('Read prepared knowledge, open media and inspect source references.', '阅读已有知识、打开素材、核对来源引用。')},
-    {id: 'definitions', label: t('Manage definitions', '管理定义'), image: 'parsing', title: t('Keep processing rules understandable.', '看清并调整资料的处理规则。'), body: t('Manage reusable parsing functions and select the definitions used by your data space.', '管理可复用解析函数，为数据空间选择适用的处理定义。')},
-    {id: 'processing', label: t('Follow processing', '追踪处理'), image: 'processing', title: t('Locate the object that needs attention.', '找到需要关注的资料与处理。'), body: t('Inspect ongoing work and failed items, then open the affected object.', '查看进行中的处理与失败项，再进入受影响的对象。')},
-    {id: 'usage', label: t('Inspect usage', '查看用量'), image: 'usage', title: t('See where model usage happens.', '了解模型消耗发生在哪些环节。'), body: t('Inspect reported tokens, actual reuse and compression, with unknown pricing kept visible.', '查看已报告 Token、实际复用与压缩记录，未知价格明确显示。')},
+    [t('Verify every conclusion.', '对照依据，核验理解。'),
+      t('Open the original image, document page or media time window behind a result. Compare the source with the interpretation, and distinguish observed facts from inferred conclusions.', '从结果打开对应的原图、文档页或音视频时间窗口，对照原始资料核验理解，区分资料中的事实与模型推断。')],
+    [t('Shape how your data is understood.', '调整定义，管理知识。'),
+      t('Choose processing channels and models. Review business models, relationships and metric definitions before publication, and manage the knowledge your agents can use.', '选择处理通道与模型，审阅业务模型、关联关系与指标口径，再发布供 Agent 使用的知识。')],
+    [t('Know what needs attention.', '看清进展，定位问题。'),
+      t('Follow processing and context tasks. Locate the affected file, failed step and reported cause, then retry the work that needs attention.', '查看资料处理和上下文任务的进展，定位受影响的文件、失败步骤与原因，针对需要处理的工作重试。')],
+    [t('See where model usage goes.', '查看用量，识别成本来源。'),
+      t('Inspect reported tokens and estimated costs by model, task and processing stage. See reuse and compression records, with missing usage or pricing clearly identified.', '按模型、任务和处理阶段查看已报告 Token 与估算成本，了解复用和压缩记录。用量缺失或价格未知时，明确显示。')],
   ]
-  const selected = topics.find(item => item.id === topic)!, src = useBaseUrl('/showcase/product/' + selected.image + '.png')
-  return <div className="product-management"><FeatureTabs options={topics} value={topic} onChange={setTopic} label={t('Product management', '产品管理')} panelId={id}/><div className="management-preview" role="tabpanel" id={id} aria-labelledby={`${id}-${topic}`}><div className="management-caption"><h3>{selected.title}</h3><p>{selected.body}</p></div><img key={src} src={src} width={1440} height={900} loading="lazy" alt={selected.title}/></div><p className="marketing-note">{t('Actual product interface shown with isolated sample data.', '真实产品界面，以隔离样例数据呈现。')}</p></div>
+  return <div className="product-management">{topics.map(([title,body]) => <div className="management-topic" key={title}><h3>{title}</h3><p>{body}</p></div>)}</div>
 }

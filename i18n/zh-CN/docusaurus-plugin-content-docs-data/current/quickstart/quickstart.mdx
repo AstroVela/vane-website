@@ -3,98 +3,110 @@ title: 快速开始
 slug: /quickstart/quickstart
 ---
 
-这篇快速开始使用 Vane 的原生文件和图像类型，将本地图片转换为缩略图。整个流程在本机运行，不需要外部 Ray 集群、GPU 或模型服务凭据。
+使用原生文件与图片类型读取尺寸、筛选图片并生成缩略图。下面的 SQL 和 Python 处理相同的三张图片，返回相同字段。示例使用 Local Runner，无需 Ray、GPU 或模型凭据。
 
-你将创建三张示例图片，读取元数据，按宽度筛选，再用 SQL 解码和缩放选中的图片。
-
-开始前，请先完成[安装指南](/zh-CN/docs/data/quickstart/installation)。在同一环境中安装图像可选依赖，其中包含生成示例图片所需的 Pillow 和默认 Python 图像后端：
+先完成[安装指南](/zh-CN/docs/data/quickstart/installation)，在同一个已激活的虚拟环境中安装图片依赖：
 
 ```bash
 uv pip install 'vane-ai[image]'
 ```
 
-## 运行第一个多模态查询
+## 准备共享图片
 
-将下面的内容保存为 `quickstart.py`，然后运行 `python quickstart.py`：
+保存为 `prepare_images.py` 并运行一次 `python3 prepare_images.py`。以下两种查询都在同一工作目录中执行。
 
 ```python
 from pathlib import Path
-
 from PIL import Image
-import vane
 
-# Create three local images; no downloads are needed.
-assets = Path("quickstart-images").resolve()
-assets.mkdir(exist_ok=True)
-for name, size, color in [
-    ("large", (640, 480), "navy"),
-    ("medium", (320, 240), "orange"),
-    ("small", (64, 64), "green"),
-]:
-    Image.new("RGB", size, color).save(assets / f"{name}.png")
-
-con = vane.connect()
-files = vane.from_files(
-    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
-    connection=con,
-)
-images = con.sql("SELECT image_file(file) AS source FROM files")
-metadata = con.sql("""
-    SELECT source, image_file_metadata(source) AS info
-    FROM images
-""")
-thumbnails = con.sql("""
-    SELECT info.width AS source_width, info.height AS source_height,
-           resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
-    FROM metadata
-    WHERE info.width >= 300
-""")
-con.sql("""
-    SELECT source_width, source_height,
-           image_width(thumbnail) AS width,
-           image_height(thumbnail) AS height,
-           typeof(thumbnail) AS image_type
-    FROM thumbnails
-    ORDER BY source_width DESC
-""").show()
+folder = Path("quickstart-images")
+folder.mkdir(exist_ok=True)
+for name, size in [("large", (640, 480)),
+                   ("medium", (320, 240)), ("small", (64, 64))]:
+    Image.new("RGB", size, "#546354").save(folder / f"{name}.png")
 ```
 
-64 × 64 的图片会被过滤掉，其余两张图片会转换为 224 × 224 的缩略图：
+## SQL 查询
 
-| source_width | source_height | width | height | image_type |
-| --- | --- | --- | --- | --- |
-| 640 | 480 | 224 | 224 | `IMAGE` |
-| 320 | 240 | 224 | 224 | `IMAGE` |
+保存为 `quickstart.sql`：
 
-## 刚才发生了什么
+```sql
+WITH images AS (
+  SELECT image_file(file) AS source
+  FROM list_files('quickstart-images/*.png')
+), metadata AS (
+  SELECT source, image_file_metadata(source) AS info FROM images
+), thumbnails AS (
+  SELECT info.width AS source_width, info.height AS source_height,
+         resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
+  FROM metadata WHERE info.width >= 300
+)
+SELECT source_width, source_height,
+       image_width(thumbnail) AS width,
+       image_height(thumbnail) AS height
+FROM thumbnails ORDER BY source_width DESC;
+```
 
-- `from_files(...)` 从本地路径创建了一个 `FILE` 列，`image_file(file)` 将每个文件引用转换为 `IMAGEFILE`。
-- `image_file_metadata(...)` 读取图片尺寸，无需解码完整的像素数组。SQL 筛选出宽度至少为 300 像素的图片。
-- `decode_image_file(...)` 将选中的引用解码为 `IMAGE` 值，`resize(...)` 生成固定尺寸的 RGB 图像。
-- `show()` 执行查询并展示尺寸和类型。`thumbnail` 列包含像素，`source` 列包含文件引用；查询不会保存新的图片文件。
+通过 Vane 的 Local Runner 执行：
 
-更多操作请参阅[文件函数](/zh-CN/docs/data/reference/multimodal-data/file)和[图像函数](/zh-CN/docs/data/reference/multimodal-data/image)。原生媒体加速是可选能力，本示例无需安装。
+```bash
+python3 -c 'import sys, vane; vane.configure(runner="local"); vane.connect().sql(sys.stdin.read()).show()' < quickstart.sql
+```
 
-## 可选：添加 Python 或 AI 处理
+## Python Relation API
 
-通过 [UDF](/zh-CN/docs/data/concepts/udfs) 添加自定义 Python 处理，或通过 [AI 函数](/zh-CN/docs/data/concepts/ai-functions) 接入模型推理。这些都可以在后续尝试；上面的图像查询不需要自定义函数或模型 API 密钥。
+也可以保存为 `quickstart.py` 并运行 `python3 quickstart.py`。此写法独立读取相同文件，无需先执行上面的 SQL。
 
-## 从本机 Ray 扩展到集群
+```python
+import vane
 
-Ray 是 Vane 的默认执行引擎。保持 `RAY_ADDRESS` 未设置时，这篇快速开始会在当前机器启动 Ray 运行时，不需要外部集群，也不需要显式配置执行引擎。
+vane.configure(runner="local")
+con = vane.connect()
+thumbnails = (vane.from_files("quickstart-images/*.png", connection=con)
+    .select(vane.image_file(vane.col("file")).alias("source"))
+    .select(vane.col("source"),
+            vane.image_file_metadata(vane.col("source")).alias("info"))
+    .filter("info.width >= 300")
+    .project("info.width AS source_width, info.height AS source_height, source")
+    .select(vane.col("source_width"), vane.col("source_height"),
+            vane.resize(vane.decode_image_file(vane.col("source"), "RGB"),
+                        224, 224).alias("thumbnail")))
+thumbnails.select(
+    vane.col("source_width"), vane.col("source_height"),
+    vane.image_width(vane.col("thumbnail")).alias("width"),
+    vane.image_height(vane.col("thumbnail")).alias("height"),
+).order("source_width DESC").show()
+```
 
-要在集群上运行，先将本地示例路径替换为每个工作节点都能访问的文件，例如共享存储或对象存储中的文件，再在主节点启用集群自动发现后启动：
+## 相同结果
+
+| source_width | source_height | width | height |
+| --- | --- | --- | --- |
+| 640 | 480 | 224 | 224 |
+| 320 | 240 | 224 | 224 |
+
+64 × 64 的图片在像素解码前被过滤。其余文件引用被解码为原生 `IMAGE`，缩放到 224 × 224。`show()` 执行查询并展示尺寸，不会保存缩略图文件。
+
+## 执行了什么
+
+- `list_files` / `from_files` 产生 `FILE` 引用，通过 `image_file` 转成 `IMAGEFILE`。
+- `image_file_metadata` 先读取尺寸，筛选宽度至少为 300 的图片，再进行完整解码。
+- `decode_image_file` 与 `resize` 在同一查询中处理原生图片类型。
+- 两种接口都返回四个字段，按原图宽度降序排列。
+
+## 需要时使用 Ray
+
+Ray 是 Vane 的默认执行引擎。创建连接前去掉 `vane.configure(runner="local")` 即可使用。未设置 `RAY_ADDRESS` 时，可在当前机器启动 Ray。使用已有集群时，在 head 节点运行：
 
 ```bash
 RAY_ADDRESS=auto python quickstart.py
 ```
 
-每个 Ray 工作节点都必须安装图像依赖，并能访问输入文件。只在主节点创建示例文件，不会让其他节点自动获得这些文件。在集群上运行前，请阅读[部署](/zh-CN/docs/data/deploy/deployment)。
+先把本机图片路径替换为所有 Worker 可访问的数据源。每个 Worker 都需要图片依赖和输入访问权限。运行配置、共享访问与资源声明见[部署文档](/zh-CN/docs/data/deploy/deployment)。
 
-## 下一步
+## 后续步骤
 
-- [多模态数据](/zh-CN/docs/data/reference/multimodal-data)
-- [UDF 概念](/zh-CN/docs/data/concepts/udfs)
-- [AI 函数概念](/zh-CN/docs/data/concepts/ai-functions)
-- [教程](/zh-CN/docs/data/tutorials)
-- [部署](/zh-CN/docs/data/deploy/deployment)
+- [Multimodal Data](/zh-CN/docs/data/reference/multimodal-data)
+- [Python UDFs](/zh-CN/docs/data/concepts/udfs)
+- [AI Functions](/zh-CN/docs/data/concepts/ai-functions)
+- [Equipment Observations](/zh-CN/docs/data/tutorials/use-cases/equipment-observations)

@@ -3,98 +3,110 @@ title: Quickstart
 slug: /quickstart/quickstart
 ---
 
-This quickstart uses Vane's native file and image types to turn local images into thumbnails. It runs on your machine and needs no external Ray cluster, GPU, or model-provider credentials.
+Use native file and image types to inspect dimensions, select images and create thumbnails. SQL and Python below process the same three files and return the same columns. This example uses the Local Runner and needs no Ray runtime, GPU or model credentials.
 
-You will create three sample images, inspect their metadata, filter by width, and decode and resize the selected images with SQL.
-
-Before continuing, complete the [Installation guide](/docs/data/quickstart/installation). Install the image extra in the same environment; it includes Pillow for the sample images and the default Python image backend:
+Complete the [Installation guide](/docs/data/quickstart/installation), then install the image extra in the same activated virtual environment:
 
 ```bash
 uv pip install 'vane-ai[image]'
 ```
 
-## Run Your First Multimodal Query
+## Prepare the Shared Images
 
-Save this as `quickstart.py` and run `python quickstart.py`:
+Save as `prepare_images.py` and run `python3 prepare_images.py` once. Keep the examples below in the same working directory.
 
 ```python
 from pathlib import Path
-
 from PIL import Image
-import vane
 
-# Create three local images; no downloads are needed.
-assets = Path("quickstart-images").resolve()
-assets.mkdir(exist_ok=True)
-for name, size, color in [
-    ("large", (640, 480), "navy"),
-    ("medium", (320, 240), "orange"),
-    ("small", (64, 64), "green"),
-]:
-    Image.new("RGB", size, color).save(assets / f"{name}.png")
-
-con = vane.connect()
-files = vane.from_files(
-    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
-    connection=con,
-)
-images = con.sql("SELECT image_file(file) AS source FROM files")
-metadata = con.sql("""
-    SELECT source, image_file_metadata(source) AS info
-    FROM images
-""")
-thumbnails = con.sql("""
-    SELECT info.width AS source_width, info.height AS source_height,
-           resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
-    FROM metadata
-    WHERE info.width >= 300
-""")
-con.sql("""
-    SELECT source_width, source_height,
-           image_width(thumbnail) AS width,
-           image_height(thumbnail) AS height,
-           typeof(thumbnail) AS image_type
-    FROM thumbnails
-    ORDER BY source_width DESC
-""").show()
+folder = Path("quickstart-images")
+folder.mkdir(exist_ok=True)
+for name, size in [("large", (640, 480)),
+                   ("medium", (320, 240)), ("small", (64, 64))]:
+    Image.new("RGB", size, "#546354").save(folder / f"{name}.png")
 ```
 
-The 64 × 64 image is filtered out. The two remaining images become 224 × 224 thumbnails:
+## SQL Query
 
-| source_width | source_height | width | height | image_type |
-| --- | --- | --- | --- | --- |
-| 640 | 480 | 224 | 224 | `IMAGE` |
-| 320 | 240 | 224 | 224 | `IMAGE` |
+Save as `quickstart.sql`:
+
+```sql
+WITH images AS (
+  SELECT image_file(file) AS source
+  FROM list_files('quickstart-images/*.png')
+), metadata AS (
+  SELECT source, image_file_metadata(source) AS info FROM images
+), thumbnails AS (
+  SELECT info.width AS source_width, info.height AS source_height,
+         resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
+  FROM metadata WHERE info.width >= 300
+)
+SELECT source_width, source_height,
+       image_width(thumbnail) AS width,
+       image_height(thumbnail) AS height
+FROM thumbnails ORDER BY source_width DESC;
+```
+
+Execute it with Vane using the Local Runner:
+
+```bash
+python3 -c 'import sys, vane; vane.configure(runner="local"); vane.connect().sql(sys.stdin.read()).show()' < quickstart.sql
+```
+
+## Python Relation API
+
+Alternatively, save as `quickstart.py` and run `python3 quickstart.py`. It reads the same files independently of the SQL example.
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+thumbnails = (vane.from_files("quickstart-images/*.png", connection=con)
+    .select(vane.image_file(vane.col("file")).alias("source"))
+    .select(vane.col("source"),
+            vane.image_file_metadata(vane.col("source")).alias("info"))
+    .filter("info.width >= 300")
+    .project("info.width AS source_width, info.height AS source_height, source")
+    .select(vane.col("source_width"), vane.col("source_height"),
+            vane.resize(vane.decode_image_file(vane.col("source"), "RGB"),
+                        224, 224).alias("thumbnail")))
+thumbnails.select(
+    vane.col("source_width"), vane.col("source_height"),
+    vane.image_width(vane.col("thumbnail")).alias("width"),
+    vane.image_height(vane.col("thumbnail")).alias("height"),
+).order("source_width DESC").show()
+```
+
+## Same Result
+
+| source_width | source_height | width | height |
+| --- | --- | --- | --- |
+| 640 | 480 | 224 | 224 |
+| 320 | 240 | 224 | 224 |
+
+The 64 × 64 image is filtered out before pixel decoding. Selected references are decoded into native `IMAGE` values and resized to 224 × 224. `show()` executes the query and displays the dimensions; it does not save thumbnail files.
 
 ## What Just Happened
 
-- `from_files(...)` created a `FILE` column from the local paths; `image_file(file)` turned each reference into an `IMAGEFILE`.
-- `image_file_metadata(...)` read the encoded image's dimensions without decoding the full pixel array. SQL selected images at least 300 pixels wide.
-- `decode_image_file(...)` decoded the selected references into `IMAGE` values; `resize(...)` produced fixed-size RGB images.
-- `show()` ran the query and displayed dimensions and types. The `thumbnail` column holds pixels, while `source` holds a file reference. The query does not save new image files.
+- `list_files` / `from_files` yields `FILE` references, converted to `IMAGEFILE` by `image_file`.
+- `image_file_metadata` reads dimensions before full decoding; the query selects widths of at least 300 pixels.
+- `decode_image_file` and `resize` operate on native image values in the same query.
+- Both interfaces return the same four columns sorted by source width.
 
-See [File functions](/docs/data/reference/multimodal-data/file) and [Image functions](/docs/data/reference/multimodal-data/image) for more operations. Native media acceleration is optional and is not required for this example.
+## Move to Ray When Needed
 
-## Optional: Add Python or AI Processing
-
-Use [UDFs](/docs/data/concepts/udfs) to add custom Python processing, or [AI Functions](/docs/data/concepts/ai-functions) to add model inference. These are separate next steps; the image query above needs neither a custom function nor a model API key.
-
-## Scale from Local Ray to a Cluster
-
-Ray is Vane's default runner. With `RAY_ADDRESS` unset, this quickstart starts a Ray runtime on the current machine; no external cluster or explicit runner configuration is required.
-
-To run on a cluster, first replace the local sample paths with files accessible to every worker, such as shared storage or object storage. Then launch from the head node with cluster discovery enabled:
+Ray is Vane's default runner. Remove `vane.configure(runner="local")` before connecting to use it. With `RAY_ADDRESS` unset, Ray can start on the current machine. To use an existing cluster, launch from its head node:
 
 ```bash
 RAY_ADDRESS=auto python quickstart.py
 ```
 
-Every Ray worker must have the image dependencies installed and access to the input files. Creating sample files on the head node alone does not make them available on other nodes. See [Deployment](/docs/data/deploy/deployment) before running on a cluster.
+First replace the local image paths with sources available to all workers. Every worker needs the image dependencies and access to the input files. See [Deployment](/docs/data/deploy/deployment) for runtime configuration, shared data access and resource declarations.
 
 ## Next Steps
 
 - [Multimodal Data](/docs/data/reference/multimodal-data)
-- [UDF Concepts](/docs/data/concepts/udfs)
-- [AI Function Concepts](/docs/data/concepts/ai-functions)
-- [Tutorials](/docs/data/tutorials)
-- [Deployment](/docs/data/deploy/deployment)
+- [Python UDFs](/docs/data/concepts/udfs)
+- [AI Functions](/docs/data/concepts/ai-functions)
+- [Equipment Observations](/docs/data/tutorials/use-cases/equipment-observations)

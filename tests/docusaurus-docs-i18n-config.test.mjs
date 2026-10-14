@@ -368,7 +368,7 @@ test('Quickstart prepares the same local media inputs in both languages', () => 
   for (const source of [quickstartSource, chineseQuickstartSource]) {
     assert.match(source, /uv pip install 'vane-ai\[image\]'/)
     assert.match(source, /Image\.new\([\s\S]*\.save\(/)
-    assert.match(source, /Path\("quickstart-images"\)\.resolve\(\)/)
+    assert.match(source, /Path\("quickstart-images"\)/)
     assert.match(source, /vane\.from_files\(/)
     assert.doesNotMatch(source, /CREATE TABLE documents|OPENAI_API_KEY/)
   }

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="650" viewBox="0 0 1400 650">
+  <title>本机与 Ray 部署对照</title><title>从本地开发到分布式执行</title>
+  <desc>同一份 SQL 或 Python 处理定义，可交给一台机器上的 Local Runner，或单机 Ray 与多机 Ray 集群执行。Local Runner 可使用本机子进程；Ray 调度 CPU Worker 和可复用模型实例的 GPU Actor。分布式执行要求所有 Worker 可访问数据、模型、依赖和输出。</desc>
+
+  <rect x="0" y="0" width="1400" height="650" fill="#FAFAF7" />
+
+
+  <text x="700" y="32" text-anchor="middle" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="24" font-weight="600">同一处理定义</text>
+  <rect x="238" y="54" width="924" height="64" rx="10" fill="#FFFFFF" stroke="#D3D8CC" stroke-width="1.5" />
+  <g fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="22" text-anchor="middle">
+    <text x="326" y="94">读取</text>
+    <text x="549" y="94">预处理 / UDF</text>
+    <text x="784" y="94">AI 推理</text>
+    <text x="1030" y="94">查询与写出</text>
+  </g>
+  <g fill="none" stroke="#8D9688" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M396 86 H441 M433 79 L441 86 L433 93" />
+    <path d="M658 86 H702 M694 79 L702 86 L694 93" />
+    <path d="M874 86 H917 M909 79 L917 86 L909 93" />
+  </g>
+  <text x="700" y="146" text-anchor="middle" fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">（SQL / Python 逻辑保持一致）</text>
+
+
+  <g fill="none" stroke="#9CA593" stroke-width="1.8" stroke-linejoin="round">
+    <polyline points="700,157 700,182 350,182 350,211" />
+    <polyline points="700,182 1045,182 1045,211" />
+  </g>
+  <g fill="#9CA593">
+    <polygon points="345,203 355,203 350,211" />
+    <polygon points="1040,203 1050,203 1045,211" />
+  </g>
+
+
+  <rect x="50" y="211" width="600" height="304" rx="14" fill="#F6F7F1" stroke="#C9D1C1" stroke-width="1.5" />
+  <path d="M78 248 h22 v-17 h-22 z M83 253 h12 M89 248 v5" fill="none" stroke="#65705E" stroke-width="1.8" stroke-linejoin="round" />
+  <text x="116" y="246" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="23" font-weight="600">一台机器 · Local Runner</text>
+  <text x="78" y="278" fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">无需 Ray · 默认 1 个 Worker</text>
+
+  <rect x="89" y="328" width="210" height="88" rx="8" fill="#FFFFFF" stroke="#C9D1C1" stroke-width="1.5" />
+  <g fill="#20251F" font-family="Noto Sans SC, sans-serif" text-anchor="middle">
+    <text x="194" y="362" font-size="21" font-weight="500">应用 / Driver</text>
+    <text x="194" y="392" font-size="18">import vane</text>
+  </g>
+
+  <rect x="356" y="314" width="247" height="134" rx="8" fill="#FFFFFF" stroke="#C9D1C1" stroke-width="1.5" />
+  <text x="479" y="345" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="19" font-weight="500" text-anchor="middle">本机 Worker / 子进程</text>
+  <line x1="374" y1="361" x2="585" y2="361" stroke="#E1E5DA" stroke-width="1.3" />
+  <g fill="none" stroke="#65705E" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="387" y="384" width="32" height="32" rx="3" />
+    <rect x="396" y="393" width="14" height="14" rx="1" />
+    <path d="M394 379 V384 M403 379 V384 M412 379 V384 M394 416 V421 M403 416 V421 M412 416 V421 M382 391 H387 M382 400 H387 M382 409 H387 M419 391 H424 M419 400 H424 M419 409 H424" />
+  </g>
+  <text x="493" y="407" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="22" text-anchor="middle">CPU 执行</text>
+  <path d="M299 372 H356 M348 365 L356 372 L348 379" fill="none" stroke="#65705E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="78" y="487" fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">本机任务与 Actor 可以由子进程执行</text>
+
+
+  <rect x="735" y="211" width="615" height="304" rx="14" fill="#F6F7F1" stroke="#C9D1C1" stroke-width="1.5" />
+  <g fill="none" stroke="#65705E" stroke-width="1.7" stroke-linejoin="round">
+    <rect x="764" y="234" width="10" height="10" rx="1" />
+    <rect x="784" y="234" width="10" height="10" rx="1" />
+    <path d="M769 244 V250 H789 V244 M779 250 V254" />
+  </g>
+  <text x="811" y="246" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="23" font-weight="600">Ray Runtime / Cluster</text>
+  <text x="764" y="278" fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">默认 Runner · 单机 Ray 或多机集群</text>
+
+  <rect x="764" y="342" width="156" height="88" rx="8" fill="#FFFFFF" stroke="#C9D1C1" stroke-width="1.5" />
+  <g fill="#20251F" font-family="Noto Sans SC, sans-serif" text-anchor="middle">
+    <text x="842" y="376" font-size="21" font-weight="500">Driver</text>
+    <text x="842" y="406" font-size="18">import vane</text>
+  </g>
+  <rect x="960" y="342" width="150" height="88" rx="8" fill="#F8EDE8" stroke="#BE4826" stroke-width="1.5" />
+  <g font-family="Noto Sans SC, sans-serif" text-anchor="middle">
+    <text x="1035" y="376" fill="#20251F" font-size="21" font-weight="500">Ray 调度</text>
+    <text x="1035" y="406" fill="#8F513A" font-size="18">任务 / 资源</text>
+  </g>
+
+  <rect x="1160" y="303" width="166" height="73" rx="8" fill="#FFFFFF" stroke="#C9D1C1" stroke-width="1.5" />
+  <g fill="none" stroke="#65705E" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1175" y="326" width="24" height="24" rx="2" />
+    <rect x="1182" y="333" width="10" height="10" rx="1" />
+    <path d="M1180 322 V326 M1187 322 V326 M1194 322 V326 M1180 350 V354 M1187 350 V354 M1194 350 V354 M1171 331 H1175 M1171 338 H1175 M1171 345 H1175 M1199 331 H1203 M1199 338 H1203 M1199 345 H1203" />
+  </g>
+  <text x="1261" y="345" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="18" text-anchor="middle">CPU Worker</text>
+
+  <rect x="1160" y="407" width="166" height="82" rx="8" fill="#F8EDE8" stroke="#BE4826" stroke-width="1.5" />
+  <g fill="none" stroke="#BE4826" stroke-width="1.6" stroke-linejoin="round">
+    <rect x="1175" y="424" width="24" height="20" rx="2" />
+    <path d="M1181 430 H1193 M1181 437 H1193 M1179 444 V448 M1185 444 V448 M1191 444 V448 M1197 444 V448" />
+  </g>
+  <text x="1261" y="440" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="18" text-anchor="middle">GPU Actor</text>
+  <text x="1243" y="472" fill="#8F513A" font-family="Noto Sans SC, sans-serif" font-size="18" text-anchor="middle">模型实例复用</text>
+
+  <g fill="none" stroke="#65705E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M920 386 H960 M952 379 L960 386 L952 393" />
+    <polyline points="1110,386 1135,386 1135,339 1160,339" />
+    <path d="M1152 332 L1160 339 L1152 346" />
+    <polyline points="1135,386 1135,448 1160,448" />
+    <path d="M1152 441 L1160 448 L1152 455" />
+  </g>
+  <text x="764" y="487" fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">CPU / GPU 按资源需求调度</text>
+
+
+  <g fill="none" stroke="#A5AD9D" stroke-width="1.7" stroke-dasharray="5 5" stroke-linejoin="round">
+    <polyline points="479,448 479,540 350,540 350,564" />
+    <polyline points="1326,339 1338,339 1338,540 1045,540 1045,564" />
+    <polyline points="1326,448 1338,448" />
+  </g>
+
+  <rect x="50" y="564" width="1300" height="72" rx="10" fill="#F0F2E9" stroke="#CCD3C2" stroke-width="1.5" />
+  <g fill="none" stroke="#65705E" stroke-width="1.7" stroke-linejoin="round">
+    <ellipse cx="103" cy="588" rx="19" ry="6" />
+    <path d="M84 588 V611 C84 619 122 619 122 611 V588" />
+    <path d="M84 599 C84 607 122 607 122 599" />
+  </g>
+  <text x="151" y="606" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="22" font-weight="500">数据源与结果存储</text>
+  <g fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">
+    <text x="437" y="591">本地：可使用本机路径</text>
+    <text x="437" y="619">分布式：数据 / 模型 / 依赖 / 输出均需所有 Worker 可访问</text>
+  </g>
+</svg>

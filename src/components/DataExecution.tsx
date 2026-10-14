@@ -1,25 +1,37 @@
-import {useId, useState} from 'react'
-import {CheckIcon, ReloadIcon} from '@radix-ui/react-icons'
-import FeatureTabs from './FeatureTabs'
+import type {CSSProperties} from 'react'
+import useBaseUrl from '@docusaurus/useBaseUrl'
+import {ArrowRightIcon} from '@radix-ui/react-icons'
 import {useSiteLocale} from '../siteI18n'
 
+// Coordinates preserve each batch's read → prepare → infer → write dependency.
+const lanes = [
+  {en: 'I/O read', zh: 'I/O 读取', blocks: [[0,14],[16,14],[32,14]]},
+  {en: 'CPU prepare', zh: 'CPU 预处理', blocks: [[16,15],[33,15],[50,15]]},
+  {en: 'GPU infer', zh: 'GPU 推理', blocks: [[33,22],[57,22],[81,22]]},
+  {en: 'Write', zh: '结果写出', blocks: [[57,10],[81,10],[105,9]]},
+]
+
 export default function DataExecution() {
-  const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh, id = useId()
-  const [mode, setMode] = useState('parallel')
-  const options = [{id: 'parallel', label: t('Overlapped resources', '资源并行')}, {id: 'backpressure', label: t('Batching & backpressure', '批处理与背压')}, {id: 'state', label: t('Instance reuse', '实例复用')}, {id: 'retry', label: t('Error handling', '错误处理')}]
-  const copy = {
-    parallel: [t('Keep I/O, CPU and GPU working together.', '让 I/O、CPU 与 GPU 同时工作。'), t('Read the next batch while preparing the current batch and running inference on the previous one.', '读取下一批数据的同时，准备当前批次，并对上一批进行推理。')],
-    backpressure: [t('Bound the work waiting downstream.', '限制等待下游的在途数据。'), t('When inference slows, bounded queues reduce upstream submissions and accumulated intermediate data.', '推理变慢时，有界队列减少上游提交与中间数据积压。')],
-    state: [t('Initialize once per instance.', '每个实例初始化一次。'), t('Reuse models, clients and decoders across batches instead of repeatedly loading them.', '在批次间复用模型、客户端和解码器，减少重复加载。')],
-    retry: [t('Make failures visible and actionable.', '让失败可定位、可处理。'), t('Apply configured retry and error policies. Preserve the boundary of work that can safely be replayed.', '按配置应用重试与错误策略，保留可安全重放的处理范围。')],
-  }[mode]!
-  return <div className="data-execution" data-mechanism={mode}>
-    <FeatureTabs options={options} value={mode} onChange={setMode} label={t('Execution mechanisms', '执行机制')} panelId={id}/>
-    <div className="execution-mechanism" role="tabpanel" id={id} aria-labelledby={`${id}-${mode}`}>
-      <div className="execution-lanes" aria-label={t('Illustration of batch execution', '批次执行示意')}>
-        <div className="execution-model">{mode === 'state' ? <CheckIcon aria-hidden="true"/> : <ReloadIcon aria-hidden="true"/>}<span>{mode === 'state' ? t('Model ready, reused across batches', '模型已就绪，在批次间复用') : mode === 'retry' ? t('Retry the failed unit according to policy', '按策略重试失败单元') : mode === 'backpressure' ? t('Downstream slowdown, bounded queue', '下游变慢，队列有界') : t('Overlapped execution', '重叠执行')}</span></div>
-        {['I/O', 'CPU', 'GPU'].map((resource, i) => <div className="execution-lane" key={resource}><strong>{resource}</strong><div className="execution-batches">{[0, 1, 2, 3].map(batch => <span key={batch} className={'execution-batch' + (mode === 'parallel' && batch === i ? ' executing' : '') + (mode === 'backpressure' && i === 0 && batch > 1 ? ' held' : '') + (mode === 'retry' && i === 2 && batch === 1 ? ' retrying' : '')}>{t('Batch', '批次')} {batch + 1}{mode === 'retry' && i === 2 && batch === 1 ? ' ↻' : ''}</span>)}</div></div>)}
-      </div><div className="execution-description"><h3>{copy[0]}</h3><p>{copy[1]}</p><span className="marketing-note">{t('Mechanism illustration, not measured throughput.', '执行机制示意，不表示实测吞吐。')}</span></div>
+  const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
+  const src = useBaseUrl(`/img/products/data-execution-${locale}.svg`)
+  return <div className="data-execution">
+    <img className="product-diagram-desktop" src={src} width={1400} height={630} loading="lazy"
+      alt={t('Batch timeline: read C, prepare B and infer A overlap. Each batch advances from reading to preprocessing, inference and output. One model instance is reused. Bounded submission makes upstream wait when downstream slows.', '批次时间线：读取 C、预处理 B、推理 A 同时推进；各批次按读取、预处理、推理、写出依次完成。模型实例复用，有界提交使上游在下游变慢时等待。')}/>
+    <div className="execution-mobile product-diagram-mobile">
+      <div className="execution-mobile-heading"><strong>{t('Batch execution', '批次执行时间线')}</strong><small>{t('Illustration', '机制示意')}</small></div>
+      <p>{t('Read C · prepare B · infer A together', '读取 C · 处理 B · 推理 A 同时推进')}</p>
+      <div className="execution-timeline">
+        {lanes.map(lane => <div className="execution-timeline-row" key={lane.en}><span>{t(lane.en,lane.zh)}</span><div className="execution-track"><i className="execution-overlap" aria-hidden="true"/>{lane.blocks.map(([start,width],i) => <span className={`timeline-batch batch-${i}`} key={i} style={{'--start':`${start/114*100}%`, '--width':`${width/114*100}%`} as CSSProperties}>{'ABC'[i]}</span>)}</div></div>)}
+      </div>
+      <p className="execution-model-note">{t('Initialize once → reuse the model in the current Actor.', '模型初始化一次 → 在当前 Actor 内复用。')}</p>
+      <div className="execution-mobile-queue"><span>{t('Upstream', '上游批次')}</span><ArrowRightIcon aria-hidden="true"/><span>{t('Bounded queue', '有界提交')}</span><ArrowRightIcon aria-hidden="true"/><span>{t('Inference', '推理实例')}</span></div>
+      <p className="execution-wait-note">↶ {t('Downstream slows → wait for space.', '下游变慢，上游等待可用空间。')}</p>
     </div>
+    <div className="diagram-explanations">{[
+      [t('Overlap the stages.', '各阶段同时推进。'), t('Read the next batch, prepare the current one and infer the previous one at the same time.', '读取下一批、准备当前批、推理上一批可以重叠进行，减少资源等待。')],
+      [t('Bound the work in flight.', '控制在途数据。'), t('Batch and submission limits keep faster upstream work from overwhelming slower stages.', '批次与提交限制约束中间数据量，下游变慢时，上游等待可用容量。')],
+      [t('Reuse expensive state.', '复用昂贵的实例状态。'), t('A stateful UDF keeps its model or client across batches within the same execution instance.', '有状态 UDF 在一次执行的实例内复用模型或客户端，减少重复初始化。')],
+    ].map(([title,body]) => <div key={title}><h3>{title}</h3><p>{body}</p></div>)}</div>
+    <p className="marketing-note">{t('Execution illustration; not measured timings. Retries follow the execution path and configured policies; AI Functions offer configurable error handling.', '执行机制示意，不表示实测耗时。重试遵循执行路径与配置策略，AI Function 支持配置错误处理方式。')}</p>
   </div>
 }
