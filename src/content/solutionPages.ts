@@ -1,0 +1,201 @@
+import {l, type Localized} from './types'
+import type {UseCaseId} from './useCases'
+
+type Step = {title: Localized; body: Localized}
+export type SolutionPage = {
+  demoTitle: Localized; demoIntro: Localized
+  previewTitle: Localized; previewFacts: Localized[]; previewSource: Localized
+  semanticTitle: Localized; semanticIntro: Localized; entities: Step[]; semanticNote: Localized
+  reuseTitle: Localized; reuseSteps: Step[]
+  deliveryTitle: Localized; deliverables: Step[]; checks: Localized[]
+  ctaTitle: Localized; ctaBody: Localized
+}
+
+export const solutionPages: Record<UseCaseId, SolutionPage> = {
+  'meeting-intelligence': {
+    demoTitle: l('Connect the conversation to what came before.', '把一句话，接到正确的背景上。'),
+    demoIntro: l('Prepare the Atlas project meeting, check a reference during the discussion, and follow up on what was actually agreed.', '准备 Atlas 项目推进会，核对讨论中的历史引用，再跟进真正达成的共识。'),
+    previewTitle: l('Atlas · Meeting brief', 'Atlas · 会议背景'),
+    previewFacts: [l('Scope: billing pilot only.', '范围：仅账单模块试点。'), l('June 24 is proposed, not yet confirmed.', '6 月 24 日是调整建议，尚待确认。'), l('Security approval is still required.', '启动仍需安全评审通过。')],
+    previewSource: l('June 3 meeting · June 12 email · CRM', '6 月 3 日会议 · 6 月 12 日邮件 · CRM'),
+    semanticTitle: l('Know which customer, project and promise.', '知道在讨论哪个客户、哪个项目、哪次承诺。'),
+    semanticIntro: l('A project nickname is useful only when it leads to the right records. Connect references across meetings, email and CRM, with the date and conditions of every decision.', '项目简称背后，需要找到正确的资料。将会议、邮件与 CRM 中的指代联系起来，保留每项决策的时间和前提。'),
+    entities: [
+      {title: l('Northstar', 'Northstar 客户'), body: l('Account identity', '客户身份')},
+      {title: l('Atlas', 'Atlas 项目'), body: l('Project & participants', '项目与参与人')},
+      {title: l('Billing pilot', '账单模块试点'), body: l('Agreed scope', '已约定范围')},
+      {title: l('June 24', '6 月 24 日'), body: l('Target, subject to review', '目标日期，附评审条件')},
+    ],
+    semanticNote: l('A suggestion, a commitment and a confirmed decision remain distinct, even when they mention the same date.', '建议、承诺和已确认决策分别保留，提到了同一个日期，也不等于同一种含义。'),
+    reuseTitle: l('Keep the history. Catch what changed.', '背景持续积累，变化及时补上。'),
+    reuseSteps: [
+      {title: l('Find the relevant history', '找到相关历史'), body: l('Retrieve the project’s prior decisions and exact source passages, without rereading every meeting.', '检索项目的历史决策和原文，减少反复阅读全部会议记录。')},
+      {title: l('Inspect the disputed detail', '核对有疑问的细节'), body: l('Open the relevant recording window or shared screen when a statement needs clarification.', '说法需要核实时，再查看对应录音区间或共享画面。')},
+      {title: l('Carry the decision forward', '让确认结果继续可用'), body: l('Keep the new June 24 decision with its security condition and source. Later authorized meetings can retrieve it.', '保留 6 月 24 日的新决定、安全评审条件及出处，供后续授权会议检索。')},
+    ],
+    deliveryTitle: l('Built around your meetings and workflows.', '从你的资料，到可用的会议 Skill。'),
+    deliverables: [
+      {title: l('Meeting-aware parsing', '面向会议的解析'), body: l('Transcripts, speakers, shared content and precise recording references.', '转写、说话人、共享内容与准确的录音引用。')},
+      {title: l('Project and decision semantics', '项目与决策语义'), body: l('Customers, projects, commitments, dates and conditions across systems.', '跨系统的客户、项目、承诺、日期与前置条件。')},
+      {title: l('MCP tools & meeting Skill', 'MCP 工具与会议 Skill'), body: l('Prepare a brief, check a reference and organize source-backed follow-ups.', '准备会议背景、查证历史引用、整理有依据的跟进事项。')},
+    ],
+    checks: [l('Does “last time” lead to the right decision?', '“上次的方案”能否找到正确决策？'), l('Are proposals distinguished from commitments?', '是否区分建议与已经作出的承诺？'), l('Can the owner follow up without reading the full archive?', '负责人能否直接跟进，无需重翻全部历史？')],
+    ctaTitle: l('Start with a meeting that needs its history.', '从一场需要历史背景的会议开始。'),
+    ctaBody: l('Bring a meeting and its related records. We’ll verify the background, references and follow-up together.', '带来一场会议及相关历史资料，一起核验背景、引用与跟进结果。'),
+  },
+  'customer-support': {
+    demoTitle: l('Reconstruct the case before choosing the action.', '先把案情理清，再决定下一步。'),
+    demoIntro: l('The carrier says delivered. The customer says it never arrived. See how each source changes the investigation.', '物流显示已签收，客户却说没有收到。看看每一条证据如何影响调查方向。'),
+    previewTitle: l('Order 1042 · Delivery investigation', '订单 1042 · 配送调查'),
+    previewFacts: [l('Order address: unit 8B.', '订单地址：8B。'), l('Delivery record: door marked 8D.', '配送记录：门牌为 8D。'), l('Next step: verify the delivery location.', '下一步：核对实际投递位置。')],
+    previewSource: l('Order · delivery evidence · regional policy', '订单 · 配送依据 · 地区政策'),
+    semanticTitle: l('Put every record in the right case.', '让每条记录，都属于正确的案件。'),
+    semanticIntro: l('Connect an authenticated customer to the order, parcel and applicable policy. Preserve the difference between a carrier status and the customer’s account.', '把已核验客户关联到订单、包裹和适用政策，同时保留承运商状态与客户陈述的区别。'),
+    entities: [
+      {title: l('Customer C-108', '客户 C-108'), body: l('Verified account', '已核验身份')},
+      {title: l('Order 1042', '订单 1042'), body: l('Address: unit 8B', '地址：8B')},
+      {title: l('Parcel P-1042', '包裹 P-1042'), body: l('Carrier events & evidence', '物流事件与配送依据')},
+      {title: l('Policy 3.2', '政策 3.2'), body: l('Region & order eligibility', '地区与订单适用条件')},
+    ],
+    semanticNote: l('The same pattern supports technical cases: connect a customer’s fault clip to the correct product model, manual and troubleshooting steps.', '同样的能力也服务技术支持：将客户的故障片段与正确型号的手册及排障步骤关联。'),
+    reuseTitle: l('Reuse service knowledge. Keep each case current.', '重复问题复用知识，新变化继续调查。'),
+    reuseSteps: [
+      {title: l('Shared service knowledge', '可复用的服务知识'), body: l('Find current policy and manual passages. Inspect only the photo, call or clip needed to resolve a gap.', '定位有效政策与手册，只深入处理需要补证的照片、通话或片段。')},
+      {title: l('Fresh business records', '及时更新的业务记录'), body: l('Refresh order and delivery events with their retrieval time before taking action.', '业务动作前核对订单与配送事件，保留获取时间。')},
+      {title: l('Private case context', '有范围的案件知识'), body: l('Keep customer evidence inside its case permissions. Hand over a focused case state with open questions.', '客户证据遵循案件权限，交付精简案情与待核实事项。')},
+    ],
+    deliveryTitle: l('Fit your policies, systems and service workflows.', '把你的政策和服务经验，交给现有客服 Agent。'),
+    deliverables: [
+      {title: l('Evidence extraction', '客服证据提取'), body: l('Messages, photos, calls, order events and relevant policy passages.', '消息、照片、通话、订单事件及相关政策条款。')},
+      {title: l('Order and policy meaning', '订单与政策语义'), body: l('Customer–order–parcel relationships, status definitions and policy scope.', '客户—订单—包裹关系、状态含义与政策范围。')},
+      {title: l('Investigation Skill', '问题调查 Skill'), body: l('Find gaps, reconcile evidence and prepare a case for an action or human handoff.', '查找缺口、核对证据，为业务动作或人工接管准备材料。')},
+    ],
+    checks: [l('Does the case include the critical evidence?', '关键证据是否齐全？'), l('Does the policy apply to this order?', '使用的政策是否适用于当前订单？'), l('Can a colleague continue from the handoff?', '接管人员能否直接继续处理？')],
+    ctaTitle: l('Start with the cases that need better context.', '从你最难处理的一类客服问题开始。'),
+    ctaBody: l('Bring de-identified cases, business records and policies. Verify the investigation and handoff with your team.', '带来去标识案件、业务记录与适用政策，和团队一起核验调查及交接质量。'),
+  },
+  'equipment-diagnosis': {
+    demoTitle: l('See the incident across every relevant signal.', '看清同一时刻，设备发生了什么。'),
+    demoIntro: l('Pump P-204 develops noise and a vibration alarm after maintenance. Find the observations that help decide what to inspect first.', 'P-204 检修后出现异响与振动报警。找到能帮助判断先检查哪里的观测依据。'),
+    previewTitle: l('P-204 · After maintenance', 'P-204 · 检修后异常'),
+    previewFacts: [l('Coupling replaced the previous day.', '前一天更换了联轴器。'), l('Sound and vibration changed together.', '声音与振动在同一时间窗变化。'), l('Alignment records are still needed.', '仍需本次对中测量记录。')],
+    previewSource: l('Site observations · sensor · work order', '现场观测 · 传感器 · 维修工单'),
+    semanticTitle: l('Find the evidence that separates possible causes.', '知道已有证据说明什么，也知道下一步该查什么。'),
+    semanticIntro: l('An observation is a lead. Combine maintenance history, the right manual and specialist measurements to distinguish the possible causes.', '观测提供调查线索。结合维修历史、对应手册与专业测量，区分不同的可能原因。'),
+    entities: [
+      {title: l('P-204 / CP-40', 'P-204 / CP-40'), body: l('Asset & model', '设备与型号')},
+      {title: l('Drive-end bearing', '驱动端轴承'), body: l('Measurement point', '测点')},
+      {title: l('mm/s RMS', 'mm/s RMS'), body: l('Velocity, same load', '速度有效值、相同负载')},
+      {title: l('Manual rev. 4', '手册第 4 版'), body: l('Model-specific procedure', '对应型号的检查步骤')},
+    ],
+    semanticNote: l('A maintenance record that confirms the result is kept separately from the agent’s initial hypothesis.', '工单确认的维修结果，与 Agent 的初步假设分别保留。'),
+    reuseTitle: l('Inspect the relevant window. Keep the verified knowledge.', '深入理解关键窗口，让检查结果服务下一次调查。'),
+    reuseSteps: [
+      {title: l('Narrow the incident window', '缩小异常范围'), body: l('Use asset identity, event time and existing indexes to locate the relevant recordings.', '通过设备标识、事件时间与已有索引定位相关录制区间。')},
+      {title: l('Investigate the missing observation', '补齐关键观测'), body: l('Analyze the necessary video or sound window, alongside specialist measurements.', '结合专业测量，按需理解必要的视频或声音窗口。')},
+      {title: l('Reuse an applicable finding', '复用适用的发现'), body: l('Retain sourced observations and confirmed work orders. Match model, component and conditions in the next case.', '保留带来源的观测和已确认工单，下次使用时核对型号、部件与工况。')},
+    ],
+    deliveryTitle: l('Built around your equipment and maintenance practice.', '围绕现场设备，配套数据、语义与诊断 Skill。'),
+    deliverables: [
+      {title: l('Incident evidence', '异常证据解析'), body: l('Recordings, historian exports, alarms, work orders and manual references.', '录制资料、历史库导出、报警、工单与手册引用。')},
+      {title: l('Time and equipment alignment', '设备与时间对齐'), body: l('Asset IDs, components, units, operating conditions and source clock offsets.', '设备 ID、部件、单位、工况与来源时钟偏差。')},
+      {title: l('Diagnosis support Skill', '诊断支持 Skill'), body: l('Retrieve observations, compare possible causes and prepare discriminating checks.', '检索观测、比较可能原因，准备能区分假设的检查依据。')},
+    ],
+    checks: [l('Do the sources refer to the same event?', '来源是否对应同一次异常？'), l('Are readings interpreted in the right units and conditions?', '数值、单位与工况是否解释正确？'), l('Does the proposed check distinguish possible causes?', '建议的检查是否能区分可能原因？')],
+    ctaTitle: l('Start with one incident and its evidence.', '从一次真实异常，验证上下文能帮上什么忙。'),
+    ctaBody: l('Bring the recordings, alarms and maintenance records for one asset. Verify the alignment and investigation with your experts.', '准备同一设备的现场记录、报警和维修资料，与专家一起核验对齐结果和调查依据。'),
+  },
+  'personal-work': {
+    demoTitle: l('See what shaped the draft.', '每一段表达，都知道从何而来。'),
+    demoIntro: l('Turn a weekly project update into a client email or an internal note. Keep the facts consistent and the personal context in scope.', '把项目周报变成客户邮件或内部更新，事实保持一致，个人背景遵循对应范围。'),
+    previewTitle: l('Your next client update', '你的下一封客户邮件'),
+    previewFacts: [l('Current fact: testing is planned for Tuesday.', '当前事实：计划下周二开始测试。'), l('Open condition: API approval is pending.', '待确认条件：接口方案尚未获批。'), l('Your preference: lead with the conclusion.', '明确偏好：先说结论。')],
+    previewSource: l('Weekly update · voice note · approved writing', '项目周报 · 语音备忘 · 已确认的表达习惯'),
+    semanticTitle: l('Keep facts, history and preferences in their place.', '当前事实、历史背景与个人偏好，各有位置。'),
+    semanticIntro: l('Use past work with its original context. Separate a dated project fact from an explicit writing preference and a request that only applies to this task.', '历史作品保留原始语境。带日期的项目事实、明确的表达偏好，以及只适用于本次任务的要求分别组织。'),
+    entities: [
+      {title: l('Your workspace', '个人工作空间'), body: l('Authorized sources', '授权的个人资料')},
+      {title: l('Atlas project', 'Atlas 项目'), body: l('Current facts & history', '当前事实与历史背景')},
+      {title: l('Writing preferences', '表达偏好'), body: l('Explicitly confirmed', '用户明确确认')},
+      {title: l('This draft', '本次草稿'), body: l('Audience & task constraints', '读者与任务限制')},
+    ],
+    semanticNote: l('“Make this email shorter” affects this draft. A lasting preference is retained only when the user explicitly asks for it.', '“这封邮件再短一点”只影响本次草稿；用户明确要求长期记住，才成为持续偏好。'),
+    reuseTitle: l('Let useful work become a lasting head start.', '让已经完成的工作，成为下一次的起点。'),
+    reuseSteps: [
+      {title: l('Find what matters now', '找到与本次相关的积累'), body: l('Retrieve the relevant project history, earlier work and approved style examples.', '检索当前项目历史、相关作品与已确认的风格示例。')},
+      {title: l('Fill a specific gap', '只补充需要的细节'), body: l('Inspect a voice note or a source passage when the current task needs more detail.', '当前任务需要细节时，再深入查看语音备忘或来源段落。')},
+      {title: l('Keep knowledge in scope', '在范围内持续复用'), body: l('Retain valid source knowledge and explicit preferences. Refresh project facts as the work changes.', '沉淀有效来源知识和明确偏好，随工作变化更新项目事实。')},
+    ],
+    deliveryTitle: l('Built around the way your users work.', '接入你的工作工具，配好资料与 Skill。'),
+    deliverables: [
+      {title: l('A useful personal archive', '可用的个人积累'), body: l('Notes, documents, recordings and reusable material with precise references.', '笔记、文档、录音和可复用资料，保留准确出处。')},
+      {title: l('Personal context and scope', '个人语义与范围'), body: l('Projects, topics, explicit preferences and task-specific instructions.', '项目、主题、明确偏好与任务专属要求。')},
+      {title: l('Work and creation Skill', '工作与创作 Skill'), body: l('Bring current facts and relevant history into writing, planning and editing.', '把当前事实和相关积累带入写作、规划与编辑。')},
+    ],
+    checks: [l('Does the draft preserve current facts and open conditions?', '草稿是否保留当前事实与未满足条件？'), l('Is every style preference grounded in the user’s own instruction?', '表达偏好是否来自用户自己的明确要求？'), l('Can later tasks reuse knowledge without mixing people or projects?', '后续任务能否复用知识，同时避免串人、串项目？')],
+    ctaTitle: l('Start with the work your users repeat.', '从用户反复要做的一项工作开始。'),
+    ctaBody: l('Bring a task and an authorized personal archive. Test whether the next piece is accurate, consistent and easier to produce.', '带来一个工作任务和授权资料库，验证下一份产出是否准确、一致、易于完成。'),
+  },
+  'marketing-campaigns': {
+    demoTitle: l('From a brief to creative choices with evidence.', '从一份 Brief，到有依据的创意选择。'),
+    demoIntro: l('Prepare an outdoor product campaign, compare opening ideas and use the next round of performance data to improve the brief.', '准备户外产品 Campaign，比较开场思路，再用下一轮表现完善 Brief。'),
+    previewTitle: l('An outdoor creative starting point', '一个户外创意的起点'),
+    previewFacts: [l('Relevant clip: a drink made at the campsite.', '可借鉴片段：在露营桌上制作饮品。'), l('Visible action: pour, add ice, blend.', '可见动作：倒入、加冰、搅拌。'), l('Claims still need product and brand support.', '产品卖点仍需规格与品牌资料支持。')],
+    previewSource: l('Original media · sample brief & campaign records', '原始媒体 · 演示 Brief 与投放记录'),
+    semanticTitle: l('Connect creative details to the right performance data.', '把创意内容，与正确的表现和口径关联。'),
+    semanticIntro: l('One asset can appear in several ads. Link the exact creative version, audience, period and attribution window before comparing results.', '同一素材可能用于多个广告。比较效果前，关联准确的素材版本、人群、周期与归因窗口。'),
+    entities: [
+      {title: l('Asset version', '素材版本'), body: l('Opening, action, message', '开场、动作、产品表述')},
+      {title: l('Creative ID', '投放创意 ID'), body: l('The edit that ran', '实际投放的剪辑版本')},
+      {title: l('Audience & channel', '人群与渠道'), body: l('Comparable scope', '一致的比较范围')},
+      {title: l('Campaign results', '投放表现'), body: l('Period & metric definitions', '周期与指标定义')},
+    ],
+    semanticNote: l('A strong click-through rate and a strong conversion rate answer different questions. Creative correlations become testable hypotheses, not automatic causal claims.', '高点击率与高转化率回答不同问题。创意相关性形成可验证假设，不直接成为因果结论。'),
+    reuseTitle: l('Understand the asset once. Keep building on it.', '理解过的素材，持续服务新的 Brief。'),
+    reuseSteps: [
+      {title: l('Retrieve a useful moment', '快速找到相关片段'), body: l('Index the library and retrieve scenes, statements and actions relevant to the brief.', '为素材库建立索引，检索与 Brief 相关的场景、表达和动作。')},
+      {title: l('Look deeper where it matters', '需要时再深入理解'), body: l('Inspect a selected clip or image region to answer a new creative question.', '围绕新的创意问题，深入查看选定片段或图片区域。')},
+      {title: l('Reuse, then add the change', '复用积累，补充变化'), body: l('Reuse valid asset observations. Add revised brand rules and new campaign results with their dates.', '复用有效素材理解，补充带日期的新品牌规范与投放结果。')},
+    ],
+    deliveryTitle: l('From your asset library to a campaign-ready Skill.', '从素材解析，到能用好资料的营销 Skill。'),
+    deliverables: [
+      {title: l('Creative-aware parsing', '面向创意的解析'), body: l('Openings, product demonstrations, visual claims, narration and reusable clips.', '开场、产品演示、画面表述、旁白与可复用片段。')},
+      {title: l('Brand and campaign semantics', '品牌与投放语义'), body: l('Creative IDs, product facts, brand rules and agreed metric definitions.', '素材 ID、产品事实、品牌规范与一致的指标口径。')},
+      {title: l('Campaign Skill', '营销 Campaign Skill'), body: l('Prepare source material, compare creative ideas and bring evidence into the next iteration.', '准备资料、比较创意思路，把效果依据带入下一次迭代。')},
+    ],
+    checks: [l('Do the suggested clips support the intended message?', '推荐片段是否支持要表达的内容？'), l('Are brand constraints and metric definitions respected?', '品牌限制与指标口径是否正确使用？'), l('Does the next brief build on valid prior understanding?', '下一份 Brief 是否用上已有的有效理解？')],
+    ctaTitle: l('Start with your next campaign brief.', '从你的下一份 Campaign Brief 开始。'),
+    ctaBody: l('Bring a brief, media and campaign records. Verify useful references, brand fit and a repeatable way to improve.', '带来 Brief、素材与投放记录，一起验证创意参考、品牌适配及持续迭代效果。'),
+  },
+  'commerce-sales': {
+    demoTitle: l('Match the product to the person, and show why.', '把模糊需求，落到具体商品和依据上。'),
+    demoIntro: l('A commuter wants a lightweight laptop backpack under ¥500. One missing detail can change which product fits.', '用户想要 500 元以内、能装电脑的轻便通勤背包。一个待确认条件，就可能改变推荐结果。'),
+    previewTitle: l('A recommendation with a reason', '说得清理由的推荐'),
+    previewFacts: [l('A: lighter, with side access.', 'A：更轻，支持侧面取物。'), l('B: room for a larger laptop.', 'B：电脑仓更大。'), l('Check the laptop dimensions before choosing.', '选择前还需核对电脑实际尺寸。')],
+    previewSource: l('Product specification · structure · current records', '商品规格 · 结构依据 · 当前业务记录'),
+    semanticTitle: l('Compare the exact product the customer can buy.', '比较用户真正可以买到的那个规格。'),
+    semanticIntro: l('Keep the selected variant, measurements, price, region and observation time together. Tie qualitative claims to product evidence.', '将选中规格、尺寸、价格、地区与获取时间放在一起，商品特点有对应依据可查。'),
+    entities: [
+      {title: l('Commuting', '通勤需求'), body: l('Budget & laptop size', '预算与电脑尺寸')},
+      {title: l('A-20 / B-24', 'A-20 / B-24'), body: l('Exact product variants', '准确的商品规格')},
+      {title: l('Fit & access', '容纳与取物方式'), body: l('Specifications & structure', '规格与结构依据')},
+      {title: l('Current offer', '当前可售记录'), body: l('Region, price, time', '地区、价格、获取时间')},
+    ],
+    semanticNote: l('“Fits a laptop” needs physical dimensions. “Easy to access” needs a supported opening or pocket design.', '“能装电脑”需要核对实际尺寸；“取物方便”需要开口或收纳结构的依据。'),
+    reuseTitle: l('Reuse product knowledge. Verify the current offer.', '复用有效商品知识，及时核对业务记录。'),
+    reuseSteps: [
+      {title: l('Durable product understanding', '相对稳定的商品理解'), body: l('Reuse authorized specifications and understood product details for the right variant.', '围绕正确规格，复用授权的参数和已理解的商品细节。')},
+      {title: l('A focused comparison', '围绕本次需求比较'), body: l('Inspect only the visual detail or usage demonstration that resolves the shopper’s uncertainty.', '只深入查看能消除当前疑问的图片细节或操作演示。')},
+      {title: l('Fresh commercial facts', '及时核对交易事实'), body: l('Refresh price and stock from permitted sources. The commerce system verifies availability before checkout.', '从授权来源刷新价格与库存，交易系统在结算前再次核对可售状态。')},
+    ],
+    deliveryTitle: l('Turn your catalog and media into useful product context.', '让你的商品资料，成为 Agent 能用好的商品知识。'),
+    deliverables: [
+      {title: l('Product evidence', '商品依据提取'), body: l('Specifications, imagery, demonstrations and relevant review passages.', '规格、图片、演示及相关评价原文。')},
+      {title: l('Variant and offer semantics', '规格与可售语义'), body: l('Product families, variants, units, region, price and availability timestamps.', '商品系列、规格、单位、地区及价格库存时间。')},
+      {title: l('Shopping Skill', '商品导购 Skill'), body: l('Match constraints, find evidence, ask a useful question and explain the trade-off.', '匹配条件、寻找依据、补问关键问题并解释取舍。')},
+    ],
+    checks: [l('Does the recommended variant meet the physical requirements?', '推荐规格是否满足实际使用条件？'), l('Can each recommendation reason be checked?', '每个推荐理由能否核验？'), l('Are price and availability current and in scope?', '价格、可售状态是否及时且范围正确？')],
+    ctaTitle: l('Start with a category and real shopping questions.', '从一个商品类别和真实购买需求开始。'),
+    ctaBody: l('Bring product media, specifications and customer questions. Verify the match, the evidence and the missing details.', '带来商品媒体、规格与顾客问题，核验需求匹配、推荐依据和关键缺口。'),
+  },
+}
