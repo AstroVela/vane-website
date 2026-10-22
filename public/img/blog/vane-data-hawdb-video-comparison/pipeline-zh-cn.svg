@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2350" height="1000" viewBox="0 0 2350 1000" role="img" aria-label="Vane Data 与 HawDB 构建可追溯多视频比较工作流">
+  <defs>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto" markerUnits="userSpaceOnUse"><path d="M2 1 L10 6 L2 11" fill="none" stroke="#111111" stroke-width="2"/></marker>
+  </defs>
+  <rect width="2350" height="1000" fill="white"/>
+  <g font-family="Arial, Noto Sans CJK SC, sans-serif" fill="#111111">
+    <text x="80" y="106" font-size="66" font-weight="700">可追溯的多视频比较</text>
+    <text x="82" y="164" font-size="32" fill="#50565E">Vane Data + HawDB · 找到相关片段，核对比较条件，回看原始依据</text>
+    <rect x="80" y="280" width="470" height="340" rx="24" fill="#DCEEFF" stroke="#111111" stroke-width="2.5"/>
+    <rect x="640" y="280" width="470" height="340" rx="24" fill="#DDF5D8" stroke="#111111" stroke-width="2.5"/>
+    <rect x="1200" y="280" width="470" height="340" rx="24" fill="#EDE4FF" stroke="#111111" stroke-width="2.5"/>
+    <rect x="1760" y="280" width="510" height="340" rx="24" fill="#FFF1C7" stroke="#111111" stroke-width="2.5"/>
+    <text x="110" y="330" font-size="25" fill="#50565E">01</text>
+    <text x="165" y="331" font-size="35" font-weight="600">视频材料</text>
+    <rect x="110" y="368" width="90" height="64" rx="10" fill="white" stroke="#111111" stroke-width="2.5"/>
+    <path d="M145 385 L169 400 L145 415 Z" fill="#111111"/>
+    <rect x="220" y="368" width="90" height="64" rx="10" fill="#D9F4F2" stroke="#111111" stroke-width="2.5"/>
+    <path d="M255 385 L279 400 L255 415 Z" fill="#111111"/>
+    <rect x="330" y="368" width="90" height="64" rx="10" fill="white" stroke="#111111" stroke-width="2.5"/>
+    <path d="M365 385 L389 400 L365 415 Z" fill="#111111"/>
+    <text x="110" y="481" font-size="27">字幕 + 带时间戳的画面</text>
+    <text x="110" y="525" font-size="26">Vane 按批读取视频帧</text>
+    <text x="110" y="569" font-size="25" fill="#50565E">应用组织画面识别与 JSONL</text>
+    <text x="670" y="330" font-size="25" fill="#50565E">02</text>
+    <text x="725" y="331" font-size="35" font-weight="600">HawDB</text>
+    <text x="670" y="402" font-size="29" font-weight="600">证据保存与检索</text>
+    <text x="670" y="452" font-size="27">作者 → 视频 → 处理版本 Run</text>
+    <text x="670" y="497" font-size="27">按选定版本读取来源材料</text>
+    <rect x="670" y="533" width="410" height="48" rx="16" fill="white" stroke="#111111" stroke-width="2.5"/>
+    <text x="688" y="566" font-size="24">向量检索为可选能力</text>
+    <text x="1230" y="330" font-size="25" fill="#50565E">03</text>
+    <text x="1285" y="331" font-size="35" font-weight="600">Vane Data</text>
+    <text x="1230" y="402" font-size="29" font-weight="600">提取说法并比较</text>
+    <text x="1230" y="452" font-size="27">说法 + 测试条件 + 引用范围</text>
+    <text x="1230" y="497" font-size="27">模型返回结构化结果</text>
+    <rect x="1230" y="533" width="410" height="48" rx="16" fill="white" stroke="#111111" stroke-width="2.5"/>
+    <text x="1248" y="566" font-size="24">先核对可比性，再判断关系</text>
+    <text x="1790" y="330" font-size="25" fill="#50565E">04</text>
+    <text x="1845" y="331" font-size="35" font-weight="600">回查原始依据</text>
+    <text x="1790" y="402" font-size="29" font-weight="600">从结果回到原视频</text>
+    <text x="1790" y="452" font-size="27">原文 · 画面 · 时间位置</text>
+    <text x="1790" y="497" font-size="27">人工确认机型与测试条件</text>
+    <text x="1790" y="562" font-size="25" fill="#50565E">保留字段缺失与分析限制</text>
+    <g fill="none" stroke="#111111" stroke-width="3" marker-end="url(#arrow)">
+      <path d="M550 450 H640"/>
+      <path d="M1110 450 H1200"/>
+      <path d="M1670 450 H1760"/>
+    </g>
+    <rect x="80" y="718" width="2190" height="192" rx="24" fill="#F3F4F5" stroke="#111111" stroke-width="2.5"/>
+    <text x="115" y="771" font-size="33" font-weight="600">应用程序 · 流程编排、引用校验、来源版本管理与缓存</text>
+    <text x="115" y="822" font-size="28">选定 Run → 检索候选片段 → 检查字段与引用 → 保存比较结果 JSON</text>
+    <text x="115" y="870" font-size="26" fill="#50565E">HawDB 提供一致性读取；应用保留 Run 历史版本；读者结合原始材料核对结果。</text>
+  </g>
+</svg>
