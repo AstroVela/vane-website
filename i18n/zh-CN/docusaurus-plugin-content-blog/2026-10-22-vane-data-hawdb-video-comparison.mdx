@@ -218,9 +218,11 @@ let hits: Vec<_> = result.hits.into_iter()
 ```python
 import json
 import pyarrow as pa
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class Statement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     evidence_id: str
     first_cue: int
     last_cue: int
@@ -232,6 +234,8 @@ class Statement(BaseModel):
     uncertainties: list[str]
 
 class Statements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     selections: list[Statement]
 
 request = {
