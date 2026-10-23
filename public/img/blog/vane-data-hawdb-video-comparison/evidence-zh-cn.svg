@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2350" height="800" viewBox="0 0 2350 800" role="img" aria-label="沿比较双方的来源版本回查原文与视频位置">
+  <defs><marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto" markerUnits="userSpaceOnUse"><path d="M2 1 L10 6 L2 11" fill="none" stroke="#111111" stroke-width="2"/></marker></defs>
+  <rect width="2350" height="800" fill="white"/>
+  <g font-family="Arial, Noto Sans CJK SC, sans-serif" fill="#111111">
+    <text x="80" y="106" font-size="60" font-weight="700">从比较结果回到原片</text>
+    <text x="82" y="164" font-size="30" fill="#50565E">沿双方的来源版本，找到原文、画面和对应的视频片段</text>
+    <rect x="80" y="320" width="420" height="220" rx="24" fill="#DCEEFF" stroke="#111111" stroke-width="2.5"/>
+    <text x="110" y="376" font-size="32" font-weight="600">候选比较关系</text>
+    <text x="110" y="429" font-size="27">应用保存为 JSON</text>
+    <text x="110" y="480" font-size="26">附带 A / B 来源版本</text>
+    <g stroke="#111111" stroke-width="2.5">
+      <rect x="660" y="250" width="450" height="175" rx="24" fill="#DDF5D8"/>
+      <rect x="660" y="465" width="450" height="175" rx="24" fill="#DDF5D8"/>
+      <rect x="1240" y="250" width="450" height="175" rx="24" fill="#F3F4F5"/>
+      <rect x="1240" y="465" width="450" height="175" rx="24" fill="#F3F4F5"/>
+      <rect x="1820" y="250" width="450" height="175" rx="24" fill="#FFF1C7"/>
+      <rect x="1820" y="465" width="450" height="175" rx="24" fill="#FFF1C7"/>
+    </g>
+    <text x="690" y="300" font-size="30" font-weight="600">来源 A · 选定 Run</text>
+    <text x="690" y="350" font-size="26">HawDB 来源记录</text>
+    <text x="690" y="391" font-size="25" fill="#50565E">生成本次结果时使用的版本</text>
+    <text x="690" y="515" font-size="30" font-weight="600">来源 B · 选定 Run</text>
+    <text x="690" y="565" font-size="26">HawDB 来源记录</text>
+    <text x="690" y="606" font-size="25" fill="#50565E">生成本次结果时使用的版本</text>
+    <text x="1270" y="300" font-size="30" font-weight="600">A 的原始依据</text>
+    <text x="1270" y="350" font-size="26">字幕原文与起止时间</text>
+    <text x="1270" y="391" font-size="25" fill="#50565E">或原始画面与帧时间</text>
+    <text x="1270" y="515" font-size="30" font-weight="600">B 的原始依据</text>
+    <text x="1270" y="565" font-size="26">字幕原文与起止时间</text>
+    <text x="1270" y="606" font-size="25" fill="#50565E">或原始画面与帧时间</text>
+    <text x="1850" y="300" font-size="30" font-weight="600">回看来源 A</text>
+    <text x="1850" y="350" font-size="26">播放引用的视频片段</text>
+    <text x="1850" y="391" font-size="25" fill="#50565E">或查看保存的原图</text>
+    <text x="1850" y="515" font-size="30" font-weight="600">回看来源 B</text>
+    <text x="1850" y="565" font-size="26">播放引用的视频片段</text>
+    <text x="1850" y="606" font-size="25" fill="#50565E">或查看保存的原图</text>
+    <g fill="none" stroke="#111111" stroke-width="3" marker-end="url(#arrow)">
+      <path d="M500 430 H580 V338 H660"/><path d="M580 430 V553 H660"/>
+      <path d="M1110 338 H1240"/><path d="M1110 553 H1240"/>
+      <path d="M1690 338 H1820"/><path d="M1690 553 H1820"/>
+    </g>
+    <text x="82" y="738" font-size="27" fill="#50565E">字幕修订或视频重新处理后，历史结果仍按生成时的来源版本回查。</text>
+  </g>
+</svg>
