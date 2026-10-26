@@ -33,14 +33,13 @@ export default function DataRunners() {
           {kind === 'ray' && <><div className="runner-mobile-node runner-scheduler">{t('Ray scheduler · Tasks & resources', 'Ray 调度 · 任务与资源')}</div><ArrowDownIcon className="diagram-down" aria-hidden="true"/></>}
           <div className="runner-mobile-workers">{kind === 'local' ? <div className="runner-mobile-node">{t('Local worker / subprocess', '本机 Worker / 子进程')}<small>{t('CPU execution', 'CPU 执行')}</small></div> : <><div className="runner-mobile-node">CPU Worker</div><div className="runner-mobile-node">GPU Actor<small>{t('Model instance reuse', '模型实例复用')}</small></div></>}</div>
         </div>
-        <div className="runner-mobile-storage"><strong>{t('Inputs & result storage', '数据源与结果存储')}</strong><p>{kind === 'local' ? t('Local files or accessible object storage.', '本机文件或可访问的对象存储。') : t('Every worker needs access to the data, models, dependencies and output.', '所有 Worker 均需访问数据、模型、依赖和输出。')}</p></div>
+        <div className="runner-mobile-storage"><strong>{t('Inputs and output storage', '输入与结果存储')}</strong><p>{kind === 'local' ? t('Local files or accessible object storage.', '本机文件或可访问的对象存储。') : t('All workers need access to inputs, models, dependencies and output storage.', '所有执行节点需能访问输入、模型、依赖与输出存储。')}</p></div>
       </div>
-      <h3>{kind === 'local' ? t('Develop and run locally.', '在本机开发与运行。') : t('Schedule the resources you need.', '按需求调度计算资源。')}</h3>
-      <p>{kind === 'local' ? t('For development, validation and on-demand processing. Local workers can use subprocesses; no Ray runtime is required.', '用于开发、验证和按需处理。本机 Worker 可使用子进程，无需 Ray。') : t('Run Ray on one machine or an existing cluster. Schedule CPU workers and GPU Actors according to resource declarations.', 'Ray 可在单机或已有集群中运行，按资源声明调度 CPU Worker 与 GPU Actor。')}</p>
+      <h3>{kind === 'local' ? t('Develop and validate locally', '本地开发与验证') : t('Scale execution with Ray', '通过 Ray 扩展执行')}</h3>
+      <p>{kind === 'local' ? t('Use the local runner for development, validation and on-demand processing, without starting Ray.', '使用本地执行器完成开发、验证与按需处理，无需启动 Ray。') : t('Run Ray on one machine or a cluster, scheduling CPU workers and GPU actors according to declared resource needs.', '在单机或集群中运行 Ray，按声明的资源需求调度 CPU Worker 与 GPU Actor。')}</p>
       <CodeWindow filename={kind === 'local' ? 'local_job.py' : 'job.py'} language="python" code={kind === 'local' ? local : ray}/>
-      {kind === 'ray' && <div className="runner-launch"><p>{t('On the head node of an existing Ray cluster:', '在已有 Ray 集群的 head 节点启动：')}</p><CodeWindow filename="terminal" language="bash" code="RAY_ADDRESS=auto python job.py"/></div>}
     </div>)}</div>
-    <p className="marketing-note">{t('Configuration excerpts share the same pipeline_sql. Prepare credentials, dependencies and shared data access for your environment. Without RAY_ADDRESS, Ray can start on the current machine; use Ray for GPU resource scheduling.', '两份执行配置共用 pipeline_sql。按环境准备凭据、依赖与数据访问；未设置 RAY_ADDRESS 时可在当前机器启动 Ray。GPU 资源调度使用 Ray。')}</p>
-    <Link className="arrow-link" to="/docs/data/deploy/deployment">{t('Deployment guide', '运行与部署文档')} →</Link>
+    <p className="marketing-note">{t('Both examples use the same pipeline_sql. Configure credentials, dependencies and data access for your environment. Ray runs locally or on a cluster and handles GPU resource scheduling.', '示例复用同一份 pipeline_sql。执行前需准备相应凭据、依赖与数据访问；Ray 可在本机或集群运行，并负责 GPU 资源调度。')}</p>
+    <Link className="arrow-link" to="/docs/data/deploy/deployment">{t('Deployment guide', '运行与部署指南')} →</Link>
   </div>
 }

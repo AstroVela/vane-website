@@ -18,7 +18,7 @@ export default function SupportExperience() {
     <DemoHeader name="CASE 1042"><Status tone="open">{t('Investigating', '调查中')}</Status></DemoHeader>
     <div className="solution-three-column support-panels">
       <div className="solution-task-pane">
-        <span className="solution-label">{t('Case timeline', '案件时间线')}</span>
+        <span className="solution-label">{t('Case timeline', '工单时间线')}</span>
         <ol className="solution-timeline">
           <li><time>14:10</time><span>{t('Carrier marks the parcel delivered.', '承运商标记已送达。')}</span></li>
           <li><time>14:25</time><span>{t('Customer reports: “I never received it.”', '客户反馈：“我没有收到。”')}</span></li>
@@ -36,10 +36,10 @@ export default function SupportExperience() {
         <div className="delivery-record-label">{t('ORDER ADDRESS', '订单地址')} <b>8B</b></div>
       </div>}</SourceReader>
       <div className="solution-context-pane" aria-live="polite">
-        <span className="solution-label">{t('Current case state', '当前案情')}</span>
-          <h3>{carrierUpdate ? t('The investigation is under way.', '投递位置核查已受理。') : t('The location needs checking.', '需要核实投递位置。')}</h3>
-        <div className="solution-fact-block"><Status tone="good">{t('Known', '已知事实')}</Status><p>{t('The order is for 8B. The carrier records a delivery at 14:10.', '订单地址为 8B，承运商记录 14:10 送达。')}</p></div>
-        <div className="solution-fact-block"><Status tone="open">{t('Unresolved', '未解释的差异')}</Status><p>{updated ? t('The evidence shows 8D; the customer says it is another building. Confirm the carrier’s location and recipient.', '依据显示 8D，客户称其位于另一栋楼。需核对承运商投递位置和收件人。') : t('The evidence shows 8D, and the customer reports no receipt. A “delivered” status does not settle the case.', '依据显示 8D，客户称未收到。“已送达”状态无法单独解释这个问题。')}</p></div>
+        <span className="solution-label">{t('Case summary', '问题概况')}</span>
+          <h3>{carrierUpdate ? t('Delivery investigation in progress.', '投递位置核查进行中') : t('Delivery location needs verification.', '投递位置待核实')}</h3>
+        <div className="solution-fact-block"><Status tone="good">{t('Known records', '已确认记录')}</Status><p>{t('The order is for 8B. The carrier records a delivery at 14:10.', '订单地址为 8B，承运商记录 14:10 送达。')}</p></div>
+        <div className="solution-fact-block"><Status tone="open">{t('Needs verification', '待核实问题')}</Status><p>{updated ? t('The evidence shows 8D; the customer says it is another building. Confirm the carrier’s location and recipient.', '依据显示 8D，客户称其位于另一栋楼。需核对承运商投递位置和收件人。') : t('The evidence shows 8D rather than the order address, 8B. The delivery location and recipient still need verification.', '配送依据显示 8D，与订单地址 8B 不一致；还需核实实际投递位置与收件人。')}</p></div>
         <div className="solution-source-links">{sources.filter(s => (updated || s.id !== 'customer') && (carrierUpdate || s.id !== 'carrier')).map(s => <SourceButton key={s.id} source={s} selected={sourceId === s.id} onClick={() => setSource(s.id)} />)}</div>
       </div>
     </div>

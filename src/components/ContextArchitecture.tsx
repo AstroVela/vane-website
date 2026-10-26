@@ -12,23 +12,23 @@ export default function ContextArchitecture() {
       <div className="context-mobile-sources"><h3>{t('Enterprise data', '企业数据')}</h3><p>{t('Files & media · Business tables · External semantic definitions', '文件与媒体 · 业务数据表 · 外部语义定义')}</p></div>
       <ArrowDownIcon className="diagram-down" aria-hidden="true"/>
       <div className="context-mobile-boundary"><h3>Vane Context</h3>
-        <div className="context-mobile-preparation"><h4>{t('Prepare & update', '持续准备与更新')}</h4><p>{t('Sync changes → basic understanding → embeddings & indexes', '同步变化 → 基础理解 → 向量与索引')}</p></div>
+        <div className="context-mobile-preparation"><h4>{t('Processing and updates', '数据处理与更新')}</h4><p>{t('Sync changes → extract and analyze → embed and index', '同步变更 → 内容提取与初步分析 → 向量化与索引')}</p></div>
         <ArrowDownIcon className="diagram-down" aria-hidden="true"/>
         <div className="context-mobile-space"><h4>{t('Data space', '数据空间')}</h4><p>{t('Files & media · Tables · Knowledge · Semantic definitions · Search indexes', '文件与媒体 · 数据表 · 知识 · 语义定义 · 检索索引')}</p><small>{t('Business tables and external definitions can stay in their source systems and be bound here.', '业务表与外部定义可保留在来源系统，通过连接绑定。')}</small></div>
-        <div className="context-mobile-loop"><span><ArrowDownIcon aria-hidden="true"/>{t('Read knowledge', '读取已有知识')}</span><span><ArrowUpIcon aria-hidden="true"/>{t('Publish insights', '沉淀新理解')}</span></div>
-        <div className="context-mobile-service"><h4>{t('Context service', '在线上下文服务')}</h4><p>{t('Search & business queries · On-demand understanding and media processing', '检索与业务查询 · 按需深度理解与素材处理')}</p><div className="context-mobile-agent"><strong>Context Agent</strong><span>{t('Optional autonomous planning', '可选择的自主编排')}</span></div></div>
-        <div className="context-mobile-call">↑ {t('Request', '请求')} <span>↓ {t('Cited results', '带引用结果')}</span></div>
-        <div className="context-mobile-integration"><h4>{t('Agent integration', 'Agent 接入')}</h4><p>MCP Tools · Skills</p><small>{t('Tools expose capabilities; Skills guide their use.', '工具提供能力，Skill 指导使用。')}</small></div>
+        <div className="context-mobile-loop"><span><ArrowDownIcon aria-hidden="true"/>{t('Retrieve existing knowledge', '检索已有知识')}</span><span><ArrowUpIcon aria-hidden="true"/>{t('Save analysis results', '沉淀分析结果')}</span></div>
+        <div className="context-mobile-service"><h4>{t('Context service', '在线上下文服务')}</h4><p>{t('Search & business queries · On-demand understanding and media processing', '检索与业务查询 · 按需深度理解与素材处理')}</p><div className="context-mobile-agent"><strong>Context Agent</strong><span>{t('Delegate to a Context Agent', '按需委托 Context Agent')}</span></div></div>
+        <div className="context-mobile-call">↑ {t('Request', '请求')} <span>↓ {t('Results with citations', '带来源引用的结果')}</span></div>
+        <div className="context-mobile-integration"><h4>{t('Agent integration', 'Agent 接入')}</h4><p>MCP Tools · Skills</p><small>{t('MCP tools expose capabilities; Skills guide the agent.', 'MCP 工具提供能力，Skills 指导 Agent 使用。')}</small></div>
         <div className="context-mobile-engine"><h4>Vane Data</h4><p>{t('Supports preparation and online processing: native media, UDFs, AI Functions, relational queries and vector search.', '支撑准备与在线处理：原生媒体、UDF、AI Function、关系查询与向量检索。')}</p></div>
-        <div className="context-mobile-governance"><h4>{t('Human oversight', '人的协同与管理')}</h4><p>{t('Verify evidence · Manage definitions · Resolve issues · Inspect usage', '核验依据 · 调整定义 · 处理问题 · 查看用量')}</p></div>
+        <div className="context-mobile-governance"><h4>{t('Management and observability', '管理与可观测性')}</h4><p>{t('Verify sources · Manage semantic definitions · Troubleshoot · Monitor usage and costs', '核验来源 · 管理语义定义 · 排查问题 · 查看用量与成本')}</p></div>
       </div>
       <div className="context-mobile-call">↑ {t('Request', '请求')} <span>↓ {t('Result', '结果')}</span></div>
-      <div className="context-mobile-agents"><h3>{t('Business agents', '业务 Agents')}</h3><p>{t('Create, decide and execute business tasks.', '最终创作与业务执行。')}</p></div>
+      <div className="context-mobile-agents"><h3>{t('Business agents', '业务 Agent')}</h3><p>{t('Use the context to create, decide and act.', '使用上下文，继续创作、决策与执行。')}</p></div>
     </div>
     <div className="diagram-summary">
-      <p>{t('Prepare basic knowledge as data changes.', '随资料变化，持续准备基础知识。')}</p>
-      <p>{t('Deepen understanding when a task needs it.', '围绕任务需要，补充深度理解。')}</p>
-      <p>{t('Let future tasks use what is already learned.', '新理解回到数据空间，供后续任务使用。')}</p>
+      <p>{t('Update searchable knowledge as your data changes.', '数据变化时，自动更新可检索知识。')}</p>
+      <p>{t('Analyze relevant content when a task needs more detail.', '围绕任务，按需分析相关内容。')}</p>
+      <p>{t('Save the results as knowledge for future tasks.', '分析结果沉淀为知识，供后续任务复用。')}</p>
     </div>
   </div>
 }

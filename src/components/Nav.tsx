@@ -5,13 +5,32 @@ import {Link} from '../router'
 import {pickLocale, useSiteLocale} from '../siteI18n'
 import {marketingProducts} from '../content/products'
 import {agentUseCases, casePagePath} from '../content/useCases'
-import {GITHUB_URL} from '../siteLinks'
+import {DISCORD_URL, GITHUB_REPO, GITHUB_URL} from '../siteLinks'
+import {useGitHubStars} from './useGitHubStars'
+import {dataSolutions} from '../content/dataSolutions'
 import Mark from './Mark'
 import CommandPalette from './CommandPalette'
 import {OPEN_DOCS_MOBILE_NAV_EVENT} from '../docs/mobileNavigation'
 
+function GitHubIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+    </svg>
+  )
+}
+
+function DiscordIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+    </svg>
+  )
+}
+
+
 type NavProps = {data?: boolean; ctaReveal?: boolean; ctaTo?: string; ctaHref?: string; withSearch?: boolean; withCta?: boolean}
-export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, withCta = true}: NavProps) {
+export default function Nav({withSearch = false}: NavProps) {
   const locale = useSiteLocale()
   const {pathname} = useLocation()
   const history = useHistory()
@@ -26,7 +45,7 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
   const mobilePanel = useRef<HTMLDivElement>(null)
   const mobileDialog = useRef<HTMLDialogElement>(null)
   const t = (en: string, zh: string) => pickLocale(locale, en, zh)
-  const isData = data || pathname.includes('/docs/data')
+  const stars = useGitHubStars(GITHUB_REPO)
   const path = pathname.replace(/^\/zh-CN(?=\/|$)/, '') || '/'
   const localePath = (locale === 'en' ? '/zh-CN' + (path === '/' ? '' : path) : path) + queryAndHash
   const close = () => {hoverMenu.current = null; setMenu(null); setMobile(false)}
@@ -57,11 +76,10 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
     {to: '/docs/data', name: t('Vane Data docs', 'Vane Data 文档')},
     {to: '/docs/data/tutorials', name: t('Vane Data examples', 'Vane Data 代码示例')},
     {to: GITHUB_URL, name: 'Vane Data GitHub ↗'},
-    {to: '/docs/context', name: t('Vane Context integration', 'Vane Context 接入概览')},
   ]
   const resources = [
-    {to: '/blog', name: t('Articles', '技术文章')}, {to: '/benchmarks', name: t('Data benchmarks', 'Data 基准测试')},
-    {to: '/release-notes', name: t('Data releases', 'Data 版本更新')}, {to: '/contact', name: t('Contact', '联系')},
+    {to: '/blog', name: t('Blogs', '博客')}, {to: '/benchmarks', name: t('Vane Data benchmarks', 'Vane Data 性能测试')},
+    {to: '/release-notes', name: t('Release Notes', '版本更新')}, {to: '/contact', name: t('Contact', '联系')},
   ]
   const dropdown = (id: string, label: string, items: {to: string; name: string; description?: string}[]) =>
     <div className="nav-dd" onMouseEnter={() => {if (menu !== id) {hoverMenu.current = id; setMenu(id)}}} onMouseLeave={e => {hoverMenu.current = null; if (!e.currentTarget.contains(document.activeElement)) setMenu(null)}} onBlurCapture={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {hoverMenu.current = null; setMenu(null)}}}>
@@ -71,24 +89,25 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
         <Link key={item.to} to={item.to} onClick={close}><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</Link>
       )}</div></div>}
     </div>
-  const productLinks = marketingProducts.map(p => ({to: p.path, name: p.name, description: p.badge[locale] + ' · ' + p.description[locale]}))
-  const useCaseLinks = [{to: '/solutions', name: t('All use cases', '全部应用场景')}, ...agentUseCases.map(item => ({to: casePagePath(item.id), name: item.name[locale]}))]
+  const productLinks = marketingProducts.map(p => ({to: p.path, name: p.name, description: p.description[locale]}))
+  const useCaseLinks = [{to: '/solutions', name: t('All solutions', '全部解决方案')}, ...agentUseCases.map(item => ({to: casePagePath(item.id), name: item.name[locale]})), ...dataSolutions.map(item => ({to: item.path, name: item.name[locale]}))]
   return <>
     <header className="nav navbar site-nav" ref={navRef}>
       <div className="wrap nav-in">
         <Link className="brand" to="/"><Mark size={26} /><span className="wm">vane</span></Link>
         <nav className="nav-links" aria-label={t('Main navigation', '主导航')}>
           {dropdown('products', t('Products', '产品'), productLinks)}
-          {dropdown('use-cases', t('Use cases', '应用场景'), useCaseLinks)}
+          {dropdown('use-cases', t('Solutions', '解决方案'), useCaseLinks)}
           {dropdown('developers', t('Developers', '开发者'), developers)}
           {dropdown('resources', t('Resources', '资源'), resources)}
         </nav>
         <div className="nav-right">
           {withSearch && <><button type="button" className="nav-docs-menu" aria-label={t('Open documentation navigation', '打开文档导航')} aria-controls="docs-mobile-navigation" onClick={() => window.dispatchEvent(new Event(OPEN_DOCS_MOBILE_NAV_EVENT))}><HamburgerMenuIcon aria-hidden="true" /></button>
             <button type="button" className="nav-search" onClick={() => setSearchOpen(true)} aria-label={t('Search docs', '搜索文档')}><MagnifyingGlassIcon aria-hidden="true" /><span className="sl">{t('Search', '搜索')}</span><span className="kbd">⌘ K</span></button></>}
-          <a className="nav-locale" href={localePath} lang={locale === 'en' ? 'zh-CN' : 'en'}>{locale === 'en' ? '中文' : 'EN'}</a>
-          {withCta && (ctaHref ? <a className="btn btn-solid btn-sm nav-main-cta" href={ctaHref}>{t('Start using', '开始使用')} →</a> :
-            <Link className="btn btn-solid btn-sm nav-main-cta" to={ctaTo ?? (isData ? '/docs/data/quickstart/quickstart' : '/demo?source=nav')}>{isData ? t('Start using', '开始使用') : t('Request Demo', '预约演示')} →</Link>)}
+          <a className="nav-discord" href={DISCORD_URL} target="_blank" rel="noreferrer" aria-label={t('Join Discord', '加入 Discord')}><DiscordIcon /></a>
+          <a className="ghp" href={GITHUB_URL} target="_blank" rel="noreferrer" aria-label={t('Star Vane on GitHub', '在 GitHub 上为 Vane 点 Star')}><GitHubIcon /><span>Star</span>{stars && <b>{stars}</b>}</a>
+          <Link className="nav-contact" to="/contact">{t('Contact us', '联系我们')}</Link>
+          <a className="nav-locale" href={localePath} lang={locale === 'en' ? 'zh-CN' : 'en'} aria-label={t('Switch to Chinese', '切换到英文')}>{locale === 'en' ? '中文' : 'EN'}</a>
           <button ref={mobileTrigger} className="site-menu-toggle" type="button" aria-expanded={mobile} aria-controls="site-mobile-navigation" aria-label={t('Open menu', '打开菜单')} onClick={() => setMobile(true)}><HamburgerMenuIcon aria-hidden="true" /></button>
         </div>
       </div>
@@ -101,10 +120,11 @@ export default function Nav({data = false, ctaTo, ctaHref, withSearch = false, w
         }}>
         <button type="button" className="site-mobile-close" onClick={close}><Cross2Icon aria-hidden="true" />{t('Close', '关闭')}</button>
         <h3>{t('Products', '产品')}</h3>{productLinks.map(p => <Link to={p.to} key={p.to} onClick={close}><strong>{p.name}</strong><small>{p.description}</small></Link>)}
-        <h3>{t('Use cases', '应用场景')}</h3>{useCaseLinks.map(item => <Link to={item.to} key={item.to} onClick={close}>{item.name}</Link>)}
+        <h3>{t('Solutions', '解决方案')}</h3>{useCaseLinks.map(item => <Link to={item.to} key={item.to} onClick={close}>{item.name}</Link>)}
         <h3>{t('Developers', '开发者')}</h3>{developers.map(p => p.to.startsWith('https:') ? <a href={p.to} key={p.to} target="_blank" rel="noreferrer">{p.name}</a> : <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
         <h3>{t('Resources', '资源')}</h3>{resources.map(p => <Link key={p.to} to={p.to} onClick={close}>{p.name}</Link>)}
-        <Link to={ctaTo ?? '/demo?source=nav'} className="btn btn-solid" onClick={close}>{t('Request Demo', '预约演示')} →</Link>
+        <h3>{t('Community', '社区')}</h3><a href={DISCORD_URL} target="_blank" rel="noreferrer">Discord ↗</a><a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub · Star ↗</a>
+        <Link to="/contact" className="btn btn-solid" onClick={close}>{t('Contact us', '联系我们')} →</Link>
       </div></dialog>}
     </header>
     {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}

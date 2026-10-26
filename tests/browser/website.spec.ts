@@ -41,25 +41,27 @@ test('unavailable reception shows the contact path without claiming receipt', as
 })
 test('product pages, documents and retained scenario routes work in both languages', async ({page, request}) => {
   for (const prefix of ['', '/zh-CN']) {
-    for (const route of ['/products/context','/products/data','/docs','/docs/context','/docs/context/search','/docs/data/quickstart/quickstart','/solutions','/solutions/video-research','/solutions/audio-evidence','/solutions/product-verification','/contact','/privacy','/blog','/release-notes']) {
+    for (const route of ['/products/context','/products/data','/docs','/solutions/training','/solutions/enterprise-agent','/docs/data/quickstart/quickstart','/solutions','/solutions/video-research','/solutions/audio-evidence','/solutions/product-verification','/contact','/privacy','/blog','/release-notes']) {
       expect((await page.goto(prefix + route))?.status()).toBe(200)
       await expect(page.locator(route === '/blog' ? 'h2' : 'h1').first()).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     }
-    const redirect = await request.get(prefix + '/solutions/enterprise-agent', {maxRedirects: 0})
-    expect(redirect.status()).toBe(301); expect(redirect.headers().location).toContain(prefix + '/products/context')
+    const removed = await request.get(prefix + '/docs/context', {maxRedirects: 0})
+    expect(removed.status()).toBe(404)
   }
-  await page.goto('/products/data'); await page.getByRole('button', {name: 'SQL', exact: true}).click()
-  await expect(page.locator('.data-example')).toContainText('SQL excerpt')
+  await page.goto('/products/data'); await page.locator('.data-example').getByRole('button', {name: 'SQL', exact: true}).click()
+  await expect(page.locator('.data-example')).toContainText('list_files')
 })
-test('Context documents remain discoverable from search and mobile navigation', async ({page}) => {
-  await page.goto('/docs/context')
+test('documentation search and mobile navigation expose Data documentation only', async ({page}) => {
+  await page.goto('/docs/data')
   await page.getByRole('button', {name: 'Search docs', exact: true}).click()
   await page.getByRole('textbox', {name: 'Search the docs'}).fill('Vane Context')
-  await expect(page.locator('.cmdk-item')).toHaveCount(6)
+  await expect(page.locator('.cmdk-item')).toHaveCount(0)
+  await page.getByRole('textbox', {name: 'Search the docs'}).fill('Quickstart')
+  await expect(page.locator('.cmdk-item').first()).toBeVisible()
   await page.keyboard.press('Escape')
   await page.setViewportSize({width: 390, height: 844})
   await page.getByRole('button', {name: 'Open documentation navigation', exact: true}).click()
   await expect(page.getByRole('dialog', {name: 'Documentation navigation'})).toBeVisible()
-  await expect(page.locator('#docs-mobile-navigation')).toContainText('Analysis and jobs')
+  await expect(page.locator('#docs-mobile-navigation')).toContainText('Vane Data')
 })

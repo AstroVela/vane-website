@@ -23,16 +23,16 @@ export default function MeetingExperience() {
     ]}>
       <div className="solution-three-column meeting-panels">
         <div className="solution-task-pane">
-          <span className="solution-label">{t('The task at hand', '此刻的任务')}</span>
+          <span className="solution-label">{t('Current task', '当前任务')}</span>
           <span className="solution-time">{after ? '18:45' : stage === 'during' ? '08:12' : t('PRE-MEETING', '会前')}</span>
-          <h3>{after ? t('What did we agree?', '这次确认了什么？') : stage === 'during' ? t('“Are we still on the original date?”', '“我们还是按原来的日期推进吗？”') : t('Confirm the pilot date and security review.', '确认试点日期与安全评审。')}</h3>
-          <p>{after ? t('Prepare the follow-up email with an owner, deadline and remaining condition.', '整理跟进邮件，写明负责人、截止日期与剩余条件。') : t('The discussion refers to a plan spread across a meeting, an email and CRM.', '这次讨论的计划，分散在会议、邮件与 CRM 中。')}</p>
+          <h3>{after ? t('What was agreed?', '本次确认了哪些事项？') : stage === 'during' ? t('“Are we still on the original date?”', '“我们还是按原来的日期推进吗？”') : t('Confirm the pilot date and security review.', '确认试点日期与安全评审')}</h3>
+          <p>{after ? t('Draft the follow-up with owners, deadlines and remaining conditions.', '整理负责人、截止时间和未满足条件，生成跟进邮件。') : t('The discussion refers to a plan spread across a meeting, an email and CRM.', '这次讨论的计划，分散在会议、邮件与 CRM 中。')}</p>
           <div className="meeting-scope"><span>Northstar</span><span>Atlas</span><span>{t('Billing pilot', '账单模块试点')}</span></div>
         </div>
         <div className="solution-context-pane" aria-live="polite">
-          <span className="solution-label">{t('Context for your agent', '交给 Agent 的上下文')}</span>
+          <span className="solution-label">{t('Context for your agent', '提供给 Agent 的上下文')}</span>
           <Status tone={after ? 'good' : 'open'}>{after ? t('Target confirmed', '目标日期已确认') : t('Date needs confirmation', '日期待确认')}</Status>
-          <h3>{after ? t('June 24, with a condition.', '6 月 24 日，保留启动条件。') : t('Two dates. Different meanings.', '两个日期，两种含义。')}</h3>
+          <h3>{after ? t('Target confirmed. Launch remains conditional.', '目标日期已确认，启动条件仍保留') : t('An original plan and a proposed change.', '原定日期与调整建议，分别有据可查')}</h3>
           <ul className="solution-facts">
             <li>{after ? t('Confirmed target: June 24.', '已确认目标：6 月 24 日。') : t('June 20 is the original, conditional plan.', '6 月 20 日是附带前提的原计划。')}</li>
             <li>{after ? t('Project owner: review documents due June 18.', '项目负责人：6 月 18 日前补齐评审材料。') : t('June 24 is a later proposal, still unconfirmed.', '6 月 24 日是后续建议，仍待确认。')}</li>
@@ -42,7 +42,7 @@ export default function MeetingExperience() {
         </div>
         <SourceReader source={selected} />
       </div>
-      <NextAction>{after ? t('Draft the follow-up: June 24 target; owner to deliver review documents by June 18; launch remains conditional. Update records through the meeting agent’s connected tools.', '生成跟进邮件：6 月 24 日为目标；负责人于 6 月 18 日前补齐材料；启动仍附条件。再通过会议 Agent 的业务工具更新记录。') : stage === 'during' ? t('Surface the original condition and the later proposal so the meeting can make an explicit decision.', '提示原计划的前提与后续建议，帮助会议作出明确决定。') : t('Prepare an agenda that asks for the date decision and the owner of the security review.', '准备议程，确认目标日期和安全评审负责人。')}</NextAction>
+      <NextAction>{after ? t('Draft the follow-up: June 24 target; owner to deliver review documents by June 18; launch remains conditional. Update records through the meeting agent’s connected tools.', '生成跟进邮件：6 月 24 日为目标；负责人于 6 月 18 日前补齐材料；启动仍附条件。再通过会议 Agent 的业务工具更新记录。') : stage === 'during' ? t('Present the original condition and proposed change so participants can confirm the plan.', '提示原计划的前提与后续调整建议，帮助参会人确认安排。') : t('Prepare an agenda that asks for the date decision and the owner of the security review.', '准备议程，确认目标日期和安全评审负责人。')}</NextAction>
     </DemoTabs>
   </div>
 }

@@ -21,26 +21,26 @@ export const imageRegions = regions
 const videoLocators = (id: string) => videoEvidence.filter(e => e.id === id).map(e => ({kind: 'time' as const, assetId: e.assetId, start: e.start, end: e.end}))
 const audioLocators = (id: string) => audioEvidence.filter(e => e.id === id).map(e => ({kind: 'time' as const, assetId: e.assetId, start: e.start, end: e.end}))
 export const showcaseInsights: Insight[] = [
-  {id: 'ingredients', title: l('Pour the drink. Add ice.', '倒入饮料与冰块'),
+  {id: 'ingredients', title: l('Adding the drink and ice', '倒入饮料与冰块'),
     explanation: l('The opening shows the ingredients going into the blender cup.', '开场展示将饮料和冰块加入搅拌杯。'), locators: videoLocators('ingredients')},
-  {id: 'blending', title: l('Start blending.', '启动搅拌'),
+  {id: 'blending', title: l('Blending on the outdoor table', '启动搅拌'),
     explanation: l('The next action shows the blender in use on the outdoor table.', '随后在户外桌面上启动搅拌机。'), locators: videoLocators('blending')},
-  {id: 'camping', title: l('An outdoor camping setting.', '露营场景'),
+  {id: 'camping', title: l('Outdoor campsite', '户外露营场景'),
     explanation: l('The tent, outdoor table and grass establish the setting.', '帐篷、户外桌面与草地交代了使用场景。'), locators: videoLocators('camping')},
-  {id: 'cup', title: l('Blender cup and brand.', '搅拌杯与品牌标识'),
+  {id: 'cup', title: l('Blender cup and visible branding', '搅拌杯与品牌标识'),
     explanation: l('A cup is held in the center. The nutribullet mark is visible on its base.', '画面中央手持搅拌杯，杯体底部可见 nutribullet 标识。'),
     locators: [{kind: 'image', assetId: 'comp_005', regionIds: ['cup']}]},
   {id: 'food', title: l('Strawberries, banana and powder.', '草莓、香蕉与粉末'),
     explanation: l('Three bowls of ingredients are visible on the kitchen counter.', '厨房台面上的三个碗中，分别有草莓、香蕉和粉末。'),
     locators: [{kind: 'image', assetId: 'comp_005', regionIds: ['strawberries', 'banana', 'powder']}]},
-  {id: 'caption', title: l('Read the words in the image.', '识别画面文字'),
+  {id: 'caption', title: l('Text in the image', '画面文字识别'),
     explanation: l('The caption names a strawberry and chocolate smoothie.', '画面标题说明这是草莓与巧克力奶昔。'),
     sourceExcerpt: {language: 'nl', text: 'Aardbeien + Chocolade smoothie'}, translation: l('Strawberry + chocolate smoothie', '草莓＋巧克力奶昔'),
     locators: [{kind: 'image', assetId: 'comp_005', regionIds: ['text']}]},
-  {id: 'portable', title: l('Portability, in the narrator’s words.', '旁白强调便携性'),
+  {id: 'portable', title: l('Portability in the narration', '便携使用的旁白表达'),
     explanation: l('The narrator says the blender can be taken anywhere to make smoothies.', '旁白表达了随身携带、随时制作奶昔的使用方式。'),
     sourceExcerpt: {language: 'en', text: audioEvidence[0].text}, translation: l(audioEvidence[0].text, '我可以把它带到任何地方，随时制作奶昔。'), locators: audioLocators('portable')},
-  {id: 'morning', title: l('A morning smoothie routine.', '早晨饮品场景'),
+  {id: 'morning', title: l('A morning smoothie routine', '早晨饮品使用场景'),
     explanation: l('The next line connects the product to a morning routine.', '下一句将产品使用与早晨的饮品习惯联系起来。'),
     sourceExcerpt: {language: 'en', text: audioEvidence[1].text}, translation: l(audioEvidence[1].text, '现在我不用担心错过早晨的奶昔了。'), locators: audioLocators('morning')},
 ]
@@ -58,3 +58,18 @@ export const showcases: Showcase[] = [
 export function showcaseFor(kind: string) {return showcases.find(s => s.kind === kind) ?? showcases[0]}
 export function assetFor(id: string) {return showcaseAssets.find(a => a.id === id)!}
 export function insightFor(id: string) {return showcaseInsights.find(i => i.id === id)!}
+
+// Prefer the most specific interval when a scene and an action overlap.
+export function activeInsightAt(assetId: string, position: number, ids?: readonly string[]): string | undefined {
+  let match: string | undefined
+  let shortest = Infinity
+  for (const insight of showcaseInsights) {
+    if (ids && !ids.includes(insight.id)) continue
+    for (const locator of insight.locators) {
+      if (locator.kind !== 'time' || locator.assetId !== assetId || position < locator.start || position >= locator.end) continue
+      const span = locator.end - locator.start
+      if (span < shortest) { shortest = span; match = insight.id }
+    }
+  }
+  return match
+}

@@ -2,9 +2,9 @@
 
 Bilingual marketing and documentation site for two products:
 
-- **Vane Context**: a commercial multimodal context service. The website presents
+- **Vane Context**: a multimodal context service. The website presents
   illustrative results and accepts demo requests; it does not run live analysis.
-- **Vane Data**: the Apache-2.0 open source data engine. Installation, examples,
+- **Vane Data**: the multimodal data engine. Installation, examples,
   benchmarks, engineering articles, and release notes remain available.
 
 Built with React 19 and Docusaurus. A small Node server serves the generated site
@@ -36,7 +36,6 @@ npm run docs:manifest        # regenerate docs/manifest.json
 npm run docs:manifest:check  # verify docs/manifest.json is current
 npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
 npm run docs:llms:check      # verify generated LLM docs files are current
-npm run docs:context:check   # verify bilingual Context documentation artifacts
 npm run showcase:check       # verify media, locators, and result references
 npm test                     # unit and SQLite service tests
 ```
@@ -66,7 +65,6 @@ src/
   marketing.css       warm-paper marketing layouts and responsive media showcase
 
 docs/
-  context/             commercial integration guides (independent docs plugin)
   data/
     index.mdx          docs home and audience-based entry points
     quickstart/        product intro, installation, SQL and Python quickstarts
@@ -86,8 +84,6 @@ i18n/
   zh-CN/
     docusaurus-plugin-content-blog/
       YYYY-MM-DD-slug.mdx  Chinese blog post translations
-    docusaurus-plugin-content-docs-context/
-      current/         Chinese Context guides
     docusaurus-plugin-content-docs-data/
       current/         Chinese docs mirror using the same English slugs
 ```
@@ -104,8 +100,7 @@ Reduced motion and mobile viewing use manual media switching by default.
 - `/products/context` and `/products/data`: product-specific capabilities and actions.
 - `/solutions`: scenarios linked to the appropriate product.
 - `/demo`: durable request receipt, validation, and safe retries.
-- `/docs/context`: six bilingual commercial integration guides.
-- `/docs/data`: existing open source documentation.
+- `/docs/data`: Vane Data documentation.
 
 Marketing copy and showcase definitions live in `src/content/`. Media assets and
 source details live in `public/showcase/marketing/` ([media manifest](public/showcase/marketing/media-manifest.json)).

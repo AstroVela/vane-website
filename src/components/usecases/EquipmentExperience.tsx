@@ -37,15 +37,15 @@ export default function EquipmentExperience() {
   const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
   const [momentId, setMoment] = useState('change'), [sourceId, setSource] = useState('observation')
   const moment = moments.find(m => m.id === momentId)!
-  const observation: Evidence = {id: 'observation', title: l('Aligned observation record', '对齐后的观测记录'), meta: l(`June 15 · ${moment.time} UTC+08 · sample data`, `6 月 15 日 · ${moment.time} UTC+08 · 演示数据`), quote: l(`${moment.visual.en} ${moment.sound.en} Velocity RMS: ${moment.value} mm/s. ${moment.alarm.en}`, `${moment.visual['zh-CN']}${moment.sound['zh-CN']}速度振动有效值：${moment.value} mm/s。${moment.alarm['zh-CN']}`)}
+  const observation: Evidence = {id: 'observation', title: l('Time-aligned observations', '时间对齐的观测记录'), meta: l(`June 15 · ${moment.time} UTC+08 · sample data`, `6 月 15 日 · ${moment.time} UTC+08 · 演示数据`), quote: l(`${moment.visual.en} ${moment.sound.en} Velocity RMS: ${moment.value} mm/s. ${moment.alarm.en}`, `${moment.visual['zh-CN']}${moment.sound['zh-CN']}速度振动有效值：${moment.value} mm/s。${moment.alarm['zh-CN']}`)}
   const sources = [observation, workOrder, manual]
   return <div className="solution-demo case-experience" data-case="equipment-diagnosis">
-    <DemoHeader name="P-204 / CP-40"><Status>{t('Sample incident', '演示事件')}</Status></DemoHeader>
+    <DemoHeader name="P-204 / CP-40"><Status>{t('Example incident', '示例事件')}</Status></DemoHeader>
     <DemoTabs value={momentId} onChange={value => {setMoment(value); setSource('observation')}} label={t('Incident window', '异常时间窗')} options={moments.map(m => ({id: m.id, label: m.label[locale]}))}>
       <div className="equipment-observations">
-        <div className="equipment-scene"><span className="solution-label">{t('Equipment & inspection area', '设备与检查位置')}</span><PumpDrawing active={momentId !== 'before'} /><span className="solution-meta">{t('Illustration of the sample equipment', '示例设备示意图')}</span></div>
+        <div className="equipment-scene"><span className="solution-label">{t('Equipment and observation area', '设备与观测位置')}</span><PumpDrawing active={momentId !== 'before'} /><span className="solution-meta">{t('Illustration of the sample equipment', '示例设备示意图')}</span></div>
         <div className="equipment-readings" aria-live="polite"><span className="solution-time">{moment.time} <small>UTC+08</small></span>
-          <dl><div><dt>{t('Video observation', '画面观测')}</dt><dd>{moment.visual[locale]}</dd></div><div><dt>{t('Sound observation', '声音观测')}</dt><dd>{moment.sound[locale]}</dd></div><div><dt>{t('Velocity RMS', '速度振动有效值')}</dt><dd className="equipment-value">{moment.value} <span>mm/s</span></dd></div></dl>
+          <dl><div><dt>{t('Video observation', '画面观测')}</dt><dd>{moment.visual[locale]}</dd></div><div><dt>{t('Audio observation', '声音观测')}</dt><dd>{moment.sound[locale]}</dd></div><div><dt>{t('Velocity RMS', '速度振动有效值')}</dt><dd className="equipment-value">{moment.value} <span>mm/s</span></dd></div></dl>
         </div>
       </div>
       <div className="equipment-timeline">
@@ -60,10 +60,10 @@ export default function EquipmentExperience() {
           <path d={`M${moment.x} 1V190`} stroke="#637457" strokeWidth="1.5" strokeDasharray="3 4" />
         </svg><div className="equipment-track-times"><span>10:41:50</span><span>10:42:10</span><span>10:42:30</span></div></div>
       </div>
-      <div className="equipment-evidence"><div><span className="solution-label">{t('Follow the evidence', '核对依据')}</span>{sources.map(source => <SourceButton key={source.id} source={source} selected={sourceId === source.id} onClick={() => setSource(source.id)} />)}
-        <details className="solution-details"><summary>{t('Sources & timing', '来源与时间')}</summary><p>{t('Same sample asset: P-204. Sensor and alarm use UTC+08. Video 00:00 maps to 10:41:30; audio is corrected by +2 seconds. Both media clocks have ±1 second uncertainty. Values represent drive-end velocity RMS under the same load.', '同一演示设备 P-204。传感器和报警采用 UTC+08。视频 00:00 对应 10:41:30；音频校正 +2 秒，两者仍有 ±1 秒的不确定度。数值为相同负载下驱动端的速度振动有效值。')}</p></details>
+      <div className="equipment-evidence"><div><span className="solution-label">{t('Inspect the source records', '查看观测依据')}</span>{sources.map(source => <SourceButton key={source.id} source={source} selected={sourceId === source.id} onClick={() => setSource(source.id)} />)}
+        <details className="solution-details"><summary>{t('Sources and time alignment', '来源与时间对齐')}</summary><p>{t('Same sample asset: P-204. Sensor and alarm use UTC+08. Video 00:00 maps to 10:41:30; audio is corrected by +2 seconds. Both media clocks have ±1 second uncertainty. Values represent drive-end velocity RMS under the same load.', '同一演示设备 P-204。传感器和报警采用 UTC+08。视频 00:00 对应 10:41:30；音频校正 +2 秒，两者仍有 ±1 秒的不确定度。数值为相同负载下驱动端的速度振动有效值。')}</p></details>
       </div><SourceReader source={sources.find(s => s.id === sourceId)!} /></div>
-      <NextAction>{t('Request the alignment measurement record and appropriate specialist checks. A maintenance professional reviews the inspection plan before acting.', '补查本次对中测量记录与专业检查依据，由维修人员核验检查计划后执行。')}</NextAction>
+      <NextAction>{t('Obtain the alignment measurements and specialist checks, then have a maintenance professional review the inspection plan.', '补充对中测量记录和相关专业检查，由维修人员核验后执行检查计划。')}</NextAction>
     </DemoTabs>
   </div>
 }
@@ -71,7 +71,7 @@ export default function EquipmentExperience() {
 export function EquipmentHypotheses() {
   const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
   return <div className="solution-hypotheses">
-    <div className="hypothesis-header"><span>{t('Hypothesis', '待核实假设')}</span><span>{t('Available evidence', '已有依据')}</span><span>{t('What would help distinguish it', '还需要什么来区分')}</span></div>
+    <div className="hypothesis-header"><span>{t('Possible cause', '待核实原因')}</span><span>{t('Available evidence', '已有依据')}</span><span>{t('Further checks needed', '还需要的检查依据')}</span></div>
     <div><h4>{t('Coupling alignment', '联轴器对中问题')}</h4><p>{t('Coupling replacement preceded the change; the manual specifies alignment checks.', '更换联轴器后出现变化，手册要求进行对中检查。')}</p><p>{t('The actual alignment measurements, points and operating conditions.', '本次对中测量值、测点与实际工况。')}</p></div>
     <div><h4>{t('Bearing-related issue', '轴承相关问题')}</h4><p>{t('Unusual sound and vibration provide a lead, without identifying a cause.', '异响与振动提供线索，目前不能确认原因。')}</p><p>{t('Specialist spectrum data or an inspection record at the relevant measurement point.', '相应测点的专业频谱数据或检查记录。')}</p></div>
   </div>

@@ -3,7 +3,7 @@ import {PlayIcon, PauseIcon, SpeakerLoudIcon, SpeakerOffIcon, ZoomInIcon, Cross2
 import useBaseUrl from '@docusaurus/useBaseUrl'
 import {useSiteLocale} from '../../siteI18n'
 import type {ImageRegion, Locator, ShowcaseAsset} from '../../content/types'
-import {imageRegions, showcaseInsights} from '../../content/showcases'
+import {activeInsightAt, imageRegions, insightFor, showcaseInsights} from '../../content/showcases'
 import {formatTime} from './locator'
 import {useMediaPlayback} from './MediaPlaybackProvider'
 
@@ -39,6 +39,7 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
   const locale = useSiteLocale(), playback = useMediaPlayback(), id = useId()
   const mediaRef = useRef<HTMLMediaElement | null>(null)
   const pending = useRef<Request | undefined>(undefined)
+  const handledRequest = useRef<number | undefined>(undefined)
   const currentEpoch = useRef(epoch)
   const clipEnd = useRef<number | undefined>(undefined)
   const resumePosition = useRef(initialPosition)
@@ -109,10 +110,12 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
 
   useEffect(() => {
     const media = mediaRef.current
-    if (!request || request.locator.kind !== 'time' || !media) return
+    if (!request || request.locator.kind !== 'time' || !media || handledRequest.current === request.epoch) return
     loadSource()
     if (media.readyState < 1) return
     const requestedEpoch = request.epoch
+    handledRequest.current = requestedEpoch
+    setClipCompleted(false)
     media.currentTime = request.locator.start
     resumePosition.current = request.locator.start
     clipEnd.current = request.locator.end
@@ -141,6 +144,7 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
     const nextPosition = target?.kind === 'time' ? target.start : Math.min(resumePosition.current, Math.max(0, media.duration - .05))
     if (Math.abs(media.currentTime - nextPosition) > .025) media.currentTime = nextPosition
     setPosition(media.currentTime)
+    onProgress(media.currentTime)
     setReady(true)
   }
   const updateTime = () => {
@@ -162,7 +166,7 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
     void playback.play(id, 'manual')
   }
   const seek = (value: number) => {
-    onInteract(); clipEnd.current = undefined; setClipCompleted(false)
+    onInteract(); clipEnd.current = undefined; pending.current = undefined; handledRequest.current = request?.epoch; setClipCompleted(false)
     const media = mediaRef.current
     if (!media) return
     loadSource()
@@ -176,12 +180,22 @@ export default function MediaPreview({asset, selected, preview, request, epoch, 
     media.muted = !media.muted; setMuted(media.muted); onAudible(!media.muted && !media.paused)
   }
   const openImage = () => {onInteract(); playback.pauseAll(); setEnlarged(true); onModal(true)}
-  const currentCaption = showcaseInsights.find(i => i.locators.some(l => l.kind === 'time' && l.assetId === asset.id && position >= l.start && position < l.end))
+  const currentInsight = activeInsightAt(asset.id, position)
+  const currentCaption = currentInsight ? insightFor(currentInsight) : undefined
   const audioInsight = currentCaption?.sourceExcerpt ? currentCaption : selectedInsight?.sourceExcerpt ? selectedInsight : showcaseInsights.find(i => i.locators.some(l => l.assetId === asset.id) && i.sourceExcerpt)
   const loadingMedia = !failed && ((!ready && (loadEnabled || Boolean(request) || playing)) || buffering && playing)
   const shared = {preload: 'metadata' as const, ref: setMedia, onLoadedMetadata: onMetadata,
     onPlay: () => {setPlaying(true); setClipCompleted(false); onAudible(asset.kind === 'audio' || !mediaRef.current?.muted)},
     onPause: () => {setPlaying(false); onAudible(false); playback.stopped(id)}, onTimeUpdate: updateTime,
+    onSeeking: () => {
+      // Native seeking outside a requested clip takes ownership from the clip request.
+      const current = mediaRef.current?.currentTime ?? 0
+      if (clipEnd.current !== undefined && request?.locator.kind === 'time' && (current < request.locator.start || current >= clipEnd.current)) {
+        clipEnd.current = undefined; pending.current = undefined; handledRequest.current = request.epoch; setClipCompleted(false)
+      }
+      updateTime()
+    },
+    onSeeked: updateTime,
     onWaiting: () => setBuffering(true), onCanPlay: () => setBuffering(false),
     onError: () => setFailed(true), onEnded: () => {setPlaying(false); onAudible(false)}}
   return <div className={'media-preview media-' + asset.kind} data-modality={asset.kind}>

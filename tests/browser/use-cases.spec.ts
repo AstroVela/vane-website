@@ -16,9 +16,10 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await expect(page.locator('.solution-reuse-steps > li')).toHaveCount(3)
       await expect(page.locator('.solution-deliverables > li')).toHaveCount(3)
       await expect(page.locator('.solution-outcomes li')).toHaveCount(3)
-      for (const selector of ['.case-hero-copy .btn', '.nav-main-cta', '.solution-final-cta .btn']) {
+      for (const selector of ['.case-hero-copy .btn', '.solution-final-cta .btn']) {
         await expect(page.locator(selector)).toHaveAttribute('href', prefix + '/demo?source=solution&scenario=' + scenario.id)
       }
+      await expect(page.locator('.nav-contact')).toHaveAttribute('href', prefix + '/contact')
       await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', new RegExp('/solutions/' + scenario.id + '$'))
       await page.locator('.case-hero-copy a[href="#case-example"]').click()
       await expect(page).toHaveURL(/#case-example$/)
@@ -67,7 +68,7 @@ test('support preserves evidence boundaries when the customer adds information',
 
 test('mobile source references bring the selected evidence into view', async ({page}) => {
   await page.setViewportSize({width: 390, height: 844})
-  for (const [route, button] of [['personal-work', '当前事实'], ['customer-support', '政策 3.2 · 配送信息不一致']]) {
+  for (const [route, button] of [['personal-work', '当前项目事实'], ['customer-support', '政策 3.2 · 配送信息不一致']]) {
     await page.goto('/zh-CN/solutions/' + route)
     await page.getByRole('button', {name: button}).click()
     await expect(page.locator('.solution-source')).toBeInViewport({ratio: 1})
@@ -86,12 +87,12 @@ test('equipment observations stay aligned with the window and distinguish hypoth
   await expect(page.locator('.solution-source')).toContainText('10:42:22')
   await page.getByRole('button', {name: 'WO-204 · 联轴器更换工单'}).click()
   await expect(page.locator('.solution-source')).toContainText('没有本次对中测量附件')
-  await page.getByText('来源与时间', {exact: true}).click()
+  await page.getByText('来源与时间对齐', {exact: true}).click()
   await expect(page.locator('.solution-details')).toContainText('±1 秒')
   await page.getByRole('tab', {name: '异常前'}).click()
   await expect(page.locator('.equipment-readings')).toContainText('2.1')
   await expect(page.locator('.solution-source blockquote')).toContainText('无振动报警')
-  await expect(page.locator('.solution-hypotheses')).toContainText('待核实假设')
+  await expect(page.locator('.solution-hypotheses')).toContainText('待核实原因')
 })
 
 test('personal drafts keep the same facts across audiences and expose explicit preference sources', async ({page}) => {
@@ -101,25 +102,25 @@ test('personal drafts keep the same facts across audiences and expose explicit p
   await expect(page.locator('.solution-source blockquote')).toContainText('报表增强另列入二期')
   await page.getByRole('tab', {name: '内部更新'}).click()
   await expect(page.locator('.personal-draft')).toContainText('仍需接口方案确认')
-  await page.getByRole('button', {name: '为什么这样写？'}).click()
+  await page.getByRole('button', {name: '查看表达偏好依据'}).click()
   await expect(page.locator('.solution-source')).toContainText('6 月 2 日确认')
   await expect(page.locator('.solution-source blockquote')).toContainText('客户更新先说结论')
-  await expect(page.locator('.solution-semantic-note')).toContainText('只影响本次草稿')
+  await expect(page.locator('.solution-semantic-note')).toContainText('只修改本次草稿')
 })
 
 test('commerce changes the recommendation with physical dimensions and shows dated variant evidence', async ({page}) => {
   await page.goto('/zh-CN/solutions/commerce-sales')
-  await expect(page.locator('.commerce-recommendation')).toContainText('尺寸适配仍待核对')
+  await expect(page.locator('.commerce-recommendation')).toContainText('电脑尺寸待核对')
   await page.getByRole('button', {name: '31 × 22 × 1.8 cm', exact: true}).click()
   await expect(page.locator('.commerce-recommendation')).toContainText('A 轻 290 g')
   await page.getByRole('button', {name: '33 × 24 × 2 cm', exact: true}).click()
   await expect(page.locator('.commerce-recommendation')).toContainText('A 的电脑仓过小')
   await expect(page.locator('.commerce-criteria')).toContainText('无法容纳')
-  await page.getByRole('button', {name: '当前可售记录 · 中国区'}).click()
+  await page.getByRole('button', {name: '价格与可售状态 · 中国区'}).click()
   await expect(page.locator('.solution-source')).toContainText('09:00')
   await expect(page.locator('.solution-source')).toContainText('结算前')
   await page.getByRole('button', {name: '重置', exact: true}).click()
-  await expect(page.locator('.commerce-recommendation')).toContainText('尺寸适配仍待核对')
+  await expect(page.locator('.commerce-recommendation')).toContainText('电脑尺寸待核对')
 })
 
 test('marketing plays exact evidence on demand and separates campaign samples from original media', async ({page}) => {
@@ -134,14 +135,14 @@ test('marketing plays exact evidence on demand and separates campaign samples fr
   await expect(page.locator('audio')).toHaveJSProperty('paused', false)
   await page.getByRole('button', {name: '图片细节', exact: true}).click()
   await expect(page.locator('audio,video')).toHaveCount(0)
-  await page.getByRole('button', {name: '识别画面文字', exact: true}).click()
+  await page.getByRole('button', {name: '画面文字识别', exact: true}).click()
   await page.locator('.image-stage-button').click()
   await expect(page.locator('dialog.media-modal')).toBeVisible()
   await expect(page.locator('dialog .image-region')).toHaveCount(1)
   await page.keyboard.press('Escape')
-  await page.getByRole('tab', {name: '复盘与迭代'}).click()
-  await expect(page.locator('.campaign-learning-note')).toContainText('不能仅凭这些数据')
-  await page.getByText('统计范围与指标口径', {exact: true}).click()
+  await page.getByRole('tab', {name: '复盘与优化'}).click()
+  await expect(page.locator('.campaign-learning-note')).toContainText('对照测试，核查开场的影响')
+  await page.getByText('统计范围与指标定义', {exact: true}).click()
   await expect(page.locator('.solution-details')).toContainText('不是参考媒体的实际表现')
   await expect(page.locator('.campaign-metrics tbody tr')).toHaveCount(2)
 })
@@ -155,8 +156,8 @@ test('overview and Context explorer mount one updated scenario preview at a time
     await expect(explorer.locator('.case-experience')).toHaveAttribute('data-case', scenario.id)
     await expect(explorer.locator('.case-explorer-panel:visible .arrow-link')).toHaveAttribute('href', '/zh-CN/solutions/' + scenario.id)
   }
-  await page.getByRole('button', {name: '应用场景', exact: true}).click()
-  await expect(page.locator('#nav-use-cases a')).toHaveCount(7)
+  await page.getByRole('button', {name: '解决方案', exact: true}).click()
+  await expect(page.locator('#nav-use-cases a')).toHaveCount(9)
   await page.locator('#nav-use-cases').getByRole('link', {name: '会议智能', exact: true}).click()
   await expect(page.locator('.solution-demo')).toHaveAttribute('data-case', 'meeting-intelligence')
 })

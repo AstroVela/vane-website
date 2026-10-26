@@ -19,11 +19,30 @@
 .reveal-ready { opacity:0; transform:translateY(20px); transition:opacity 500ms ease,transform 500ms cubic-bezier(.16,1,.3,1); }
 .reveal-ready.is-revealed { opacity:1; transform:none; }
 .marketing-main { min-height:65vh; }
+/* Marketing headings share alignment; descriptions use language-appropriate line lengths.
+   Keep card copy, code samples and documentation body text in their own reading layouts. */
+.marketing-main,.benchmark-intro,.shead { --heading-copy-width:72ch; }
+.marketing-main:lang(zh),.benchmark-intro:lang(zh),.shead:lang(zh) { --heading-copy-width:44em; }
+.hero-title-line { display:block; text-wrap:balance; }
+.marketing-main :is(.h1,.h2),.benchmark-intro .h1,.shead .h2,.cta .h2 {
+  text-align:center; text-wrap:balance; margin-inline:auto;
+}
+.marketing-main p.lead,.marketing-main .section-heading p,
+.marketing-main .marketing-final-cta p,.marketing-main .case-audience,
+.benchmark-intro .lead,.shead .lead {
+  max-width:var(--heading-copy-width); margin-inline:auto; text-align:center; text-wrap:balance;
+}
+.marketing-main :is(.product-hero-grid,.data-hero-grid)>div:first-child,
+.marketing-main :is(.case-hero-copy,.training-hero-copy,.enterprise-hero-copy,.training-code-copy),
+.use-cases-hero,.blog-index-heading,.benchmark-intro { text-align:center; }
+.marketing-main :is(.product-hero-grid,.data-hero-grid,.case-hero-copy) .marketing-actions,
+.training-hero-actions,.enterprise-hero-actions,.enterprise-hero-meta,.case-index-links { justify-content:center; }
+
 .marketing-main :is(h1,h2,h3,p,li) { overflow-wrap:break-word; }
 .marketing-main .wrap,.site-nav .wrap,.site-footer .wrap { max-width:1440px; padding-inline:48px; }
-.marketing-main .h1 { font-size:clamp(46px,4.5vw,66px); line-height:1.08; letter-spacing:-.04em; }
-.marketing-main .h2 { font-size:clamp(34px,3vw,44px); line-height:1.16; letter-spacing:-.035em; }
-.marketing-main .h1:lang(zh) { font-size:clamp(42px,3.8vw,56px); line-height:1.18; letter-spacing:-.045em; }
+.marketing-main .h1 { font-size:clamp(46px,4.5vw,66px); line-height:1.08; letter-spacing:var(--heading-tracking); }
+.marketing-main .h2 { font-size:clamp(34px,3vw,44px); line-height:1.16; letter-spacing:var(--section-tracking); }
+.marketing-main .h1:lang(zh) { font-size:clamp(42px,3.8vw,56px); line-height:1.18; }
 .marketing-main .h2:lang(zh) { font-size:clamp(32px,2.9vw,42px); line-height:1.22; }
 .marketing-main h3 { font-size:22px; line-height:1.35; }
 .marketing-main p { font-size:17px; line-height:1.65; color:var(--ink-3); }
@@ -62,8 +81,8 @@
 .site-nav-dropdown a { display:flex; flex-direction:column; padding:16px; gap:5px; min-height:44px; border-radius:6px; }
 .site-nav-dropdown a:hover { background:var(--paper-3); text-decoration:none; }
 .site-nav-dropdown small { font-size:14px; color:var(--ink-3); line-height:1.5; }
-.site-nav .nav-locale { display:inline-flex; min-width:44px; min-height:44px; padding:10px; font-size:14px; border:0; background:none; }
-.site-nav .nav-right { margin-left:auto; gap:14px; }
+.site-nav .nav-locale { display:inline-flex; min-width:44px; height:34px; padding:0 11px; font-size:12.5px; border:1.5px solid var(--line); background:var(--paper-2); }
+.site-nav .nav-right { margin-left:auto; gap:10px; }
 .site-nav .nav-main-cta { min-height:44px; }
 .site-menu-toggle { display:none; width:44px; height:44px; border:0; background:transparent; }
 .site-mobile-backdrop { position:fixed; inset:0; z-index:110; margin:0; padding:0; width:100vw; height:100dvh; max-width:none; max-height:none; border:0; background:rgba(21,23,30,.28); color:var(--ink); }
@@ -153,9 +172,9 @@
 .modal-image img { display:block; height:min(76dvh,820px); max-width:100%; object-fit:contain; width:auto; }
 .marketing-section { padding:88px 0; }
 .capability-section { border-top:1px solid var(--line-2); padding-top:76px; }
-.section-heading { margin-bottom:42px; max-width:800px; }
+.section-heading { margin:0 auto 42px; max-width:1040px; text-align:center; }
 .section-heading h1,.section-heading h2 { margin:0; }
-.section-heading p { margin:18px 0 0; max-width:65ch; }
+.section-heading p { margin:18px auto 0; }
 .capability-rows { display:flex; flex-direction:column; gap:24px; }
 .capability-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:64px; padding:24px 0; align-items:center; }
 .capability-row h3 { margin:0 0 12px; }
@@ -218,10 +237,10 @@
 .proof-workloads > span { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--ink-3); }
 .proof-workloads strong { color:var(--ink); font-size:22px; }
 .marketing-final-cta { padding:88px 0; background:var(--paper-3); }
-.marketing-final-cta .wrap { display:flex; justify-content:space-between; align-items:center; gap:40px; }
-.marketing-final-cta .marketing-actions { margin:0; flex:none; }
-.marketing-final-cta .h2 { max-width:650px; }
-.marketing-final-cta .h2 { margin:0; }
+.marketing-final-cta .wrap { display:flex; flex-direction:column; align-items:center; gap:28px; text-align:center; }
+.marketing-final-cta .marketing-actions { margin:0; flex:none; justify-content:center; }
+.marketing-main .marketing-final-cta .h2 { max-width:1100px; margin:0 auto; }
+.marketing-main .marketing-final-cta p { margin:18px auto 0; }
 .site-footer { padding:72px 0 28px; background:var(--paper); border-top:1px solid var(--line-2); }
 .site-footer-grid { display:grid; grid-template-columns:1.3fr repeat(4,minmax(0,1fr)); gap:24px; }
 .site-footer h4 { font-size:15px; font-weight:600; margin:0 0 14px; }
@@ -232,7 +251,7 @@
 .footer-license { display:block; color:var(--ink-3); font-size:13px; line-height:1.6; }
 .site-footer-bottom { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; margin-top:44px; padding-top:24px; border-top:1px solid var(--line-2); color:var(--ink-3); font-size:14px; }
 .marketing-product-hero { padding:52px 0 60px; }
-.product-hero-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.46fr); gap:40px; align-items:center; }
+.product-hero-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:40px; align-items:center; }
 .context-product-hero .h1 { font-size:clamp(42px,3.65vw,54px); }
 .context-product-hero .h1:lang(zh) { font-size:clamp(40px,3.4vw,50px); }
 .marketing-product-hero h1 { margin:18px 0 22px; }
@@ -262,7 +281,7 @@
 .marketing-faq details { border-bottom:1px solid var(--line-2); padding:20px 0; }
 .marketing-faq summary { cursor:pointer; min-height:44px; font-size:18px; line-height:1.6; }
 .marketing-faq p { margin-top:10px; }
-.data-hero-grid { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:72px; align-items:center; }
+.data-hero-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:72px; align-items:center; }
 .data-product-hero .h1 { font-size:clamp(42px,3.7vw,54px); }
 .data-example { padding:28px; background:var(--paper-3); border-radius:8px; }
 .data-example .marketing-tabs { margin-bottom:18px; }
@@ -385,7 +404,8 @@
 }
 @media(max-width:1199px) {
   .marketing-main .wrap,.site-nav .wrap,.site-footer .wrap { padding-inline:32px; }
-  .hero-experience.with-hero-copy,.product-hero-grid { grid-template-columns:minmax(0,.9fr) minmax(0,1.35fr); gap:30px; }
+  .hero-experience.with-hero-copy { grid-template-columns:minmax(0,.9fr) minmax(0,1.35fr); gap:30px; }
+  .product-hero-grid { gap:30px; }
   .marketing-main .h1 { font-size:48px; }
   .marketing-main .h1:lang(zh) { font-size:42px; }
   .hero-copy .hero-subtitle { min-height:90px; }
@@ -411,7 +431,6 @@
   .demo-evidence { gap:24px; padding:24px; }
   .demo-evidence-image { width:85px; }
   .integration-layout { gap:40px; }
-  .marketing-final-cta .wrap { align-items:flex-start; flex-direction:column; }
   .audio-stage { padding:20px 20px 6px; }
   .audio-transcript { min-height:110px; }
   .waveform { height:64px; margin-top:12px; }
@@ -466,7 +485,7 @@
 }
 @media(max-width:767px) {
   .marketing-main .wrap,.site-nav .wrap,.site-footer .wrap { padding-inline:22px; }
-  .marketing-main .h1,.marketing-main .h1:lang(zh) { font-size:clamp(33px,8.7vw,44px); line-height:1.16; letter-spacing:-.04em; }
+  .marketing-main .h1,.marketing-main .h1:lang(zh) { font-size:clamp(33px,8.7vw,44px); line-height:1.16; letter-spacing:var(--heading-tracking); }
   .marketing-main .h2 { font-size:32px; line-height:1.2; }
   .marketing-main p,.marketing-main .lead { font-size:16px; }
   .marketing-main h3 { font-size:22px; }
@@ -700,3 +719,7 @@
   .reuse-source { grid-template-columns:1fr; }
   .reuse-source img { max-width:120px; }
 }
+
+.site-nav .nav-discord svg,.site-nav .ghp svg { width:15px; height:15px; }
+.site-nav #nav-use-cases { max-height:calc(100dvh - 88px); overflow:auto; }
+.site-nav #nav-use-cases a { padding-block:11px; }

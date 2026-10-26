@@ -1,6 +1,5 @@
 import {useSidebarBreadcrumbs} from '@docusaurus/plugin-content-docs/client'
 import { PRODUCTS } from '../../docs/products'
-import {useLocation} from '@docusaurus/router'
 
 type BreadcrumbItem = {
   label: string
@@ -8,7 +7,7 @@ type BreadcrumbItem = {
 
 export default function DocBreadcrumbs() {
   const breadcrumbs = useSidebarBreadcrumbs() as BreadcrumbItem[] | null
-  const product = useLocation().pathname.includes('/docs/context') ? PRODUCTS.context : PRODUCTS.data
+  const product = PRODUCTS.data
   const group = breadcrumbs && breadcrumbs.length > 1 ? breadcrumbs[0]?.label : undefined
 
   return (

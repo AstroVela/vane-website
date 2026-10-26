@@ -4,6 +4,7 @@
 .workshop-heading { text-align:center; max-width:960px; margin:auto; padding:0 24px; }
 .marketing-main .workshop-heading .h1 { font-size:clamp(40px,4.5vw,66px); line-height:1.13; margin:0 auto 22px; max-width:920px; text-wrap:balance; }
 .workshop-heading h1 span { color:var(--accent); }
+.workshop-heading .hero-title-phrase { display:inline-block; white-space:nowrap; color:inherit; }
 .marketing-main .workshop-heading .lead { max-width:710px; margin:auto; font-size:18px; text-wrap:balance; }
 .workshop-heading .marketing-actions { justify-content:center; margin-top:24px; }
 .context-conveyor { position:relative; max-width:1510px; margin:0 auto; }
@@ -14,9 +15,6 @@
 
 .workshop-support { text-align:center; padding:10px 24px 20px; }
 .marketing-main .workshop-support p { margin:0; font-size:13px; }
-.centered-section-heading { max-width:820px; margin:0 auto 42px; text-align:center; }
-.centered-section-heading .h2 { text-wrap:balance; margin:0 0 16px; }
-.centered-section-heading p { max-width:650px; margin:auto; text-wrap:balance; }
 .understanding-section { padding-top:90px; }
 .understanding-explorer { max-width:1180px; margin:auto; }
 .understanding-types { display:flex; width:fit-content; max-width:100%; margin:0 auto 28px; padding:5px; gap:5px; background:var(--paper-3); border:1px solid var(--line-2); border-radius:10px; }
@@ -136,7 +134,7 @@
 }
 @media(max-width:767px){
  .workshop-hero{padding-top:20px}.marketing-main .workshop-heading .h1{font-size:39px;line-height:1.18;max-width:570px}.marketing-main .workshop-heading .lead{font-size:15px;max-width:440px}.workshop-heading .marketing-actions{gap:16px}.context-conveyor{margin:18px -14px 0}.workshop-support{padding-top:24px}
- .understanding-section{padding-top:60px}.centered-section-heading{margin-bottom:28px}.understanding-types{gap:0;padding:4px;width:100%;justify-content:center;margin-bottom:20px}.understanding-types button{flex:1;padding:10px 8px;gap:6px;font-size:13px}.understanding-types svg{width:15px;height:15px}
+ .understanding-section{padding-top:60px}.understanding-types{gap:0;padding:4px;width:100%;justify-content:center;margin-bottom:20px}.understanding-types button{flex:1;padding:10px 8px;gap:6px;font-size:13px}.understanding-types svg{width:15px;height:15px}
  .understanding-frame{grid-template-columns:1fr;border-radius:10px;min-height:0}.understanding-original{padding:18px 22px 20px}.understanding-source{--media-height:330px}.understanding-label{margin-bottom:20px}.understanding-source .media-controls{max-width:340px}.understanding-source .audio-stage{padding:12px 0 0}.understanding-source .audio-transcript{min-height:130px}.understanding-source .waveform{height:65px}
  .understanding-modes{justify-content:space-between;gap:15px;padding:0 23px;border-top:1px solid var(--line)}.understanding-modes button{font-size:14px;padding:17px 0}.understanding-result-body{height:auto;max-height:none;padding:23px;overflow:visible}.understanding-finding{padding:13px 10px}.understanding-finding strong{font-size:17px}.understanding-summary{font-size:15px}.understanding-hint{padding:16px 23px}.understanding-disclosure{text-align:left!important}.answer-sources>div{align-items:flex-start}.understanding-fields dd{font-size:15px;flex-wrap:wrap;gap:8px}.pdf-source{max-width:300px}.pdf-controls{gap:10px}.source-disclosure{font-size:10px}
  .home-entry-grid{grid-template-columns:1fr}.home-entry{padding:26px}.home-entry-context{grid-row:auto}.entry-source-composition{height:230px}.entry-source-composition img{height:175px}.entry-methods{font-size:20px}

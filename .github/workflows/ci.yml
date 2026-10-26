@@ -35,7 +35,6 @@ jobs:
           npm run docs:lint
           npm run docs:manifest:check
           npm run docs:llms:check
-          npm run docs:context:check
       - name: Basic content checks
         run: |
           npm run home:content:check

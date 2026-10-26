@@ -1,42 +1,31 @@
-import { useEffect, useState } from 'react'
-
-/* Live GitHub star count for an `owner/repo`, fetched once per session and
-   cached in sessionStorage. Returns a formatted string ("4.2k") or null while
-   loading and on any failure — including when the repo is private, where the
-   public API responds 404. Callers should render nothing when it's null. */
-type GitHubRepoResponse = {
-  stargazers_count?: unknown
-}
+import {useEffect, useState} from 'react'
 
 function format(n: number) {
-  if (n < 1000) return String(n)
-  return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+  return n < 1000 ? String(n) : (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
 }
 
 export function useGitHubStars(repo: string) {
-  const cacheKey = `gh-stars:${repo}`
-  const [stars, setStars] = useState(() => {
-    if (typeof sessionStorage === 'undefined') return null
-    const cached = sessionStorage.getItem(cacheKey)
-    return cached !== null ? format(Number(cached)) : null
-  })
-
+  const [stars, setStars] = useState<string | null>(null)
   useEffect(() => {
-    if (typeof sessionStorage === 'undefined') return undefined
-    if (sessionStorage.getItem(cacheKey) !== null) return undefined
-    let cancelled = false
-    fetch(`https://api.github.com/repos/${repo}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data: GitHubRepoResponse) => {
-        if (cancelled || typeof data.stargazers_count !== 'number') return
-        sessionStorage.setItem(cacheKey, String(data.stargazers_count))
-        setStars(format(data.stargazers_count))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [repo, cacheKey])
-
+    const key = `gh-stars:${repo}`
+    try {
+      const cached = sessionStorage.getItem(key)
+      if (cached !== null && Number.isFinite(Number(cached)) && Number(cached) >= 0) {
+        // Read browser-only cached state after hydration, without a synchronous effect render.
+        const frame = requestAnimationFrame(() => setStars(format(Number(cached))))
+        return () => cancelAnimationFrame(frame)
+      }
+    } catch { /* The link works when browser storage is unavailable. */ }
+    const controller = new AbortController()
+    fetch(`https://api.github.com/repos/${repo}`, {signal: controller.signal})
+      .then(response => response.ok ? response.json() : Promise.reject(response.status))
+      .then((data: {stargazers_count?: number}) => {
+        const count = data.stargazers_count
+        if (controller.signal.aborted || typeof count !== 'number' || !Number.isFinite(count) || count < 0) return
+        setStars(format(count))
+        try { sessionStorage.setItem(key, String(count)) } catch { /* Optional cache. */ }
+      }).catch(() => {})
+    return () => controller.abort()
+  }, [repo])
   return stars
 }

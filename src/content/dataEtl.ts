@@ -8,13 +8,13 @@ export type EtlExample = {
 export const etlStages: {id: EtlStage; label: Localized}[] = [
   {id: 'native', label: l('Native types', '原生类型')},
   {id: 'udf', label: l('Custom functions', '自定义函数')},
-  {id: 'understand', label: l('Structured understanding', '结构化理解')},
+  {id: 'understand', label: l('Structured extraction', '结构化信息提取')},
   {id: 'embed', label: l('Embeddings', '向量化')},
   {id: 'query', label: l('Search & joins', '检索与关联')},
 ]
 export const etlExamples: Record<EtlStage, EtlExample[]> = {
   native: [
-    {id: 'file', label: l('File', 'File'), title: l('A reference, ready for the next operation.', '文件引用，直接进入数据流。'),
+    {id: 'file', label: l('File', 'File'), title: l('Filter files before reading their content.', '先筛选文件，再读取内容'),
       code: {sql: `SELECT file AS source_file
 FROM list_files($file_glob)
 WHERE file_path(file) LIKE '%.pdf'
@@ -26,7 +26,7 @@ WHERE file_path(file) LIKE '%.pdf'
 )`},
       rows: [['source_file', 'FILE'], ['source_url', 'equipment/A-017/manual.pdf'], ['size', '2.4 MB']],
       note: l('Filter object metadata first. Read the candidate files when a later operation needs their content.', '先根据对象元数据筛选，需要内容时再读取候选文件。')},
-    {id: 'image', label: l('ImageFile', 'ImageFile'), title: l('Inspect dimensions before decoding pixels.', '先看尺寸，再解码像素。'),
+    {id: 'image', label: l('ImageFile', 'ImageFile'), title: l('Filter by image dimensions before decoding.', '按尺寸筛选，再解码图片'),
       code: {sql: `WITH images AS (
   SELECT image_file(file) AS image FROM list_files($image_glob)
 ), metadata AS (
@@ -44,7 +44,7 @@ FROM metadata WHERE meta.width >= 1920 AND meta.height >= 1080;`, python: `image
 )`},
       rows: [['image', 'IMAGEFILE'], ['meta.width × meta.height', '1920 × 1080'], ['pixels', "IMAGE('RGB')"]],
       note: l('Bounded header reads select suitable images before full pixel decoding.', '先读取图像头部信息，合格图片才进入像素解码。')},
-    {id: 'audio', label: l('AudioFile', 'AudioFile'), title: l('From an audio reference to a typed waveform.', '从录音引用到有类型的波形。'),
+    {id: 'audio', label: l('AudioFile', 'AudioFile'), title: l('Prepare audio for downstream models.', '筛选音频，生成模型需要的波形'),
       code: {sql: `WITH audio AS (
   SELECT audio_file(file) AS audio FROM list_files($audio_glob)
 ), metadata AS (
@@ -61,7 +61,7 @@ WHERE meta.frames/meta.sample_rate <= 3600 AND meta.sample_rate >= 8000;`, pytho
 )`},
       rows: [['audio', 'AUDIOFILE'], ['duration / sample_rate', '12 s / 48,000 Hz'], ['waveform', 'TENSOR(DOUBLE, [192000, 1])']],
       note: l('Filter duration and sample rate, then produce a 16 kHz tensor for downstream processing.', '按时长与采样率筛选，再生成 16 kHz Tensor 供后续处理。')},
-    {id: 'video', label: l('VideoFile', 'VideoFile'), title: l('Read the event window. Keep its location.', '读取事件窗口，保留时间位置。'),
+    {id: 'video', label: l('VideoFile', 'VideoFile'), title: l('Extract frames from the relevant time window.', '按时间区间抽帧，保留时间戳'),
       code: {sql: `WITH videos AS (
   SELECT video_file(file) AS video FROM list_files($video_glob)
 ), metadata AS (
@@ -83,7 +83,7 @@ FROM metadata WHERE meta.height >= 1080;`, python: `frames = (
       note: l('Sample the relevant window at 640 × 360, retaining frame times without decoding the full video.', '在相关时间窗内按 640 × 360 采样，保留原视频引用与帧时间。')},
   ],
   udf: [
-    {id: 'units', label: l('Unit conversion', '单位换算'), title: l('Your business rules, callable from SQL.', '业务规则，直接从 SQL 调用。'),
+    {id: 'units', label: l('Unit conversion', '单位换算'), title: l('Call your Python business logic from SQL.', 'Python 业务逻辑，可从 SQL 调用'),
       code: {python: `import re
 UNITS = {"mm/s": 1, "m/s": 1000, "in/s": 25.4, "um/s": 0.001}
 
@@ -94,7 +94,7 @@ def vibration_mm_s(text: str) -> float | None:
     return round(float(m[1]) * UNITS[m[2]], 3) if m else None`},
       rows: [['measurement_text', '0.5 in/s'], ['vibration_mm_s', '12.7'], ['type', 'DOUBLE']],
       note: l('Use @vane.func for deterministic transforms. The numeric result stays available to later SQL.', '用 @vane.func 封装确定性的转换，数值结果继续参与 SQL 计算。')},
-    {id: 'speech', label: l('Speech recognition', '语音转写'), title: l('Load a model once. Reuse it across recordings.', '加载一次模型，持续处理录音。'),
+    {id: 'speech', label: l('Speech recognition', '语音转写'), title: l('Reuse models across calls in a UDF instance.', '在 UDF 实例内复用模型'),
       code: {python: `import json
 from vane import AudioFile
 from faster_whisper import WhisperModel
@@ -115,7 +115,7 @@ class SpeechRecognizer:
       note: l('@vane.cls keeps a model in each instance. Transcript segments retain their source time windows.', '@vane.cls 在实例内复用模型，转写片段保留原始时间窗口。')},
   ],
   understand: [
-    {id: 'document', label: l('Equipment document', '设备文档'), title: l('Model output becomes a native STRUCT.', '模型理解，成为原生 STRUCT。'),
+    {id: 'document', label: l('Equipment document', '设备文档'), title: l('Turn model output into a native STRUCT.', '将模型输出转为原生 STRUCT'),
       code: {sql: `SELECT factory_id, asset_id, permission_scope, quality_status,
        source_url, evidence_locator,
        ai_prompt($doc_instruction, source_file,
@@ -132,7 +132,7 @@ FROM prepared_docs;`, python: `doc_observations = prepared_docs.select(
 )`},
       rows: [['asset_id', 'A-017'], ['observation.measurement_text', '0.5 in/s'], ['observation.failure_mode', 'Bearing wear indicators'], ['source', 'manual.pdf / p. 3']],
       note: l('A fixed JSON Schema determines the STRUCT fields. Keep source positions from the parser.', '固定 JSON Schema 约束输出字段，来源位置由解析阶段保留。')},
-    {id: 'recording', label: l('Inspection recording', '巡检录音'), title: l('Different sources. The same typed observations.', '不同来源，同一套观测字段。'),
+    {id: 'recording', label: l('Inspection recording', '巡检录音'), title: l('Extract a consistent schema from different sources.', '将不同来源提取为统一字段'),
       code: {sql: `SELECT factory_id, asset_id, permission_scope, quality_status,
        source_url, evidence_locator,
        ai_prompt(concat($audio_instruction, source_text),
@@ -151,7 +151,7 @@ FROM inspection_segments;`, python: `audio_observations = inspection_segments.se
       rows: [['asset_id', 'A-017'], ['observation.severity', 'P2'], ['observation.recommended_action', 'Inspect the bearing and fasteners'], ['source', 'inspection.wav / 4.2–8.6 s']],
       note: l('Merge document and transcript observations with UNION ALL using the same schema.', '文档与转写使用相同输出 Schema，通过 UNION ALL 合并观测。')},
   ],
-  embed: [{id: 'embedding', label: l('Normalize & embed', '归一化与向量化'), title: l('Understanding stays queryable.', '理解结果，继续参与计算。'),
+  embed: [{id: 'embedding', label: l('Normalize & embed', '归一化与向量化'), title: l('Query and embed your analysis results.', '分析结果，可查询、可向量化'),
     code: {sql: `WITH normalized AS (
   SELECT factory_id, asset_id, permission_scope, quality_status,
          source_url, evidence_locator, observation.* EXCLUDE (event_time),
@@ -186,7 +186,7 @@ embedded = valid.select(
 )`},
     rows: [['asset_id / severity', 'A-017 / P2'], ['vibration_mm_s', '12.7'], ['embedding', 'FLOAT[1024]'], ['source_url + evidence_locator', 'inspection.wav / 4.2–8.6 s']],
     note: l('Expand structured output, apply a Python rule and create a typed vector in the same data flow.', '展开结构化输出、应用 Python 规则、生成有类型的向量，都在同一份数据中完成。')}],
-  query: [{id: 'join', label: l('Search & join', '检索与关联'), title: l('Put relevant evidence back into the business.', '将相关依据，放回业务对象中。'),
+  query: [{id: 'join', label: l('Search & join', '检索与关联'), title: l('Join retrieved evidence with business data.', '将检索结果关联到业务数据'),
     code: {sql: `WITH events AS (
   SELECT * FROM lance_hybrid_search(
     'lance_ns.main.asset_observations',

@@ -660,8 +660,8 @@ test('shared code windows localize copy controls for Chinese pages', () => {
 })
 
 test('shared navigation localizes visible short labels for Chinese pages', () => {
-  assert.match(navSource, /t\('Request Demo', '预约演示'\)/)
-  assert.match(navSource, /t\('Use cases', '应用场景'\)/)
+  assert.match(navSource, /t\('Contact us', '联系我们'\)/)
+  assert.match(navSource, /t\('Solutions', '解决方案'\)/)
 })
 
 test('docs paginator maps generated metadata titles back to localized docs titles', () => {

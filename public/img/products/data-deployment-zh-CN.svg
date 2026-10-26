@@ -113,7 +113,7 @@
     <path d="M84 588 V611 C84 619 122 619 122 611 V588" />
     <path d="M84 599 C84 607 122 607 122 599" />
   </g>
-  <text x="151" y="606" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="22" font-weight="500">数据源与结果存储</text>
+  <text x="151" y="606" fill="#20251F" font-family="Noto Sans SC, sans-serif" font-size="22" font-weight="500">输入与结果存储</text>
   <g fill="#65705E" font-family="Noto Sans SC, sans-serif" font-size="18">
     <text x="437" y="591">本地：可使用本机路径</text>
     <text x="437" y="619">分布式：数据 / 模型 / 依赖 / 输出均需所有 Worker 可访问</text>

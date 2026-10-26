@@ -113,7 +113,7 @@
     <path d="M84 588 V611 C84 619 122 619 122 611 V588" />
     <path d="M84 599 C84 607 122 607 122 599" />
   </g>
-  <text x="151" y="606" fill="#20251F" font-family="Arial, Noto Sans SC, sans-serif" font-size="17" font-weight="500">Inputs &amp; result storage</text>
+  <text x="151" y="606" fill="#20251F" font-family="Arial, Noto Sans SC, sans-serif" font-size="17" font-weight="500">Inputs and output storage</text>
   <g fill="#65705E" font-family="Arial, Noto Sans SC, sans-serif" font-size="18">
     <text x="437" y="591" font-size="22.0">Local: local paths are available.</text>
     <text x="437" y="619" font-size="17">Distributed: all workers need access to data, models, dependencies and outputs.</text>

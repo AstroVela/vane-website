@@ -44,3 +44,23 @@ test('rotation is suspended by focus, modal, audible media and hidden documents'
   }
   assert.equal(heroReducer(ready, {type: 'rotate'}).activeMedia, 'image')
 })
+
+const {activeInsightAt} = load('../src/content/showcases.ts')
+test('overlapping scene and action references select only the narrowest current evidence', () => {
+  assert.equal(activeInsightAt('comp_001', 0), 'camping')
+  assert.equal(activeInsightAt('comp_001', 3), 'ingredients')
+  assert.equal(activeInsightAt('comp_001', 4), 'camping')
+  assert.equal(activeInsightAt('comp_001', 5.5), 'blending')
+  assert.equal(activeInsightAt('comp_001', 7), undefined)
+  assert.equal(activeInsightAt('comp_001', 3, ['blending']), undefined)
+})
+test('playback updates selection without issuing another seek or restarting the selected clip', () => {
+  const clicked = heroReducer(initialHeroState(), {type:'select', media:'video', insight:'camping'})
+  const playing = heroReducer(clicked, {type:'progress', media:'video', insight:'ingredients'})
+  assert.equal(playing.selectedInsight.video, 'ingredients')
+  assert.equal(playing.requestedInsight, 'camping')
+  assert.equal(playing.selectionEpoch, clicked.selectionEpoch)
+  assert.equal(heroReducer(playing, {type:'progress', media:'video', insight:'ingredients'}), playing)
+  assert.equal(heroReducer(playing, {type:'progress', media:'audio', insight:'portable'}), playing)
+  assert.equal(heroReducer(playing, {type:'progress', media:'video'}).selectedInsight.video, undefined)
+})

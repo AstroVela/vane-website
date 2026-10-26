@@ -11,7 +11,6 @@ export default {
     }
     if (url.pathname === '/api/demo-requests') return handleDemoRequest(request,env,ctx)
     if (url.pathname.startsWith('/api/')) return json({error:'not_found'},404)
-    if (/^\/(?:zh-CN\/)?solutions\/enterprise-agent\/?$/.test(url.pathname)) return Response.redirect(url.origin+(url.pathname.startsWith('/zh-CN')?'/zh-CN':'')+'/products/context',301)
     return env.ASSETS.fetch(request)
   }
 }

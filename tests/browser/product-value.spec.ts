@@ -3,7 +3,7 @@ import {test, expect} from '@playwright/test'
 test.beforeEach(async ({page}) => {await page.emulateMedia({reducedMotion: 'reduce'})})
 
 test('equipment example connects native types, UDFs, structured output and business queries in both languages', async ({page}) => {
-  for (const [prefix, udf, understanding, embeddings, query] of [['', 'Custom functions', 'Structured understanding', 'Embeddings', 'Search & joins'], ['/zh-CN', '自定义函数', '结构化理解', '向量化', '检索与关联']]) {
+  for (const [prefix, udf, understanding, embeddings, query] of [['', 'Custom functions', 'Structured extraction', 'Embeddings', 'Search & joins'], ['/zh-CN', '自定义函数', '结构化信息提取', '向量化', '检索与关联']]) {
     await page.goto(prefix + '/products/data')
     const example = page.locator('.etl-explorer')
     for (const name of ['File','ImageFile','AudioFile','VideoFile']) {

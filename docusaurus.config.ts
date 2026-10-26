@@ -46,17 +46,6 @@ const config = {
       },
     ],
     [
-      '@docusaurus/plugin-content-docs',
-      {
-        id: 'context',
-        path: 'docs/context',
-        routeBasePath: 'docs/context',
-        sidebarPath: require.resolve('./sidebars.context.ts'),
-        showLastUpdateAuthor: false,
-        showLastUpdateTime: false,
-      },
-    ],
-    [
       '@docusaurus/plugin-content-blog',
       {
         path: 'blog',
@@ -64,6 +53,7 @@ const config = {
         blogTitle: 'Vane Blog',
         blogDescription: 'Engineering notes, release deep dives, and field reports from the Vane team.',
         blogSidebarCount: 0,
+        blogListComponent: '@site/src/components/BlogList.tsx',
         showLastUpdateAuthor: false,
         showLastUpdateTime: false,
       },
@@ -87,7 +77,7 @@ const config = {
       },
     ],
     require.resolve('./src/plugins/vaneRoutes.ts'),
-    ['@docusaurus/plugin-sitemap', {ignorePatterns:['/solutions/enterprise-agent','/zh-CN/solutions/enterprise-agent','/docs/agent','/docs/rl','/zh-CN/docs/agent','/zh-CN/docs/rl']}],
+    ['@docusaurus/plugin-sitemap', {ignorePatterns:['/docs/agent','/docs/rl','/zh-CN/docs/agent','/zh-CN/docs/rl']}],
   ],
   themes: ['@docusaurus/theme-classic'],
   themeConfig: {

@@ -5,7 +5,7 @@ test.beforeEach(async ({page}) => {await page.emulateMedia({reducedMotion: 'redu
 test('Context architecture exposes the product boundary and the lifecycle keeps update distinct from reuse', async ({page}) => {
   await page.goto('/zh-CN/products/context')
   await expect(page.locator('.context-architecture > img')).toBeVisible()
-  await expect(page.locator('.diagram-summary')).toContainText('新理解回到数据空间')
+  await expect(page.locator('.diagram-summary')).toContainText('分析结果沉淀为知识')
   const cycle = page.locator('.knowledge-cycle')
   await cycle.getByRole('tab', {name: '后续相关任务', exact: true}).click()
   await expect(cycle).toHaveAttribute('data-state', 'reuse')
@@ -13,22 +13,22 @@ test('Context architecture exposes the product boundary and the lifecycle keeps 
   await cycle.getByRole('tab', {name: '来源更新后', exact: true}).click()
   await expect(cycle.locator('.knowledge-online')).toContainText('更新变化的来源')
   const data = page.locator('.context-data-experience')
-  await data.getByRole('tab', {name: '业务语义', exact: true}).click()
+  await data.getByRole('tab', {name: '语义层', exact: true}).click()
   await expect(data.locator('.connected-semantic')).toHaveClass(/selected/)
   await expect(data.locator('.connected-semantic')).toContainText('转化数 / 点击数')
 })
 
-test('MCP configuration, Skill and call details remain inspectable without a live service request', async ({page}) => {
+test('one MCP connection exposes optional configuration and on-demand guidance', async ({page}) => {
   await page.goto('/products/context#integration')
   const integration = page.locator('.agent-integration')
+  await expect(integration.locator('.integration-steps > li')).toHaveCount(3)
+  await integration.locator('.integration-config summary').click()
   const config = JSON.parse((await integration.locator('.agent-connection pre').textContent())!)
   expect(config.mcpServers.vanecontext.url).toBe('<MCP_ENDPOINT_URL>')
-  await integration.getByRole('tab', {name: 'Load Skill', exact: true}).click()
-  await expect(integration.locator('.agent-connection pre')).toContainText('prepare_context')
-  await integration.locator('.agent-call-story details').first().locator('summary').click()
-  const call = JSON.parse((await integration.locator('.agent-call-story pre').first().textContent())!)
-  expect(call.input.request_key).toBe('camping-script-01')
-  expect(call.output.task_id).toBeTruthy()
+  await expect(integration).toContainText('list_context_skills')
+  await expect(integration).toContainText('read_context_skill')
+  await expect(integration.getByRole('tab')).toHaveCount(0)
+  await expect(integration).not.toContainText('Install the Skill')
 })
 
 test('the Data architecture is readable page content; execution and deployments are visible without controls', async ({page}) => {
@@ -41,12 +41,13 @@ test('the Data architecture is readable page content; execution and deployments 
   const mechanism = page.locator('.data-execution')
   await expect(mechanism.locator('img')).toBeVisible()
   await expect(mechanism.getByRole('tab')).toHaveCount(0)
-  await expect(mechanism).toContainText('控制在途数据')
+  await expect(mechanism).toContainText('背压与容量控制')
   const runners = page.locator('.data-runners')
   await expect(runners.getByRole('tab')).toHaveCount(0)
   await expect(runners.locator('.runner-configurations .term').nth(0)).toContainText('runner="local"')
   await expect(runners.locator('.runner-configurations .term').nth(1)).toContainText('con.sql(pipeline_sql)')
-  await expect(runners.locator('.runner-launch')).toContainText('RAY_ADDRESS=auto')
+  await expect(runners.locator('.runner-launch')).toHaveCount(0)
+  await expect(runners).not.toContainText('RAY_ADDRESS=auto')
 })
 
 test('new tabs support the keyboard and copy the currently selected code', async ({page, context}) => {
@@ -84,7 +85,7 @@ test('both product benchmarks include the slower video result and the downloadab
     await page.goto(route)
     const plots = page.locator('.benchmark-preview .benchmark-plot')
     await expect(plots).toHaveCount(4)
-    await expect(plots.last()).toContainText('9.8% 较 Ray 耗时更高')
+    await expect(plots.last()).toContainText('9.8% 相比 Ray Data 耗时增加')
     await expect(plots.nth(1)).toContainText('OOM')
   }
   const source = await request.get('/examples/equipment_observations.py')

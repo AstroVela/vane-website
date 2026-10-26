@@ -95,21 +95,12 @@ test('decorative animation moves silently and stops offscreen without changing t
  for(const video of await conveyor.locator('video').all())await expect(video).toHaveJSProperty('paused',true)
 })
 
-test('product tasks change handoff, distinguish reused knowledge, and inspect original evidence',async({page})=>{
- await page.goto('/zh-CN/products/context#tasks')
- const tasks=page.locator('.task-context-experience')
- await expect(tasks.locator('.task-brief')).toContainText('露营')
- await tasks.getByRole('button',{name:'补充文案参考',exact:false}).click()
- await expect(tasks.locator('.task-delivery')).toContainText('旁白')
- await tasks.getByRole('button',{name:'核验：旁白强调便携性',exact:true}).click()
- await expect(tasks.locator('audio')).toHaveJSProperty('paused',false)
- await expect.poll(()=>tasks.locator('audio').evaluate(e=>(e as HTMLAudioElement).currentTime)).toBeGreaterThanOrEqual(3)
- await tasks.getByRole('button',{name:'整理参考清单',exact:false}).click()
- await expect(tasks.locator('[data-origin=new]')).toHaveCount(0)
- await expect(tasks.locator('[data-origin=known]')).toHaveCount(3)
- await tasks.getByText('查看完整交付',{exact:true}).click()
- const result=JSON.parse((await tasks.locator('.task-json code').textContent())!)
- expect(result.findings).toHaveLength(3);expect(result.limits).toBeTruthy()
+test('product retains knowledge reuse without the retired continuous-task demo',async({page})=>{
+ await page.goto('/zh-CN/products/context')
+ await expect(page.locator('.task-context-experience,.context-task-detail')).toHaveCount(0)
+ await expect(page.locator('.knowledge-cycle')).toBeVisible()
+ await page.locator('.agent-integration').scrollIntoViewIfNeeded()
+ await expect(page.locator('.integration-steps>li')).toHaveCount(3)
 })
 
 test('media failures preserve results and leave other media usable',async({page})=>{
@@ -131,11 +122,11 @@ for(const width of [390,768,1366])test(`home and product work at ${width}px with
  await expect(explorer.getByRole('tab',{name:'图片',exact:true})).toBeFocused()
  for(const kind of ['图片','音频','PDF']){
   await explorer.getByRole('tab',{name:kind,exact:true}).click()
-  await explorer.getByRole('tab',{name:'提取信息',exact:true}).click()
+  await explorer.getByRole('tab',{name:'信息提取',exact:true}).click()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  }
- await page.goto('/zh-CN/products/context#tasks')
- await page.locator('.task-context-experience').getByRole('button',{name:'补充文案参考',exact:false}).click()
+ await page.goto('/zh-CN/products/context#integration')
+ await page.locator('.integration-config summary').click()
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
 })
 

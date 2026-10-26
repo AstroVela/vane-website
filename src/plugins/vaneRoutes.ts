@@ -15,7 +15,7 @@ const vaneRoutesPlugin:PluginModule=context=>({
     for(const scenario of agentUseCases) route('/solutions/'+scenario.id,'AgentUseCase')
     route('/solutions/training','TrainingUseCase')
     for(const slug of ['video-research','audio-evidence','product-verification']) route('/solutions/'+slug,'SolutionDetail')
-    route('/solutions/enterprise-agent','EnterpriseRedirect')
+    route('/solutions/enterprise-agent','EnterpriseAgentUseCase')
     route('/demo','Demo')
     route('/privacy','Privacy')
     route('/contact','Contact')

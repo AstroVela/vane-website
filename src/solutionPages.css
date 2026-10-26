@@ -1,11 +1,11 @@
 /* Solution pages use the existing Vane type, paper and accent tokens. */
 .solution-page { --solution-green:#5b7350; --solution-sage:#e8ede2; }
 .solution-hero { padding-top:28px; padding-bottom:0; }
+.solution-hero .case-hero-copy { min-width:0; }
 .solution-hero-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.98fr); gap:80px; align-items:center; }
-.solution-hero .case-hero-copy .h1 { font-size:clamp(38px,4.1vw,60px); line-height:1.1; letter-spacing:-.035em; margin:24px 0; max-width:13ch; text-wrap:balance; }
+.solution-hero .case-hero-copy .h1 { font-size:clamp(38px,4.1vw,60px); line-height:1.1; letter-spacing:var(--heading-tracking); margin:24px auto; max-width:100%; text-wrap:balance; }
 html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:clamp(34px,3.8vw,52px); line-height:1.25; }
-.solution-hero .lead { max-width:43ch; }
-.solution-hero .case-audience { margin-top:28px; max-width:50ch; }
+.solution-hero .case-audience { margin-top:28px; }
 .solution-source-strip { display:flex; align-items:center; flex-wrap:wrap; gap:14px 28px; padding:24px 0; margin-top:56px; border-block:1px solid var(--line-2); color:var(--ink-2); font-size:13px; }
 .solution-source-strip > span:first-child { color:var(--ink-3); font-family:var(--mono); font-size:10px; letter-spacing:.07em; margin-right:auto; }
 .solution-section-label { display:block; font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--ink-3); margin-bottom:20px; }
@@ -13,9 +13,6 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 .solution-page [id^=case-] { scroll-margin-top:100px; }
 .solution-page .marketing-section { padding-block:88px; }
 .solution-page .solution-example-section { padding-top:72px; }
-.solution-section-split { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.8fr); align-items:center; gap:80px; margin-bottom:42px; }
-.solution-section-split .section-heading { margin:0; }
-.solution-section-split > p { margin:0; }
 .solution-label { display:flex; align-items:center; gap:7px; font-size:11px; line-height:1.6; font-weight:500; letter-spacing:.025em; color:var(--ink-3); }
 .solution-label > svg { width:14px; height:14px; }
 .solution-meta { display:block; font-size:11px; line-height:1.75; color:var(--ink-3); }
@@ -29,7 +26,7 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 .solution-preview-top > span:first-child { font:10px var(--mono); letter-spacing:.07em; color:var(--ink-3); }
 .solution-preview-art { min-height:192px; background:#f1f3ed; padding:24px 30px; display:grid; place-items:center; border-bottom:1px solid var(--line-2); }
 .solution-preview-body { padding:24px 28px 22px; }
-.solution-preview-body h3 { margin:10px 0 16px; font-size:23px; letter-spacing:-.025em; }
+.solution-preview-body h3 { margin:10px 0 16px; font-size:23px; letter-spacing:var(--section-tracking); }
 .solution-preview-body ul { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
 .solution-preview-body li { display:flex; gap:10px; font-size:13px; color:var(--ink-2); line-height:1.65; }
 .solution-preview-body li svg { flex:none; width:14px; height:14px; margin-top:4px; color:#5b7350; }
@@ -78,14 +75,14 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 .solution-three-column { display:grid; grid-template-columns:.8fr 1.1fr 1fr; min-height:460px; }
 .solution-task-pane,.solution-context-pane { padding:32px; min-width:0; }
 .solution-task-pane { background:#f8f9f4; border-right:1px solid var(--line-2); }
-.solution-task-pane h3 { font-size:24px; line-height:1.45; letter-spacing:-.02em; margin:16px 0; }
+.solution-task-pane h3 { font-size:24px; line-height:1.45; letter-spacing:var(--section-tracking); margin:16px 0; }
 .marketing-main .solution-task-pane p { font-size:14px; line-height:1.8; }
 .solution-time { display:block; margin-top:24px; font:12px var(--mono); color:#5b7350; }
 .solution-time small { font-size:10px; color:var(--ink-3); }
 .meeting-scope { display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:32px; font-size:10px; color:var(--ink-3); }
 .meeting-scope span { border-bottom:1px solid var(--line); padding-bottom:4px; }
 .solution-context-pane > .solution-status { margin-top:20px; }
-.solution-context-pane h3 { margin:16px 0 22px; font-size:25px; line-height:1.35; letter-spacing:-.025em; }
+.solution-context-pane h3 { margin:16px 0 22px; font-size:25px; line-height:1.35; letter-spacing:var(--section-tracking); }
 .solution-facts { list-style:none; margin:0 0 24px; padding:0; display:grid; gap:16px; }
 .solution-facts li { padding-left:15px; position:relative; font-size:14px; line-height:1.7; color:var(--ink-2); }
 .solution-facts li:before { content:''; position:absolute; left:0; top:9px; width:4px; height:4px; border-radius:50%; background:#819471; }
@@ -263,7 +260,7 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 .solution-deliverables h3 { font-size:22px; margin:0 0 12px; }
 .marketing-main .solution-deliverables p { font-size:14px; margin:0; line-height:1.8; }
 .solution-outcomes { background:#f0f2eb; padding:32px; border-radius:6px; align-self:start; }
-.solution-outcomes h3 { font-size:26px; line-height:1.4; letter-spacing:-.025em; margin:18px 0 24px; }
+.solution-outcomes h3 { font-size:26px; line-height:1.4; letter-spacing:var(--section-tracking); margin:18px 0 24px; }
 .solution-outcomes ul { list-style:none; padding:0; margin:0; display:grid; gap:18px; }
 .solution-outcomes li { display:flex; gap:12px; font-size:14px; line-height:1.75; color:var(--ink-2); }
 .solution-outcomes li svg { color:#6e855c; width:16px; height:16px; flex:none; margin-top:4px; }
@@ -274,15 +271,12 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 .solution-integration-note { display:flex; justify-content:space-between; align-items:center; gap:36px; padding-top:24px; }
 .marketing-main .solution-integration-note p { font-size:13px; max-width:84ch; margin:0; }
 .solution-integration-note a { flex:none; }
-.solution-final-cta .wrap { align-items:center; }
-.solution-final-cta .h2 { max-width:720px; }
-.marketing-main .solution-final-cta p { max-width:70ch; font-size:15px; }
-.solution-final-cta .marketing-actions { flex-wrap:wrap; flex-shrink:0; max-width:230px; }
+.marketing-main .solution-final-cta p { font-size:15px; }
+.solution-final-cta .marketing-actions { flex-wrap:wrap; flex-shrink:0; }
 .solution-next-case { padding-block:28px; display:flex; justify-content:space-between; gap:24px; border-top:1px solid var(--line-2); }
 .solution-next-case a { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-3); }
 @media (max-width:1200px) {
   .solution-hero-layout { gap:42px; }
-  .solution-section-split { gap:48px; }
   .solution-task-pane,.solution-context-pane,.solution-source { padding:24px; }
   .solution-three-column { grid-template-columns:.8fr 1fr 1fr; }
   .solution-delivery-grid { gap:48px; }
@@ -315,7 +309,6 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
   .meeting-panels .solution-source { grid-column:1 / -1; border-left:0; border-top:1px solid var(--line-2); }
   .support-panels .solution-context-pane { grid-column:1 / -1; border-top:1px solid var(--line-2); }
   .support-panels .solution-source { border-right:0; }
-  .solution-section-split { gap:32px; }
   .solution-entity-flow h3 { font-size:18px; }
   .solution-entity-flow li { padding-right:20px; }
   .solution-entity-flow li:not(:first-child) { padding-left:20px; }
@@ -340,13 +333,12 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
 @media (max-width:767px) {
   .solution-page .marketing-section { padding-block:58px; }
   .solution-hero { padding-top:20px; }
-  .solution-hero-layout { grid-template-columns:1fr; gap:32px; }
-  .solution-hero .case-hero-copy .h1 { max-width:18ch; font-size:42px; }
+  .solution-hero-layout { grid-template-columns:minmax(0,1fr); gap:32px; }
+  .solution-hero .case-hero-copy .h1 { font-size:clamp(32px,8.7vw,40px); }
   html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:12em; font-size:34px; }
   .solution-source-strip { margin-top:28px; padding-block:20px; gap:12px; }
   .solution-source-strip > span:first-child { width:100%; }
   .solution-source-strip > span:not(:first-child) { font-size:11px; }
-  .solution-section-split { grid-template-columns:1fr; gap:22px; margin-bottom:28px; }
   .solution-section-label { margin-bottom:16px; font-size:10px; }
   .solution-preview-top { padding:16px 20px; }
   .solution-preview-body { padding:22px; }
@@ -443,7 +435,6 @@ html[lang=zh-CN] .solution-hero .case-hero-copy .h1 { max-width:13em; font-size:
   .solution-outcomes { padding:24px; }
   .solution-outcomes h3 { font-size:24px; }
   .solution-handoff { margin-top:32px; padding-block:24px; }
-  .solution-final-cta .marketing-actions { max-width:none; }
   .solution-next-case { padding-block:24px; }
   .solution-next-case a { font-size:11px; }
 }

@@ -56,7 +56,7 @@ test('Data product summarizes measurements and home links to the full methodolog
   assert.match(previewSource, /BENCHMARK_ENVIRONMENT\.gpuMemoryGb/)
   assert.match(previewSource, /modified VRAM/)
   assert.match(dataProductSource, /<BenchmarkScopeNote locale=\{locale\}/)
-  assert.match(benchmarkScopeNoteSource, /we have not reproduced the original benchmark's full cluster-scale setup/)
+  assert.match(benchmarkScopeNoteSource, /Results apply to the documented hardware, data and settings/)
 })
 
 test('benchmark surfaces remove the placeholder performance claims', () => {

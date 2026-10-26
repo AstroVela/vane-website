@@ -5,7 +5,7 @@ import {useSiteLocale} from '../../siteI18n'
 import {track} from '../../analytics'
 import Button from '../Button'
 import {Link} from '../../router'
-import {assetFor, insightFor, showcaseFor, showcases} from '../../content/showcases'
+import {activeInsightAt, assetFor, insightFor, showcaseFor, showcases} from '../../content/showcases'
 import type {MediaKind} from '../../content/types'
 import {useMediaPlayback} from './MediaPlaybackProvider'
 import MediaPreview from './MediaPreview'
@@ -26,13 +26,16 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
   const tabsRef = useRef<HTMLDivElement>(null)
   const showcase = showcaseFor(state.activeMedia), asset = assetFor(showcase.assetId)
   const selected = state.selectedInsight[state.activeMedia]
-  const featured = selected ?? showcase.insightIds[0]
+  const featured = selected ?? (showcase.kind === 'image' ? showcase.insightIds[0] : undefined)
   const request = useMemo(() => state.requestedInsight ? {epoch: state.selectionEpoch, locator: insightFor(state.requestedInsight).locators[0]} : undefined, [state.requestedInsight, state.selectionEpoch])
   const t = (en: string, zh: string) => locale === 'en' ? en : zh
   const onAudible = useCallback((audible: boolean) => dispatch({type: 'environment', values: {audible}}), [])
   const onModal = useCallback((modalOpen: boolean) => dispatch({type: 'environment', values: {modalOpen}}), [])
   const onInteract = useCallback(() => dispatch({type: 'mode', mode: 'manual'}), [])
-  const onProgress = (position: number) => {positions.set(asset.id, position)}
+  const onProgress = useCallback((position: number) => {
+    positions.set(asset.id, position)
+    dispatch({type: 'progress', media: showcase.kind, insight: activeInsightAt(asset.id, position, showcase.insightIds)})
+  }, [asset.id, positions, showcase])
 
   const select = useCallback((kind: MediaKind, insight?: string) => {
     playback.pauseAll(); setHoveredInsight(undefined)
@@ -90,9 +93,9 @@ export default function HeroShowcase({withCopy = true, initialMedia = 'video', a
   }} aria-label={state.rotationMode === 'auto' ? t('Pause switching', '暂停切换') : t('Enable automatic switching', '自动切换')}>{state.rotationMode === 'auto' ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}</button>}</div>
   return <div className={'hero-experience' + (withCopy ? ' with-hero-copy' : ' inline-showcase')} data-media={state.activeMedia} data-rotation={state.rotationMode}
     onFocusCapture={e => dispatch({type: 'environment', values: {focusWithin: (e.target as HTMLElement).matches(':focus-visible')}})} onBlurCapture={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dispatch({type: 'environment', values: {focusWithin: false}})}}>
-    {withCopy ? <div className="hero-copy"><span className="hero-product-name">Vane Context</span><h1 className="h1">{locale === 'en' ? <>Your <span key={showcase.kind}>{showcase.headlineWord[locale]}</span>.<br />Context for AI.</> : <>让「<span key={showcase.kind}>{showcase.headlineWord[locale]}</span>」成为<br />AI 可用的上下文。</>}</h1>
+    {withCopy ? <div className="hero-copy"><span className="hero-product-name">Vane Context</span><h1 className="h1">{locale === 'en' ? <>Your <span key={showcase.kind}>{showcase.headlineWord[locale]}</span>.<br />Context for AI.</> : <>让「<span key={showcase.kind}>{showcase.headlineWord[locale]}</span>」成为<br />AI 可用的上下文</>}</h1>
       <p className="lead hero-subtitle" key={showcase.kind}>{showcase.subtitle[locale]}</p>{types}
-      <div className="marketing-actions"><Button solid to={'/demo?source=home&media=' + state.activeMedia} arrow onClick={() => track('context_demo_click', {product: 'context', locale, media: state.activeMedia})}>{t('Request Demo', '预约演示')}</Button><Link to="/products/context">{t('Explore Vane Context', '了解 Vane Context')}<ArrowRightIcon aria-hidden="true" /></Link></div>
+      <div className="marketing-actions"><Button solid to={'/demo?source=home&media=' + state.activeMedia} arrow onClick={() => track('context_demo_click', {product: 'context', locale, media: state.activeMedia})}>{t('Request a demo', '预约演示')}</Button><Link to="/products/context">{t('Explore Vane Context', '了解 Vane Context')}<ArrowRightIcon aria-hidden="true" /></Link></div>
     </div> : types}
     <div className={'showcase-stage stage-' + showcase.kind} ref={stageRef} id={id + '-panel'} role="tabpanel" aria-labelledby={id + '-' + showcase.kind} tabIndex={0}>
       <div className="stage-heading"><span>{asset.title[locale]}</span><span>{t('Understanding, with evidence', '理解，有据可查')}</span></div>

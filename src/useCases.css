@@ -1,5 +1,4 @@
 /* Existing solution navigation and overview layout. Detailed pages use solutionPages.css. */
-.case-breadcrumb { display:inline-block; margin-bottom:32px; font-size:13px; color:var(--ink-3); text-decoration:none; }
 .case-hero-copy .h1 { font-size:clamp(36px,3.7vw,54px); line-height:1.14; margin:24px 0; }
 .case-hero-copy .lead { max-width:42ch; }
 .marketing-main .case-audience { font-size:13px; max-width:44ch; margin-top:36px; }
@@ -20,8 +19,7 @@
 .case-explorer-caption { display:flex; align-items:center; justify-content:space-between; gap:30px; margin-top:18px; }
 .marketing-main .case-explorer-caption p { font-size:14px; margin:0; max-width:56ch; }
 .case-explorer-caption a { flex:none; }
-.use-cases-hero .h1 { max-width:950px; }
-.use-cases-hero .lead { max-width:64ch; }
+.use-cases-hero .h1 { max-width:1100px; }
 .case-index-links { display:flex; flex-wrap:wrap; gap:12px 28px; margin-top:30px; }
 .case-index-links a { display:flex; align-items:center; gap:10px; min-height:40px; color:var(--accent-strong); font-size:14px; text-decoration:none; }
 .case-index-links a:hover { text-decoration:underline; }
@@ -50,7 +48,6 @@
   .case-explorer-caption a { margin-top:8px; }
 }
 @media (max-width:767px) {
-  .case-breadcrumb { margin-bottom:22px; }
   .case-hero-copy .h1 { font-size:34px; margin-top:20px; }
   .case-explorer { display:block; margin:20px 0; }
   .case-explorer-item { display:block; }
