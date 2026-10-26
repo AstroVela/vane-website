@@ -16,7 +16,7 @@ reduced motion retains a static scene. Existing manual media playback takes prio
 
 ## Reference assets
 
-Source: https://hypit.ai/ (conveyor/sprites, version 22dcbbb2), used at the user's
+Source: [Hypit](https://hypit.ai/) (conveyor/sprites, version 22dcbbb2), used at the user's
 explicit request to reproduce the reference apparatus. Local assets are under
 public/showcase/context/production/. The plate, pillar, arm components and belt masks
 are displayed with neutral filters. The original product/platform markings are
