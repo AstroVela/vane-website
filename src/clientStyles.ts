@@ -1,5 +1,5 @@
 import '@fontsource-variable/hanken-grotesk'
-import '@fontsource-variable/space-grotesk'
+import '@fontsource-variable/space-grotesk/index.css'
 import '@fontsource/silkscreen/latin-400.css'
 import '@fontsource-variable/noto-sans-sc'
 import '@fontsource-variable/jetbrains-mono'
