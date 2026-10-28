@@ -1,3 +1,19 @@
+export const quickstartHeroPython = `import vane
+
+con = vane.connect()
+images = con.sql("""
+    SELECT image_file(
+        'quickstart-images/large.png'
+    ) AS source
+""")
+
+images.select("""
+    source,
+    image_file_metadata(source).width AS width,
+    resize(decode_image_file(source, 'RGB'),
+           224, 224) AS thumbnail
+""").show()`
+
 export const quickstartFixtures = `from pathlib import Path
 from PIL import Image
 

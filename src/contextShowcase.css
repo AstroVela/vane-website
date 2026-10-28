@@ -93,7 +93,6 @@
 .home-entry p { margin:0; font-size:15px; }
 .home-entry .marketing-actions { gap:20px; margin-top:20px; }
 .home-entry-data { background:var(--paper-2); }
-.entry-query { display:block; padding:16px 0; margin:12px 0; font-family:var(--mono); font-size:13px; line-height:1.9; color:var(--ink-2); border-bottom:1px solid var(--line-2); }
 .entry-methods { display:flex; gap:20px; margin:22px 0; font-family:var(--mono); font-size:22px; color:var(--ink-2); }
 .product-context-task { padding-top:80px; }
 .task-context-experience { border:1px solid var(--line); border-radius:var(--r); overflow:hidden; background:var(--paper-2); }

@@ -12,31 +12,16 @@ import BenchmarkScopeNote from '../components/BenchmarkScopeNote'
 import {Link} from '../router'
 import {useSiteLocale} from '../siteI18n'
 import {dataSolutions} from '../content/dataSolutions'
+import {quickstartHeroPython} from '../content/dataQuickstart'
 import {GITHUB_URL} from '../siteLinks'
 import {track} from '../analytics'
-
-const heroCode = `import vane
-
-con = vane.connect()
-images = con.sql("""
-    SELECT image_file(
-        'quickstart-images/large.png'
-    ) AS source
-""")
-
-images.select("""
-    source,
-    image_file_metadata(source).width AS width,
-    resize(decode_image_file(source, 'RGB'),
-           224, 224) AS thumbnail
-""").show()`
 
 export default function DataProduct() {
   const anchors = useBrokenLinks()
   for (const id of ['architecture', 'processing', 'execution', 'runners', 'benchmarks', 'solutions', 'quickstart']) anchors.collectAnchor(id)
   const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
   return <MarketingLayout data title={t('Vane Data | The multimodal data engine for SQL and Python', 'Vane Data｜SQL 与 Python 多模态数据引擎')} description={t('Combine native multimodal types, Python UDFs and AI Functions in one engine for processing, inference and queries. Scale execution with Ray.', '在同一引擎中组合多模态原生类型、Python UDF 和 AI Functions，完成处理、推理与查询，并通过 Ray 扩展执行。')}>
-    <section className="marketing-product-hero data-product-hero"><div className="wrap data-hero-grid"><div><h1 className="h1"><span className="hero-title-line">{t('Process multimodal data', '用 SQL 和 Python，')}</span><span className="hero-title-line">{t('with SQL and Python.', '处理多模态数据')}</span></h1><p className="lead">{t('Combine file processing, model inference and relational queries in one pipeline. Develop locally and scale execution with Ray.', '在一条流水线中完成文件处理、模型推理与关系查询，从本地开发扩展到 Ray 执行。')}</p><div className="marketing-actions"><Button solid to="/docs/data/quickstart/quickstart" arrow onClick={() => track('data_docs_click', {product: 'data', locale})}>Quickstart</Button><a href={GITHUB_URL} target="_blank" rel="noreferrer" onClick={() => track('data_github_click', {product: 'data', locale})}>GitHub ↗</a></div><div className="data-install"><code>pip install vane-ai</code></div></div><div className="data-hero-code"><CodeWindow filename="quickstart.py" language="python" code={heroCode}/><div className="hero-code-output"><span>{t('Original width', '原图宽度')} <strong>640</strong></span><span>{t('Thumbnail', '缩略图')} <strong>224 × 224</strong></span></div><Link className="arrow-link" to="/docs/data/quickstart/quickstart">{t('Set up and run the example', '准备样本并运行示例')} →</Link></div></div></section>
+    <section className="marketing-product-hero data-product-hero"><div className="wrap data-hero-grid"><div><h1 className="h1"><span className="hero-title-line">{t('Process multimodal data', '用 SQL 和 Python，')}</span><span className="hero-title-line">{t('with SQL and Python.', '处理多模态数据')}</span></h1><p className="lead">{t('Combine file processing, model inference and relational queries in one pipeline. Develop locally and scale execution with Ray.', '在一条流水线中完成文件处理、模型推理与关系查询，从本地开发扩展到 Ray 执行。')}</p><div className="marketing-actions"><Button solid to="/docs/data/quickstart/quickstart" arrow onClick={() => track('data_docs_click', {product: 'data', locale})}>Quickstart</Button><a href={GITHUB_URL} target="_blank" rel="noreferrer" onClick={() => track('data_github_click', {product: 'data', locale})}>GitHub ↗</a></div><div className="data-install"><code>pip install vane-ai</code></div></div><div className="data-hero-code"><CodeWindow filename="quickstart.py" language="python" code={quickstartHeroPython}/><Link className="arrow-link" to="/docs/data/quickstart/quickstart">{t('Set up and run the example', '准备样本并运行示例')} →</Link></div></div></section>
     <section className="section marketing-section" id="architecture"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('Data processing and model inference. One engine.', '数据处理与模型推理，统一执行')}</h2></div><DataEngineArchitecture/><div className="architecture-summary">{[[t('One data model', '统一数据模型'), t('Query multimodal files and business fields in the same data model.', '多模态文件与业务字段，可在同一数据模型中查询。')], [t('Composable pipelines', '可组合的处理逻辑'), t('Compose SQL, Python UDFs and AI Functions for processing and inference.', '组合 SQL、Python UDF 与 AI Functions，完成预处理与推理。')], [t('Unified execution', '统一执行机制'), t('Coordinate batching, concurrency and compute resources.', '统一协调批处理、并发与计算资源。')]].map(([title, body]) => <div key={title}><strong>{title}</strong><p>{body}</p></div>)}</div><Link className="arrow-link" to="/blog/ai-workloads-need-a-new-data-engine">{t('Read the architecture walkthrough', '阅读架构详解')} →</Link></div></section>
     <section className="section marketing-section" id="processing"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('Build multimodal pipelines with SQL and Python.', '像编写 ETL 一样，构建多模态处理流水线')}</h2><p>{t('Follow an equipment inspection pipeline from native media types and Python UDFs to AI extraction, embeddings and business queries.', '通过设备巡检案例，了解如何组合原生类型、Python UDF、AI 信息提取、向量化与业务查询。')}</p></div><DataEtlExplorer/></div></section>
     <section className="section marketing-section" id="execution"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('Coordinate I/O, CPU and GPU in one pipeline.', '协同调度 I/O、CPU 与 GPU')}</h2><p>{t('Overlap reading, preprocessing and inference across batches, with backpressure to control in-flight data.', '让读取、预处理与推理跨批次重叠执行，通过背压控制中间数据量。')}</p></div><DataExecution/><Link className="arrow-link" to="/blog/why-we-need-a-multimodal-native-engine">{t('Explore the execution architecture', '了解执行架构')} →</Link></div></section>

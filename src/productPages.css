@@ -28,7 +28,7 @@
 .products-section .home-entry-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
 .products-section .home-entry {display:flex;flex-direction:column}
 .products-section .home-entry .marketing-actions {margin-top:auto;padding-top:24px}
-.products-section .home-entry-data .entry-query {margin:28px 0;min-height:200px;display:flex;flex-direction:column;justify-content:center}
+.products-section .home-entry-data .data-hero-code {margin-top:28px}
 .understanding-section .understanding-frame {grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
 .understanding-section .understanding-original {grid-column:2;grid-row:1}
 .understanding-section .understanding-results {grid-column:1;grid-row:1}
@@ -108,8 +108,7 @@
 .data-hero-code .term {background:var(--paper-2);border:1px solid var(--line);border-radius:var(--r-lg)}
 .data-hero-code .term .code {font-size:13px;line-height:1.75;padding:24px}
 .data-hero-code .token.string,.etl-explorer .token.string,.data-runners .token.string,#quickstart .token.string {color:#347234!important}
-.hero-code-output {display:flex;gap:26px;padding:16px 0;font-size:12px;color:var(--ink-3)}
-.hero-code-output strong {font:13px var(--mono);color:var(--ink);margin-left:8px}
+.data-hero-code > .arrow-link {margin-top:20px}
 .architecture-summary {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin:28px 0}
 .architecture-summary strong {font-size:17px}
 .architecture-summary p {font-size:15px;margin:10px 0}
@@ -148,7 +147,7 @@
   .home-outcome-layout,.connected-data,.knowledge-preparation,.knowledge-online,.agent-integration,.etl-workspace{grid-template-columns:1fr;gap:28px}
   .products-section .home-entry-grid,.benchmark-plots,.architecture-summary{grid-template-columns:1fr}
   .usecase-delivery-plan{grid-template-columns:1fr;gap:12px}
-  .products-section .home-entry-data .entry-query{min-height:0}.solution-delivery{padding:24px}
+  .solution-delivery{padding:24px}
   .understanding-section .understanding-frame{grid-template-columns:1fr}.understanding-section .understanding-original{grid-column:1;grid-row:1}.understanding-section .understanding-results{grid-column:1;grid-row:2}
   .feature-tabs{gap:4px;margin-bottom:20px}.feature-tabs button{font-size:13px;padding:9px 11px}
   .feature-footnote{align-items:flex-start;flex-direction:column;gap:10px}.feature-footnote>span{font-size:12px}
@@ -156,7 +155,7 @@
   .connected-media{grid-template-columns:90px minmax(0,1fr)}.connected-media .arrow-link{font-size:12px}.connected-media code{font-size:10px}
   .knowledge-cycle{padding:22px}.knowledge-source{grid-template-columns:90px minmax(0,1fr);gap:18px}.knowledge-online h3{font-size:21px}.knowledge-online{min-height:0}.knowledge-loop{font-size:12px}.knowledge-source code{font-size:10px}
   .etl-path{gap:10px;font-size:11px;padding-top:0}.etl-path>span{gap:8px}.etl-path svg{width:12px}.etl-workspace{min-height:0}.etl-code .term{min-height:0}.etl-code .term .code{padding:18px;font-size:11px}.etl-result{padding:24px}.etl-result h3{font-size:23px}.etl-variants{gap:2px}.etl-variants button{font-size:12px;padding:8px}
-  .hero-code-output{gap:18px;font-size:11px}.data-hero-code .term .code{font-size:12px;padding:20px}.architecture-summary{gap:18px;margin-top:22px}.architecture-summary p{margin:8px 0 0}
+  .data-hero-code .term .code{font-size:12px;padding:20px}.architecture-summary{gap:18px;margin-top:22px}.architecture-summary p{margin:8px 0 0}
 }
 
 /* Product diagrams are static; compact layouts keep their labels readable. */

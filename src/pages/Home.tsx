@@ -7,6 +7,8 @@ import SolutionDelivery from '../components/SolutionDelivery'
 import ContextReuseStory from '../components/ContextReuseStory'
 import BenchmarkPreview from '../components/BenchmarkPreview'
 import Button from '../components/Button'
+import CodeWindow from '../components/CodeWindow'
+import {quickstartHeroPython} from '../content/dataQuickstart'
 import {Link} from '../router'
 import {useSiteLocale} from '../siteI18n'
 import {GITHUB_URL} from '../siteLinks'
@@ -22,7 +24,7 @@ export default function Home() {
     <section className="section marketing-section home-performance" id="performance"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('High-performance processing for multimodal data.', '高性能引擎，支撑多模态数据处理')}</h2><p>{t('Vane Data coordinates I/O, CPU and GPU execution. Explore measured performance across document, image, audio and video pipelines.', '基于 Vane Data，协同调度 I/O、CPU 与 GPU。查看文档、图片、音频和视频流水线的实测表现。')}</p></div><BenchmarkPreview compact/><div className="marketing-actions"><Link className="arrow-link" to="/benchmarks">{t('View all benchmark results', '查看完整性能测试')}<ArrowRightIcon aria-hidden="true"/></Link><Link className="arrow-link" to="/products/data">{t('Explore Vane Data', '了解 Vane Data')}<ArrowRightIcon aria-hidden="true"/></Link></div></div></section>
     <section className="section marketing-section products-section"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('See what your agents can do with your data.', '用你的数据，验证 Agent 效果')}</h2><p>{t('Request a Vane Context demo, or start building with the Vane Data engine.', '预约 Vane Context 演示，或使用Vane Data 开始构建。')}</p></div><div className="home-entry-grid">
       <article className="home-entry home-entry-context"><div className="entry-source-composition"><img src={blend} alt={t('An action reference from the camping video.', '露营视频中的操作参考。')} width={480} height={854} loading="lazy"/><img src={photo} alt={t('Original product imagery.', '原始产品图片。')} width={576} height={1024} loading="lazy"/></div><h3>Vane Context</h3><p>{t('See how multimodal analysis, source citations and knowledge reuse improve your agent’s output.', '围绕你的业务任务，验证多模态分析、来源引用和知识复用如何改善 Agent 输出。')}</p><div className="marketing-actions"><Button solid to="/demo?source=home" arrow>{t('Request a demo', '预约演示')}</Button><Link to="/products/context">{t('Explore Vane Context', '了解 Vane Context')} →</Link></div></article>
-      <article className="home-entry home-entry-data"><h3>Vane Data</h3><p>{t('Process files, model inference and business data in one SQL and Python pipeline.', '用 SQL 和 Python 统一处理文件、模型推理与业务数据。')}</p><code className="entry-query">import vane<br/>con = vane.connect()<br/><br/>files = vane.from_files("images/*.png")<br/>files.show()</code><div className="marketing-actions"><Button solid to="/docs/data/quickstart/quickstart" arrow>Quickstart</Button><a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a></div></article>
+      <article className="home-entry home-entry-data"><h3>Vane Data</h3><p>{t('Process files, model inference and business data in one SQL and Python pipeline.', '用 SQL 和 Python 统一处理文件、模型推理与业务数据。')}</p><div className="data-hero-code"><CodeWindow filename="quickstart.py" language="python" code={quickstartHeroPython}/></div><div className="marketing-actions"><Button solid to="/docs/data/quickstart/quickstart" arrow>Quickstart</Button><a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a></div></article>
     </div></div></section>
   </MarketingLayout>
 }

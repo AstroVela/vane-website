@@ -74,7 +74,6 @@ export default function Nav({withSearch = false}: NavProps) {
   }, [mobile])
   const developers = [
     {to: '/docs/data', name: t('Vane Data docs', 'Vane Data 文档')},
-    {to: '/docs/data/tutorials', name: t('Vane Data examples', 'Vane Data 代码示例')},
     {to: GITHUB_URL, name: 'Vane Data GitHub ↗'},
   ]
   const resources = [
