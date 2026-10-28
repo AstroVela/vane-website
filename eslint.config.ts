@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['build', 'dist', '.docusaurus', 'vane-design-system']),
+  globalIgnores(['build', 'dist', '.docusaurus', 'vane-design-system', '.worktrees', '.tmp-visual-check']),
   {
     files: ['docusaurus.config.ts', 'src/plugins/**/*.ts'],
     extends: [js.configs.recommended],

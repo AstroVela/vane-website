@@ -1,0 +1,110 @@
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {mkdtempSync,mkdirSync,writeFileSync,utimesSync,rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import {brotliCompressSync,brotliDecompressSync,gzipSync,gunzipSync} from 'node:zlib'
+import {createJiti} from 'jiti'
+const {staticAssets}=createJiti(import.meta.url)('../server/assets.ts')
+
+function fixture(t) {
+  const root=mkdtempSync(join(tmpdir(),'vane-static-'))
+  t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const code=Buffer.from('console.log("cached asset");\n'.repeat(100))
+  mkdirSync(join(root,'assets/js'),{recursive:true})
+  mkdirSync(join(root,'showcase'),{recursive:true})
+  const path='/assets/js/main.12345678.js'
+  writeFileSync(join(root,path),code)
+  writeFileSync(join(root,path+'.br'),brotliCompressSync(code))
+  writeFileSync(join(root,path+'.gz'),gzipSync(code))
+  writeFileSync(join(root,'index.html'),'<h1>Vane</h1>')
+  writeFileSync(join(root,'404.html'),'<h1>Not found</h1>')
+  writeFileSync(join(root,'showcase/clip.abcdef123456.mp4'),Buffer.from('0123456789'))
+  const fetch=(pathname=path,headers={},method='GET')=>staticAssets(root).fetch(new Request('https://vane.example'+pathname,{headers,method}))
+  return {root,code,path,fetch}
+}
+test('text variants negotiate encoding and preserve decoded contents, MIME and byte lengths',async t=>{
+  const {code,fetch}=fixture(t)
+  for(const [accept,encoding,decode] of [['gzip, br','br',brotliDecompressSync],['br;q=0.2, gzip;q=0.8','gzip',gunzipSync],['br;q=0, gzip','gzip',gunzipSync],['gzip;q=0, *;q=1','br',brotliDecompressSync]]) {
+    const response=await fetch(undefined,{'Accept-Encoding':accept})
+    assert.equal(response.status,200)
+    assert.equal(response.headers.get('Content-Encoding'),encoding)
+    assert.match(response.headers.get('Content-Type'),/javascript/)
+    assert.equal(response.headers.get('Vary'),'Accept-Encoding')
+    const body=Buffer.from(await response.arrayBuffer())
+    assert.equal(body.length,Number(response.headers.get('Content-Length')))
+    assert.deepEqual(decode(body),code)
+  }
+  const identity=await fetch(undefined,{'Accept-Encoding':'br;q=0, gzip;q=0'})
+  assert.equal(identity.headers.get('Content-Encoding'),null)
+  assert.deepEqual(Buffer.from(await identity.arrayBuffer()),code)
+})
+test('hashed assets cache indefinitely; HTML revalidates and missing URLs cannot cache an error as an immutable asset',async t=>{
+  const {fetch}=fixture(t)
+  const script=await fetch()
+  assert.equal(script.headers.get('Cache-Control'),'public, max-age=31536000, immutable')
+  await script.body.cancel()
+  const media=await fetch('/showcase/clip.abcdef123456.mp4')
+  assert.equal(media.headers.get('Cache-Control'),'public, max-age=31536000, immutable')
+  await media.body.cancel()
+  const html=await fetch('/')
+  assert.equal(html.headers.get('Cache-Control'),'no-cache')
+  await html.body.cancel()
+  const missing=await fetch('/missing.abcdef123456.js')
+  assert.equal(missing.status,404)
+  assert.equal(missing.headers.get('Cache-Control'),'no-cache')
+  await missing.body.cancel()
+})
+test('HEAD and conditional requests preserve the negotiated variant and avoid sending a body',async t=>{
+  const {fetch}=fixture(t)
+  const first=await fetch(undefined,{'Accept-Encoding':'br'},'HEAD')
+  assert.equal(first.body,null)
+  assert.equal(first.headers.get('Content-Encoding'),'br')
+  const cached=await fetch(undefined,{'Accept-Encoding':'br','If-None-Match':'W/"other", '+first.headers.get('ETag')})
+  assert.equal(cached.status,304)
+  assert.equal(cached.body,null)
+  assert.equal(cached.headers.get('Vary'),'Accept-Encoding')
+  const different=await fetch(undefined,{'Accept-Encoding':'gzip','If-None-Match':first.headers.get('ETag')})
+  assert.equal(different.status,200)
+  assert.equal(different.headers.get('Content-Encoding'),'gzip')
+  await different.body.cancel()
+})
+test('partial media and text requests return original byte ranges, including suffixes and invalid ranges',async t=>{
+  const {code,fetch}=fixture(t)
+  const video=await fetch('/showcase/clip.abcdef123456.mp4',{'Range':'bytes=2-5','Accept-Encoding':'br, gzip'})
+  assert.equal(video.status,206)
+  assert.equal(video.headers.get('Content-Range'),'bytes 2-5/10')
+  assert.equal(video.headers.get('Content-Encoding'),null)
+  assert.equal(await video.text(),'2345')
+  const suffix=await fetch('/showcase/clip.abcdef123456.mp4',{'Range':'bytes=-3'})
+  assert.equal(await suffix.text(),'789')
+  const text=await fetch(undefined,{'Range':'bytes=0-10','Accept-Encoding':'br, gzip'})
+  assert.equal(text.status,206)
+  assert.equal(text.headers.get('Content-Encoding'),null)
+  assert.deepEqual(Buffer.from(await text.arrayBuffer()),code.subarray(0,11))
+  const invalid=await fetch('/showcase/clip.abcdef123456.mp4',{'Range':'bytes=50-'})
+  assert.equal(invalid.status,416)
+  assert.equal(invalid.headers.get('Content-Range'),'bytes */10')
+})
+test('stale compressed siblings are ignored after the original asset changes',async t=>{
+  const {root,path,code,fetch}=fixture(t)
+  utimesSync(join(root,path+'.br'),new Date(0),new Date(0))
+  utimesSync(join(root,path+'.gz'),new Date(0),new Date(0))
+  const response=await fetch(undefined,{'Accept-Encoding':'br, gzip'})
+  assert.equal(response.headers.get('Content-Encoding'),null)
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),code)
+})
+test('versioned media supports conditional ranges with a strong validator; a different version returns the complete source',async t=>{
+  const {fetch}=fixture(t)
+  const path='/showcase/clip.abcdef123456.mp4'
+  const head=await fetch(path,{},'HEAD')
+  const etag=head.headers.get('ETag')
+  assert.ok(etag&&!etag.startsWith('W/'), 'Combining cached ranges requires a strong validator')
+  const unchanged=await fetch(path,{'Range':'bytes=2-5','If-Range':etag})
+  assert.equal(unchanged.status,206)
+  assert.equal(await unchanged.text(),'2345')
+  const changed=await fetch(path,{'Range':'bytes=2-5','If-Range':'"old-version"'})
+  assert.equal(changed.status,200)
+  assert.equal(changed.headers.get('Content-Range'),null)
+  assert.equal(await changed.text(),'0123456789')
+})

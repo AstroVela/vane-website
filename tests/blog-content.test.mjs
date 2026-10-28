@@ -261,7 +261,8 @@ test('Multimodal post translations use localized in-article diagrams', () => {
   ]
 
   for (const [source, imagePath, imageUrl] of localizedPosts) {
-    const preview = source.split('<!-- truncate -->', 1)[0]
+    const body = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+    const preview = body.split('<!-- truncate -->', 1)[0]
 
     assert.equal(existsSync(imagePath), true)
     assert.equal(readFileSync(imagePath).subarray(1, 4).toString('ascii'), 'PNG')
@@ -272,6 +273,7 @@ test('Multimodal post translations use localized in-article diagrams', () => {
     assert.ok(source.includes(`height="${multimodalImageSize[1]}"`))
     assert.match(source, /loading="lazy"/)
     assert.match(source, /decoding="async"/)
+    assert.ok(source.includes(`image: ${imageUrl}`))
     assert.equal(preview.includes(imageUrl), false)
   }
 })

@@ -1,9 +1,6 @@
 import type {ProductId} from './products'
 
-/* Pixel product glyphs, ported from the design prototype's GLYPHS map.
-   `data` uses fixed tonal grays (its bars are part of the brand mark); the
-   coming-soon products draw in `currentColor` so they inherit the muted tone
-   of whatever tile they sit in. */
+/* Keep the established pixel glyph style for both products. */
 export default function ProductGlyph({ id, size = 13 }: { id: ProductId; size?: number }) {
   if (id === 'data') {
     return (
@@ -14,7 +11,7 @@ export default function ProductGlyph({ id, size = 13 }: { id: ProductId; size?: 
       </svg>
     )
   }
-  if (id === 'agent') {
+  if (id === 'context') {
     return (
       <svg width={size} height={size} viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden="true">
         <rect x="5" y="2" width="6" height="6" fill="currentColor" />

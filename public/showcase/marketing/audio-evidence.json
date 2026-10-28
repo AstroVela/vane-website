@@ -1,0 +1,16 @@
+[
+  {
+    "id": "portable",
+    "assetId": "comp_008",
+    "start": 3,
+    "end": 7,
+    "text": "I can take it anywhere and blend smoothies anytime."
+  },
+  {
+    "id": "morning",
+    "assetId": "comp_008",
+    "start": 7,
+    "end": 11,
+    "text": "Now I don't have to worry about missing my morning smoothies."
+  }
+]

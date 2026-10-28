@@ -1,6 +1,5 @@
-import Head from '@docusaurus/Head'
-import Nav from '../components/Nav'
-import Footer from '../components/Footer'
+import {Link} from '../router'
+import MarketingLayout from '../components/MarketingLayout'
 import Box from '../components/Box'
 import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
@@ -297,11 +296,11 @@ export default function EnterpriseAgentUseCase() {
       description: 'Process native multimodal file types with SQL and Python, preserve source references, and write text and embeddings to retrieval and analytics systems.',
       ogTitle: 'Turn multimodal business materials into searchable records.',
       ogDescription: 'Connect native file types, model processing, source references, and retrieval systems in one data pipeline.',
-      eyebrow: 'Data Infrastructure for Enterprise Agents',
-      heading: 'Turn multimodal business data into searchable records with source references.',
+      eyebrow: 'Enterprise data pipelines',
+      heading: 'Turn enterprise media into searchable records.',
       lead: 'Process files, images, audio, and video with native types, SQL, and Python UDFs. Preserve business IDs and source references, then write text and embeddings to your retrieval and analytics systems.',
       runPipeline: 'Run the pipeline',
-      requestDemo: 'Request a demo',
+      requestDemo: 'Talk to our team',
       meta: 'native file types · SQL + Python · vector and analytics sinks',
       problemEyebrow: 'The Problem',
       problemTitle: "Keep source context throughout model processing.",
@@ -318,11 +317,11 @@ export default function EnterpriseAgentUseCase() {
       description: '用 SQL 和 Python 处理原生多模态文件类型，保留来源引用，将文本与向量写入检索和分析系统。',
       ogTitle: '把多模态业务材料整理成可检索记录',
       ogDescription: '在一条数据流水线中连接原生文件类型、模型处理、来源引用与检索系统。',
-      eyebrow: '面向企业 Agent 的数据基础设施',
+      eyebrow: '企业多模态数据流水线',
       heading: '将多模态业务数据整理成带来源引用的可检索记录',
       lead: '用原生类型、SQL 和 Python UDF 处理文件、图像、音频与视频。保留业务 ID 和来源引用，再将文本与向量写入现有检索和分析系统。',
       runPipeline: '运行示例',
-      requestDemo: '申请演示',
+      requestDemo: '联系我们',
       meta: '原生文件类型 · SQL + Python · 向量与分析系统写入',
       problemEyebrow: '问题',
       problemTitle: '难点不只是调用模型，还在于保留完整的来源信息',
@@ -337,25 +336,14 @@ export default function EnterpriseAgentUseCase() {
   )
 
   return (
-    <>
-      <Head>
-        <title>{copy.title}</title>
-        <meta
-          name="description"
-          content={copy.description}
-        />
-        <meta property="og:title" content={copy.ogTitle} />
-        <meta property="og:description" content={copy.ogDescription} />
-      </Head>
-
-      <Nav />
-
+    <MarketingLayout data title={copy.title.replace(' — Vane', '')} description={copy.description}>
+      <div className="data-solution">
       {/* HERO — solutions intro archetype: editorial copy + primary actions,
           paired with the agent-context visual in the right rail. */}
-      <section className="intro enterprise-hero">
+      <section className="marketing-product-hero enterprise-hero">
         <div className="wrap enterprise-hero-grid">
           <div className="enterprise-hero-copy">
-            <Eyebrow style={{ marginBottom: 20 }}>{copy.eyebrow}</Eyebrow>
+            <span className="product-badge">Vane Data · {copy.eyebrow}</span>
             <h1 className="h1 enterprise-hero-title">{copy.heading}</h1>
             <p className="lead enterprise-hero-lead">
               {copy.lead}
@@ -431,7 +419,8 @@ export default function EnterpriseAgentUseCase() {
         </div>
       </section>
 
-      <Footer />
-    </>
+      <div className="wrap data-solution-related"><Link to="/solutions">{locale === 'en' ? 'All eight solutions' : '全部八个解决方案'} →</Link><Link to="/products/data">{locale === 'en' ? 'Explore Vane Data' : '了解 Vane Data'} →</Link></div>
+      </div>
+    </MarketingLayout>
   )
 }

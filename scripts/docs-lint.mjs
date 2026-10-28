@@ -18,13 +18,14 @@ import {
 } from './docs-utils.mjs'
 
 const root = process.cwd()
-const docsDir = path.join(root, 'docs')
+const docsDir = path.join(root, 'docs/data')
 const i18nDocsDir = path.join(root, 'i18n/zh-CN/docusaurus-plugin-content-docs-data/current')
 const registryPath = path.join(root, 'src/docs/registry.ts')
 const sidebarPath = path.join(root, 'src/docs/sidebar.data.json')
 const legacySlugsPath = path.join(root, 'src/docs/legacySlugs.ts')
 const docsPagePath = path.join(root, 'src/pages/Docs.tsx')
 const routesPath = path.join(root, 'src/plugins/vaneRoutes.ts')
+const pageRoutes = new Set(Array.from(readText(routesPath).matchAll(/\broute\('([^']+)'/g), match => match[1]))
 const errors = []
 
 function addError(file, line, message) {
@@ -182,6 +183,7 @@ function checkLinks(file, lines, pages, locale) {
 
       if (target.startsWith('/')) {
         const urlPath = localeRoutePath(stripLinkDecorations(target), locale)
+        if (pageRoutes.has(urlPath)) continue
         const slug = slugForRoute(urlPath)
         if (slug && registeredSlugs.has(slug)) continue
         const publicPath = path.join(root, 'public', urlPath)

@@ -1,169 +1,19 @@
-import { Fragment, type PropsWithChildren } from 'react'
-import Head from '@docusaurus/Head'
-import useBrokenLinks from '@docusaurus/useBrokenLinks'
-import Nav from '../components/Nav'
-import Footer from '../components/Footer'
-import Box from '../components/Box'
+import {ArrowRightIcon} from '@radix-ui/react-icons'
+import MarketingLayout from '../components/MarketingLayout'
 import Button from '../components/Button'
-import Eyebrow from '../components/Eyebrow'
-import CodeWindow from '../components/CodeWindow'
-import Cta from '../components/Cta'
-import PixelIcon from '../components/PixelIcon'
-import { USE_CASES } from './useCasesData'
-import { pickLocale, useSiteLocale } from '../siteI18n'
-import { vaneSourceFileUrl } from '../siteLinks'
-
-function Pipeline({ steps }: { steps: string[] }) {
-  return (
-    <div className="pipeline">
-      {steps.map((s, i) => (
-        <Fragment key={i}>
-          <span className="pstep">{s}</span>
-          {i < steps.length - 1 && <span className="psep">→</span>}
-        </Fragment>
-      ))}
-    </div>
-  )
-}
-
-function UseCaseBlock({ id, children }: PropsWithChildren<{ id: string }>) {
-  const brokenLinks = useBrokenLinks()
-  brokenLinks.collectAnchor(id)
-
-  return (
-    <Box className="uc-block" id={id}>
-      {children}
-    </Box>
-  )
-}
+import UseCaseExplorer from '../components/usecases/UseCaseExplorer'
+import {Link} from '../router'
+import {dataSolutions} from '../content/dataSolutions'
+import {agentUseCases, casePagePath} from '../content/useCases'
+import {useSiteLocale} from '../siteI18n'
 
 export default function UseCases() {
-  const locale = useSiteLocale()
-  const copy = pickLocale(
-    locale,
-    {
-      title: 'AI pipeline use cases — Vane',
-      description: 'Explore Vane use cases for multimodal AI pipelines: embeddings, semantic search, deduplication, image pipelines, generation, prompting, and voice analytics.',
-      ogDescription: 'Real AI pipeline examples for embeddings, search, deduplication, images, generation, prompting, and voice analytics.',
-      eyebrow: 'Use Cases',
-      heading: 'AI pipelines Vane is built for',
-      lead: 'Real user scenarios, not just examples. Each one is the same shape: the problem, the pipeline, the code, what goes in and out, and when to reach for it.',
-      problem: 'Problem',
-      io: 'Input / Output',
-      input: 'input',
-      output: 'output',
-      when: 'When to use it',
-      example: 'Example:',
-      openExample: 'Open example',
-      readDocs: 'Read the Docs',
-      seeBenchmarks: 'See benchmarks',
-    },
-    {
-      title: 'Vane AI 工作流用例',
-      description: '查看 Vane 支撑的多模态 AI 工作流用例：embeddings、语义检索、去重、图像处理、批量生成、Prompt 和语音分析。',
-      ogDescription: '覆盖 embeddings、搜索、去重、图像、生成、Prompt 和语音分析的真实 AI 流水线示例。',
-      eyebrow: '用例',
-      heading: 'Vane 适合哪些 AI 工作流',
-      lead: '常见生产场景示例，每个用例都说明问题、流水线、代码、输入输出和适用时机。',
-      problem: '问题',
-      io: '输入 / 输出',
-      input: '输入',
-      output: '输出',
-      when: '何时使用',
-      example: '示例：',
-      openExample: '打开示例',
-      readDocs: '阅读文档',
-      seeBenchmarks: '查看基准测试',
-    },
-  )
-
-  return (
-    <>
-      <Head>
-        <title>{copy.title}</title>
-        <meta
-          name="description"
-          content={copy.description}
-        />
-        <meta property="og:title" content={copy.title} />
-        <meta property="og:description" content={copy.ogDescription} />
-      </Head>
-
-      <Nav />
-
-      {/* INTRO */}
-      <section className="intro">
-        <div className="wrap">
-          <Eyebrow>{copy.eyebrow}</Eyebrow>
-          <h1 className="h1" style={{ marginTop: 16, fontSize: 'clamp(34px,4.6vw,52px)' }}>
-            {copy.heading}
-          </h1>
-          <p className="lead" style={{ marginTop: 18, maxWidth: 620 }}>
-            {copy.lead}
-          </p>
-          <div className="chips">
-            {USE_CASES.map((u) => (
-              <a className="chip" href={`#${u.id}`} key={u.id}>{pickLocale(locale, u.title, u.titleZh)}</a>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className="wrap"><div className="ddiv" /></div>
-
-      <section className="section" style={{ padding: '44px 0 20px' }}>
-        <div className="wrap">
-          {USE_CASES.map((u) => (
-            <UseCaseBlock id={u.id} key={u.id}>
-              <div className="uc-head">
-                <span className="ic"><PixelIcon name={u.icon} size={18} /></span>
-                <h2>{pickLocale(locale, u.title, u.titleZh)}</h2>
-                <span className="tg">{pickLocale(locale, u.tag, u.tagZh)}</span>
-              </div>
-              <Pipeline steps={pickLocale(locale, u.pipeline, u.pipelineZh)} />
-              <div className="uc-body">
-                <div>
-                  <div className="field">
-                    <div className="ftt">{copy.problem}</div>
-                    <p>{pickLocale(locale, u.problem, u.problemZh)}</p>
-                  </div>
-                  <div className="field">
-                    <div className="ftt">{copy.io}</div>
-                    <div className="io">
-                      <div className="cell"><div className="k">{copy.input}</div><div className="v">{pickLocale(locale, u.input, u.inputZh)}</div></div>
-                      <div className="cell"><div className="k">{copy.output}</div><div className="v">{pickLocale(locale, u.output, u.outputZh)}</div></div>
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="ftt">{copy.when}</div>
-                    <p>{pickLocale(locale, u.when, u.whenZh)}</p>
-                  </div>
-                </div>
-                <CodeWindow filename={u.filename} code={u.code} />
-              </div>
-              <div className="exrow">
-                <span className="ex">{copy.example} <u>{u.example}</u></span>
-                <Button sm href={vaneSourceFileUrl(u.example)} target="_blank" rel="noreferrer" arrow>
-                  {copy.openExample}
-                </Button>
-              </div>
-            </UseCaseBlock>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA */}
-      <div className="wrap"><div className="ddiv" /></div>
-      <section className="section" style={{ paddingTop: 40 }}>
-        <div className="wrap">
-          <Cta>
-            <Button solid to="/docs" arrow>{copy.readDocs}</Button>
-            <Button to="/benchmarks">{copy.seeBenchmarks}</Button>
-          </Cta>
-        </div>
-      </section>
-
-      <Footer />
-    </>
-  )
+  const locale = useSiteLocale(), t = (en: string, zh: string) => locale === 'en' ? en : zh
+  return <MarketingLayout title={t('Solutions for agents and multimodal data', 'Agent 与多模态数据解决方案')} description={t('Eight solutions for business agents, multimodal training data and enterprise data pipelines with Vane Context and Vane Data.', '探索六类业务 Agent 场景，以及多模态训练数据与企业数据流水线，共八个解决方案。')}>
+    <section className="marketing-product-hero use-cases-hero"><div className="wrap"><span className="product-badge">Vane Context · Vane Data</span><h1 className="h1">{t('From your data to the work ahead.', '从你的数据，到业务与模型的下一步')}</h1><p className="lead">{t('Give business agents useful context with Vane Context. Build training datasets and enterprise data pipelines with Vane Data.', '用 Vane Context 为业务 Agent 提供可用上下文，用 Vane Data 构建训练数据集与企业数据流水线。')}</p><nav className="case-index-links" aria-label={t('Browse use cases', '浏览应用场景')}>{agentUseCases.map(scenario => <Link to={casePagePath(scenario.id)} key={scenario.id}>{scenario.name[locale]}<ArrowRightIcon aria-hidden="true" /></Link>)}{dataSolutions.map(item => <Link to={item.path} key={item.id}>{item.name[locale]}<ArrowRightIcon aria-hidden="true"/></Link>)}</nav></div></section>
+    <section className="section marketing-section case-overview-explorer"><div className="wrap"><UseCaseExplorer /></div></section>
+    <section className="section marketing-section"><div className="wrap"><div className="section-heading"><h2 className="h2">{t('One context foundation. Six ways to put it to work.', '同一套上下文能力，进入不同的业务')}</h2></div><div className="case-directory">{agentUseCases.map(scenario => <Link className="case-directory-entry" key={scenario.id} to={casePagePath(scenario.id)}><div><span className="value-label">{scenario.agent}</span><h3>{scenario.name[locale]}</h3></div><p>{scenario.summary[locale]}</p><ArrowRightIcon aria-hidden="true" /></Link>)}</div></div></section>
+    <section className="section marketing-section"><div className="wrap"><div className="section-heading"><span className="product-badge">Vane Data</span><h2 className="h2">{t('Build the data your models and agents need.', '构建模型与 Agent 所需的数据')}</h2><p>{t('Two data engineering solutions, from source files to training samples and searchable business records.', '两类数据工程方案，将源文件整理为训练样本与可检索的业务记录。')}</p></div><div className="case-directory data-solution-directory">{dataSolutions.map(item => <Link className="case-directory-entry" key={item.id} to={item.path}><div><span className="value-label">{item.product}</span><h3>{item.name[locale]}</h3></div><p>{item.summary[locale]}</p><ArrowRightIcon aria-hidden="true"/></Link>)}</div></div></section>
+    <section className="section marketing-final-cta"><div className="wrap"><h2 className="h2">{t('What is your agent working on?', '你的 Agent 正在处理什么任务？')}</h2><div className="marketing-actions"><Button solid to="/demo?source=solution" arrow>{t('Request Demo', '预约演示')}</Button></div></div></section>
+  </MarketingLayout>
 }

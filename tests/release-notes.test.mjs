@@ -52,7 +52,8 @@ test('v0.1.0 preserves the published capability boundaries in both languages', (
 test('all release navigation entries use locale-aware internal links', () => {
   const nav = read('src/components/Nav.tsx')
   const footer = read('src/components/Footer.tsx')
-  assert.equal((nav.match(/<Link\b[^>]*to="\/release-notes"/g) ?? []).length, 2)
+  assert.match(nav, /to: '\/release-notes'/)
+  assert.match(nav, /resources\.map/)
   assert.equal((footer.match(/<Link\b[^>]*to="\/release-notes"/g) ?? []).length, 1)
   for (const source of [nav, footer]) {
     assert.doesNotMatch(source, /\$\{GITHUB_URL\}\/releases/)

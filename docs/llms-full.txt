@@ -112,101 +112,113 @@ Next: [Quickstart](/docs/data/quickstart/quickstart).
 Route: /docs/data/quickstart/quickstart
 Source: docs/data/quickstart/quickstart.mdx
 
-This quickstart uses Vane's native file and image types to turn local images into thumbnails. It runs on your machine and needs no external Ray cluster, GPU, or model-provider credentials.
+Use native file and image types to inspect dimensions, select images and create thumbnails. SQL and Python below process the same three files and return the same columns. This example uses the Local Runner and needs no Ray runtime, GPU or model credentials.
 
-You will create three sample images, inspect their metadata, filter by width, and decode and resize the selected images with SQL.
-
-Before continuing, complete the [Installation guide](/docs/data/quickstart/installation). Install the image extra in the same environment; it includes Pillow for the sample images and the default Python image backend:
+Complete the [Installation guide](/docs/data/quickstart/installation), then install the image extra in the same activated virtual environment:
 
 ```bash
 uv pip install 'vane-ai[image]'
 ```
 
-## Run Your First Multimodal Query
+## Prepare the Shared Images
 
-Save this as `quickstart.py` and run `python quickstart.py`:
+Save as `prepare_images.py` and run `python3 prepare_images.py` once. Keep the examples below in the same working directory.
 
 ```python
 from pathlib import Path
-
 from PIL import Image
-import vane
 
-# Create three local images; no downloads are needed.
-assets = Path("quickstart-images").resolve()
-assets.mkdir(exist_ok=True)
-for name, size, color in [
-    ("large", (640, 480), "navy"),
-    ("medium", (320, 240), "orange"),
-    ("small", (64, 64), "green"),
-]:
-    Image.new("RGB", size, color).save(assets / f"{name}.png")
-
-con = vane.connect()
-files = vane.from_files(
-    [str(assets / f"{name}.png") for name in ("large", "medium", "small")],
-    connection=con,
-)
-images = con.sql("SELECT image_file(file) AS source FROM files")
-metadata = con.sql("""
-    SELECT source, image_file_metadata(source) AS info
-    FROM images
-""")
-thumbnails = con.sql("""
-    SELECT info.width AS source_width, info.height AS source_height,
-           resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
-    FROM metadata
-    WHERE info.width >= 300
-""")
-con.sql("""
-    SELECT source_width, source_height,
-           image_width(thumbnail) AS width,
-           image_height(thumbnail) AS height,
-           typeof(thumbnail) AS image_type
-    FROM thumbnails
-    ORDER BY source_width DESC
-""").show()
+folder = Path("quickstart-images")
+folder.mkdir(exist_ok=True)
+for name, size in [("large", (640, 480)),
+                   ("medium", (320, 240)), ("small", (64, 64))]:
+    Image.new("RGB", size, "#546354").save(folder / f"{name}.png")
 ```
 
-The 64 × 64 image is filtered out. The two remaining images become 224 × 224 thumbnails:
+## SQL Query
 
-| source_width | source_height | width | height | image_type |
-| --- | --- | --- | --- | --- |
-| 640 | 480 | 224 | 224 | `IMAGE` |
-| 320 | 240 | 224 | 224 | `IMAGE` |
+Save as `quickstart.sql`:
+
+```sql
+WITH images AS (
+  SELECT image_file(file) AS source
+  FROM list_files('quickstart-images/*.png')
+), metadata AS (
+  SELECT source, image_file_metadata(source) AS info FROM images
+), thumbnails AS (
+  SELECT info.width AS source_width, info.height AS source_height,
+         resize(decode_image_file(source, 'RGB'), 224, 224) AS thumbnail
+  FROM metadata WHERE info.width >= 300
+)
+SELECT source_width, source_height,
+       image_width(thumbnail) AS width,
+       image_height(thumbnail) AS height
+FROM thumbnails ORDER BY source_width DESC;
+```
+
+Execute it with Vane using the Local Runner:
+
+```bash
+python3 -c 'import sys, vane; vane.configure(runner="local"); vane.connect().sql(sys.stdin.read()).show()' < quickstart.sql
+```
+
+## Python Relation API
+
+Alternatively, save as `quickstart.py` and run `python3 quickstart.py`. It reads the same files independently of the SQL example.
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+thumbnails = (vane.from_files("quickstart-images/*.png", connection=con)
+    .select(vane.image_file(vane.col("file")).alias("source"))
+    .select(vane.col("source"),
+            vane.image_file_metadata(vane.col("source")).alias("info"))
+    .filter("info.width >= 300")
+    .project("info.width AS source_width, info.height AS source_height, source")
+    .select(vane.col("source_width"), vane.col("source_height"),
+            vane.resize(vane.decode_image_file(vane.col("source"), "RGB"),
+                        224, 224).alias("thumbnail")))
+thumbnails.select(
+    vane.col("source_width"), vane.col("source_height"),
+    vane.image_width(vane.col("thumbnail")).alias("width"),
+    vane.image_height(vane.col("thumbnail")).alias("height"),
+).order("source_width DESC").show()
+```
+
+## Same Result
+
+| source_width | source_height | width | height |
+| --- | --- | --- | --- |
+| 640 | 480 | 224 | 224 |
+| 320 | 240 | 224 | 224 |
+
+The 64 × 64 image is filtered out before pixel decoding. Selected references are decoded into native `IMAGE` values and resized to 224 × 224. `show()` executes the query and displays the dimensions; it does not save thumbnail files.
 
 ## What Just Happened
 
-- `from_files(...)` created a `FILE` column from the local paths; `image_file(file)` turned each reference into an `IMAGEFILE`.
-- `image_file_metadata(...)` read the encoded image's dimensions without decoding the full pixel array. SQL selected images at least 300 pixels wide.
-- `decode_image_file(...)` decoded the selected references into `IMAGE` values; `resize(...)` produced fixed-size RGB images.
-- `show()` ran the query and displayed dimensions and types. The `thumbnail` column holds pixels, while `source` holds a file reference. The query does not save new image files.
+- `list_files` / `from_files` yields `FILE` references, converted to `IMAGEFILE` by `image_file`.
+- `image_file_metadata` reads dimensions before full decoding; the query selects widths of at least 300 pixels.
+- `decode_image_file` and `resize` operate on native image values in the same query.
+- Both interfaces return the same four columns sorted by source width.
 
-See [File functions](/docs/data/reference/multimodal-data/file) and [Image functions](/docs/data/reference/multimodal-data/image) for more operations. Native media acceleration is optional and is not required for this example.
+## Move to Ray When Needed
 
-## Optional: Add Python or AI Processing
-
-Use [UDFs](/docs/data/concepts/udfs) to add custom Python processing, or [AI Functions](/docs/data/concepts/ai-functions) to add model inference. These are separate next steps; the image query above needs neither a custom function nor a model API key.
-
-## Scale from Local Ray to a Cluster
-
-Ray is Vane's default runner. With `RAY_ADDRESS` unset, this quickstart starts a Ray runtime on the current machine; no external cluster or explicit runner configuration is required.
-
-To run on a cluster, first replace the local sample paths with files accessible to every worker, such as shared storage or object storage. Then launch from the head node with cluster discovery enabled:
+Ray is Vane's default runner. Remove `vane.configure(runner="local")` before connecting to use it. With `RAY_ADDRESS` unset, Ray can start on the current machine. To use an existing cluster, launch from its head node:
 
 ```bash
 RAY_ADDRESS=auto python quickstart.py
 ```
 
-Every Ray worker must have the image dependencies installed and access to the input files. Creating sample files on the head node alone does not make them available on other nodes. See [Deployment](/docs/data/deploy/deployment) before running on a cluster.
+First replace the local image paths with sources available to all workers. Every worker needs the image dependencies and access to the input files. See [Deployment](/docs/data/deploy/deployment) for runtime configuration, shared data access and resource declarations.
 
 ## Next Steps
 
 - [Multimodal Data](/docs/data/reference/multimodal-data)
-- [UDF Concepts](/docs/data/concepts/udfs)
-- [AI Function Concepts](/docs/data/concepts/ai-functions)
-- [Tutorials](/docs/data/tutorials)
-- [Deployment](/docs/data/deploy/deployment)
+- [Python UDFs](/docs/data/concepts/udfs)
+- [AI Functions](/docs/data/concepts/ai-functions)
+- [Equipment Observations](/docs/data/tutorials/use-cases/equipment-observations)
 
 ## SQL vs Python
 
@@ -945,6 +957,8 @@ These use cases combine multiple source systems, modality branches, or SQL-deriv
 | [Vane + Doris support recording search](/docs/data/tutorials/use-cases/audio-support-doris-search) | Transcribe support recordings, extract candidate fault categories, embed segments, and retrieve similar feedback in Doris linked to orders and batches | Three sample WAV recordings plus a ticket manifest |
 
 ## Choosing an example
+
+For the native-type, UDF, AI Function and hybrid-query sequence shown on the product page, follow [Equipment observations with native types and AI](/docs/data/tutorials/use-cases/equipment-observations). It includes the complete preparation script and the source mapping contract.
 
 Start with Common Crawl or Red Pajamas for text and embedding workflows. The compact MinHash example introduces the algorithm; the global web-text use case carries it through candidate diagnostics, exact verification, clustering, and publication. Image generation, image querying, voice, and Basic Prompt show how binary media and model results move through Arrow-backed Relations. Choose the claims, procurement, Agent-evidence, or training-release use case when you need a full workflow with several inputs and explicit downstream policy.
 
@@ -4149,6 +4163,78 @@ The sink commits each batch separately; the pipeline does not provide a transact
 Completion criteria: Doris contains recording segments with 384-dimensional embeddings; search.sql can be executed directly to retrieve similar feedback from other tickets using an existing recording segment; and segments can be linked to orders and production batches and replayed using their source references and timestamps.
 
 References: [Vane installation](/docs/data/quickstart/installation); [Doris Vector Index Practical Guide](https://doris.apache.org/docs/4.x/table-design/index/vector-index/practical-guide/).
+
+## Equipment Observations with Native Types and AI
+
+Route: /docs/data/tutorials/use-cases/equipment-observations
+Source: docs/data/tutorials/use-cases/equipment-observations.mdx
+
+This is the complete companion to the five examples on the [Vane Data product page](/products/data#processing). The default pipeline combines equipment documents and inspection recordings, preserves their source locations, extracts typed observations and joins the searchable result to an equipment register. Image and video operators are additional input preparation examples using the same engine.
+
+## Install and configure
+
+Use a Vane build that supports native FILE inputs to `ai_prompt`, with the matching [Lance extension](/docs/data/extensions/lance) installed. This example is separate from the 0.1.0 quickstart. Install the packages needed for your model providers, plus `faster-whisper`, `pyarrow` and `pylance`. The speech model must be available in each worker's model cache.
+
+Download [equipment_observations.py](/examples/equipment_observations.py). Run it outside a Vane source checkout so it imports the installed package.
+
+```bash
+pip install 'vane-ai[google,openai,audio]' faster-whisper pyarrow pylance
+export VANE_PROMPT_PROVIDER=google
+export VANE_PROMPT_MODEL='<PDF-capable-model>'
+export VANE_EMBEDDING_PROVIDER=openai
+export VANE_EMBEDDING_MODEL='<model-supporting-1024-dimensions>'
+export VANE_ASR_MODEL=small
+export VANE_FACTORY_ID=factory_a
+export VANE_PERMISSION_SCOPE=maintenance
+export VANE_OBSERVATIONS_PATH=./asset_observations.lance
+```
+
+Set the providers' credential environment variables according to their documentation. Google handles the document inputs in this configuration; OpenAI produces text embeddings. Model names are explicit choices in your environment. A compatible endpoint must support the selected media and vector dimension.
+
+## Prepare source and business records
+
+Save `manifest.csv` and `assets.csv` beside the script. Use real document and audio paths that your worker can read. Local paths and configured object-store paths are both possible.
+
+```csv
+factory_id,asset_id,permission_scope,quality_status,source_kind,source_url
+factory_a,A-017,maintenance,draft,document,/absolute/path/to/A-017/manual.pdf
+factory_a,A-017,maintenance,draft,audio,/absolute/path/to/A-017/inspection.wav
+```
+
+```csv
+factory_id,asset_id,permission_scope,line_id,model
+factory_a,A-017,maintenance,Line 03,Motor M-240
+```
+
+The factory, equipment identifier and permission scope come from trusted source mapping. `quality_status` belongs to a business review process. Change a source's `draft` state to `approved` after checking it; the query deliberately excludes unapproved material. A model confidence filter does not approve the record.
+
+Sources need to state an event time if they are to pass the dated-observation filter. Unknown time, unsupported facts or low-confidence output do not become a result merely to fill the example. The default document locator points to the complete file; a page parser can supply more precise page and character locations. Audio locators use the real segment timestamps returned by ASR.
+
+## Follow the five mechanisms
+
+| Mechanism | What the script does | Preserved result |
+| --- | --- | --- |
+| Native types | `to_file` retains the document reference; `audio_file` supplies typed audio to the UDF | Source URL and business identifiers |
+| Custom functions | `@vane.func` normalizes vibration units; `@vane.cls` reuses the speech model | Numeric measurement and timed transcript segments |
+| Structured understanding | `ai_prompt` uses a fixed JSON Schema for document and transcript branches | Native STRUCT with facts, confidence and source wording |
+| Embeddings | SQL expands fields, casts event time and calls `ai_embed` | `FLOAT[1024]` alongside fields and source locations |
+| Search and joins | Lance hybrid search applies scope and quality filters, then joins the equipment register | Ranked evidence grouped by equipment |
+
+The script includes imports, the two UDF registrations, the full output Schema, intermediate Relations, Lance persistence, full-text and scalar index creation, query embedding and the final SQL. Query and preparation share the embedding configuration. Small samples use exact vector search; create an ANN index when the dataset warrants one.
+
+To prepare images or video in the same connection, use the native-type examples on the product page and the [image](/docs/data/reference/multimodal-data/image), [audio](/docs/data/reference/multimodal-data/audio) and [video](/docs/data/reference/multimodal-data/video) references. Decode suitable images, resample audio or sample the relevant video window. Additional model branches should use the same observation Schema and keep their original locators.
+
+## Run and inspect
+
+```bash
+python equipment_observations.py
+```
+
+The script writes `asset_observations.lance`, prints the equipment evidence and writes `equipment_evidence.parquet`. It refuses to overwrite an existing dataset; select a new output path for another standalone run.
+
+Inspect the original measurement, normalized velocity, event time, source quote, locator and vector type. Search uses the current authorization inputs and joins only equipment in that scope. Match scores rank retrieval results; they are not diagnostic confidence. An empty result can be correct when the source, time, approval or relevance filters do not match.
+
+[Python UDFs](/docs/data/concepts/udfs) · [AI Functions](/docs/data/concepts/ai-functions) · [Lance setup](/docs/data/extensions/lance)
 
 ## UDF reference
 

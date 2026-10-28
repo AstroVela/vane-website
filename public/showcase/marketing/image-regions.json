@@ -1,0 +1,42 @@
+[
+  {
+    "id": "cup",
+    "assetId": "comp_005",
+    "x": 0.365,
+    "y": 0.315,
+    "width": 0.18,
+    "height": 0.28
+  },
+  {
+    "id": "strawberries",
+    "assetId": "comp_005",
+    "x": 0.58,
+    "y": 0.537,
+    "width": 0.214,
+    "height": 0.075
+  },
+  {
+    "id": "banana",
+    "assetId": "comp_005",
+    "x": 0.55,
+    "y": 0.611,
+    "width": 0.213,
+    "height": 0.078
+  },
+  {
+    "id": "powder",
+    "assetId": "comp_005",
+    "x": 0.25,
+    "y": 0.645,
+    "width": 0.224,
+    "height": 0.082
+  },
+  {
+    "id": "text",
+    "assetId": "comp_005",
+    "x": 0.09,
+    "y": 0.447,
+    "width": 0.81,
+    "height": 0.096
+  }
+]

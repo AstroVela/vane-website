@@ -1,5 +1,7 @@
 [default.extend-identifiers]
 PNGs = "PNGs"
+# React callback for the standard media seeked event.
+onSeeked = "onSeeked"
 
 [default.extend-words]
 Vane = "Vane"

@@ -4,13 +4,6 @@ import { test } from 'node:test'
 
 const siteStyles = readFileSync('src/index.css', 'utf8')
 
-test('Chinese CTA headings have enough room at the desktop font-size cap', () => {
-  assert.match(
-    siteStyles,
-    /\.cta \.h2:lang\(zh\)\s*\{[^}]*max-width:\s*680px/s,
-  )
-})
-
 test('outlined buttons keep the ink palette and no link underline on hover', () => {
   assert.match(
     siteStyles,

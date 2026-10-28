@@ -189,6 +189,16 @@
       }
     },
     {
+      "slug": "tutorials/use-cases/equipment-observations",
+      "title": "Equipment Observations with Native Types and AI",
+      "source": "docs/data/tutorials/use-cases/equipment-observations.mdx",
+      "route": "/docs/data/tutorials/use-cases/equipment-observations",
+      "frontmatter": {
+        "title": "Equipment Observations with Native Types and AI",
+        "description": "Use native media, custom UDFs, AI Functions and SQL to prepare searchable equipment observations."
+      }
+    },
+    {
       "slug": "reference/udf",
       "title": "UDF reference",
       "source": "docs/data/reference/udf/index.mdx",
@@ -832,6 +842,11 @@
               "slug": "tutorials/use-cases/audio-support-doris-search",
               "label": "Vane + Doris Support Recording Search",
               "route": "/docs/data/tutorials/use-cases/audio-support-doris-search"
+            },
+            {
+              "slug": "tutorials/use-cases/equipment-observations",
+              "label": "Equipment Observations with Native Types and AI",
+              "route": "/docs/data/tutorials/use-cases/equipment-observations"
             }
           ]
         }

@@ -1,73 +1,52 @@
-/* ============================================================
-   VANE × turbopuffer-style — monospace, ink-on-paper, boxy,
-   dotted offset shadows. Near-monochrome; the only color is the
-   low-saturation code syntax theme + the grayscale logo mark.
-   Source of truth: design_handoff_vane_turbopuffer/designs/tp.css
-   ============================================================ */
+/* Shared Vane brand and document layout. Marketing rules live in marketing.css. */
 :root {
-  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-  /* Role-based aliases (AIE-style abstraction): name the *role*, not the face.
-     All three map to the mono stack today — the design is deliberately all-mono.
-     If a display or reading face is ever introduced, change it here only. */
+  --mono: 'JetBrains Mono Variable', 'Noto Sans SC Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* Proportional text for reading; mono for code and technical values. */
   --font-mono: var(--mono);
-  --font-body: var(--mono);
-  /* Display tier (marketing headlines only): a proportional grotesk that
-     contrasts the mono body — Space Grotesk is the proportional sibling of a
-     monospace, so it reads "designed" without leaving the technical register.
-     Falls back to the mono stack if the webfont fails. Applied only to
-     .h1/.h2/.hero-h1 — small headings & all UI/code stay mono. */
-  --font-display: 'Space Grotesk', var(--mono);
-  /* System-label tier (the highlight 亮点): a dot-matrix bitmap face for the
-     uppercase micro-labels that annotate the page. Its glyphs are built from
-     the same dots as the 象界 perception-grid background — so the labels and
-     the substrate share one material. This borrows AIE's *pixel idea* but
-     re-roots its meaning: here pixels = 象 (perception nodes) / 像素, the atomic
-     unit of multimodal data — not retro-terminal nostalgia. Silkscreen is built
-     for small sizes (legible where VT323 would smear). Falls back to mono. */
-  --font-pixel: 'Silkscreen', var(--mono);
+  --font-body: 'Hanken Grotesk Variable', 'Noto Sans SC Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Noto Sans SC Variable', sans-serif;
+  --heading-tracking: -.025em;
+  --section-tracking: -.02em;
+  --ifm-font-family-base: var(--font-body);
+  --ifm-font-family-monospace: var(--font-mono);
+  --ifm-heading-font-weight: 650;
+  --font-pixel: 'Silkscreen', 'Noto Sans SC Variable', sans-serif;
   --paper: #F4F3ED;       /* warm off-white page */
   --paper-2: #FBFAF6;     /* card surface */
   --paper-3: #ECEAE1;     /* inset / stripe */
   --ink: #15171E;         /* near-black navy ink */
   --ink-2: #23262F;       /* body / secondary text — darkened for comfortable long-form reading */
-  --ink-3: #6E717C;       /* muted */
+  --ink-3: #62656D;       /* muted */
   --line: #15171E;        /* strong (card) borders */
   --line-2: #CFCDC2;      /* soft hairlines */
   --accent: #9A5638;      /* the single warm, low-saturation accent (links) */
+  --accent-wash: #F1E7DE;
   --accent-strong: #7E4329; /* accent, deepened for hover */
   --green: #15171E;       /* monochrome: folded to ink */
   --green-ink:#15171E;
   --r: 2px;
   --r-lg: 2px;
-  /* Content width: stays at the spec'd 1180px on laptops (≤1440px viewports),
-     then grows fluidly on large screens so the side gutters share the extra
-     width instead of ballooning — capped at 1440px. */
-  --wrap-max: clamp(1180px, calc(1180px + (100vw - 1440px) * 0.5), 1440px);
+  --wrap-max: 1368px;
 }
+/* Chinese glyphs need less tracking compression than Latin display type. */
+:root:lang(zh) { --heading-tracking: -.01em; --section-tracking: 0em; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body {
   background-color: var(--paper); color: var(--ink);
+  background-image:
+    radial-gradient(ellipse 108% 108% at 50% 34%,transparent 58%,rgba(21,23,30,.03) 100%),
+    radial-gradient(rgba(21,23,30,.06) 1px,transparent 1.7px),
+    linear-gradient(to right,rgba(21,23,30,.045) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(21,23,30,.045) 1px,transparent 1px);
+  background-size:100% 100%,88px 88px,88px 88px,88px 88px;
+  background-position:50% 50%,43px 43px,-1px -1px,-1px -1px;
+  background-repeat:no-repeat,repeat,repeat,repeat;
   font-family: var(--font-body); font-size: 15px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  /* "象界" substrate — a coordinate world (界) carrying faint perception
-     nodes (象), bounded by a soft edge vignette. All ≤6% ink, monochrome;
-     deliberately recedes so it never competes with the text. */
-  background-image:
-    /* 界 — bounded world: gentle edge fade, keeps the center clean & focused */
-    radial-gradient(ellipse 108% 108% at 50% 34%, transparent 58%, rgba(21,23,30,0.03) 100%),
-    /* 象 — perception nodes suspended in the centre of each grid cell */
-    radial-gradient(rgba(21,23,30,0.06) 1px, transparent 1.7px),
-    /* 界 — engineering coordinate grid */
-    linear-gradient(to right, rgba(21,23,30,0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(21,23,30,0.045) 1px, transparent 1px);
-  background-size: 100% 100%, 88px 88px, 88px 88px, 88px 88px;
-  background-position: 50% 50%, 43px 43px, -1px -1px, -1px -1px;
-  background-attachment: fixed, scroll, scroll, scroll;
-  background-repeat: no-repeat, repeat, repeat, repeat;
 }
 ::selection { background: var(--ink); color: var(--paper); }
 a { color: inherit; }
@@ -100,12 +79,11 @@ a { color: inherit; }
 .eyebrow { font-family: var(--font-pixel); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); display: inline-flex; align-items: center; gap: 12px; }
 .eyebrow::before, .eyebrow::after { content: "—"; color: var(--line-2); }
 .eyebrow.solo::after { display: none; }
-h1, h2, h3 { font-family: inherit; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
-/* Display tier — proportional grotesk on the big marketing headlines only.
-   Small headings (.h3, bare h2/h3 in docs) and all UI/code stay monospace. */
-.h1, .h2, .hero-h1 { font-family: var(--font-display); letter-spacing: -0.03em; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 650; letter-spacing: var(--section-tracking); margin: 0; }
+/* Display type follows the Vane wordmark; long copy keeps a proportional reading face. */
+.h1, .h2, .hero-h1 { font-family: var(--font-display); letter-spacing: var(--heading-tracking); }
 .h1 { font-size: clamp(38px, 5.2vw, 62px); line-height: 1.02; }
-.h2 { font-size: clamp(28px, 3.4vw, 42px); line-height: 1.08; }
+.h2 { font-size: clamp(28px, 3.4vw, 42px); font-weight: 650; line-height: 1.08; letter-spacing: var(--section-tracking); }
 .h3 { font-size: 19px; line-height: 1.3; }
 .lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: var(--ink-2); }
 u, .ul { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
@@ -378,9 +356,9 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
 .tk .d { width: 6px; height: 6px; background: var(--ink); border-radius: 50%; }
 
 /* ---- section head ---- */
-.shead { margin-bottom: 36px; }
+.shead { margin: 0 auto 36px; max-width: 1040px; text-align: center; }
 .shead .h2 { margin-top: 12px; }
-.shead .lead { margin-top: 12px; max-width: 600px; }
+.shead .lead { margin-top: 12px; }
 
 /* ---- VS / why ---- */
 .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -2786,8 +2764,7 @@ pre.code { margin: 0; padding: 15px 16px; font-family: var(--font-mono); font-si
   display: flex;
   justify-content: center;
 }
-.cta .h2 { margin: 14px auto 0; max-width: 620px; }
-.cta .h2:lang(zh) { max-width: 680px; }
+.cta .h2 { margin: 14px auto 0; max-width: 1100px; }
 .cta .btns { display: flex; gap: 12px; justify-content: center; margin-top: 26px; flex-wrap: wrap; }
 footer.ft { border-top: 1.5px solid var(--line); background: var(--paper-2); margin-top: 84px; }
 .ft-top { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr 1fr; gap: 32px; padding: 48px 0 26px; }

@@ -40,3 +40,8 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+
+# Local SQLite submissions and browser acceptance artifacts
+.local-data/
+playwright-report/
+test-results/

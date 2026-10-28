@@ -1,18 +1,26 @@
 # Vane site
 
-Marketing and documentation site for **Vane** — a DuckDB-compatible engine for
-multimodal data pipelines on Ray. Built with React 19 + Docusaurus, with the
-documentation and blog authored in MDX and rendered through the site's existing UI.
+Bilingual marketing and documentation site for two products:
+
+- **Vane Context**: a multimodal context service. The website presents
+  illustrative results and accepts demo requests; it does not run live analysis.
+- **Vane Data**: the multimodal data engine. Installation, examples,
+  benchmarks, engineering articles, and release notes remain available.
+
+Built with React 19 and Docusaurus. A small Node server serves the generated site
+and saves demo requests in an embedded SQLite file.
 
 ## Tech stack
 
 - **React 19** + **Docusaurus 3** (Docusaurus docs and blog plugins plus custom marketing routes)
 - **MDX** for documentation and blog content, rendered with the site's custom MDX components
 - **ESLint** (flat config in `eslint.config.ts`)
+- **Node 24** and its built-in **SQLite** module for demo request reception
+- **Playwright** for browser acceptance checks
 
 ## Getting started
 
-Prerequisites: **Node 20.19+** (or 22.12+) and npm.
+Prerequisites: **Node 24+** and npm.
 
 ```bash
 npm install        # install dependencies
@@ -20,13 +28,16 @@ npm run dev        # start the bilingual dev server (http://localhost:3000)
 npm run dev:en     # start the English locale Docusaurus server only
 npm run dev:zh-CN  # start the Chinese locale Docusaurus server only
 npm run build      # production build to build/
-npm run preview    # serve the production build locally
+npm run preview    # build both locales and serve http://127.0.0.1:4328
+npm run preview:local # serve an existing build with SQLite (no email in local mode)
 npm run lint       # run ESLint
 npm run docs:lint  # check docs registry, sidebar, links, headings, and code fences
 npm run docs:manifest        # regenerate docs/manifest.json
 npm run docs:manifest:check  # verify docs/manifest.json is current
 npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
 npm run docs:llms:check      # verify generated LLM docs files are current
+npm run showcase:check       # verify media, locators, and result references
+npm test                     # unit and SQLite service tests
 ```
 
 The default `npm run dev` command starts one Docusaurus server per locale with
@@ -44,12 +55,14 @@ src/
   plugins/
     vaneRoutes.ts      Docusaurus route registration for public pages
   router.tsx           compatibility Link/useRouter helpers over Docusaurus routing
-  pages/               Home, UseCases, Benchmarks, Docs
+  pages/               product, scenario, demo, and resource pages
+  content/             localized products, scenarios, and showcase definitions
   components/          shared UI (Nav, Footer, CodeWindow, …)
   docs/
     registry.ts        docs metadata registry and public doc slug ordering
     sidebar.data.json  Vane Data docs grouping / ordering
-  index.css, pages.css global styles and design tokens
+  index.css, pages.css shared styles and design tokens
+  marketing.css       warm-paper marketing layouts and responsive media showcase
 
 docs/
   data/
@@ -74,6 +87,47 @@ i18n/
     docusaurus-plugin-content-docs-data/
       current/         Chinese docs mirror using the same English slugs
 ```
+
+## Marketing pages and demo reception
+
+The [approved website design](https://ocnq8kyde63e.feishu.cn/wiki/PYbEw8ePzig9AQkBtQnccjT7nIb)
+uses a warm light theme, one clay accent, 4px corners, and self-hosted Space Grotesk
+and JetBrains Mono. Design variance / motion / density follow the agreed 8 / 5 / 3
+direction: asymmetric page layouts, synchronized media transitions, and open space.
+Reduced motion and mobile viewing use manual media switching by default.
+
+- `/` and `/zh-CN`: interactive media results, analysis, and source references.
+- `/products/context` and `/products/data`: product-specific capabilities and actions.
+- `/solutions`: scenarios linked to the appropriate product.
+- `/demo`: durable request receipt, validation, and safe retries.
+- `/docs/data`: Vane Data documentation.
+
+Marketing copy and showcase definitions live in `src/content/`. Media assets and
+source details live in `public/showcase/marketing/` ([media manifest](public/showcase/marketing/media-manifest.json)).
+Examples represent an authored ideal result; they are not customer records or live
+service outputs. `?media=video|image|audio` remembers the selected medium and
+freezes automatic rotation. The headline and media switch together; clicking
+evidence plays a bounded clip or highlights the original image region. Only one video or audio element can play at a time.
+
+The preview stores requests at `.local-data/demo.sqlite`, which is ignored by Git.
+SQLite runs inside the website Node process and has no separate process or port.
+Local mode never sends email. The Docusaurus development servers serve pages only;
+use the Node preview to test form reception. Deployment configuration, notification
+retries, retention, reverse proxy settings, and backups are described in
+[server/README.md](server/README.md). Keep the SQLite path on persistent storage in
+production. `npm run deploy:static` remains available for static hosting; that mode
+requires a separately routed request API before the form can accept submissions.
+
+For browser checks, build and start the local preview, then run:
+
+```bash
+npx playwright install chromium
+npm run test:browser
+```
+
+Screenshots and failure traces are saved under `.tmp-visual-check/` and ignored by
+Git. The browser suite covers both languages, mobile navigation, the three real media
+types, source localization, rotation and playback state, request persistence, and response-loss retries.
 
 ## Authoring documentation
 
@@ -197,4 +251,5 @@ artifacts and candidates out of the Vane Data runtime version list.
 
 ## License
 
-Licensed under the [Apache License 2.0](./LICENSE).
+Website source is licensed under the [Apache License 2.0](./LICENSE). This does
+not grant a license to the separate commercial Vane Context product.

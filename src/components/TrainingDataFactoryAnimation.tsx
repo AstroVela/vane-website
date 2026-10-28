@@ -190,7 +190,7 @@ export default function TrainingDataFactoryAnimation() {
     {
       aria: '执行时间线',
       eyebrow: '执行时间线',
-      title: '异构资源重叠执行。',
+      title: '异构资源重叠执行',
       lead: '传统流水线会形成阶段屏障和流水线气泡。Vane 通过流式执行与动态批处理，将 CPU、GPU 和 I/O 工作负载重叠调度。',
       samePipeline: '同一条流水线',
       pipelineNote: '相同阶段的执行时序示意；实际性能取决于数据、模型与硬件。',

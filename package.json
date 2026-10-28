@@ -2,13 +2,13 @@
   "name": "vane-site",
   "private": true,
   "version": "0.0.0",
-  "description": "Marketing and documentation site for Vane — a DuckDB-compatible engine for multimodal data pipelines on Ray.",
+  "description": "Vane Context and Vane Data website.",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:en": "docusaurus start",
     "dev:zh-CN": "docusaurus start --locale zh-CN",
-    "build": "docusaurus build",
+    "build": "docusaurus build && node scripts/compress-assets.mjs",
     "test": "node --test tests/*.test.mjs",
     "docs:lint": "node scripts/docs-lint.mjs",
     "docs:llms": "node scripts/docs-llms.mjs",
@@ -22,14 +22,25 @@
     "write-translations": "docusaurus write-translations --locale zh-CN",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "preview": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy"
+    "preview": "npm run build && npm run preview:local",
+    "showcase:check": "node scripts/showcase-check.mjs",
+    "test:browser": "playwright test",
+    "preview:local": "node --env-file-if-exists=.env.local server/start.ts",
+    "start": "node --env-file-if-exists=.env.local server/start.ts",
+    "deploy:static": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",
     "@docusaurus/plugin-content-blog": "^3.10.1",
     "@docusaurus/plugin-content-docs": "^3.10.1",
+    "@docusaurus/plugin-sitemap": "^3.10.1",
     "@docusaurus/theme-classic": "^3.10.1",
+    "@fontsource-variable/hanken-grotesk": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/noto-sans-sc": "5.3.1",
+    "@fontsource-variable/space-grotesk": "5.2.10",
+    "@fontsource/silkscreen": "5.2.7",
+    "@radix-ui/react-icons": "^1.3.2",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
@@ -39,6 +50,7 @@
     "@docusaurus/tsconfig": "^3.10.1",
     "@eslint/js": "^10.0.1",
     "@mdx-js/react": "^3.1.1",
+    "@playwright/test": "^1.64.0",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -49,5 +61,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "wrangler": "^4.112.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

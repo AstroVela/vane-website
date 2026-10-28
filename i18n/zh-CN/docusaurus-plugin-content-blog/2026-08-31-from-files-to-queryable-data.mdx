@@ -3,6 +3,7 @@ slug: from-files-to-queryable-data
 title: Vane Data：从多模态文件到可查询数据
 description: Vane Data 如何用 SQL、Python UDF、AI Function 与 GPU Actor，把 PDF、图片、音频和视频组织成可查询的 Relation。
 date: 2026-08-31
+image: /img/blog/from-files-to-queryable-data/vane-data-multimodal-pipeline-zh-cn.png
 ---
 
 <p className="blog-body-lead">AI 应用往往需要处理 PDF、图片、音频和视频。进入数据管道前，需要对 PDF 拆页、对图片解码、对音频重采样，并沿视频时间轴展开，同时保留文件名、页码和帧号等定位信息。本文以这四类文件为例，介绍 Vane Data 如何以 Relation（多模态数据集）为核心，串联文件展开、批量处理、模型推理、查询和写出，把原始文件转化为可查询的数据。</p>

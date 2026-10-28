@@ -5,13 +5,19 @@
     "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "strict": true,
-    "types": ["node", "@docusaurus/module-type-aliases"]
+    "types": [
+      "node",
+      "@docusaurus/module-type-aliases"
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "docusaurus.config.ts",
     "eslint.config.ts",
     "sidebars.data.ts",
+    "sidebars.context.ts",
     "docs/**/*.mdx",
-    "src/**/*"
+    "src/**/*",
+    "server/**/*.ts"
   ]
 }

@@ -2,7 +2,7 @@ import type {Config} from '@docusaurus/types'
 
 const config = {
   title: 'Vane',
-  tagline: 'DuckDB-compatible pipelines for AI workloads',
+  tagline: 'Multimodal data. Usable context.',
   favicon: 'favicon.svg',
   url: process.env.SITE_URL ?? 'https://vane.astrovela.ai',
   baseUrl: '/',
@@ -32,30 +32,6 @@ const config = {
     },
   },
   clientModules: [require.resolve('./src/clientStyles.ts')],
-  headTags: [
-    {
-      tagName: 'link',
-      attributes: {
-        rel: 'preconnect',
-        href: 'https://fonts.googleapis.com',
-      },
-    },
-    {
-      tagName: 'link',
-      attributes: {
-        rel: 'preconnect',
-        href: 'https://fonts.gstatic.com',
-        crossorigin: 'anonymous',
-      },
-    },
-    {
-      tagName: 'link',
-      attributes: {
-        rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..600&family=Silkscreen:wght@400;700&family=Space+Grotesk:wght@400..700&display=swap',
-      },
-    },
-  ],
   plugins: [
     require.resolve('./src/plugins/devServerWebSocketPath.ts'),
     [
@@ -77,6 +53,7 @@ const config = {
         blogTitle: 'Vane Blog',
         blogDescription: 'Engineering notes, release deep dives, and field reports from the Vane team.',
         blogSidebarCount: 0,
+        blogListComponent: '@site/src/components/BlogList.tsx',
         showLastUpdateAuthor: false,
         showLastUpdateTime: false,
       },
@@ -100,6 +77,7 @@ const config = {
       },
     ],
     require.resolve('./src/plugins/vaneRoutes.ts'),
+    ['@docusaurus/plugin-sitemap', {ignorePatterns:['/docs/agent','/docs/rl','/zh-CN/docs/agent','/zh-CN/docs/rl']}],
   ],
   themes: ['@docusaurus/theme-classic'],
   themeConfig: {

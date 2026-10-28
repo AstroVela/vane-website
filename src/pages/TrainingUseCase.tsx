@@ -1,7 +1,5 @@
-import Head from '@docusaurus/Head'
+import MarketingLayout from '../components/MarketingLayout'
 import useBrokenLinks from '@docusaurus/useBrokenLinks'
-import Nav from '../components/Nav'
-import Footer from '../components/Footer'
 import Box from '../components/Box'
 import Button from '../components/Button'
 import Eyebrow from '../components/Eyebrow'
@@ -158,11 +156,11 @@ export default function TrainingUseCase() {
       title: 'Multimodal training data pipelines for AI models — Vane',
       description: 'Prepare images, video, audio, documents, tables, and sensor logs for multimodal model training. Run filtering, captioning, embedding, deduplication, auto-labeling, and dataset release packaging in one Ray-backed pipeline.',
       ogDescription: 'Raw multimodal data to training-ready releases with one Ray-backed distributed pipeline.',
-      eyebrow: 'Use Case · Multimodal Model Training',
-      heading: 'From raw multimodal data to training-ready dataset releases.',
+      eyebrow: 'Multimodal training data',
+      heading: 'Turn raw media into training-ready data.',
       lead: 'Use native file, image, audio, and video types to prepare training data with SQL and Python. Add model labeling, embedding, quality filters, and deduplication, then write to files or lake formats and scale from local execution to Ray clusters.',
       runPipeline: 'Try the quickstart',
-      requestDemo: 'Request a demo',
+      requestDemo: 'Talk to our team',
       why: 'Why Vane',
       faster: 'Faster pipelines, in far less code.',
       performanceTitle: 'Performance — Overlap CPU, GPU, and I/O work',
@@ -198,11 +196,11 @@ export default function TrainingUseCase() {
       title: '多模态AI模型训练数据流水线 — Vane',
       description: '为多模态模型训练准备图像、视频、音频、文档、表格和传感器日志。用一条 Ray 支撑的流水线完成筛选、caption、embedding、去重、自动标注和数据集发布。',
       ogDescription: '用一条 Ray 支撑的分布式流水线把原始多模态数据转换为可训练发布版本。',
-      eyebrow: '用例 · 多模态模型训练',
-      heading: '把原始多模态数据变成可发布的训练数据集',
+      eyebrow: '多模态训练数据',
+      heading: '把原始媒体变成可训练的数据',
       lead: '用原生文件、图像、音频和视频类型，通过 SQL 与 Python 准备训练数据。按需加入模型标注、向量化、质量过滤和去重，再写入文件或湖格式，并从本地执行扩展到 Ray 集群。',
       runPipeline: '体验快速开始',
-      requestDemo: '申请演示',
+      requestDemo: '联系我们',
       why: '为什么选择 Vane',
       faster: '更高吞吐，更简洁的代码',
       performanceTitle: '高性能：重叠执行 CPU、GPU 与 I/O 工作',
@@ -239,25 +237,14 @@ export default function TrainingUseCase() {
   brokenLinks.collectAnchor('code')
 
   return (
-    <>
-      <Head>
-        <title>{copy.title}</title>
-        <meta
-          name="description"
-          content={copy.description}
-        />
-        <meta property="og:title" content={copy.title} />
-        <meta property="og:description" content={copy.ogDescription} />
-      </Head>
-
-      <Nav />
-
+    <MarketingLayout data title={copy.title.replace(' — Vane', '')} description={copy.description}>
+      <div className="data-solution">
       {/* HERO — solutions intro archetype: editorial copy + primary actions,
           leading straight into the execution timeline animation */}
-      <section className="intro training-hero">
+      <section className="marketing-product-hero training-hero">
         <div className="wrap training-hero-grid">
           <div className="training-hero-copy">
-            <Eyebrow style={{ marginBottom: 20 }}>{copy.eyebrow}</Eyebrow>
+            <span className="product-badge">Vane Data · {copy.eyebrow}</span>
             <h1 className="h1">
               {copy.heading}
             </h1>
@@ -368,7 +355,8 @@ export default function TrainingUseCase() {
         </div>
       </section>
 
-      <Footer />
-    </>
+      <div className="wrap data-solution-related"><Link to="/solutions">{locale === 'en' ? 'All eight solutions' : '全部八个解决方案'} →</Link><Link to="/products/data">{locale === 'en' ? 'Explore Vane Data' : '了解 Vane Data'} →</Link></div>
+      </div>
+    </MarketingLayout>
   )
 }

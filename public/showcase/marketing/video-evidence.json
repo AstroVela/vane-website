@@ -1,0 +1,20 @@
+[
+  {
+    "id": "camping",
+    "assetId": "comp_001",
+    "start": 0,
+    "end": 7
+  },
+  {
+    "id": "ingredients",
+    "assetId": "comp_001",
+    "start": 1,
+    "end": 4
+  },
+  {
+    "id": "blending",
+    "assetId": "comp_001",
+    "start": 5,
+    "end": 7
+  }
+]

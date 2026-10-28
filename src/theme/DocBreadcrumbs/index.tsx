@@ -7,11 +7,12 @@ type BreadcrumbItem = {
 
 export default function DocBreadcrumbs() {
   const breadcrumbs = useSidebarBreadcrumbs() as BreadcrumbItem[] | null
+  const product = PRODUCTS.data
   const group = breadcrumbs && breadcrumbs.length > 1 ? breadcrumbs[0]?.label : undefined
 
   return (
     <div className="crumb">
-      {PRODUCTS.data.name}
+      {product.name}
       {group && <> / {group}</>}
     </div>
   )

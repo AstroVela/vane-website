@@ -132,6 +132,7 @@
 .release-notes-heading h1 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 40px); line-height: 1.15; }
 .release-notes-heading p { color: var(--ink-2); line-height: 1.7; }
 
+.blog-wrapper article { background:var(--paper); }
 .blog-wrapper .container.margin-vert--lg {
   width: 100%;
   max-width: var(--wrap-max);
@@ -626,6 +627,7 @@ html[lang="zh-Hans-CN"] .theme-doc-sidebar-container .menu__list .menu__list .me
 }
 
 main[class*="docMainContainer"] .doc {
+  background:var(--paper);
   padding: 40px var(--docs-content-pad, 44px) 100px;
   min-width: 0;
 }
