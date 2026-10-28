@@ -32,7 +32,7 @@
 .case-data-link { display:flex; justify-content:space-between; align-items:center; gap:48px; }
 .case-data-link h2 { font-size:28px; margin:18px 0; }
 .case-data-link a { flex:none; }
-.marketing-main .demo-selected-case { font-size:14px; color:var(--accent-strong); padding:12px 16px; background:var(--accent-wash); border-radius:6px; }
+.marketing-main .demo-selected-case { font-size:14px; color:var(--accent-strong); padding:12px 16px; background:var(--accent-wash); border-radius:var(--r); }
 .site-nav #nav-use-cases .site-nav-dropdown { width:265px; }
 .site-nav #nav-use-cases a { padding:10px 16px; }
 @media (max-width:1200px) {

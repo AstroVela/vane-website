@@ -2,7 +2,7 @@
 .workshop-heading{position:relative;z-index:12}
 .marketing-main .workshop-heading h1 span{color:inherit}
 /* Reserve room for the heading; the visible scene starts at the gate, not native y=0. */
-.production-line.context-conveyor{--hero-scene-width:min(100vw,1600px,max(320px,calc((100svh - 436px)*3.97)));position:relative;width:var(--hero-scene-width);max-width:100%;margin:calc(28px - var(--scene-scale,.5)*835px) auto 0;pointer-events:none}
+.production-line.context-conveyor{--paper:#FAFAF7;--paper-2:#FFF;--paper-3:#F0F0E9;--ink:#20251F;--ink-2:#3F443D;--ink-3:#686E63;--line:#D8DDD3;--line-2:#DFE3DA;--accent:#BE4826;--accent-strong:#96351A;--accent-wash:#F7ECE5;--r:6px;--r-lg:12px;--font-display:var(--font-body);--font-pixel:var(--font-body);font-family:var(--font-body);--hero-scene-width:min(100vw,1600px,max(320px,calc((100svh - 436px)*3.97)));position:relative;width:var(--hero-scene-width);max-width:100%;margin:calc(28px - var(--scene-scale,.5)*835px) auto 0;pointer-events:none}
 .production-scene{position:relative;isolation:isolate;aspect-ratio:2900/1631}
 .production-stage{position:absolute;left:0;top:0;width:2900px;height:1631px;transform:scale(var(--scene-scale,.5));transform-origin:0 0}
 .assembly-input,.assembly-result{position:absolute;left:0;top:0;bottom:auto;transform-origin:50% 0;will-change:transform,opacity;opacity:0;--playhead:.3}
@@ -92,9 +92,10 @@
 /* Original apparatus shares the existing card coordinates and delivery timing. */
 /* The front panel hides incoming media; the rear exit rim stays behind outgoing media. */
 .production-gate{position:absolute;left:690px;top:835px;width:194px;height:601px;pointer-events:none}
-.gate-interior{position:absolute;z-index:3;left:174px;right:1px;top:16px;bottom:17px;background:linear-gradient(90deg,#27302b,#090f0b 75%,#3c4940);clip-path:polygon(0 2.3%,100% 0,100% 98%,0 100%)}
+.gate-interior{position:absolute;z-index:3;left:174px;right:1px;top:16px;bottom:17px;background:linear-gradient(90deg,#505b52,#343d36 75%,#68746a);clip-path:polygon(0 2.3%,100% 0,100% 98%,0 100%)}
 .gate-shell{position:absolute;z-index:6;inset:0;width:194px;height:601px;filter:grayscale(1)}
-.gate-shell-front{clip-path:polygon(0 0,100% 0,100% 2.7%,93% 2.7%,93% 100%,0 100%)}
+/* Exclude the unused handle detail embedded in the gate shell artwork. */
+.gate-shell-front{clip-path:polygon(0 0,100% 0,100% 2.7%,93% 2.7%,93% 100%,0 100%,0 85%,4% 85%,4% 74%,0 74%)}
 .gate-shell-rim{z-index:3;clip-path:polygon(98.3% 0,100% 0,100% 100%,98.3% 100%)}
 .gate-sill{position:absolute;z-index:6;left:180px;right:0;bottom:0;height:20px;background:linear-gradient(100deg,#f7faf5,#dde3d9);clip-path:polygon(0 12%,100% 0,100% 82%,0 100%)}
 .production-gate-face{position:absolute;z-index:6;left:7.6%;right:7%;top:2.7%;bottom:0;background:linear-gradient(112deg,#e4e9e0,#c2cbbd);border:2px solid #fdfefd;box-shadow:inset 2px 0 3px #fff7;display:flex;align-items:center;justify-content:center}

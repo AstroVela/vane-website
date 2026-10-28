@@ -9,7 +9,7 @@
 .blog-index-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:56px 32px; }
 .blog-index .blog-card { min-width:0; margin:0; }
 .blog-card-link { display:block; height:100%; color:var(--ink); text-decoration:none; border-radius:var(--r); }
-.blog-card-visual { aspect-ratio:16/9; overflow:hidden; border:1px solid var(--line-2); border-radius:var(--r); background:var(--paper-2); }
+.blog-card-visual { aspect-ratio:16/9; overflow:hidden; border:1px solid var(--line); border-radius:var(--r); background:var(--paper-2); }
 .blog-card-visual img { display:block; width:100%; height:100%; object-fit:contain; }
 .blog-card-visual--diagram img { padding:14px; }
 .blog-card-visual--photo img { object-fit:cover; }
@@ -18,9 +18,9 @@
 .blog-card-visual--fallback { display:grid; place-items:center; background:var(--paper-3); }
 .blog-card-visual--fallback img { width:38%; height:auto; max-height:70%; }
 .blog-card-copy { padding-top:22px; }
-.blog-card-copy time { display:block; margin-bottom:12px; color:var(--ink-3); font-size:13px; line-height:1.5; }
+.blog-card-copy time { font-family:var(--mono); display:block; margin-bottom:12px; color:var(--ink-3); font-size:13px; line-height:1.5; }
 .marketing-main .blog-card h2 { margin:0 0 14px; font-size:24px; line-height:1.32; letter-spacing:var(--section-tracking); color:var(--ink); transition:color 160ms ease; }
-.marketing-main .blog-card p { margin:0; font-size:16px; line-height:1.65; color:var(--ink-3); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.marketing-main .blog-card p { margin:0; font-size:16px; line-height:1.65; color:var(--ink-2); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
 .blog-card-link:hover { color:var(--ink); text-decoration:none; }
 .blog-card-link:hover h2,.blog-card-link:focus-visible h2 { color:var(--accent-strong); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:4px; }
 .blog-card-link:focus-visible { outline:2px solid var(--accent-strong); outline-offset:7px; }

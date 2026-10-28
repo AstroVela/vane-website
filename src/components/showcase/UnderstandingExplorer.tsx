@@ -31,7 +31,7 @@ export default function UnderstandingExplorer() {
   const list=evidence.filter(e=>e.media===media)
   return <div className="understanding-explorer" data-media={media} data-mode={mode}>
     <div className="understanding-types" role="tablist" aria-label={t('Media type','资料类型')} ref={typeRef}>{understandingMedia.map((kind,i)=>{const Icon=icons[kind];return <button type="button" role="tab" key={kind} id={id+'-'+kind} aria-controls={id+'-source'} aria-selected={media===kind} tabIndex={media===kind?0:-1} onClick={()=>changeMedia(kind)} onKeyDown={event=>{const n=event.key==='ArrowRight'?(i+1)%4:event.key==='ArrowLeft'?(i+3)%4:event.key==='Home'?0:event.key==='End'?3:-1;if(n>=0){event.preventDefault();changeMedia(understandingMedia[n]);typeRef.current?.querySelectorAll<HTMLButtonElement>('button')[n]?.focus()}}}><Icon aria-hidden="true"/>{mediaLabels[kind][locale]}</button>})}</div>
-    <div className="understanding-frame" role="tabpanel" id={id+'-source'} aria-labelledby={id+'-'+media}>
+    <div className="brand-sheet"><div className="understanding-frame" role="tabpanel" id={id+'-source'} aria-labelledby={id+'-'+media}>
       <div className="understanding-original" ref={sourceRef}><div className="understanding-label"><span>{t('Original source','原始资料')}</span><span>{media==='pdf'?t('Example brief','示例简报'):media==='video'?'comp_001':media==='image'?'comp_005':'comp_008'}</span></div>
         <UnderstandingSource key={media} media={media} selected={selected} preview={hover} epoch={epoch} onProgress={onProgress}/>
         {selected&&<button type="button" className="source-return" onClick={()=>resultRef.current?.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})}>{t('Back to results','返回分析结果')}<ArrowRightIcon aria-hidden="true"/></button>}
@@ -44,6 +44,6 @@ export default function UnderstandingExplorer() {
           {mode==='fields'&&<><p className="understanding-summary">{t('Extract structured fields with a citation for each value.','按字段提取信息，并保留对应来源。')}</p><dl className="understanding-fields">{fields[media].map(f=><div key={f.key}><dt>{f.label[locale]}</dt><dd>{f.value[locale]}{cite(f.evidence)}</dd></div>)}</dl><details className="understanding-json"><summary>{t('View structured result','查看结构化结果')}</summary><pre><code>{JSON.stringify({example:true,fields:fields[media].map(f=>({name:f.key,value:f.value[locale],source:f.evidence,locator:evidenceFor(f.evidence).media==='pdf'?{page:evidenceFor(f.evidence).page}:insightFor(f.evidence).locators[0]}))},null,2)}</code></pre></details></>}
         </div><p className="understanding-hint"><Crosshair2Icon aria-hidden="true"/>{t('Select a result to view its source.','点击结果，查看对应来源。')}</p>
       </div>
-    </div><p className="understanding-disclosure">{t('Interactive examples use prepared results to demonstrate analysis across different media types.','交互演示使用预设结果，分别展示不同类型素材的分析能力。')}</p>
+    </div></div><p className="understanding-disclosure">{t('Interactive examples use prepared results to demonstrate analysis across different media types.','交互演示使用预设结果，分别展示不同类型素材的分析能力。')}</p>
   </div>
 }

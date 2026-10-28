@@ -4,27 +4,28 @@
   /* Proportional text for reading; mono for code and technical values. */
   --font-mono: var(--mono);
   --font-body: 'Hanken Grotesk Variable', 'Noto Sans SC Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-display: var(--font-body);
+  --font-display: 'Space Grotesk Variable', 'Noto Sans SC Variable', sans-serif;
   --heading-tracking: -.025em;
   --section-tracking: -.02em;
   --ifm-font-family-base: var(--font-body);
   --ifm-font-family-monospace: var(--font-mono);
-  --ifm-heading-font-weight: 600;
-  --font-pixel: var(--font-body);
+  --ifm-heading-font-weight: 650;
+  --font-pixel: 'Silkscreen', 'Noto Sans SC Variable', sans-serif;
   --paper: #F4F3ED;       /* warm off-white page */
   --paper-2: #FBFAF6;     /* card surface */
   --paper-3: #ECEAE1;     /* inset / stripe */
   --ink: #15171E;         /* near-black navy ink */
   --ink-2: #23262F;       /* body / secondary text — darkened for comfortable long-form reading */
   --ink-3: #62656D;       /* muted */
-  --line: #D7D4CA;        /* strong (card) borders */
-  --line-2: #D7D4CA;      /* soft hairlines */
+  --line: #15171E;        /* strong (card) borders */
+  --line-2: #CFCDC2;      /* soft hairlines */
   --accent: #9A5638;      /* the single warm, low-saturation accent (links) */
+  --accent-wash: #F1E7DE;
   --accent-strong: #7E4329; /* accent, deepened for hover */
   --green: #15171E;       /* monochrome: folded to ink */
   --green-ink:#15171E;
-  --r: 4px;
-  --r-lg: 4px;
+  --r: 2px;
+  --r-lg: 2px;
   --wrap-max: 1368px;
 }
 /* Chinese glyphs need less tracking compression than Latin display type. */
@@ -34,6 +35,14 @@ html, body { margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body {
   background-color: var(--paper); color: var(--ink);
+  background-image:
+    radial-gradient(ellipse 108% 108% at 50% 34%,transparent 58%,rgba(21,23,30,.03) 100%),
+    radial-gradient(rgba(21,23,30,.06) 1px,transparent 1.7px),
+    linear-gradient(to right,rgba(21,23,30,.045) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(21,23,30,.045) 1px,transparent 1px);
+  background-size:100% 100%,88px 88px,88px 88px,88px 88px;
+  background-position:50% 50%,43px 43px,-1px -1px,-1px -1px;
+  background-repeat:no-repeat,repeat,repeat,repeat;
   font-family: var(--font-body); font-size: 15px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,11 +79,11 @@ a { color: inherit; }
 .eyebrow { font-family: var(--font-pixel); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); display: inline-flex; align-items: center; gap: 12px; }
 .eyebrow::before, .eyebrow::after { content: "—"; color: var(--line-2); }
 .eyebrow.solo::after { display: none; }
-h1, h2, h3 { font-family: inherit; font-weight: 600; letter-spacing: var(--section-tracking); margin: 0; }
-/* A shared proportional family for headings and reading; monospace stays with code and technical values. */
+h1, h2, h3 { font-family: var(--font-display); font-weight: 650; letter-spacing: var(--section-tracking); margin: 0; }
+/* Display type follows the Vane wordmark; long copy keeps a proportional reading face. */
 .h1, .h2, .hero-h1 { font-family: var(--font-display); letter-spacing: var(--heading-tracking); }
 .h1 { font-size: clamp(38px, 5.2vw, 62px); line-height: 1.02; }
-.h2 { font-size: clamp(28px, 3.4vw, 42px); font-weight: 550; line-height: 1.08; letter-spacing: var(--section-tracking); }
+.h2 { font-size: clamp(28px, 3.4vw, 42px); font-weight: 650; line-height: 1.08; letter-spacing: var(--section-tracking); }
 .h3 { font-size: 19px; line-height: 1.3; }
 .lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: var(--ink-2); }
 u, .ul { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
