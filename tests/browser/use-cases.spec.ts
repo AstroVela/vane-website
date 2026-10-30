@@ -162,23 +162,19 @@ test('overview and Context explorer mount one updated scenario preview at a time
   await expect(page.locator('.solution-demo')).toHaveAttribute('data-case', 'meeting-intelligence')
 })
 
-test('demo requests retain the scenario, suggested brief and modalities through submission', async ({page}) => {
+test('demo contact preserves the selected scenario and discussion prompt', async ({page}) => {
   const scenario = agentUseCases[2]
+  const apiRequests: string[] = []
+  await page.route('**/api/**', route => {apiRequests.push(route.request().url()); return route.abort()})
   await page.goto('/zh-CN/solutions/' + scenario.id)
   await page.locator('.case-hero-copy .btn').click()
   await expect(page.locator('.demo-selected-case')).toContainText('设备诊断')
-  await expect(page.locator('textarea[name="need"]')).toHaveValue(scenario.need['zh-CN'])
+  await expect(page.locator('.demo-use-case')).toHaveText(scenario.need['zh-CN'])
   await page.reload()
-  for (const modality of scenario.modalities) await expect(page.locator(`input[name="modalities"][value="${modality}"]`)).toBeChecked()
-  await page.locator('input[name="name"]').fill('Solution acceptance')
-  await page.locator('input[name="email"]').fill('website-test@example.com')
-  await page.locator('input[name="company"]').fill('Local website test')
-  const response = page.waitForResponse(r => r.url().endsWith('/api/demo-requests') && r.request().method() === 'POST')
-  await page.getByRole('button', {name: '申请产品演示', exact: true}).click()
-  const result = await response
-  expect(result.request().postDataJSON().scenario).toBe(scenario.id)
-  expect(result.status()).toBe(201)
-  await expect(page.locator('.receipt-id')).toBeVisible()
+  await expect(page.locator('.demo-use-case')).toHaveText(scenario.need['zh-CN'])
+  await expect(page.locator('.demo-contact-email')).toHaveText('pulse@astrovela.ai')
+  await expect(page.locator('form')).toHaveCount(0)
+  expect(apiRequests).toEqual([])
 })
 
 test('all twelve localized pages scroll normally and fit narrow screens in their interactive states', async ({page}) => {

@@ -318,29 +318,17 @@
 .demo-evidence img { display:block; width:100%; height:auto; border-radius:var(--r); }
 .demo-evidence p { color:var(--ink); font-size:19px; line-height:1.6; }
 .demo-evidence a { font-size:14px; color:var(--accent-strong); }
-.demo-form-card { padding:40px; border:1px solid var(--line-2); border-radius:var(--r); background:var(--paper-2); box-shadow:none; }
-.demo-form-card h2 { font-size:24px; margin-bottom:28px; }
-.demo-form-card fieldset { border:0; margin:0; padding:0; min-width:0; }
-.demo-field-row { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-.demo-field { display:flex; flex-direction:column; gap:9px; margin:0 0 24px; font-size:16px; }
-.demo-field :is(input,textarea) { width:100%; min-width:0; min-height:48px; padding:12px; border:1px solid var(--line-2); border-radius:var(--r); background:var(--paper); color:var(--ink); font-family:inherit; font-size:16px; line-height:1.5; }
-.demo-field textarea { resize:vertical; }
-.demo-field :is(input,textarea)::placeholder { color:var(--ink-3); opacity:1; }
-.demo-field :is(input,textarea)[aria-invalid=true] { border-color:var(--accent); }
-.demo-modalities { display:flex; flex-wrap:wrap; gap:8px 20px; }
-.demo-form-card .demo-modalities { margin-bottom:24px; }
-.demo-modalities legend { font-size:16px; margin-bottom:10px; }
-.demo-modalities label { display:flex; align-items:center; gap:8px; min-height:44px; font-size:15px; }
-.demo-modalities input { accent-color:var(--accent); width:18px; height:18px; }
-.marketing-main .demo-privacy { font-size:14px; }
-.demo-privacy a { text-decoration:underline; }
-.demo-submit { width:100%; justify-content:center; }
-.demo-submit:disabled { opacity:.55; cursor:wait; }
-.field-error { color:var(--accent-strong); font-size:14px; }
-.demo-submit-error { padding:20px; background:var(--paper-3); margin-top:24px; border-radius:var(--r); }
-.demo-submit-error p,.demo-submit-error small { font-size:15px; line-height:1.6; }
-.demo-submit-error small { display:block; color:var(--ink-3); margin-top:12px; }
-.demo-submit-error a { color:var(--accent-strong); }
+.demo-contact-card { padding:40px; border:1px solid var(--line-2); border-radius:var(--r); background:var(--paper-2); box-shadow:none; }
+.demo-contact-card h2 { font-size:24px; margin-bottom:20px; }
+.demo-contact-card h3 { font-size:18px; margin:28px 0 16px; }
+.marketing-main .demo-contact-email { font-size:clamp(20px,2.1vw,28px); color:var(--ink); margin:28px 0 20px; overflow-wrap:anywhere; user-select:all; }
+.demo-copy-email { min-height:48px; }
+.marketing-main .demo-copy-status { min-height:48px; margin:12px 0 0; font-size:14px; color:var(--ink-3); }
+.demo-contact-details { padding-left:20px; color:var(--ink-3); font-size:16px; line-height:1.7; }
+.demo-contact-details li { margin-bottom:12px; }
+.demo-contact-card .marketing-note a { color:var(--accent-strong); text-decoration:underline; }
+.text-button { margin:0; }
+.demo-error-actions :is(button,a) { min-height:44px; display:inline-flex; align-items:center; }
 .receipt-check { width:48px; height:48px; display:flex; align-items:center; justify-content:center; font-size:26px; color:var(--accent-strong); border:1px solid var(--line-2); border-radius:var(--r); margin-bottom:24px; }
 .receipt-id { padding:20px; border:1px solid var(--line-2); margin:24px 0; border-radius:var(--r); font-size:15px; }
 .receipt-id code { display:block; font-size:14px; padding:12px 0 0; border:0; background:none; overflow-wrap:anywhere; }
@@ -553,8 +541,7 @@
   .execution-diagram { flex-direction:column; align-items:stretch; gap:20px; padding:24px; }
   .execution-diagram > span { align-self:center; transform:rotate(90deg); }
   .demo-page { padding-top:32px; }
-  .demo-form-card { padding:24px 20px; }
-  .demo-field-row { grid-template-columns:1fr; gap:0; }
+  .demo-contact-card { padding:24px 20px; }
   .data-example { padding:18px; margin:8px; }
   .data-example .term pre.code { font-size:12px; padding:16px; }
   .quickstart-output td,.quickstart-output th { padding:8px 5px; font-size:12px; }
