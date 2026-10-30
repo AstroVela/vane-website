@@ -55,7 +55,7 @@ jobs:
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
-            if curl -fsS http://127.0.0.1:4328/api/demo-status; then break; fi
+            if curl -fsS --output /dev/null http://127.0.0.1:4328/demo; then break; fi
             sleep 1
           done
           npm run test:browser

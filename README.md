@@ -3,19 +3,20 @@
 Bilingual marketing and documentation site for two products:
 
 - **Vane Context**: a multimodal context service. The website presents
-  illustrative results and accepts demo requests; it does not run live analysis.
+  illustrative results and provides contact details for demo inquiries; it does not run live analysis.
 - **Vane Data**: the multimodal data engine. Installation, examples,
   benchmarks, engineering articles, and release notes remain available.
 
-Built with React 19 and Docusaurus. A small Node server serves the generated site
-and saves demo requests in an embedded SQLite file.
+Built with React 19 and Docusaurus. The generated site is entirely static. Contact
+and demo pages provide a team email address; they do not submit or store forms.
+A small Node server is available for local static preview.
 
 ## Tech stack
 
 - **React 19** + **Docusaurus 3** (Docusaurus docs and blog plugins plus custom marketing routes)
 - **MDX** for documentation and blog content, rendered with the site's custom MDX components
 - **ESLint** (flat config in `eslint.config.ts`)
-- **Node 24** and its built-in **SQLite** module for demo request reception
+- **Node 24** for build tooling and local static preview
 - **Playwright** for browser acceptance checks
 
 ## Getting started
@@ -29,7 +30,7 @@ npm run dev:en     # start the English locale Docusaurus server only
 npm run dev:zh-CN  # start the Chinese locale Docusaurus server only
 npm run build      # production build to build/
 npm run preview    # build both locales and serve http://127.0.0.1:4328
-npm run preview:local # serve an existing build with SQLite (no email in local mode)
+npm run preview:local # serve an existing static build
 npm run lint       # run ESLint
 npm run docs:lint  # check docs registry, sidebar, links, headings, and code fences
 npm run docs:manifest        # regenerate docs/manifest.json
@@ -37,7 +38,7 @@ npm run docs:manifest:check  # verify docs/manifest.json is current
 npm run docs:llms            # regenerate docs/llms.txt and docs/llms-full.txt
 npm run docs:llms:check      # verify generated LLM docs files are current
 npm run showcase:check       # verify media, locators, and result references
-npm test                     # unit and SQLite service tests
+npm test                     # unit and static asset service tests
 ```
 
 The default `npm run dev` command starts one Docusaurus server per locale with
@@ -99,7 +100,7 @@ Reduced motion and mobile viewing use manual media switching by default.
 - `/` and `/zh-CN`: interactive media results, analysis, and source references.
 - `/products/context` and `/products/data`: product-specific capabilities and actions.
 - `/solutions`: scenarios linked to the appropriate product.
-- `/demo`: durable request receipt, validation, and safe retries.
+- `/demo`: contact email, browser-side copying, and scenario-specific discussion prompts.
 - `/docs/data`: Vane Data documentation.
 
 Marketing copy and showcase definitions live in `src/content/`. Media assets and
@@ -109,14 +110,15 @@ service outputs. `?media=video|image|audio` remembers the selected medium and
 freezes automatic rotation. The headline and media switch together; clicking
 evidence plays a bounded clip or highlights the original image region. Only one video or audio element can play at a time.
 
-The preview stores requests at `.local-data/demo.sqlite`, which is ignored by Git.
-SQLite runs inside the website Node process and has no separate process or port.
-Local mode never sends email. The Docusaurus development servers serve pages only;
-use the Node preview to test form reception. Deployment configuration, notification
-retries, retention, reverse proxy settings, and backups are described in
-[server/README.md](server/README.md). Keep the SQLite path on persistent storage in
-production. `npm run deploy:static` remains available for static hosting; that mode
-requires a separately routed request API before the form can accept submissions.
+Cloudflare deploys only the static files in `build/` through `npm run deploy:static`.
+No form API, Worker application code, database, mail provider or credentials are
+required. The demo page displays the team email address and supports copying it;
+visitors contact the team using their own email application. It does not claim
+that a request was submitted. Privacy copy describes the same behavior.
+
+The local Node preview also serves static assets only, including compressed text,
+cache headers and media byte ranges. See [server/README.md](server/README.md) for
+preview and publishing commands.
 
 For browser checks, build and start the local preview, then run:
 
@@ -127,7 +129,7 @@ npm run test:browser
 
 Screenshots and failure traces are saved under `.tmp-visual-check/` and ignored by
 Git. The browser suite covers both languages, mobile navigation, the three real media
-types, source localization, rotation and playback state, request persistence, and response-loss retries.
+types, source localization, rotation and playback state, static contact pages, and clipboard fallback.
 
 ## Authoring documentation
 

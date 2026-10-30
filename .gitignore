@@ -41,7 +41,7 @@ dist-ssr
 .env*
 !.env.example
 
-# Local SQLite submissions and browser acceptance artifacts
+# Local preview data and browser acceptance artifacts
 .local-data/
 playwright-report/
 test-results/
