@@ -694,6 +694,15 @@
       }
     },
     {
+      "slug": "extensions/postgres",
+      "title": "PostgreSQL",
+      "source": "docs/data/extensions/postgres.mdx",
+      "route": "/docs/data/extensions/postgres",
+      "frontmatter": {
+        "title": "PostgreSQL"
+      }
+    },
+    {
       "slug": "extensions/doris",
       "title": "Apache Doris",
       "source": "docs/data/extensions/doris.mdx",
@@ -1179,6 +1188,11 @@
           "slug": "extensions/qdrant",
           "label": "Qdrant",
           "route": "/docs/data/extensions/qdrant"
+        },
+        {
+          "slug": "extensions/postgres",
+          "label": "PostgreSQL",
+          "route": "/docs/data/extensions/postgres"
         },
         {
           "slug": "extensions/doris",

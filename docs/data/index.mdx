@@ -35,6 +35,7 @@ Use [built-in media functions](reference/multimodal-data/index.mdx) to inspect m
 | Lake table formats: [Iceberg](extensions/iceberg.mdx), [Paimon](extensions/paimon.mdx), [DuckLake](extensions/ducklake.mdx) | Distributed queries and writes |
 | Columnar formats: [Lance](extensions/lance.mdx), [Vortex](extensions/vortex.mdx) | Distributed queries and writes; Lance also supports vector and hybrid search |
 | Vector databases: [Milvus](extensions/milvus.mdx), [Qdrant](extensions/qdrant.mdx) | Distributed upserts of query results |
+| Relational database: [PostgreSQL](extensions/postgres.mdx) | Distributed upserts of query results, including pgvector columns |
 | Analytical database: [Doris](extensions/doris.mdx) | Distributed Arrow batch writes |
 
 Lake and columnar format extensions are installed as provider packages released independently of `vane-ai`. Database sinks use their corresponding optional dependencies; follow the linked guides for setup and supported operations.

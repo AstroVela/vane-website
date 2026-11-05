@@ -35,6 +35,7 @@ Vane Data 是面向 AI 工作负载的高性能、多模态原生数据引擎。
 | 湖表格式：[Iceberg](extensions/iceberg.mdx)、[Paimon](extensions/paimon.mdx)、[DuckLake](extensions/ducklake.mdx) | 分布式查询与写入 |
 | 列式格式：[Lance](extensions/lance.mdx)、[Vortex](extensions/vortex.mdx) | 分布式查询与写入；Lance 还支持向量搜索和混合搜索 |
 | 向量数据库：[Milvus](extensions/milvus.mdx)、[Qdrant](extensions/qdrant.mdx) | 将查询结果分布式写入或更新（upsert） |
+| 关系数据库：[PostgreSQL](extensions/postgres.mdx) | 将查询结果分布式写入或更新（upsert），支持 pgvector 列 |
 | 分析数据库：[Doris](extensions/doris.mdx) | 分布式 Arrow 批量写入 |
 
 湖表和列式格式扩展通过独立于 `vane-ai` 发布的 provider 包安装。数据库写入使用各自的可选依赖；安装配置与支持的操作请参阅对应指南。
