@@ -1,131 +1,103 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { createJiti } from 'jiti'
 
-const dataSource = readFileSync('src/benchmarkData.ts', 'utf8')
+const jiti = createJiti(import.meta.url)
+const {
+  BENCHMARK_RESULTS,
+  DEFAULT_BATCH_BENCHMARK_RESULTS,
+  BENCHMARK_ENVIRONMENT,
+  benchmarkEngines,
+  formatSeconds,
+  runtimeChangePercent,
+} = await jiti.import('../src/benchmarkData.ts')
 const homeSource = readFileSync('src/pages/Home.tsx', 'utf8')
-const dataProductSource = readFileSync('src/pages/DataProduct.tsx', 'utf8')
-const previewSource = readFileSync('src/components/BenchmarkPreview.tsx', 'utf8')
 const benchmarkPageSource = readFileSync('src/pages/Benchmarks.tsx', 'utf8')
-const benchmarkScopeNoteSource = readFileSync('src/components/BenchmarkScopeNote.tsx', 'utf8')
-const trainingSource = readFileSync('src/pages/TrainingUseCase.tsx', 'utf8')
-const pageStyles = readFileSync('src/pages.css', 'utf8')
-const siteStyles = readFileSync('src/index.css', 'utf8')
-const siteLinksSource = readFileSync('src/siteLinks.ts', 'utf8')
+const previewSource = readFileSync('src/components/BenchmarkPreview.tsx', 'utf8')
+const dataProductSource = readFileSync('src/pages/DataProduct.tsx', 'utf8')
+const scopeSource = readFileSync('src/components/BenchmarkScopeNote.tsx', 'utf8')
 
-test('benchmark data source records the supplied tuned batch-size results exactly', () => {
-  assert.match(dataSource, /vaneData: 'Vane Data'/)
-  assert.match(dataSource, /rayData: 'Ray Data'/)
-  assert.match(dataSource, /daft: 'Daft'/)
-  assert.match(dataSource, /document[^\n]*rayDataSeconds: 127[^\n]*vaneSeconds: 86\.092[^\n]*daftSeconds: 413[^\n]*rayData: 320[^\n]*vaneData: 2560[^\n]*daft: 20/)
-  assert.match(dataSource, /image[^\n]*rayDataSeconds: 1767\.11[^\n]*vaneSeconds: 1147[^\n]*daftSeconds: null[^\n]*rayData: 100[^\n]*vaneData: 100[^\n]*daft: null/)
-  assert.match(dataSource, /audio[^\n]*rayDataSeconds: 2363\.08[^\n]*vaneSeconds: 2312[^\n]*daftSeconds: null[^\n]*rayData: 128[^\n]*vaneData: 128[^\n]*daft: null/)
-  assert.match(dataSource, /video[^\n]*rayDataSeconds: 6922[^\n]*vaneSeconds: 7603[^\n]*daftSeconds: 8322[^\n]*rayData: 32[^\n]*vaneData: 32[^\n]*daft: 'not-set'/)
-  assert.match(dataSource, /batchSize === 'not-set' \? 'batch size not set'/)
-  assert.match(dataSource, /cpuCores: 36/)
-  assert.match(dataSource, /memoryGb: 64/)
-  assert.match(dataSource, /gpu: '2080 Ti'/)
-  assert.match(dataSource, /gpuMemoryGb: 22/)
-  assert.match(dataSource, /gpuMemoryModified: true/)
+function rows(results) {
+  return results.map(({ id, vaneLocalSeconds, vaneRaySeconds, rayDataSeconds, daftSeconds }) =>
+    [id, vaneLocalSeconds, vaneRaySeconds, rayDataSeconds, daftSeconds])
+}
+
+test('tuned results preserve all retested values and the previous Daft results', () => {
+  assert.deepEqual(rows(BENCHMARK_RESULTS), [
+    ['document', 101.76, 106.81, 215.24, 413],
+    ['image', 661.20, 653.36, 1831.16, null],
+    ['audio', 2132.67, 2177.74, 2110.56, null],
+    ['video', 6938.71, 7141.23, 7035.15, 8322],
+  ])
 })
 
-test('benchmark data source records the supplied default batch-size results separately', () => {
-  assert.match(dataSource, /DEFAULT_BATCH_BENCHMARK_RESULTS/)
-  assert.match(dataSource, /document[^\n]*rayDataSeconds: 209[^\n]*vaneSeconds: 187[^\n]*daftSeconds: 732\.99/)
-  assert.match(dataSource, /image[^\n]*rayDataSeconds: 2036[^\n]*vaneSeconds: 1188[^\n]*daftSeconds: null/)
-  assert.match(dataSource, /audio[^\n]*rayDataSeconds: 2880[^\n]*vaneSeconds: 2638[^\n]*daftSeconds: null/)
-  assert.match(dataSource, /video[^\n]*rayDataSeconds: 6922[^\n]*vaneSeconds: 7603[^\n]*daftSeconds: 8322/)
-  assert.doesNotMatch(dataSource, /daftSeconds: (?:8651)/)
+test('default results preserve all retested values and the previous Daft results', () => {
+  assert.deepEqual(rows(DEFAULT_BATCH_BENCHMARK_RESULTS), [
+    ['document', 198.51, 211.49, 299.21, 732.99],
+    ['image', 661.54, 699.38, 1839.03, null],
+    ['audio', 2288.67, 2279.10, 2141.49, null],
+    ['video', 6935.88, 7150.87, 7061.62, 8322],
+  ])
 })
 
-test('Data product and benchmark pages consume the shared source instead of duplicating results', () => {
-  assert.match(dataProductSource, /<BenchmarkPreview/)
-  assert.match(previewSource, /from '\.\.\/benchmarkData'/)
-  assert.match(previewSource, /BENCHMARK_RESULTS\.map/)
-  assert.match(benchmarkPageSource, /from '\.\.\/benchmarkData'/)
-  assert.match(benchmarkPageSource, /BENCHMARK_RESULTS\.map/)
-  assert.match(benchmarkPageSource, /DEFAULT_BATCH_BENCHMARK_RESULTS\.map/)
+test('the four engine columns stay distinct, ordered, and retain OOM as missing time', () => {
+  assert.deepEqual(benchmarkEngines(BENCHMARK_RESULTS[1]), [
+    { id: 'vaneLocal', label: 'Vane Local', seconds: 661.20 },
+    { id: 'vaneRay', label: 'Vane Ray', seconds: 653.36 },
+    { id: 'rayData', label: 'Ray Data', seconds: 1831.16 },
+    { id: 'daft', label: 'Daft', seconds: null },
+  ])
+  assert.equal(formatSeconds(661.2), '661.20 s')
+  assert.equal(formatSeconds(2279.1), '2279.10 s')
 })
 
-test('Data product summarizes measurements and home links to the full methodology', () => {
-  assert.match(previewSource, /className="benchmark-plots"/)
-  assert.match(dataProductSource, /to="\/benchmarks"/)
-  assert.match(homeSource, /<BenchmarkPreview compact/)
-  assert.match(homeSource, /to="\/benchmarks"/)
-  assert.match(previewSource, /BENCHMARK_RESULTS\.map/)
-  assert.match(previewSource, /BENCHMARK_ENVIRONMENT\.gpuMemoryGb/)
-  assert.match(previewSource, /modified VRAM/)
-  assert.match(dataProductSource, /<BenchmarkScopeNote locale=\{locale\}/)
-  assert.match(benchmarkScopeNoteSource, /Results apply to the documented hardware, data and settings/)
+test('headline speedups use tuned Ray Data as baseline and identify the measured mode', () => {
+  const document = BENCHMARK_RESULTS.find(({ id }) => id === 'document')
+  const image = BENCHMARK_RESULTS.find(({ id }) => id === 'image')
+  assert.equal((document.rayDataSeconds / document.vaneLocalSeconds).toFixed(2), '2.12')
+  assert.equal((image.rayDataSeconds / image.vaneRaySeconds).toFixed(2), '2.80')
+  assert.equal(runtimeChangePercent(document.vaneLocalSeconds, document.rayDataSeconds).toFixed(1), '-52.7')
+  assert.equal(runtimeChangePercent(image.vaneRaySeconds, image.rayDataSeconds).toFixed(1), '-64.3')
 })
 
-test('benchmark surfaces remove the placeholder performance claims', () => {
-  const benchmarkSurfaces = `${homeSource}\n${dataProductSource}\n${benchmarkPageSource}\n${trainingSource}`
-
-  assert.doesNotMatch(benchmarkSurfaces, /vLLM batch inference/)
-  assert.doesNotMatch(benchmarkSurfaces, /66K rows/)
-  assert.doesNotMatch(benchmarkSurfaces, /A100/)
-  assert.doesNotMatch(benchmarkSurfaces, /prefix bucketing/)
-  assert.doesNotMatch(benchmarkSurfaces, /3\.1[×x]|3\.1 倍/)
-  assert.doesNotMatch(benchmarkPageSource, /reproduce\.sh|REPRODUCE_CODE|CodeWindow/)
+test('audio regressions and near-parity video results are preserved in both configurations', () => {
+  for (const results of [BENCHMARK_RESULTS, DEFAULT_BATCH_BENCHMARK_RESULTS]) {
+    const audio = results.find(({ id }) => id === 'audio')
+    const video = results.find(({ id }) => id === 'video')
+    assert.ok(runtimeChangePercent(audio.vaneLocalSeconds, audio.rayDataSeconds) > 0)
+    assert.ok(runtimeChangePercent(audio.vaneRaySeconds, audio.rayDataSeconds) > 0)
+    assert.ok(runtimeChangePercent(video.vaneLocalSeconds, video.rayDataSeconds) < 0)
+    assert.ok(runtimeChangePercent(video.vaneRaySeconds, video.rayDataSeconds) > 0)
+  }
 })
 
-test('benchmark page places the tuned chart before the table and keeps the default chart separate', () => {
-  assert.match(siteLinksSource, /multimodal_inference_benchmarks/)
-  assert.match(benchmarkPageSource, /leadPrefix: 'The benchmark workflow is'/)
-  assert.match(benchmarkPageSource, /leadSeparator: ' '/)
-  assert.match(benchmarkPageSource, /leadLink: 'here'/)
-  assert.match(benchmarkPageSource, /leadPrefix: 'Benchmark 测试流程见'/)
-  assert.match(benchmarkPageSource, /leadSeparator: ''/)
-  assert.match(benchmarkPageSource, /leadLink: '这里'/)
+test('benchmark provenance distinguishes the Ray retest from historical Daft results', () => {
+  assert.equal(BENCHMARK_ENVIRONMENT.rayVersion, '2.58.0')
+  assert.equal(BENCHMARK_ENVIRONMENT.cpuCores, 36)
+  assert.equal(BENCHMARK_ENVIRONMENT.memoryGb, 64)
+  assert.equal(BENCHMARK_ENVIRONMENT.gpuMemoryGb, 22)
+  assert.match(scopeSource, /retained from the previous run and were not retested/)
+  assert.match(scopeSource, /Daft 沿用历史测试，本轮未重测/)
+  assert.match(scopeSource, /ray-data-daft-benchmarking-multimodal-ai-workloads/)
   assert.match(benchmarkPageSource, /href=\{BENCHMARK_WORKFLOW_URL\}/)
-  assert.match(benchmarkPageSource, /className="benchmark-workflow-link"/)
-  assert.match(pageStyles, /\.benchmark-workflow-link\s*\{[^}]*font-weight:\s*700;[^}]*text-decoration:\s*underline/s)
-  assert.match(benchmarkPageSource, /summaryTitle: 'Tuned batch-size results'/)
-  assert.match(benchmarkPageSource, /summaryTitle: 'batch size 调优结果'/)
-  assert.match(benchmarkPageSource, /defaultTitle: 'Default batch-size results'/)
-  assert.match(benchmarkPageSource, /defaultTitle: '默认 batch size 结果'/)
-  assert.ok(benchmarkPageSource.indexOf("summaryTitle: 'Tuned batch-size results'") < benchmarkPageSource.indexOf("defaultTitle: 'Default batch-size results'"))
-  assert.doesNotMatch(benchmarkPageSource, /benchmark-tuned-summary/)
-  assert.match(benchmarkPageSource, /className="benchmark-table-wrap"/)
-  assert.doesNotMatch(benchmarkPageSource, /benchmark-context/)
-  assert.match(benchmarkPageSource, /className="benchmark-environment"/)
-  assert.match(benchmarkPageSource, /BENCHMARK_ENVIRONMENT\.cpuCores/)
-  assert.match(benchmarkPageSource, /BENCHMARK_ENVIRONMENT\.memoryGb/)
-  assert.match(benchmarkPageSource, /BENCHMARK_ENVIRONMENT\.gpu/)
-  assert.match(benchmarkPageSource, /BENCHMARK_ENVIRONMENT\.gpuMemoryGb/)
-  assert.match(benchmarkPageSource, /BENCHMARK_ENVIRONMENT\.gpuMemoryModified/)
-  assert.match(benchmarkPageSource, /modifiedVram: 'modified VRAM'/)
-  assert.match(benchmarkPageSource, /modifiedVram: '显存改装版'/)
-  assert.match(pageStyles, /\.benchmark-environment\s*\{[^}]*font-size:\s*13px/s)
-  assert.match(benchmarkPageSource, /className="home-benchmark-chart benchmark-tuned-chart"/)
-  assert.match(benchmarkPageSource, /className="home-benchmark-chart benchmark-default-chart"/)
-  assert.equal((benchmarkPageSource.match(/className="home-benchmark-chart benchmark-(?:tuned|default)-chart"/g) ?? []).length, 2)
-  assert.equal((benchmarkPageSource.match(/<BenchmarkScopeNote locale=\{locale\} \/>/g) ?? []).length, 2)
-  assert.ok(benchmarkPageSource.indexOf('className="home-benchmark-chart benchmark-tuned-chart"') < benchmarkPageSource.indexOf('className="benchmark-table-wrap"'))
-  assert.match(benchmarkPageSource, /DEFAULT_BATCH_BENCHMARK_RESULTS\.map/)
-  assert.match(benchmarkPageSource, /TUNED_CHART_MIN_SECONDS = 50/)
-  assert.match(benchmarkPageSource, /TUNED_CHART_TICKS = \[50, 300, 1000, 3000, 10000\]/)
-  assert.match(benchmarkPageSource, /chartBarHeight/)
-  assert.match(benchmarkPageSource, /formatBatchSize\(engine\.batchSize\)/)
-  assert.match(benchmarkPageSource, /tunedLogScale: 'Tuned batch sizes · log scale · lower is better'/)
-  assert.match(benchmarkPageSource, /Math\.log10\(seconds\)/)
-  assert.match(benchmarkPageSource, /result\.batchSizes\.vaneData/)
-  assert.match(benchmarkPageSource, /result\.batchSizes\.rayData/)
-  assert.match(benchmarkPageSource, /result\.batchSizes\.daft/)
-  assert.match(benchmarkPageSource, /runtimeChangePercent\(result\.vaneSeconds, result\.daftSeconds\)/)
-  assert.doesNotMatch(benchmarkPageSource, /labels\.hardware|labels\.method/)
-  assert.doesNotMatch(benchmarkPageSource, /RuntimeChart|runtime-grid|runtime-card|statline/)
-  assert.doesNotMatch(benchmarkPageSource, /VANE_FASTER_THAN_RAY_COUNT/)
-  assert.doesNotMatch(benchmarkPageSource, /imageReduction/)
-  assert.doesNotMatch(benchmarkPageSource, /Elapsed time within each workload|每类 workload 内的耗时对比/)
-  assert.doesNotMatch(benchmarkPageSource, /Recorded configuration|Not included in the run record/)
+  assert.match(benchmarkPageSource, /Ray Data has the lowest audio elapsed time/)
+  assert.doesNotMatch(benchmarkPageSource, /Ray upgrade caused|升级导致/)
 })
 
-test('benchmark results remain readable on narrow viewports', () => {
-  assert.match(pageStyles, /\.benchmark-table-wrap\s*\{[^}]*overflow-x:\s*auto/s)
-  assert.match(pageStyles, /\.benchmark-summary\s*\{[^}]*min-width:\s*1040px/s)
-  assert.doesNotMatch(pageStyles, /benchmark-context-grid/)
-  assert.doesNotMatch(benchmarkPageSource, /vane-column/)
-  assert.doesNotMatch(pageStyles, /\.benchmark-summary \.vane-column/)
+test('the current home, Data product, and detail pages share the retested results', () => {
+  for (const source of [homeSource, dataProductSource, benchmarkPageSource]) {
+    assert.match(source, /<BenchmarkPreview/)
+    assert.doesNotMatch(source, /vaneSeconds|batchSizes\.vaneData|3\.1[×x]|A100/)
+  }
+  assert.match(previewSource, /benchmarkEngines\(result\)/)
+  assert.match(previewSource, /<BenchmarkHighlights locale=\{locale\}/)
+  assert.match(benchmarkPageSource, /<BenchmarkHighlights locale=\{locale\}/)
+  assert.match(benchmarkPageSource, /<MarketingLayout data/)
+})
+
+test('Daft provenance stays in the methodology without labels beneath engine names', () => {
+  assert.doesNotMatch(previewSource, /previous:|copy\.previous|<small>.*(?:previous run|历史测试)/)
+  assert.doesNotMatch(benchmarkPageSource, /copy\.previous|previous:|<small>.*(?:previous run|历史测试)/)
+  assert.match(scopeSource, /Daft results are retained from the previous run/)
 })

@@ -1,19 +1,11 @@
 export type BenchmarkWorkloadId = 'document' | 'image' | 'audio' | 'video'
-export type BenchmarkBatchSize = number | 'not-set' | null
 
 export type BenchmarkElapsedResult = {
   id: BenchmarkWorkloadId
   rayDataSeconds: number
-  vaneSeconds: number
+  vaneLocalSeconds: number
+  vaneRaySeconds: number
   daftSeconds: number | null
-}
-
-export type BenchmarkResult = BenchmarkElapsedResult & {
-  batchSizes: {
-    rayData: BenchmarkBatchSize
-    vaneData: BenchmarkBatchSize
-    daft: BenchmarkBatchSize
-  }
 }
 
 export const BENCHMARK_ENVIRONMENT = {
@@ -22,45 +14,46 @@ export const BENCHMARK_ENVIRONMENT = {
   gpu: '2080 Ti',
   gpuMemoryGb: 22,
   gpuMemoryModified: true,
+  rayVersion: '2.58.0',
 } as const
 
 export const BENCHMARK_ENGINE_NAMES = {
-  vaneData: 'Vane Data',
+  vaneLocal: 'Vane Local',
+  vaneRay: 'Vane Ray',
   rayData: 'Ray Data',
   daft: 'Daft',
 } as const
 
+// Vane and Ray Data: latest supplied retest, using Ray 2.58.0.
+// Daft: retained from the previous run; null records an observed OOM.
+// Per-engine batch sizes were not supplied for this retest. Do not reuse old settings.
 export const BENCHMARK_RESULTS = [
-  { id: 'document', rayDataSeconds: 127, vaneSeconds: 86.092, daftSeconds: 413, batchSizes: { rayData: 320, vaneData: 2560, daft: 20 } },
-  { id: 'image', rayDataSeconds: 1767.11, vaneSeconds: 1147, daftSeconds: null, batchSizes: { rayData: 100, vaneData: 100, daft: null } },
-  { id: 'audio', rayDataSeconds: 2363.08, vaneSeconds: 2312, daftSeconds: null, batchSizes: { rayData: 128, vaneData: 128, daft: null } },
-  { id: 'video', rayDataSeconds: 6922, vaneSeconds: 7603, daftSeconds: 8322, batchSizes: { rayData: 32, vaneData: 32, daft: 'not-set' } },
-] as const satisfies readonly BenchmarkResult[]
-
-export const DEFAULT_BATCH_BENCHMARK_RESULTS = [
-  { id: 'document', rayDataSeconds: 209, vaneSeconds: 187, daftSeconds: 732.99 },
-  { id: 'image', rayDataSeconds: 2036, vaneSeconds: 1188, daftSeconds: null },
-  { id: 'audio', rayDataSeconds: 2880, vaneSeconds: 2638, daftSeconds: null },
-  { id: 'video', rayDataSeconds: 6922, vaneSeconds: 7603, daftSeconds: 8322 },
+  { id: 'document', vaneLocalSeconds: 101.76, vaneRaySeconds: 106.81, rayDataSeconds: 215.24, daftSeconds: 413 },
+  { id: 'image', vaneLocalSeconds: 661.20, vaneRaySeconds: 653.36, rayDataSeconds: 1831.16, daftSeconds: null },
+  { id: 'audio', vaneLocalSeconds: 2132.67, vaneRaySeconds: 2177.74, rayDataSeconds: 2110.56, daftSeconds: null },
+  { id: 'video', vaneLocalSeconds: 6938.71, vaneRaySeconds: 7141.23, rayDataSeconds: 7035.15, daftSeconds: 8322 },
 ] as const satisfies readonly BenchmarkElapsedResult[]
 
-export const VANE_FASTER_THAN_RAY_COUNT = BENCHMARK_RESULTS.filter(
-  ({ vaneSeconds, rayDataSeconds }) => vaneSeconds < rayDataSeconds,
-).length
+export const DEFAULT_BATCH_BENCHMARK_RESULTS = [
+  { id: 'document', vaneLocalSeconds: 198.51, vaneRaySeconds: 211.49, rayDataSeconds: 299.21, daftSeconds: 732.99 },
+  { id: 'image', vaneLocalSeconds: 661.54, vaneRaySeconds: 699.38, rayDataSeconds: 1839.03, daftSeconds: null },
+  { id: 'audio', vaneLocalSeconds: 2288.67, vaneRaySeconds: 2279.10, rayDataSeconds: 2141.49, daftSeconds: null },
+  { id: 'video', vaneLocalSeconds: 6935.88, vaneRaySeconds: 7150.87, rayDataSeconds: 7061.62, daftSeconds: 8322 },
+] as const satisfies readonly BenchmarkElapsedResult[]
+
+export function benchmarkEngines(result: BenchmarkElapsedResult) {
+  return [
+    { id: 'vaneLocal', label: BENCHMARK_ENGINE_NAMES.vaneLocal, seconds: result.vaneLocalSeconds },
+    { id: 'vaneRay', label: BENCHMARK_ENGINE_NAMES.vaneRay, seconds: result.vaneRaySeconds },
+    { id: 'rayData', label: BENCHMARK_ENGINE_NAMES.rayData, seconds: result.rayDataSeconds },
+    { id: 'daft', label: BENCHMARK_ENGINE_NAMES.daft, seconds: result.daftSeconds },
+  ] as const
+}
 
 export function runtimeChangePercent(seconds: number, baselineSeconds: number) {
   return ((seconds / baselineSeconds) - 1) * 100
 }
 
-export function formatRuntimeChange(changePercent: number) {
-  return `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(1)}%`
-}
-
 export function formatSeconds(seconds: number) {
-  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(2)} s`
-}
-
-export function formatBatchSize(batchSize: BenchmarkBatchSize) {
-  if (batchSize === null) return ''
-  return batchSize === 'not-set' ? 'batch size not set' : `batch size ${batchSize}`
+  return `${seconds.toFixed(2)} s`
 }

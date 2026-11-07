@@ -48,8 +48,8 @@ test('new value sections fit narrow screens and benchmark comparisons keep slowe
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     }
   }
-  await expect(page.locator('.benchmark-takeaways > div')).toHaveCount(4)
-  await expect(page.locator('.benchmark-takeaways > div').last()).toContainText('更高')
+  await expect(page.locator('.benchmark-plots > article')).toHaveCount(4)
+  await expect(page.locator('.benchmark-plots > article').nth(2)).toContainText('3.2% 相比 Ray Data 耗时增加')
   await expect(page.locator('.benchmark-reading-guide')).toContainText('不衡量模型准确率、上下文质量或 Token 节省')
 })
 
