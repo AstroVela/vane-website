@@ -8,12 +8,12 @@ export default function BenchmarkScopeNote({ locale }: { locale: SiteLocale }) {
     {
       beforeLink: 'This single-node evaluation follows the workload design of the',
       link: 'Ray Data multimodal AI benchmark',
-      afterLink: ". Results apply to the documented hardware, data and settings. Daft ran out of memory on the image and audio workloads. See the benchmark page for methodology and scripts.",
+      afterLink: ". Results apply to the documented single-node hardware, data and settings. Daft results are retained from the previous run and were not retested; OOM indicates out of memory in that run.",
     },
     {
       beforeLink: '本次单机测试参考',
       link: 'Ray Data 多模态 AI 基准测试',
-      afterLink: '的工作负载设计。结果仅适用于列明的硬件、数据与配置。Daft 在本次图片和音频负载中出现内存不足（OOM）；完整测试方法与脚本见性能测试页。',
+      afterLink: '的工作负载设计。结果仅适用于列明的单机硬件、数据与配置。Daft 沿用历史测试，本轮未重测；OOM 表示该次测试中内存不足。',
     },
   )
 

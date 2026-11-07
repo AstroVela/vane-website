@@ -42,13 +42,8 @@
 .benchmark-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .summary th, .summary td { text-align: left; padding: 13px 16px; font-size: 13.5px; }
 .summary { display: table; width: 100%; border-collapse: collapse; }
-.benchmark-summary { min-width: 1040px; table-layout: fixed; }
-.benchmark-summary th:nth-child(1) { width: 12%; }
-.benchmark-summary th:nth-child(2),
-.benchmark-summary th:nth-child(3),
-.benchmark-summary th:nth-child(4) { width: 18%; }
-.benchmark-summary th:nth-child(5),
-.benchmark-summary th:nth-child(6) { width: 17%; }
+.benchmark-summary { min-width: 760px; table-layout: fixed; }
+.benchmark-summary th:nth-child(1) { width: 16%; }
 .summary thead th { font-weight: 700; border-bottom: 1.5px solid var(--line); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
 .summary tbody tr { border-top: 1px solid var(--line-2); }
 .summary tbody tr:nth-child(even) { background: var(--paper-3); }

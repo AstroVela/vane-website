@@ -80,12 +80,15 @@ test('all examples fit mobile; management copy and readable diagram alternatives
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('both product benchmarks include the slower video result and the downloadable example is available', async ({page, request}) => {
+test('both product benchmarks distinguish Vane modes and keep slower results visible and the downloadable example is available', async ({page, request}) => {
   for (const route of ['/zh-CN/', '/zh-CN/products/data']) {
     await page.goto(route)
     const plots = page.locator('.benchmark-preview .benchmark-plot')
     await expect(plots).toHaveCount(4)
-    await expect(plots.last()).toContainText('9.8% 相比 Ray Data 耗时增加')
+    await expect(plots.last()).toContainText('Vane Ray: 1.5% 相比 Ray Data 耗时增加')
+    await expect(plots.last()).toContainText('Vane Local: 1.4% 相比 Ray Data 耗时降低')
+    await expect(plots.nth(2)).toContainText('Vane Local: 1.0% 相比 Ray Data 耗时增加')
+    await expect(plots.nth(2)).toContainText('Vane Ray: 3.2% 相比 Ray Data 耗时增加')
     await expect(plots.nth(1)).toContainText('OOM')
   }
   const source = await request.get('/examples/equipment_observations.py')

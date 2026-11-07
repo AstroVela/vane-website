@@ -102,6 +102,8 @@ For knowledge base teams, what ultimately matters is how long it takes to prepar
 
 ## The Same Task, from Nearly 7 Minutes to 86 Seconds
 
+> **Benchmark update:** The figures below describe the original test. See the [latest benchmark results](/benchmarks) for the Ray 2.58.0 retest, with Vane Local and Vane Ray reported separately. Daft was not retested.
+
 We ran the same PDF processing task with all three engines on the same machine: extract text, split it into chunks, generate embeddings, and save the results. All three used the same text extraction tool, splitting rules, and embedding model. Batch sizes were tuned separately for each engine, and we compared the time taken to complete the full pipeline.
 
 The following performance figures come from benchmark [1]. Timing covers the complete processing pipeline, from reading the input to saving the embedding results as Parquet. It excludes the Milvus writes shown in the examples above and index creation. The results are as follows:
