@@ -8,6 +8,19 @@ const chineseDirectory = 'i18n/zh-CN/docusaurus-plugin-content-blog-release-note
 const files = (directory) => readdirSync(directory).filter((file) => file.endsWith('.mdx')).sort()
 const metadata = (source, field) => source.match(new RegExp(`^${field}: (.+)$`, 'm'))?.[1]
 
+test('release note bodies compile as MDX in both languages', async () => {
+  const { compile } = await import('@mdx-js/mdx')
+  for (const directory of [englishDirectory, chineseDirectory]) {
+    for (const file of files(directory)) {
+      const path = `${directory}/${file}`
+      const body = read(path)
+        .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+        .replace(/<!-- truncate -->/g, '')
+      await assert.doesNotReject(() => compile(body), path)
+    }
+  }
+})
+
 test('release translations preserve version identity, date, sources, and bounded previews', () => {
   assert.deepEqual(files(chineseDirectory), files(englishDirectory))
   const slugs = new Set()
@@ -85,6 +98,39 @@ test('published runtime releases include v0.2.0 without promoting provider candi
     assert.doesNotMatch(source, /^## Provider/m)
     assert.equal((source.match(/^  - \[(?:Iceberg|Lance|Paimon|DuckLake|Vortex)\]/gm) ?? []).length, 5)
   }
+})
+
+test('v0.3.0 retains the complete release structure and capability limits in both languages', () => {
+  const editions = [
+    [englishDirectory, "What's New", ['Execution and resource management', 'AI and multimodal pipelines', 'Storage and catalogs']],
+    [chineseDirectory, '新增与改进', ['执行与资源管理', 'AI 与多模态流水线', '存储与目录']],
+  ]
+  for (const [directory, whatsNew, headings] of editions) {
+    const source = read(`${directory}/2026-11-09-v0.3.0.mdx`)
+    const highlights = source.split(`## ${whatsNew}\n`)[1].split(/^### /m)[0]
+    assert.equal((highlights.match(/^- /gm) ?? []).length, 5)
+    assert.doesNotMatch(source, /^### Highlights$/m)
+    assert.deepEqual(
+      [...source.matchAll(/^### (.+)$/gm)].map((match) => match[1]),
+      headings,
+    )
+    for (const [index, count] of [3, 5, 3].entries()) {
+      const section = source.split(`### ${headings[index]}\n`)[1].split(/^##?\#? /m)[0]
+      assert.equal((section.match(/^- /gm) ?? []).length, count)
+    }
+    for (const value of ['2.80', '2.12', '1831.16', '653.36', '215.24', '101.76', 'TypeSafe Jev', 'VaneFS', 'Gravitino', 'MCP Tools', 'Skills']) {
+      assert.ok(source.includes(value), `Missing release detail: ${value}`)
+    }
+    for (const author of ['kaka11chen', 'hubgeter', 'figurant', 'sollhui', 'QuakeWang', 'wsjz']) {
+      assert.ok(source.includes(`https://github.com/${author}`))
+    }
+  }
+  const english = read(`${englishDirectory}/2026-11-09-v0.3.0.mdx`)
+  const chinese = read(`${chineseDirectory}/2026-11-09-v0.3.0.mdx`)
+  assert.match(english, /private beta and will be open-sourced later/)
+  assert.match(chinese, /私有测试阶段，将在后续开源/)
+  assert.match(english, /Model runtimes and weights remain optional and must be provisioned separately/)
+  assert.match(chinese, /模型运行时和权重仍为可选依赖，需单独准备/)
 })
 
 test('release layout reserves compact navigation columns only on desktop', () => {

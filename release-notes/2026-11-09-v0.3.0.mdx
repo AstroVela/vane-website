@@ -1,0 +1,58 @@
+---
+slug: v0.3.0
+title: Vane Data v0.3.0
+description: Local Runner, multimodal performance, embedding functions, cross-platform wheels, and Vane Context private beta.
+date: 2026-11-09
+---
+
+Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org/), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
+
+<!-- truncate -->
+
+## What's New
+
+- **Local Runner, no Ray required**\
+  You can now use the Local Runner for single-node workloads, combining DuckDB's native lightning-fast performance with full multimodal capabilities, including python UDFs and backpressure,  without Ray's startup and operational overhead. Run the same SQL/Relation plan locally with `vane.configure(runner="local")`. Move to Ray for multi-node or GPU scheduling without rewriting the pipeline.
+
+- **Multimodal performance**\
+  Up to 2.80× faster on images (Ray Runner) and 2.12× on documents (Local Runner) than Ray Data, with tuned batch sizes on a single node (36 CPU / 64 GB / 2080 Ti): 1831.16s → 653.36s and 215.24s → 101.76s. Audio and video are on par. Optimizations include native multimodal types, metadata-first filtering to avoid unnecessary decoding, dynamic batching and backpressure, and CPU/GPU/I/O overlap.
+
+- **Embedding functions**\
+  `embed()` / `ai_embed` are first-class SQL/Python operators with typed text, image, audio, video, and multimodal inputs, query/document roles, dimensions, and normalization. Providers include ONNX Runtime (CPU/CUDA/CoreML), LiteRT-LM, native vLLM/SGLang, OpenAI, and Google. A shared embedding service keeps one resident model for ingestion and queries.
+
+- **Windows, macOS, and Linux**\
+  Prebuilt wheels for Linux x86-64, macOS arm64, and Windows x64 across Python 3.10–3.14. `pip install vane-ai` works on all three.
+
+- **[Vane Context](https://vane.astrovela.ai/)** (private beta, open source coming)\
+  An agent-ready context layer built on Vane Data. It connects enterprise media, documents, business tables, and semantic definitions; continuously extracts, embeds, and indexes content; and lets agents retrieve relevant context, analyze only what a task needs, and reuse validated knowledge with citations to the original frames, audio segments, or document pages. Integration is through MCP Tools and Skills. Vane Context is in private beta and will be open-sourced later. Contact us at [https://vane.astrovela.ai/contact](https://vane.astrovela.ai/contact) or [pulse@astrovela.ai](mailto:pulse@astrovela.ai) to join the beta.
+
+### Execution and resource management
+
+- Local execution now uses the native engine. Shared local runtimes add admission limits, cancellation, streaming results, and resident subprocess model pools for the documented read-only query path.
+- Windows UDF processes use native socket duplication and shared-memory transport. Local shared-memory capacity accounts for available platform headroom, with early allocation and resource diagnostics.
+- Ray execution improves resource accounting, asynchronous status observation, unordered read streaming, and cleanup after worker failures. Fixes preserve exchange boundaries on single-partition hash joins and column types in shuffle transport.
+
+### AI and multimodal pipelines
+
+- Unified `vane.ai.embed` inputs cover text, images, audio, video, and ordered mixed parts through `TextInput`, `ImageInput`, `AudioInput`, `VideoInput`, and `MultimodalInput`.
+- Add native and HTTP embedding integrations for vLLM and SGLang, local LiteRT-LM, MLX on Apple Silicon, and ONNX Runtime. Each adapter retains its documented model, modality, device, and platform limits.
+- Persistent embedding services can share one resident model across workers through explicit local endpoints. Model runtimes and weights remain optional and must be provisioned separately.
+- Add image, audio, and video embedding capabilities, paired retrieval integrations, and TypeSafe Jev judgments through Python and SQL.
+- Video clips retain synchronized audio and source timestamps; container probing, fractional stream-end handling, and sample-aspect-ratio metadata receive correctness improvements.
+
+### Storage and catalogs
+
+- Add native SQLite-backed VaneFS with I/O and fsync durability improvements, including reads by same-host Ray workers.
+- Add native Gravitino catalog and Fileset integration, batch Fileset writes, and metalake resource discovery.
+- Improve distributed CSV and newline-delimited JSON scan splitting.
+
+## Contributor Acknowledgements
+
+Thank you to all authors and co-authors whose non-automated contributions supported this release.
+
+[@kaka11chen](https://github.com/kaka11chen), [@hubgeter](https://github.com/hubgeter), [@figurant](https://github.com/figurant), [@sollhui](https://github.com/sollhui), [@QuakeWang](https://github.com/QuakeWang), and [@wsjz](https://github.com/wsjz).
+
+## Release references
+
+- [Original release and downloads](https://github.com/AstroVela/vane/releases/tag/v0.3.0)
+- [Source at v0.3.0](https://github.com/AstroVela/vane/tree/v0.3.0)
