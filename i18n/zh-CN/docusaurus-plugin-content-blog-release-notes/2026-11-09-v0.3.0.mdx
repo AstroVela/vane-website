@@ -1,0 +1,58 @@
+---
+slug: v0.3.0
+title: Vane Data v0.3.0
+description: Local Runner、多模态性能、Embedding 函数、跨平台安装包与 Vane Context 私有测试。
+date: 2026-11-09
+---
+
+Vane Data 是面向 AI 工作负载的高性能多模态原生数据引擎。它基于 [DuckDB](https://duckdb.org/) fork，在核心执行引擎上扩展原生多模态处理能力，并提供统一的本地与分布式执行框架。
+
+<!-- truncate -->
+
+## 新增与改进
+
+- **Local Runner，无需 Ray**\
+  现在可以使用 Local Runner 执行单节点工作负载，将 DuckDB 原生引擎的高性能与完整的多模态能力相结合，包括 Python UDF 和背压，无需承担 Ray 的启动与运维开销。通过 `vane.configure(runner="local")` 在本地运行相同的 SQL/Relation 计划。需要多节点执行或 GPU 调度时，可切换到 Ray，无需重写流水线。
+
+- **多模态性能**\
+  在单节点（36 核 CPU / 64 GB 内存 / 2080 Ti）上调优批大小后，相比 Ray Data，图像处理（Ray Runner）最高提速 2.80×，文档处理（Local Runner）最高提速 2.12×，耗时分别从 1831.16 秒降至 653.36 秒、从 215.24 秒降至 101.76 秒。音频和视频表现相当。优化包括原生多模态类型、优先通过元数据过滤以避免不必要的解码、动态批处理与背压，以及 CPU/GPU/I/O 的重叠执行。
+
+- **Embedding 函数**\
+  `embed()` / `ai_embed` 是一等 SQL/Python 算子，支持带类型的文本、图像、音频、视频和多模态输入，以及查询/文档角色、维度和归一化。Provider 包括 ONNX Runtime（CPU/CUDA/CoreML）、LiteRT-LM、原生 vLLM/SGLang、OpenAI 和 Google。共享 Embedding 服务为数据入库和查询保留同一个常驻模型。
+
+- **Windows、macOS 和 Linux**\
+  为 Linux x86-64、macOS arm64 和 Windows x64 提供预构建 wheel，覆盖 Python 3.10–3.14。三个平台均可通过 `pip install vane-ai` 安装。
+
+- **[Vane Context](https://vane.astrovela.ai/)**（私有测试，后续开源）\
+  基于 Vane Data 构建的面向 Agent 的上下文层。它连接企业媒体、文档、业务表和语义定义，持续提取内容、生成向量并建立索引，让 Agent 检索相关上下文，仅分析任务所需的内容，并复用已验证的知识，同时保留到原始视频帧、音频片段或文档页的引用。通过 MCP Tools 和 Skills 集成。Vane Context 目前处于私有测试阶段，将在后续开源。可通过[联系页面](https://vane.astrovela.ai/contact)或 [pulse@astrovela.ai](mailto:pulse@astrovela.ai) 联系我们申请测试。
+
+### 执行与资源管理
+
+- 本地执行现已使用原生引擎。共享本地运行时为文档所述的只读查询路径增加准入限制、取消、流式结果和常驻子进程模型池。
+- Windows UDF 进程使用原生套接字复制和共享内存传输。本地共享内存容量会考虑平台可用资源余量，并提供提前分配和资源诊断。
+- Ray 执行改进了资源计量、异步状态观察、无序读取流式传输，以及 Worker 失败后的清理。修复单分区 Hash Join 的 Exchange 边界保留问题，以及 Shuffle 传输中的列类型问题。
+
+### AI 与多模态流水线
+
+- 统一的 `vane.ai.embed` 输入通过 `TextInput`、`ImageInput`、`AudioInput`、`VideoInput` 和 `MultimodalInput` 覆盖文本、图像、音频、视频和有序混合内容。
+- 新增 vLLM 和 SGLang 的原生及 HTTP Embedding 集成，以及本地 LiteRT-LM、Apple Silicon 上的 MLX 和 ONNX Runtime 集成。各适配器仍遵循其文档所述的模型、模态、设备和平台限制。
+- 持久化 Embedding 服务可通过显式本地端点，让多个 Worker 共享一个常驻模型。模型运行时和权重仍为可选依赖，需单独准备。
+- 新增图像、音频和视频 Embedding 能力、配套的检索集成，以及通过 Python 和 SQL 使用的 TypeSafe Jev 判断能力。
+- 视频片段保留同步音频与源时间戳；改进容器探测、小数精度的流结束位置处理，以及采样宽高比元数据的正确性。
+
+### 存储与目录
+
+- 新增基于 SQLite 的原生 VaneFS，改进 I/O 和 fsync 持久性，并支持同主机 Ray Worker 读取。
+- 新增原生 Gravitino Catalog 与 Fileset 集成，支持批量 Fileset 写入和 Metalake 资源发现。
+- 改进分布式 CSV 与换行分隔 JSON 的扫描切分。
+
+## 贡献者致谢
+
+感谢所有通过非自动化贡献支持本次发布的作者与共同作者。
+
+[@kaka11chen](https://github.com/kaka11chen)、[@hubgeter](https://github.com/hubgeter)、[@figurant](https://github.com/figurant)、[@sollhui](https://github.com/sollhui)、[@QuakeWang](https://github.com/QuakeWang) 和 [@wsjz](https://github.com/wsjz)。
+
+## 发布相关链接
+
+- [原始发布说明与下载](https://github.com/AstroVela/vane/releases/tag/v0.3.0)
+- [v0.3.0 版本源码](https://github.com/AstroVela/vane/tree/v0.3.0)
