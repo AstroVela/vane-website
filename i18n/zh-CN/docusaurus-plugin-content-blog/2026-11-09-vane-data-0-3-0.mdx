@@ -1,0 +1,87 @@
+---
+slug: vane-data-0-3-0
+title: "Vane Data 0.3.0：本地执行、多模态 Embedding 与跨平台支持"
+description: Vane Data 0.3.0 带来无需 Ray 的原生本地执行、更完整的多模态 Embedding、更快的图像与文档处理，以及 Windows、macOS 和 Linux 预构建安装包。
+date: 2026-11-09
+---
+
+<p className="blog-body-lead">Vane Data 0.3.0 更新了 Local Runner，单机多模态任务无需启动 Ray 即可运行。Embedding 接口支持更多输入类型和模型后端，图像与文档处理也有提速。预构建安装包现已覆盖 Linux、Windows 和 Apple Silicon Mac。</p>
+
+<!-- truncate -->
+
+Vane Data 是面向 AI 工作负载的多模态数据引擎，基于 DuckDB 的分支开发，在执行引擎中加入多模态处理能力，并通过统一的 SQL 与 Relation 计划模型支持本地和分布式执行。
+
+回看前两个版本，[0.1.0](https://github.com/AstroVela/vane/releases/tag/v0.1.0) 建立了分布式执行、Python UDF、AI Functions 和容错调度；[0.2.0](https://github.com/AstroVela/vane/releases/tag/v0.2.0) 加入原生多模态类型与分布式扩展框架，并通过独立发布的 Provider 接入湖仓格式和新的数据写入目标。
+
+本次更新主要围绕 Local Runner、Embedding 和跨平台安装展开。
+
+## Local Runner：单机运行，无需 Ray
+
+Local Runner 在 0.1.0 中还是实验功能。0.3.0 改用原生引擎执行本地任务，支持多模态处理、Python UDF 和背压，也省去了启动和维护 Ray 的开销。
+
+在创建连接之前选择执行器即可：
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+con.sql("SELECT 42 AS answer").show()
+```
+
+在文档所述的只读查询场景中，共享本地运行时还支持限制任务准入、取消查询、流式返回结果，以及通过子进程模型池保持模型常驻。
+
+Ray 仍是默认执行器，适合多机执行或需要 GPU 资源调度的任务。在两种执行器之间切换时，SQL 和 Relation 使用相同的计划模型；迁移到集群后，仍需配置好 Worker 依赖、数据访问和资源参数。具体配置见[部署说明](/zh-CN/docs/data/deploy/deployment)。
+
+## Embedding：支持更多模态与模型后端
+
+0.3.0 扩展了 `embed()` 和 `ai_embed`：输入覆盖文本、图像、音频、视频，以及按顺序组织的多模态内容，同时可以表达查询与文档角色、输出维度和归一化要求。
+
+`vane.ai.embed` 用 `TextInput`、`ImageInput`、`AudioInput`、`VideoInput` 和 `MultimodalInput` 区分输入类型。查询和文档入库使用同一套接口，并分别指定角色。
+
+模型接入也有扩展，覆盖 ONNX Runtime、LiteRT-LM、vLLM、SGLang、Apple Silicon 上的 MLX，以及 OpenAI、Google 等托管服务。开发者可以根据输入模态、目标设备和部署平台，选择对应的适配器与模型。
+
+入库和查询使用同一模型时，可以配置本地 Embedding 服务端点，让多个 Worker 共享一个常驻模型。模型运行时和权重需按所选后端单独准备。
+
+## 图像与文档测试提速，音视频耗时接近 Ray Data
+
+在调优批大小后的单机测试中，Vane 的图像分类速度达到 Ray Data 的 2.80 倍，文档 Embedding 速度达到 2.12 倍：
+
+| 工作负载 | Ray Data 耗时 | Vane 耗时 | Vane 执行器 | 加速比 |
+| --- | --- | --- | --- | --- |
+| 图像分类 | 1831.16 秒 | 653.36 秒 | Ray Runner | 2.80× |
+| 文档 Embedding | 215.24 秒 | 101.76 秒 | Local Runner | 2.12× |
+
+测试机器为 36 核 CPU、64 GB 内存，使用改装为 22 GB 显存的 RTX 2080 Ti，Ray 版本为 2.58.0。这组数据来自**单机、调优批大小后的测试**，实际表现取决于工作负载与参数，多机扩展能力需要单独测量。本轮提供的复测结果未记录各引擎的具体批大小。音频和视频任务的耗时总体与 Ray Data 接近。
+
+这些执行路径使用原生多模态类型，先通过元数据过滤，减少不必要的解码；动态批处理与背压控制中间数据量，CPU、GPU 和 I/O 则尽量重叠执行。表中耗时来自完整流水线，详细结果与条件见[基准测试页面](/zh-CN/benchmarks)。
+
+## Windows、macOS 和 Linux 都有预构建安装包
+
+0.3.0 的 wheel 覆盖 Linux x86-64、macOS arm64 和 Windows x64，支持 Python 3.10–3.14。在这三类平台上，可以直接安装 Vane Data：
+
+```bash
+pip install vane-ai==0.3.0
+```
+
+Windows UDF 进程增加了原生套接字复制和共享内存传输支持。本地运行时会根据平台可用资源确定共享内存容量，并提前分配和诊断资源问题。
+
+## 存储与执行更新
+
+0.3.0 新增基于 SQLite 的原生 VaneFS，改进 I/O 和 fsync 持久性，并支持同主机 Ray Worker 读取。原生 Gravitino Catalog 与 Fileset 集成支持批量 Fileset 写入和 Metalake 资源发现，分布式 CSV 与换行分隔 JSON 的扫描切分也得到改进。
+
+多模态处理方面，视频片段保留同步音频与源时间戳，容器探测和视频元数据处理有所修正。Ray 执行路径还修复了 Exchange 边界与 Shuffle 列类型处理问题，并改进资源计量、状态观察及 Worker 失败后的清理。
+
+## Vane Context 进入私有测试
+
+**Vane Context** 基于 Vane Data 构建，为 Agent 提供可检索、可分析的企业上下文。它接入媒体、文档、业务表和语义定义，持续提取内容、生成向量并建立索引。Agent 可以检索任务所需的材料，按需分析，并复用已验证的知识。
+
+检索和分析结果保留来源引用，可以回查原始视频帧、音频片段或文档页。Agent 通过 MCP Tools 和 Skills 使用这些能力。
+
+Vane Context 目前作为独立产品开放私有测试，计划后续开源。有兴趣试用，可以通过[联系页面](/zh-CN/contact)申请。
+
+## 开始使用
+
+单机任务可以选择 Local Runner，需要多机执行或 GPU 资源调度时使用 Ray Runner。Embedding 的模型与后端则取决于输入模态、设备和部署环境。
+
+发布说明和安装包见 [GitHub Releases](https://github.com/AstroVela/vane/releases)，SQL 与 Python 示例见[快速开始](/zh-CN/docs/data/quickstart/quickstart)。

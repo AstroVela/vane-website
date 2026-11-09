@@ -1,0 +1,87 @@
+---
+slug: vane-data-0-3-0
+title: "Vane Data 0.3.0: Local Execution, Multimodal Embeddings, and Cross-Platform Support"
+description: Vane Data 0.3.0 brings native local execution without Ray, typed multimodal embeddings, faster image and document pipelines, and prebuilt wheels for Windows, macOS, and Linux.
+date: 2026-11-09
+---
+
+<p className="blog-body-lead">Vane Data 0.3.0 updates Local Runner so single-machine multimodal jobs can run without starting Ray. Embedding APIs support more input types and model backends, and image and document pipelines run faster in our single-node tests. Prebuilt wheels now cover Linux, Windows, and Apple Silicon Macs.</p>
+
+<!-- truncate -->
+
+Vane Data is a multimodal data engine for AI workloads, built on a fork of DuckDB. It extends the execution engine with multimodal processing and a shared SQL and Relation plan model for local and distributed execution.
+
+The [0.1.0 release](https://github.com/AstroVela/vane/releases/tag/v0.1.0) established distributed execution, Python UDFs, AI Functions, and fault-tolerant scheduling. [0.2.0](https://github.com/AstroVela/vane/releases/tag/v0.2.0) added native multimodal types and a distributed extension framework, with separately delivered lakehouse providers and new data sinks.
+
+This release focuses on Local Runner, embeddings, and installation across platforms.
+
+## Run a single-node pipeline without starting Ray
+
+In 0.1.0, Local Runner was experimental. In 0.3.0, local execution uses the native engine and supports multimodal processing, Python UDFs, and backpressure without Ray's startup and operational overhead.
+
+Select the runner before creating a connection:
+
+```python
+import vane
+
+vane.configure(runner="local")
+con = vane.connect()
+con.sql("SELECT 42 AS answer").show()
+```
+
+For the documented read-only query path, shared local runtimes support admission limits, query cancellation, streaming results, and subprocess pools that keep models resident.
+
+Ray remains the default runner and the choice for multi-node execution or GPU resource scheduling. The SQL and Relation plan model stays the same when moving between runners, while worker dependencies, data access, and resource settings still need to match the target environment. See the [deployment guide](/docs/data/deploy/deployment).
+
+## Embeddings: more input types and model backends
+
+0.3.0 expands `embed()` and `ai_embed` with typed text, image, audio, video, and ordered multimodal inputs. The API also represents query and document roles, output dimensions, and normalization.
+
+`vane.ai.embed` distinguishes input types through `TextInput`, `ImageInput`, `AudioInput`, `VideoInput`, and `MultimodalInput`. Queries and document ingestion use the same interface with their respective roles.
+
+The release expands integrations across ONNX Runtime, LiteRT-LM, vLLM, SGLang, MLX on Apple Silicon, and hosted providers such as OpenAI and Google. Choose an adapter and model according to the required input modality, device, and platform.
+
+Persistent embedding services can share one resident model across workers through explicit local endpoints. This is useful when ingestion and query workloads use the same model. Model runtimes and weights remain optional dependencies that must be provisioned separately.
+
+## Single-node results: images and documents improve, audio and video remain comparable
+
+In single-node tests with tuned batch sizes, Vane achieves a 2.80× speedup for image classification and a 2.12× speedup for document embedding compared with Ray Data:
+
+| Workload | Ray Data | Vane | Runner | Speedup |
+| --- | --- | --- | --- | --- |
+| Image classification | 1831.16 s | 653.36 s | Ray | 2.80× |
+| Document embedding | 215.24 s | 101.76 s | Local | 2.12× |
+
+The test machine had 36 CPU cores, 64 GB of memory, and an RTX 2080 Ti modified to 22 GB of GPU memory, using Ray 2.58.0. These are **single-node results with tuned batch sizes**; performance depends on the workload and settings, and multi-node scaling requires separate measurement. Per-engine batch sizes were not recorded in the supplied retest results. Audio and video runtimes remain broadly comparable to Ray Data.
+
+The execution paths combine native multimodal types, metadata-first filtering to avoid unnecessary decoding, dynamic batching and backpressure, and CPU/GPU/I/O overlap. These timings measure complete pipelines. See the [benchmark results and conditions](/benchmarks).
+
+## Prebuilt wheels for three operating systems
+
+0.3.0 provides wheels for Linux x86-64, macOS arm64, and Windows x64 across Python 3.10–3.14. Developers on all three platforms can install Vane Data with:
+
+```bash
+pip install vane-ai==0.3.0
+```
+
+Windows execution also gains native socket duplication and shared-memory transport for UDF processes. Local shared-memory capacity accounts for platform headroom, with earlier allocation and resource diagnostics.
+
+## Storage and execution updates
+
+0.3.0 adds native SQLite-backed VaneFS, including I/O and fsync durability improvements and reads by same-host Ray workers. Native Gravitino catalog and Fileset integration adds batch Fileset writes and metalake resource discovery. Distributed CSV and newline-delimited JSON scan splitting also improves.
+
+Other changes preserve synchronized audio and source timestamps in video clips, improve container probing and video metadata handling, and correct exchange boundaries and column-type handling in Ray execution. Ray resource accounting, status observation, and cleanup after worker failures also receive updates.
+
+## Vane Context enters private beta
+
+**Vane Context** uses Vane Data to make enterprise context available for agent retrieval and analysis. It connects media, documents, business tables, and semantic definitions, then continuously extracts content, generates embeddings, and builds indexes. Agents can retrieve the material a task needs, analyze it on demand, and reuse validated knowledge.
+
+Retrieval and analysis results retain source citations to original video frames, audio segments, or document pages. Agents access these capabilities through MCP Tools and Skills.
+
+Vane Context is available separately in private beta, with open source planned later. Request access through the [contact page](/contact).
+
+## Getting started
+
+For a single-node workload, start with Local Runner. When a pipeline needs multiple machines or Ray resource scheduling, use Ray Runner. For embedding workloads, choose the model and backend according to the required modality, device, and deployment environment.
+
+Find release notes and packages on [GitHub Releases](https://github.com/AstroVela/vane/releases), and SQL and Python examples in the [quickstart](/docs/data/quickstart/quickstart).
