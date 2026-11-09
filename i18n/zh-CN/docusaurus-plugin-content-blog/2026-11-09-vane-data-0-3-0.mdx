@@ -13,7 +13,13 @@ Vane Data 是面向 AI 工作负载的多模态数据引擎，基于 DuckDB 的�
 
 回看前两个版本，[0.1.0](https://github.com/AstroVela/vane/releases/tag/v0.1.0) 建立了分布式执行、Python UDF、AI Functions 和容错调度；[0.2.0](https://github.com/AstroVela/vane/releases/tag/v0.2.0) 加入原生多模态类型与分布式扩展框架，并通过独立发布的 Provider 接入湖仓格式和新的数据写入目标。
 
-本次更新主要围绕 Local Runner、Embedding 和跨平台安装展开。
+## Highlights
+
+- **Local Runner 无需 Ray**：通过原生引擎执行单机多模态任务，支持 Python UDF 和背压；需要多机执行或 GPU 资源调度时使用 Ray。
+- **图像与文档处理提速**：在调优批大小后的单机测试中，相比 Ray Data，Vane Ray 的图像分类速度达到 2.80 倍，Vane Local 的文档 Embedding 速度达到 2.12 倍；音视频耗时总体接近。
+- **多模态 Embedding**：SQL 与 Python 接口支持文本、图像、音频、视频及混合输入，可指定查询或文档角色、维度与归一化。入库和查询可通过共享 Embedding 服务使用同一个常驻模型。
+- **跨平台安装包**：预构建 wheel 覆盖 Windows x64、macOS arm64 和 Linux x86-64，支持 Python 3.10–3.14。
+- **Vane Context 私有测试**：基于 Vane Data 提供企业上下文，通过 MCP Tools 和 Skills 接入 Agent，保留到原始视频帧、音频片段和文档页的引用，计划后续开源。
 
 ## Local Runner：单机运行，无需 Ray
 

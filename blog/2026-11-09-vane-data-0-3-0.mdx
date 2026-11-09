@@ -13,7 +13,13 @@ Vane Data is a multimodal data engine for AI workloads, built on a fork of DuckD
 
 The [0.1.0 release](https://github.com/AstroVela/vane/releases/tag/v0.1.0) established distributed execution, Python UDFs, AI Functions, and fault-tolerant scheduling. [0.2.0](https://github.com/AstroVela/vane/releases/tag/v0.2.0) added native multimodal types and a distributed extension framework, with separately delivered lakehouse providers and new data sinks.
 
-This release focuses on Local Runner, embeddings, and installation across platforms.
+## Highlights
+
+- **Local Runner without Ray:** Run single-node multimodal jobs with Python UDFs and backpressure through the native engine. Use Ray for multi-node execution or GPU resource scheduling.
+- **Faster image and document pipelines:** In single-node tests with tuned batch sizes, image classification runs 2.80× faster on Vane Ray and document embedding 2.12× faster on Vane Local than on Ray Data. Audio and video runtimes remain comparable.
+- **Multimodal embeddings:** SQL and Python APIs support typed text, image, audio, video, and mixed inputs, with query/document roles, dimensions, and normalization. A shared embedding service lets ingestion and queries use one resident model.
+- **Windows, macOS, and Linux wheels:** Prebuilt packages cover Windows x64, macOS arm64, and Linux x86-64 across Python 3.10–3.14.
+- **Vane Context private beta:** An enterprise context layer built on Vane Data, accessed through MCP Tools and Skills, with citations to source frames, audio segments, and document pages. Open source is planned later.
 
 ## Run a single-node pipeline without starting Ray
 
