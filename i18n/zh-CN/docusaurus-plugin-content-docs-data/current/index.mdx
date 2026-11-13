@@ -4,6 +4,17 @@ title: 概览
 
 Vane Data 是面向 AI 工作负载的高性能、多模态原生数据引擎。它基于 DuckDB 分支构建，在核心执行引擎之上扩展原生多模态处理能力，并提供统一的本地与分布式执行框架。
 
+```bash
+pip install vane-ai
+```
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT 42 AS answer").show()
+```
+
 从[快速开始](quickstart/quickstart.mdx)入手，用 Vane 处理本地图片，无需 GPU、模型 API 密钥或外部集群。
 
 <DataArchitecture />
