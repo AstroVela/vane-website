@@ -67,6 +67,15 @@ Sparse checkout 不会把 `vane/` 和 `duckdb/` 源码目录放入工作区，�
 | [基于全局 LSH 的网页文本去重](/zh-CN/docs/data/tutorials/use-cases/web-text-deduplication) | 生成全局 LSH 候选、用精确 Jaccard 校验、形成图聚类并保留代表文档 | 24 篇包含重复组与单例的文档 |
 | [Vane + Doris 客服录音检索](/zh-CN/docs/data/tutorials/use-cases/audio-support-doris-search) | 转写客服录音、提取候选故障类别并生成向量，写入 Doris 后检索相似反馈并关联订单与批次 | 三段示例 WAV 录音与工单清单 |
 
+### Vane + PostgreSQL 本地向量检索
+
+这两篇教程都在本机运行：模型可以直接用本地 CPU，数据写入本地的 PostgreSQL 和 pgvector。两篇都通过 Vane 的 `PostgresSink` 写入向量，再用 SQL 查询；环境准备和全部脚本都写在页面里。
+
+| 用例 | 你将构建什么 | 默认场景 |
+| --- | --- | --- |
+| [Vane + PostgreSQL 旅行照片选片](/zh-CN/docs/data/tutorials/use-cases/travel-photo-selection) | 生成图片向量，写入或更新元数据与向量，并编排六张的 HTML 相册 | 24 张来源照片与 8 张派生变体 |
+| [Vane + MOSS + PostgreSQL 裁员沟通检索](/zh-CN/docs/data/tutorials/use-cases/moss-layoff-conversations) | 分离录音说话人，生成分段向量，并检索可回听的原始位置 | 五段虚构合成音色对话 |
+
 ## 如何选择
 
 文本与嵌入工作流可以从 Common Crawl 或 Red Pajamas 开始。精简的 MinHash 示例适合了解算法；全局网页文本用例则继续覆盖候选诊断、精确校验、聚类和发布。图像生成、图像查询、语音和基础 Prompt 示例展示了二进制媒体与模型结果如何在 Arrow 支撑的 Relation 中流转。如果需要由多个输入和明确下游策略组成的完整工作流，可以选择理赔、采购、Agent 证据或训练数据发布用例。

@@ -40,7 +40,14 @@
           { "slug": "tutorials/use-cases/procurement-compliance-audit" },
           { "slug": "tutorials/use-cases/web-text-deduplication" },
           { "slug": "tutorials/use-cases/audio-support-doris-search" },
-          { "slug": "tutorials/use-cases/equipment-observations" }
+          { "slug": "tutorials/use-cases/equipment-observations" },
+          {
+            "group": "Vane + PostgreSQL local vector search",
+            "items": [
+              { "slug": "tutorials/use-cases/travel-photo-selection" },
+              { "slug": "tutorials/use-cases/moss-layoff-conversations" }
+            ]
+          }
         ]
       }
     ]

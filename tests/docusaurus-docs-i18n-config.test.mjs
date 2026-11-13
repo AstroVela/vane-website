@@ -153,6 +153,10 @@ const exampleRunnerSources = [
   // Self-contained tutorial whose code blocks are localized per locale; see the parity test below.
   'docs/data/tutorials/use-cases/audio-support-doris-search.mdx',
   'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/audio-support-doris-search.mdx',
+  'docs/data/tutorials/use-cases/travel-photo-selection.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/travel-photo-selection.mdx',
+  'docs/data/tutorials/use-cases/moss-layoff-conversations.mdx',
+  'i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/moss-layoff-conversations.mdx',
 ].map((file) => readFileSync(file, 'utf8'))
 const tutorialOverviewSource = readFileSync('docs/data/tutorials/index.mdx', 'utf8')
 const chineseTutorialOverviewSource = readFileSync(
@@ -271,10 +275,14 @@ test('Tutorials sidebar separates examples and use cases', () => {
       entry.slug.startsWith('tutorials/examples/'),
     ),
   )
-  assert.ok(
-    tutorials.items[2].items.every((entry) =>
-      entry.slug.startsWith('tutorials/use-cases/'),
-    ),
+  const useCaseSlugs = tutorials.items[2].items.flatMap((entry) =>
+    entry.items ? entry.items.map((item) => item.slug) : [entry.slug],
+  )
+  assert.ok(useCaseSlugs.every((slug) => slug.startsWith('tutorials/use-cases/')))
+  const postgresGroup = tutorials.items[2].items.find((entry) => entry.group === 'Vane + PostgreSQL local vector search')
+  assert.deepEqual(
+    postgresGroup?.items.map((entry) => entry.slug),
+    ['tutorials/use-cases/travel-photo-selection', 'tutorials/use-cases/moss-layoff-conversations'],
   )
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.Tutorials']?.message,
@@ -287,6 +295,10 @@ test('Tutorials sidebar separates examples and use cases', () => {
   assert.equal(
     dataDocsTranslations['sidebar.dataSidebar.category.Use cases']?.message,
     '端到端用例',
+  )
+  assert.equal(
+    dataDocsTranslations['sidebar.dataSidebar.category.Vane + PostgreSQL local vector search']?.message,
+    'Vane + PostgreSQL 本地向量检索',
   )
   assert.equal(existsSync('docs/data/tutorials/ray-worker.mdx'), false)
   assert.equal(
@@ -796,4 +808,16 @@ test('local dev command serves English and Chinese routes through isolated local
 test('README describes the current deployment documentation', () => {
   assert.match(readmeSource, /deploy\/\s+runner configuration and Ray deployment material/)
   assert.doesNotMatch(readmeSource, /single-node, Ray cluster, and sizing material/)
+})
+
+
+test('PostgreSQL tutorials keep bilingual code and section structure in sync', () => {
+  for (const slug of ['travel-photo-selection', 'moss-layoff-conversations']) {
+    const english = readFileSync(`docs/data/tutorials/use-cases/${slug}.mdx`, 'utf8')
+    const chinese = readFileSync(
+      `i18n/zh-CN/docusaurus-plugin-content-docs-data/current/tutorials/use-cases/${slug}.mdx`,
+      'utf8',
+    )
+    assertBilingualParity(slug, english, chinese)
+  }
 })
