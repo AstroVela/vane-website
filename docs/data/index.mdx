@@ -4,6 +4,17 @@ title: Overview
 
 Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
 
+```bash
+pip install vane-ai
+```
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT 42 AS answer").show()
+```
+
 Start with the [Quickstart](quickstart/quickstart.mdx) to process local images with Vane, without a GPU, model API key, or external cluster.
 
 <DataArchitecture />
