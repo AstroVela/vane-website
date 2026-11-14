@@ -185,6 +185,7 @@
       { "slug": "extensions/ducklake" },
       { "slug": "extensions/milvus" },
       { "slug": "extensions/qdrant" },
+      { "slug": "extensions/postgres" },
       { "slug": "extensions/doris" }
     ]
   },

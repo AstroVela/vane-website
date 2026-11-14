@@ -40,6 +40,7 @@ Use [built-in media functions](reference/multimodal-data/index.mdx) to inspect m
 | Lake table formats: [Iceberg](extensions/iceberg.mdx), [Paimon](extensions/paimon.mdx), [DuckLake](extensions/ducklake.mdx) | Distributed queries and writes |
 | Columnar formats: [Lance](extensions/lance.mdx), [Vortex](extensions/vortex.mdx) | Distributed queries and writes; Lance also supports vector and hybrid search |
 | Vector databases: [Milvus](extensions/milvus.mdx), [Qdrant](extensions/qdrant.mdx) | Distributed upserts of query results |
+| Relational database: [PostgreSQL](extensions/postgres.mdx) | Distributed upserts of query results, including pgvector columns |
 | Analytical database: [Doris](extensions/doris.mdx) | Distributed Arrow batch writes |
 
 Lake and columnar format extensions are installed as provider packages released independently of `vane-ai`. Database sinks use their corresponding optional dependencies; follow the linked guides for setup and supported operations.
@@ -7083,6 +7084,7 @@ Connect Vane Data to lakehouse formats and external data stores.
 - **[DuckLake](https://ducklake.select/)** — A lakehouse format combining SQL analytics with data lake scalability. The Vane extension provides distributed query and write capabilities.
 - **[Milvus](https://milvus.io/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
 - **[Qdrant](https://qdrant.tech/)** — A vector database designed for high-dimensional similarity search. The Vane extension provides distributed write capabilities, supporting distributed upserts and query result writes.
+- **[PostgreSQL](https://www.postgresql.org/)** — A relational database that stores embeddings next to application data with the pgvector extension. The Vane extension provides distributed write capabilities, supporting distributed upserts of query results, including pgvector columns.
 - **[Apache Doris](https://doris.apache.org/)** — A real-time analytical database with a high-performance OLAP engine. The Vane extension provides distributed write capabilities, supporting Arrow batch writes through Arrow Stream Load.
 
 ## Apache Iceberg
@@ -7214,6 +7216,43 @@ summary = relation.write_datasink(sink)
 ```
 
 Use an endpoint reachable by all workers. Reusing an ID replaces the point's full vector and payload; successful batches are not rolled back if a later batch fails.
+
+## PostgreSQL
+
+Route: /docs/data/extensions/postgres
+Source: docs/data/extensions/postgres.mdx
+
+[PostgreSQL](https://www.postgresql.org/) is a relational database; with the [pgvector](https://github.com/pgvector/pgvector) extension it stores embeddings next to application data. Vane upserts query results by key through distributed ADBC bulk loads, so rerunning a pipeline updates existing rows instead of adding duplicates.
+
+## Example
+
+This example writes two products to `products`. Install the `vane-ai[postgres]` extra, enable pgvector, and create the target table with `id bigint PRIMARY KEY`, `title text`, and `embedding vector(3)`. Set `POSTGRES_PASSWORD` to the database password in every worker's environment.
+
+```python
+import vane
+from vane import EnvironmentSecret, PostgresSink
+
+relation = vane.sql("""
+    SELECT id, title, embedding
+    FROM (VALUES
+        (1, 'Red running shoe', [0.12, 0.85, 0.33]),
+        (2, 'Blue rain jacket', [0.91, 0.08, 0.27])
+    ) AS products(id, title, embedding)
+""")
+
+sink = PostgresSink(
+    "products",
+    dsn="postgresql://writer@db.example:5432/app",
+    password=EnvironmentSecret("POSTGRES_PASSWORD"),
+    key_columns="id",
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+The table needs a primary key or unique constraint on the key columns, whose values must be non-null and unique in the input. Values are cast to the target column types, including `uuid`, `jsonb`, and `vector`; map input names to other column names with `field_mapping`. Each batch commits in its own transaction, so a rejected value rolls back only that batch, and writing the same keys again replaces the earlier values.
+
+`dsn` is a libpq connection string or URI and must not contain the password. Pass the password as `password=EnvironmentSecret(...)`; it is read on each worker. Omit `password` when the server does not require one, for example with certificate authentication.
 
 ## Apache Doris
 

@@ -78,6 +78,7 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/extensions/ducklake: DuckLake.
 - /docs/data/extensions/milvus: Milvus.
 - /docs/data/extensions/qdrant: Qdrant.
+- /docs/data/extensions/postgres: PostgreSQL.
 - /docs/data/extensions/doris: Apache Doris.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

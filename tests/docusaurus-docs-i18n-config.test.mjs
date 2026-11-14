@@ -735,7 +735,7 @@ test('Extensions follows Reference as a category with an overview and localized 
   assert.equal(dataSidebar[index + 1].group, 'Operations')
   assert.equal(dataDocsTranslations['sidebar.dataSidebar.category.Extensions'].message, '扩展')
   assert.equal(dataDocsTranslations['sidebar.dataSidebar.doc.Extensions overview'].message, '概览')
-  const slugs = ['iceberg', 'lance', 'paimon', 'vortex', 'ducklake', 'milvus', 'qdrant', 'doris']
+  const slugs = ['iceberg', 'lance', 'paimon', 'vortex', 'ducklake', 'milvus', 'qdrant', 'postgres', 'doris']
   assert.deepEqual(dataSidebar[index].items.map((entry) => entry.slug), [
     'extensions', ...slugs.map((slug) => `extensions/${slug}`),
   ])
@@ -747,6 +747,7 @@ test('Extensions follows Reference as a category with an overview and localized 
     ducklake: 'https://ducklake.select/',
     milvus: 'https://milvus.io/',
     qdrant: 'https://qdrant.tech/',
+    postgres: 'https://www.postgresql.org/',
     doris: 'https://doris.apache.org/',
   }
   for (const root of [
@@ -757,7 +758,7 @@ test('Extensions follows Reference as a category with an overview and localized 
     for (const slug of slugs) {
       assert.ok(overview.includes(`](${websites[slug]})`))
       const page = readFileSync(`${root}/extensions/${slug}.mdx`, 'utf8')
-      if (['milvus', 'qdrant', 'doris'].includes(slug)) {
+      if (['milvus', 'qdrant', 'postgres', 'doris'].includes(slug)) {
         assert.doesNotMatch(page, /\*\*(?:GitHub|Document|文档):\*\*|archived|历史版本/)
         assert.match(page, /```python/)
         assert.match(page, /relation\.write_datasink\(sink\)/)

@@ -53,6 +53,11 @@ export const DOCS_PAGES = {
     title: 'Qdrant',
     titleZh: 'Qdrant',
   },
+  'extensions/postgres': {
+    source: 'docs/data/extensions/postgres.mdx',
+    title: 'PostgreSQL',
+    titleZh: 'PostgreSQL',
+  },
   'extensions/doris': {
     source: 'docs/data/extensions/doris.mdx',
     title: 'Apache Doris',
