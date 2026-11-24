@@ -32,7 +32,7 @@ Vane Data 是面向 AI 工作负载的高性能多模态数据引擎。它基于
 
 - **Ray Runner 与 Local Runner**\
   同一套 SQL 和 Relation 计划模型既可通过分布式 Ray Runner 执行，也可通过本地进程内 FTE Runner 执行。Ray Runner 是默认执行路径，支持单机和分布式执行。Local Runner 面向不依赖 Ray 的轻量、低开销本地执行。\
-  **Local Runner 目前为实验性功能。**
+  **Local Runner 在 v0.1.0 中为实验性功能；自 v0.3.0 起已不再是实验性功能。**
 
 - **多模态基准测试**\
   提供可对比的 Vane、Ray Data 和 Daft 流水线，覆盖音频转写、文档嵌入、图像分类和视频目标检测。\
