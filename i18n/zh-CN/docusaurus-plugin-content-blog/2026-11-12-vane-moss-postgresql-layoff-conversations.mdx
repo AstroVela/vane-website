@@ -1,0 +1,244 @@
+---
+slug: vane-moss-postgresql-layoff-conversations
+title: "用 Vane、MOSS 和 PostgreSQL，找回裁员沟通中的关键原话"
+description: 从“腾讯裁员 50%”传闻说起，用 MOSS 转写多轮裁员沟通录音，经 Vane 写入 PostgreSQL，再结合语义、说话人和句子顺序找回原话，并回到录音核对。
+date: 2026-11-12
+image: /img/blog/vane-moss-postgresql-layoff-conversations/cover.png
+---
+
+<p className="blog-body-lead">11 月 12 日，腾讯公关总监张军回应网传“腾讯裁员 50%”：这是“纯纯的误会和谣言”。</p>
+
+<!-- truncate -->
+
+根据[澎湃新闻](https://www.thepaper.cn/newsDetail_forward_34458772)和 [IT 之家](https://www.ithome.com/1/026/076.htm)的报道，腾讯管理层在 28 周年 Linktime 直播中提到：50% 的人像“陆军”，通过提效做好现有核心业务；另 50% 的人像“海军”，探索 AI Native。张军表示，这是资源重新调度的比喻，可能是“裁员 50%”的误读出处，该说法完全不属实。
+
+一个讲资源调度的比喻，在传播中变成了裁员比例。本文不讨论这件事本身，只借它引出一个更常见的场景。
+
+一次裁员往往要经过多轮沟通。岗位取消的原因、补偿、年假和最后工作日，分散在员工与主管、HR 的几次谈话中，前后说法也可能发生变化。即使这些谈话都有录音，要确认“最后工作日是在哪一次沟通中调整的”“主管和 HR 谈到绩效时具体怎么说”，仍然需要把几段录音逐一回听，再自己整理出谁在什么时候说了什么。
+
+本文用五段虚构的谈话录音做了一次演示：先转写录音、分清说话人，再把每句话连同向量写入 PostgreSQL，最后用 SQL 找回最后工作日、绩效和年假相关的原话，每条结果都能跳回录音的对应位置回听。各部分的分工是：
+
+- **MOSS-Transcribe-Diarize**：OpenMOSS 开源的 0.9B 语音模型，一次推理即可输出转写文本、起止时间和匿名说话人标签。
+- **Vane**：把转写分段、向量和来源信息写入 PostgreSQL。
+- **PostgreSQL + pgvector**：pgvector 是 PostgreSQL 的向量扩展，用来保存向量、按向量距离排序。本例用它保存分段和向量，用 SQL 完成语义检索、条件过滤和上下文查询。
+
+## 录音素材准备
+
+本例的五段录音由 macOS 合成音色生成，共约 10 分 16 秒，人物、公司、日期和安排都是虚构的。内容是员工小林在十天内与主管、HR 的五次沟通：
+
+| 录音 | 沟通日期 | 参与者 | 主要内容 |
+| --- | --- | --- | --- |
+| R01 | 3 月 4 日 | 主管、员工 | 第一次通知岗位取消 |
+| R02 | 3 月 7 日 | HR、员工 | 补偿、奖金、年假和初步日期 |
+| R03 | 3 月 9 日 | 员工、主管、HR | 岗位取消的原因和绩效口径 |
+| R04 | 3 月 11 日 | HR、员工 | 书面方案、日期调整和年假复核 |
+| R05 | 3 月 14 日 | 主管、员工 | 交接安排 |
+
+这五次沟通里，有三处说法前后变了：最后工作日从 6 月 30 日调整为 7 月 3 日；交接清单里出现过一项“绩效改进材料”，后来被主管更正；年假从系统显示的六天复核为五天。
+
+录音、剧本和说话人映射都可以在[分步教程](/zh-CN/docs/data/tutorials/use-cases/moss-layoff-conversations)第 2 节下载。
+
+## 转写与说话人确认
+
+MOSS 每次处理一段录音，输出每句话的文本、起止秒数和 `S01`、`S02` 这样的说话人标签。五段录音一共得到 91 个分段，正好对应剧本里的 91 句台词。
+
+说话人标签只区分不同的声音，不说明是谁，而且每段录音单独编号：R01 的 `S01` 是主管，R03 的 `S01` 却是员工。所以每段录音都要人工听一遍，单独记下对应关系：
+
+```json
+{
+  "R01": {"S01": "manager", "S02": "employee"},
+  "R02": {"S01": "hr", "S02": "employee"},
+  "R03": {"S01": "employee", "S02": "manager", "S03": "hr"}
+}
+```
+
+转写文本没有手工修改。MOSS 把好几处“HR”听成了“小石”，把“考勤系统”听成了“考前系统”，后文的结果表都保留了这些原始输出。
+
+## 写入 PostgreSQL
+
+每个分段在 PostgreSQL 中占一行。除了文本和向量，还多存了几列：说话人、沟通日期、这句话在录音里的序号、起止秒数和录音地址。后面查询时，说话人和日期用来过滤，序号用来找前后句，秒数和地址用来回听。这些列和向量在同一行里，过滤、排序和取上下文都能写进同一条 SQL，不需要另外维护一套检索服务。
+
+完整的建表语句还为向量列建了 HNSW 索引，数据量大时可以加快按距离查找。下面是去掉索引后的部分：
+
+```sql
+-- 向量列依赖 pgvector 扩展。
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE conversation_demo.recording_segments (
+    -- 分段主键，如 R04-0011；重新写入时按它更新原行。
+    segment_uid text PRIMARY KEY,
+    -- 所在录音和句子序号，用于按顺序取上下文。
+    recording_id text NOT NULL,
+    segment_id integer NOT NULL,
+    -- 沟通日期，用于按时间过滤和排序。
+    recorded_at timestamptz NOT NULL,
+    -- MOSS 的匿名标签，以及人工确认后的角色：employee、manager 或 hr。
+    speaker_label text NOT NULL,
+    speaker text NOT NULL,
+    -- MOSS 转写原文，未做人工修改。
+    text text NOT NULL,
+    -- 片段起止秒数、播放地址和原始 WAV 的 SHA-256，用于回听核对。
+    start_seconds double precision NOT NULL,
+    end_seconds double precision NOT NULL,
+    source_uri text NOT NULL,
+    source_sha256 text NOT NULL,
+    transcription_model text NOT NULL,
+    -- 与文本向量模型的 384 维输出对应。
+    embedding vector(384) NOT NULL,
+    UNIQUE (recording_id, segment_id)
+);
+```
+
+向量由 sentence-transformers 的 `paraphrase-multilingual-MiniLM-L12-v2` 生成：模型把每句话换算成 384 个数字，意思越接近的两句话，这两组数字之间的距离越小。按距离排序，就能找到意思相近、说法不同的句子。生成后，向量和分段字段拼成一张表（Arrow 格式），交给 Vane 的 `PostgresSink` 写入：
+
+```python
+# 为每个分段生成归一化的 384 维向量；查询时也使用相同模型和归一化方式。
+model = SentenceTransformer(MODEL)
+vectors = model.encode(
+    [row["text"] for row in rows], batch_size=16, normalize_embeddings=True
+)
+
+# 分段字段与向量组成一张 Arrow 表。
+table = pa.table({field: [row[field] for row in rows] for field in FIELDS})
+table = table.append_column(
+    "embedding", pa.array(vectors.tolist(), type=pa.list_(pa.float32()))
+)
+
+with vane.connect() as conn:
+    conn.register("segment_vectors", table)
+    # 按 segment_uid 执行 upsert；两个 worker 分批写入，每批最多 16 行。
+    summary = conn.sql("SELECT * FROM segment_vectors").write_datasink(
+        PostgresSink(
+            "recording_segments", schema="conversation_demo", dsn=dsn,
+            key_columns="segment_uid", worker_count=2, max_batch_rows=16,
+        )
+    )
+```
+
+`PostgresSink` 按主键 `segment_uid` 写入：主键相同的行已经存在就更新，不存在就新增，也就是 upsert。所以同一份转写写入两次，表里仍是 91 行；转写或说话人改正后重新写入，会覆盖原来那一行。
+
+## 检索关键原话
+
+下面三个查询分别对应前面提到的三处变化。SQL 中以 `$` 开头的是查询参数，含义在每个查询前说明；结果来自本例 91 个分段的实际运行。
+
+### 最后工作日的调整
+
+先直接搜“最后工作日”。下面是检索结果页，每条结果标出录音编号、说话人、起止秒数和语义距离（距离越小，意思越接近），点 **Play original segment** 会从这句话开始播放：
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/vane-moss-postgresql-layoff-conversations/timeline-result.png"
+  alt="检索“最后工作日”的结果页，每条结果显示录音编号、说话人、起止秒数、原话和音频播放控件"
+  width="1440"
+  height="1000"
+  loading="lazy"
+  decoding="async"
+/>
+
+排在前四的结果正好来自四次不同的沟通，但它们是按语义距离排的，顺序是 R01、R05、R04、R02，看不出先后。沟通日期就在同一行里，在外面再按日期排一次即可。这里 `$1` 是“最后工作日”经同一模型生成的向量：
+
+```sql
+SELECT recorded_at::date AS day, recording_id, speaker,
+       start_seconds, text, distance
+FROM (
+    -- 按余弦距离取出与“最后工作日”最接近的四个分段。
+    SELECT *, embedding <=> $1::vector AS distance
+    FROM conversation_demo.recording_segments
+    ORDER BY distance
+    LIMIT 4
+) AS top_hits
+-- 再按沟通日期和片段位置排列，便于看出前后变化。
+ORDER BY recorded_at, start_seconds;
+```
+
+| 日期 | 录音 | 说话人 | 位置 | 原话 | 距离 |
+| --- | --- | --- | --- | --- | --- |
+| 3 月 4 日 | R01 | 员工 | 55.60 秒 | 六月三十日是最后工作日吗？ | 0.1592 |
+| 3 月 7 日 | R02 | HR | 26.41 秒 | 最后工作日先按六月三十日登记，补偿明细、剩余年假和奖金处理，会在书面方案里分别列出。 | 0.3436 |
+| 3 月 11 日 | R04 | 员工 | 6.95 秒 | 看到了，最后工作日从六月三十日变成了七月三日，我想知道原因。 | 0.3044 |
+| 3 月 14 日 | R05 | 主管 | 0.07 秒 | 今天只核对交接事项，小石已经把七月三日作为当前最后工作日，我们按这个日期安排。 | 0.2901 |
+
+按日期读下来：6 月 30 日是第一次沟通时的初步日期，3 月 7 日 HR 按这个日期登记；3 月 11 日核对书面方案时，日期已经改成 7 月 3 日；3 月 14 日交接时，主管按 7 月 3 日安排。
+
+R01 命中的是员工的提问。主管紧接着回答“这是目前的初步日期……暂时不要把它当成最终确认”，这句排在第 28 位（距离 0.5722），因为里面没有“最后工作日”几个字。怎么把这类回答找出来，后面查年假时再说。
+
+### 主管和 HR 对绩效的表述
+
+直接搜“绩效”，前 5 条都是员工说的，前 10 条里有 7 条来自员工，毕竟这件事主要是员工在追问。只限定主管和 HR 也不够，排第一的是主管讲内部转岗的一句话，和绩效无关。把说话人和关键词两个条件一起加上，结果剩下三条。这里 `$1` 是“绩效”的向量，`$2` 是关键词“绩效”：
+
+```sql
+SELECT recorded_at::date AS day, recording_id, speaker,
+       start_seconds, text,
+       embedding <=> $1::vector AS distance
+FROM conversation_demo.recording_segments
+-- 只看主管和 HR 的表述，并要求原文包含关键词。
+WHERE speaker IN ('manager', 'hr')
+  AND text ILIKE '%' || $2 || '%'
+ORDER BY distance;
+```
+
+| 日期 | 录音 | 说话人 | 位置 | 原话 |
+| --- | --- | --- | --- | --- |
+| 3 月 4 日 | R01 | 主管 | 72.46 秒 | 这次主要原因是业务合并和岗位调整，不是我对你个人能力的否定，即使绩效材料仍会按流程提供。 |
+| 3 月 9 日 | R03 | 主管 | 38.84 秒 | 对，我没有在沟通中说过你绩效不合格，你上个季度的评价是达到岗位要求。 |
+| 3 月 9 日 | R03 | HR | 24.31 秒 | 目前书面方案的主因是岗位取消，绩效记录只作为历史材料归档，不是今天沟通中提出的新处理理由。 |
+
+三条说法一致：岗位取消是主要原因，绩效记录只作为历史材料。第一条里的“即使”也是转写错误，原话是“历史绩效材料仍会按流程提供”。
+
+不过，这三条里少了一句：R03 中，主管承认交接清单上的“绩效改进材料”是沿用了旧模板，并当场收回。这句话以“那一项是我沿用了旧模板”开头，没有“绩效”两个字，被关键词条件筛掉了。
+
+### 年假复核结果
+
+年假遇到的是同一个问题。HR 两次说到年假天数，原话是“系统目前显示六天……”和“系统最终确认是五天……”，都没提“年假”。如果照查绩效时的写法，限定 HR、要求原文含“年假”，只会查到两句：一句说年终奖不计入年假项目，一句说年假会在书面方案里列出，都没有天数。
+
+这两句回答都紧跟在员工问年假的那句话后面。所以换个方向：先找员工提到年假的句子，再按序号取同一段录音里的下一句。这里 `$1` 是关键词“年假”：
+
+```sql
+WITH hits AS (
+    -- 员工提到年假的句子。
+    SELECT recording_id, segment_id
+    FROM conversation_demo.recording_segments
+    WHERE speaker = 'employee'
+      AND text ILIKE '%' || $1 || '%'
+)
+SELECT c.recorded_at::date AS day, c.recording_id, c.speaker,
+       c.start_seconds, c.text
+FROM conversation_demo.recording_segments AS c
+JOIN hits AS h
+  ON c.recording_id = h.recording_id
+ -- 同一段录音中的命中句本身，以及紧接着的下一句。
+ AND c.segment_id IN (h.segment_id, h.segment_id + 1)
+ORDER BY c.recorded_at, c.segment_id;
+```
+
+查到三组问答：
+
+| 日期 | 录音 | 说话人 | 位置 | 原话 |
+| --- | --- | --- | --- | --- |
+| 3 月 7 日 | R02 | 员工 | 49.31 秒 | 我还有六天年假，是安排休完，还是折算？ |
+| 3 月 7 日 | R02 | HR | 54.11 秒 | 系统目前显示六天，但还要扣除你已经提交尚未生效的一天请假，最终数量以考前系统复核为准。 |
+| 3 月 11 日 | R04 | 员工 | 62.50 秒 | 年假复核结果是多少？ |
+| 3 月 11 日 | R04 | HR | 65.14 秒 | 系统最终确认是五天，已扣除后来生效的一天请假，具体折算方式也写在明细附注里。 |
+| 3 月 11 日 | R04 | 员工 | 111.08 秒 | 今天的结论是日期调整为七月三日，年假确认五天，其余按书面明细继续核对。 |
+| 3 月 11 日 | R04 | HR | 119.36 秒 | 总结准确，新的修改也会继续通过书面方式确认。 |
+
+六天是系统里的账面天数，还要扣掉一天待生效的请假；3 月 11 日复核后确认是五天，员工在谈话结束前复述了一遍，HR 回答“总结准确”。
+
+这个查询没用到向量，`hits` 也可以换成任意一次检索的结果。前面漏掉的两句回答，都能用同样的办法找回来：R01 中员工问“六月三十日是最后工作日吗？”，下一句就是主管说的“这是目前的初步日期……”；R03 中员工问“那为什么交接清单里有一项写着绩效改进材料？”，下一句就是主管收回旧模板表述的那句话。
+
+## 小结
+
+回到前面提的两个问题。最后工作日是在书面方案中调整的：3 月 7 日 HR 还按 6 月 30 日登记，到 3 月 11 日核对书面方案时已改为 7 月 3 日，3 月 14 日交接也按这个日期安排。谈到绩效时，主管和 HR 都说明岗位取消是主要原因，绩效记录只作为历史材料；交接清单里的“绩效改进材料”是沿用旧模板的表述，主管在 3 月 9 日当场收回。年假则从系统显示的六天，复核为五天。
+
+这些结论都能对应到具体的录音和秒数，可以按位置回听原录音核对。三个查询用的是同一张表，区别只在于用了哪几列。
+
+## 延伸阅读
+
+- [分步教程：Vane + MOSS + PostgreSQL 裁员沟通检索](/zh-CN/docs/data/tutorials/use-cases/moss-layoff-conversations)：环境准备、模型下载、五段录音和全部代码
+- <a href="/tutorials/moss-layoff-conversations/timeline.html" target="_blank" rel="noreferrer">检索结果页</a>：“最后工作日”查询的实际结果，可直接回听
+- [MOSS-Transcribe-Diarize 模型（Hugging Face）](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize)
+- [MOSS-Transcribe-Diarize 代码（GitHub）](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [Vane 快速开始](/zh-CN/docs/data/quickstart/quickstart)
+- [Vane GitHub 仓库](https://github.com/astrovela/vane)

@@ -1,0 +1,221 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>关键原话时间线</title><style>body{margin:0;background:#f4f5f7;color:#20242a;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}
+header{padding:48px 6vw 32px;background:#20242a;color:white}header p{line-height:1.7;max-width:850px}main{padding:32px 6vw;max-width:1100px}
+.segment{background:white;margin:0 0 18px;padding:22px;border-radius:14px;box-shadow:0 5px 20px #20242a12}.meta{color:#59636f;font-size:14px}
+.segment p{font-size:18px;line-height:1.8}audio{width:100%;margin:10px 0}button{padding:9px 14px;border:0;border-radius:8px;background:#345995;color:white;cursor:pointer}
+code{display:block;margin-top:12px;color:#6b7280;font-size:11px;overflow-wrap:anywhere}input{padding:10px 14px;min-width:260px}</style></head>
+<body><header><h1>关键原话时间线</h1><p>查询：<strong>最后工作日</strong></p><p>MOSS 提供转写、匿名说话人标签和时间戳，sentence-transformers 生成文本向量，Vane 通过 PostgresSink 写入 PostgreSQL。数据库结合相似度与业务条件检索；结果用于定位原始材料，不构成法律判断，请回听并核对上下文。</p></header>
+<main><input placeholder="过滤当前结果" oninput="document.querySelectorAll('.segment').forEach(x=>x.style.display=x.dataset.text.includes(this.value.toLowerCase())?'block':'none')">
+
+        <article class="segment" data-speaker="employee" data-text="六月三十日是最后工作日吗？">
+          <div class="meta"><strong>R01</strong> · employee · 55.60–58.27s · distance 0.1592</div>
+          <p>六月三十日是最后工作日吗？</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',55.6,58.27)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="今天只核对交接事项，小石已经把七月三日作为当前最后工作日，我们按这个日期安排。">
+          <div class="meta"><strong>R05</strong> · manager · 0.07–7.44s · distance 0.2901</div>
+          <p>今天只核对交接事项，小石已经把七月三日作为当前最后工作日，我们按这个日期安排。</p>
+          <audio id="audio-R05" controls preload="none" src="previews/R05_handover.mp3"></audio>
+          <button onclick="playSegment('R05',0.07,7.44)">Play original segment</button>
+          <code>SHA-256 247fde0f288fe1bc584c308bd045cce0f9bf16c5b2d766ad178dfece073336aa</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="看到了，最后工作日从六月三十日变成了七月三日，我想知道原因。">
+          <div class="meta"><strong>R04</strong> · employee · 6.95–13.46s · distance 0.3044</div>
+          <p>看到了，最后工作日从六月三十日变成了七月三日，我想知道原因。</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',6.95,13.46)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="最后工作日先按六月三十日登记，补偿明细、剩余年假和奖金处理，会在书面方案里分别列出。">
+          <div class="meta"><strong>R02</strong> · hr · 26.41–34.64s · distance 0.3436</div>
+          <p>最后工作日先按六月三十日登记，补偿明细、剩余年假和奖金处理，会在书面方案里分别列出。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',26.41,34.64)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="小林，我是小石周宁。今天主要说明岗位取消后的流程，以及你需要核对的信息。">
+          <div class="meta"><strong>R02</strong> · hr · 0.07–7.34s · distance 0.4190</div>
+          <p>小林，我是小石周宁。今天主要说明岗位取消后的流程，以及你需要核对的信息。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',0.07,7.34)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="好，我希望下一次沟通把岗位取消的原因、日期和可选方案都说清楚。">
+          <div class="meta"><strong>R01</strong> · employee · 95.58–102.41s · distance 0.4190</div>
+          <p>好，我希望下一次沟通把岗位取消的原因、日期和可选方案都说清楚。</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',95.58,102.41)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="可以，是上次说的业务合并有结果了吗？">
+          <div class="meta"><strong>R01</strong> · employee · 7.38–10.98s · distance 0.4224</div>
+          <p>可以，是上次说的业务合并有结果了吗？</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',7.38,10.98)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="你现在的岗位计划在六月三十日取消，今天先把初步安排告诉你，具体流程由小石后续说明。">
+          <div class="meta"><strong>R01</strong> · manager · 20.89–29.08s · distance 0.4288</div>
+          <p>你现在的岗位计划在六月三十日取消，今天先把初步安排告诉你，具体流程由小石后续说明。</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',20.89,29.08)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="管理层这周确定了方案，我也是在昨天的部门会议上收到最终名单。">
+          <div class="meta"><strong>R01</strong> · manager · 49.24–54.84s · distance 0.4346</div>
+          <p>管理层这周确定了方案，我也是在昨天的部门会议上收到最终名单。</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',49.24,54.84)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="好，请把今天的三点写进会议纪要，岗位取消是主因，绩效模板会更正，转岗另行申请。">
+          <div class="meta"><strong>R03</strong> · employee · 119.18–128.27s · distance 0.4581</div>
+          <p>好，请把今天的三点写进会议纪要，岗位取消是主因，绩效模板会更正，转岗另行申请。</p>
+          <audio id="audio-R03" controls preload="none" src="previews/R03_three_way_review.mp3"></audio>
+          <button onclick="playSegment('R03',119.18,128.27)">Play original segment</button>
+          <code>SHA-256 ca8df227c794462db3431d8dab48e2f89364b1f1c54677382e3bd435cc1b58fe</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="具体关闭时间由伊塔小石通知执行，我不口头承诺具体小时，你不要提前删除任何工作记录。">
+          <div class="meta"><strong>R05</strong> · manager · 43.10–51.61s · distance 0.4603</div>
+          <p>具体关闭时间由伊塔小石通知执行，我不口头承诺具体小时，你不要提前删除任何工作记录。</p>
+          <audio id="audio-R05" controls preload="none" src="previews/R05_handover.mp3"></audio>
+          <button onclick="playSegment('R05',43.1,51.61)">Play original segment</button>
+          <code>SHA-256 247fde0f288fe1bc584c308bd045cce0f9bf16c5b2d766ad178dfece073336aa</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="主管已经告诉我岗位计划在六月三十日取消，我想知道补偿怎么计算。">
+          <div class="meta"><strong>R02</strong> · employee · 8.15–14.62s · distance 0.4761</div>
+          <p>主管已经告诉我岗位计划在六月三十日取消，我想知道补偿怎么计算。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',8.15,14.62)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="所以账面六天不能直接作为最终结果，对吗？">
+          <div class="meta"><strong>R02</strong> · employee · 64.06–68.24s · distance 0.4817</div>
+          <p>所以账面六天不能直接作为最终结果，对吗？</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',64.06,68.24)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="补偿金额需要根据你的工作年限、工资记录和试用规则核算，我现在不能口头给你一个最终数字。">
+          <div class="meta"><strong>R02</strong> · hr · 15.08–22.86s · distance 0.5020</div>
+          <p>补偿金额需要根据你的工作年限、工资记录和试用规则核算，我现在不能口头给你一个最终数字。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',15.08,22.86)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="那我目前的岗位保留吗？">
+          <div class="meta"><strong>R01</strong> · employee · 18.39–20.43s · distance 0.5177</div>
+          <p>那我目前的岗位保留吗？</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',18.39,20.43)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="那今天能确定哪些内容？">
+          <div class="meta"><strong>R02</strong> · employee · 23.62–25.92s · distance 0.5238</div>
+          <p>那今天能确定哪些内容？</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',23.62,25.92)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="我还有六天年假，是安排休完，还是折算？">
+          <div class="meta"><strong>R02</strong> · employee · 49.31–53.62s · distance 0.5258</div>
+          <p>我还有六天年假，是安排休完，还是折算？</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',49.31,53.62)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="所以前两次沟通里的六月三十日已经不是当前日期了，对吗？">
+          <div class="meta"><strong>R04</strong> · employee · 23.29–28.91s · distance 0.5285</div>
+          <p>所以前两次沟通里的六月三十日已经不是当前日期了，对吗？</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',23.29,28.91)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="书面明细里有计算表和工资项目清单，金额以那份明细为准，我今天不再另报一个口头数字。">
+          <div class="meta"><strong>R04</strong> · hr · 41.75–49.86s · distance 0.5288</div>
+          <p>书面明细里有计算表和工资项目清单，金额以那份明细为准，我今天不再另报一个口头数字。</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',41.75,49.86)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="权限也是在七月三日结束后关闭吗？">
+          <div class="meta"><strong>R05</strong> · employee · 39.10–42.68s · distance 0.5317</div>
+          <p>权限也是在七月三日结束后关闭吗？</p>
+          <audio id="audio-R05" controls preload="none" src="previews/R05_handover.mp3"></audio>
+          <button onclick="playSegment('R05',39.1,42.68)">Play original segment</button>
+          <code>SHA-256 247fde0f288fe1bc584c308bd045cce0f9bf16c5b2d766ad178dfece073336aa</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="好，请把今天提到的六月三十日也标注为初步日期。">
+          <div class="meta"><strong>R02</strong> · employee · 114.21–119.18s · distance 0.5371</div>
+          <p>好，请把今天提到的六月三十日也标注为初步日期。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',114.21,119.18)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="可以，我会注明这是当前登记日期，最终以双方核对后的书面方案为准。">
+          <div class="meta"><strong>R02</strong> · hr · 119.69–125.91s · distance 0.5392</div>
+          <p>可以，我会注明这是当前登记日期，最终以双方核对后的书面方案为准。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',119.69,125.91)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="好，我以最终收到的书面版本为准，再安排下一次沟通。">
+          <div class="meta"><strong>R03</strong> · employee · 141.46–146.99s · distance 0.5484</div>
+          <p>好，我以最终收到的书面版本为准，再安排下一次沟通。</p>
+          <audio id="audio-R03" controls preload="none" src="previews/R03_three_way_review.mp3"></audio>
+          <button onclick="playSegment('R03',141.46,146.99)">Play original segment</button>
+          <code>SHA-256 ca8df227c794462db3431d8dab48e2f89364b1f1c54677382e3bd435cc1b58fe</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="明白，我会带明细回去核对，明天通过邮件回复问题。">
+          <div class="meta"><strong>R04</strong> · employee · 98.82–104.24s · distance 0.5567</div>
+          <p>明白，我会带明细回去核对，明天通过邮件回复问题。</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',98.82,104.24)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="理解，不需要你提交主动离职申请，今天讨论的是公司岗位取消后的安排。">
+          <div class="meta"><strong>R02</strong> · hr · 106.88–113.41s · distance 0.5593</div>
+          <p>理解，不需要你提交主动离职申请，今天讨论的是公司岗位取消后的安排。</p>
+          <audio id="audio-R02" controls preload="none" src="previews/R02_hr_compensation.mp3"></audio>
+          <button onclick="playSegment('R02',106.88,113.41)">Play original segment</button>
+          <code>SHA-256 54613d80889b4328523ce836694087b356eb8d7fd1814de3deff038eb6dec33d</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="今天想集中核对两个问题，岗位取消的原因，以及绩效记录会在流程里怎么使用。">
+          <div class="meta"><strong>R03</strong> · employee · 0.00–7.82s · distance 0.5594</div>
+          <p>今天想集中核对两个问题，岗位取消的原因，以及绩效记录会在流程里怎么使用。</p>
+          <audio id="audio-R03" controls preload="none" src="previews/R03_three_way_review.mp3"></audio>
+          <button onclick="playSegment('R03',0.0,7.82)">Play original segment</button>
+          <code>SHA-256 ca8df227c794462db3431d8dab48e2f89364b1f1c54677382e3bd435cc1b58fe</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="小林，今天想先跟你同步一下部门的组织调整，现在方便聊二十分钟吗？">
+          <div class="meta"><strong>R01</strong> · manager · 0.07–6.64s · distance 0.5711</div>
+          <p>小林，今天想先跟你同步一下部门的组织调整，现在方便聊二十分钟吗？</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',0.07,6.64)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="manager" data-text="这是目前的初步日期，还要和小石核对补偿、年假和交接安排，暂时不要把它当成最终确认。">
+          <div class="meta"><strong>R01</strong> · manager · 58.75–66.53s · distance 0.5722</div>
+          <p>这是目前的初步日期，还要和小石核对补偿、年假和交接安排，暂时不要把它当成最终确认。</p>
+          <audio id="audio-R01" controls preload="none" src="previews/R01_manager_notice.mp3"></audio>
+          <button onclick="playSegment('R01',58.75,66.53)">Play original segment</button>
+          <code>SHA-256 0446769d367aa14ceea5b73cca472c67ea01313e036f30b0edadd90e678308f4</code>
+        </article>
+        <article class="segment" data-speaker="employee" data-text="今天的结论是日期调整为七月三日，年假确认五天，其余按书面明细继续核对。">
+          <div class="meta"><strong>R04</strong> · employee · 111.08–118.94s · distance 0.5730</div>
+          <p>今天的结论是日期调整为七月三日，年假确认五天，其余按书面明细继续核对。</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',111.08,118.94)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article>
+        <article class="segment" data-speaker="hr" data-text="昨天的书面方案你看到了吗？今天可以逐项核对，不用急着当场做决定。">
+          <div class="meta"><strong>R04</strong> · hr · 0.00–6.16s · distance 0.5775</div>
+          <p>昨天的书面方案你看到了吗？今天可以逐项核对，不用急着当场做决定。</p>
+          <audio id="audio-R04" controls preload="none" src="previews/R04_hr_followup.mp3"></audio>
+          <button onclick="playSegment('R04',0.0,6.16)">Play original segment</button>
+          <code>SHA-256 3c6d0ace09280a73494d7c06cb06dc0a6fcf5c6c39fb1633df4428bd8f902219</code>
+        </article></main><script>
+function playSegment(id,start,end){const audio=document.getElementById('audio-'+id);audio.currentTime=start;audio.play();const stop=()=>{if(audio.currentTime>=end){audio.pause();audio.removeEventListener('timeupdate',stop)}};audio.addEventListener('timeupdate',stop)}
+</script></body></html>

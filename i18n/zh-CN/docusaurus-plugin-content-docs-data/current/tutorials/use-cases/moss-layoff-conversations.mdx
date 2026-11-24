@@ -1,0 +1,531 @@
+---
+title: Vane + MOSS + PostgreSQL 裁员沟通检索
+---
+
+本教程把五段虚构职场沟通转成可以检索、可以回听的时间线。你会从第一段 WAV 录音开始运行 MOSS，检查说话人映射，将文本和向量写入 PostgreSQL，最后得到下面这个结果页。
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/vane-moss-postgresql-layoff-conversations/timeline-result.png"
+  alt="本教程实际生成的关键原话检索与回听页面"
+  width="1440"
+  height="1000"
+  loading="lazy"
+  decoding="async"
+/>
+
+处理顺序：MOSS 转写并保留说话人和时间戳 → sentence-transformers 生成文本向量 → Vane 通过 `PostgresSink` 写入 PostgreSQL → 语义与条件组合检索 → 回到原音核对。
+
+所有人物、公司、日期和安排均为虚构，音频使用 macOS 合成音色生成。
+
+## 1. 准备环境
+
+本例面向 macOS 或 Linux 的 Bash 环境，在本地完成转写、向量化和写入。先按下表准备组件，再继续下载录音。
+
+| 组件 | 要求 |
+|-|-|
+| Python | 3.12；建议为本例创建独立项目目录 |
+| Vane | 需要包含 `PostgresSink` 的版本；Vane 0.3.0 及更早版本不包含此接口 |
+| PostgreSQL | 需要安装 [pgvector](https://github.com/pgvector/pgvector) 0.5.0 及以上版本（HNSW 索引需要），并具备建 schema、建表和写入权限 |
+| 转写模型 | [MOSS-Transcribe-Diarize 0.9B](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize)，权重约 1.8 GB，Apache-2.0 协议；运行时代码来自 [OpenMOSS/MOSS-Transcribe-Diarize](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize) |
+| 向量模型 | [paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)，输出 384 维向量 |
+
+两个模型都在首次运行时从 Hugging Face 自动下载，运行环境需要能访问 Hugging Face。
+
+### 1.1 准备 PostgreSQL 和 pgvector
+
+已有 PostgreSQL 实例时，确认实例已安装 pgvector，且当前用户可以执行 `CREATE EXTENSION vector`。本地没有数据库时，可以用 pgvector 提供的 Docker 镜像启动一个只监听本机的实例。先输入一个密码，它会成为 `postgres` 用户的密码；输入时屏幕上不显示，密码不能为空：
+
+```bash
+printf 'PostgreSQL password: '; read -rs POSTGRES_PASSWORD; echo
+export POSTGRES_PASSWORD
+docker run -d --name vane-moss-pg \
+  -e POSTGRES_PASSWORD \
+  -p 127.0.0.1:5432:5432 \
+  pgvector/pgvector:pg17
+docker exec vane-moss-pg pg_isready -h 127.0.0.1 -U postgres
+```
+
+刚启动的容器需要几秒完成初始化，`pg_isready` 显示 `no response` 时稍等再执行一次，看到 `accepting connections` 后继续。
+
+如果本机已有 PostgreSQL 占用了 5432 端口，`docker run` 会提示端口已被占用：把命令里的 `127.0.0.1:5432:5432` 改成 `127.0.0.1:5433:5432`，后面 `POSTGRES_DSN` 里的端口也改成 5433。重新执行这段命令时，如果提示容器名已存在，执行 `docker start vane-moss-pg` 启动原来的容器即可；原来的容器沿用第一次设置的密码，`POSTGRES_PASSWORD` 也要填那个密码。其他安装方式见 [pgvector 安装说明](https://github.com/pgvector/pgvector#installation)。
+
+后续脚本从 `POSTGRES_DSN` 读取连接地址，从 `POSTGRES_PASSWORD` 读取密码，不需要把密码写进 DSN。使用已有实例时，按实际情况修改 DSN，并同样设置 `POSTGRES_PASSWORD`：
+
+```bash
+export POSTGRES_DSN='postgresql://postgres@127.0.0.1:5432/postgres'
+```
+
+后面的步骤请在同一个终端窗口里执行。换了新窗口时，需要重新设置 `POSTGRES_PASSWORD` 和 `POSTGRES_DSN`，否则脚本会报 `no password supplied`。
+
+### 1.2 安装 Python 依赖
+
+如果尚未安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，请先安装；其他环境方案见[安装指南](/zh-CN/docs/data/quickstart/installation)。
+
+下面的安装命令固定 MOSS 运行时源码版本，转写脚本也固定模型 revision。模型加载使用 `trust_remote_code=True`，运行前请审查对应源码和模型仓库。
+
+```bash
+mkdir -p ~/vane-moss-postgres-demo/code
+cd ~/vane-moss-postgres-demo
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install "vane-ai[postgres]" sentence-transformers "torch>=2.8" "torchaudio>=2.8" \
+  "moss-transcribe-diarize @ https://github.com/OpenMOSS/MOSS-Transcribe-Diarize/archive/79c675f0670cc2f824bcbcdd98263704f40f1f7e.zip"
+python -c "from vane import PostgresSink; print('PostgresSink available')"
+```
+
+看到 `PostgresSink available` 后继续。MOSS 运行时源码 revision 为 `79c675f0670cc2f824bcbcdd98263704f40f1f7e`，模型 revision 为 `10304d926740cf5a5cee05a268086e3265197910`，两者不要混用。
+
+### 1.3 下载模型
+
+转写脚本通过 transformers 加载 `OpenMOSS-Team/MOSS-Transcribe-Diarize`。首次运行 `transcribe.py` 时会自动下载约 1.8 GB 权重，缓存在 `~/.cache/huggingface/hub`，之后不会重复下载。也可以提前下载：
+
+```bash
+hf download OpenMOSS-Team/MOSS-Transcribe-Diarize \
+  --revision 10304d926740cf5a5cee05a268086e3265197910
+hf download sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+```
+
+`hf` 命令随 `huggingface_hub` 一起安装。如果运行环境无法访问 Hugging Face，可以在能访问的机器上执行上面的命令，再把 `~/.cache/huggingface/hub` 下对应的模型目录复制过来。
+
+转写脚本在有 NVIDIA GPU 时使用 CUDA，否则使用 CPU。在 Apple M5、32 GB 内存的 Mac 上，用 CPU 转写 R01（约 110 秒录音），连同加载模型约需 1 分钟；转写全部五段（约 10 分钟录音）约需 5 分钟。
+
+完成本教程后，项目目录如下。`recordings/` 保存原始 WAV，`previews/` 保存供网页播放的 MP3；`code/transcripts/`、`code/segments.csv` 和 `code/segments.json` 在第 3 节生成，`timeline.html` 在第 5 节生成。
+
+```plaintext
+vane-moss-postgres-demo/
+├── manifest.csv
+├── script.md
+├── recordings/
+├── previews/
+├── timeline.html
+└── code/
+    ├── speaker-map.json
+    ├── transcribe.py
+    ├── schema.sql
+    ├── ingest.py
+    ├── search.py
+    ├── transcripts/
+    ├── segments.csv
+    └── segments.json
+```
+
+## 2. 下载五段虚构录音
+
+执行下面的命令下载 WAV 原音、用于网页播放的 MP3 预览和完整剧本，不需要克隆 website 仓库：
+
+```bash
+mkdir -p recordings previews code/transcripts
+export VANE_EXAMPLE_URL='https://vane.astrovela.ai/tutorials/moss-layoff-conversations'
+curl -fL "$VANE_EXAMPLE_URL/script.md" -o script.md
+for id in R01_manager_notice R02_hr_compensation R03_three_way_review R04_hr_followup R05_handover; do
+  curl -fL "$VANE_EXAMPLE_URL/recordings/$id.wav" -o "recordings/$id.wav"
+  curl -fL "$VANE_EXAMPLE_URL/previews/$id.mp3" -o "previews/$id.mp3"
+done
+```
+
+将下面内容保存为 `manifest.csv`，记录五段录音及虚构沟通日期：
+
+```csv
+recording_id,file,title,fictional_date,participants,topics,duration_seconds,synthetic
+R01,recordings/R01_manager_notice.wav,第一次主管沟通,2026-03-04,employee|manager,组织调整|岗位取消|第一次通知|初步日期,110.14,true
+R02,recordings/R02_hr_compensation.wav,第一次 HR 补偿沟通,2026-03-07,employee|hr,补偿|奖金|年假|初步最后工作日,126.72,true
+R03,recordings/R03_three_way_review.wav,三方核对绩效与岗位调整,2026-03-09,employee|manager|hr,绩效口径|岗位调整|三方沟通|书面材料,147.5,true
+R04,recordings/R04_hr_followup.wav,第二次 HR 书面方案核对,2026-03-11,employee|hr,书面方案|日期调整|补偿明细|年假复核,124.73,true
+R05,recordings/R05_handover.wav,最终交接与日期确认,2026-03-14,employee|manager,交接|最后工作日|权限|原始材料,106.72,true
+```
+
+MOSS 只提供 `S01`、`S02` 等匿名标签，不知道谁是员工、主管或 HR。将下面的审查结果保存为 `code/speaker-map.json`：
+
+```json
+{
+  "R01": {"S01": "manager", "S02": "employee"},
+  "R02": {"S01": "hr", "S02": "employee"},
+  "R03": {"S01": "employee", "S02": "manager", "S03": "hr"},
+  "R04": {"S01": "hr", "S02": "employee"},
+  "R05": {"S01": "manager", "S02": "employee"}
+}
+```
+
+## 3. 先转写第一段录音
+
+将下面完整脚本保存为 `code/transcribe.py`。它调用 MOSS，保留分段文本、匿名标签、起止秒数和原始 WAV 的 SHA-256。
+
+```python
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+from pathlib import Path
+
+import torch
+from transformers import AutoModelForCausalLM, AutoProcessor
+from moss_transcribe_diarize import parse_transcript
+from moss_transcribe_diarize.inference_utils import (
+    build_transcription_messages,
+    generate_transcription,
+    resolve_device,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=MODEL)
+    parser.add_argument("--revision", default="10304d926740cf5a5cee05a268086e3265197910")
+    parser.add_argument("--only", action="append", help="Recording ID to process; repeatable")
+    parser.add_argument("--max-new-tokens", type=int, default=4096)
+    args = parser.parse_args()
+    with (ROOT / "manifest.csv").open(encoding="utf-8") as source:
+        manifest = list(csv.DictReader(source))
+    selected = set(args.only or [])
+    if selected:
+        manifest = [row for row in manifest if row["recording_id"] in selected]
+    if not manifest:
+        raise ValueError("No recordings selected")
+    speaker_maps = json.loads((ROOT / "code" / "speaker-map.json").read_text(encoding="utf-8"))
+    device = resolve_device("auto")
+    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model, revision=args.revision, trust_remote_code=True, dtype="auto",
+        attn_implementation="sdpa",
+    ).to(dtype=dtype).to(device).eval()
+    processor = AutoProcessor.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
+    output_dir = ROOT / "code" / "transcripts"
+    output_dir.mkdir(exist_ok=True)
+    rows = []
+    for item in manifest:
+        recording_id = item["recording_id"]
+        wav = ROOT / item["file"]
+        result = generate_transcription(
+            model, processor, build_transcription_messages(wav),
+            max_new_tokens=args.max_new_tokens, do_sample=False, device=device, dtype=dtype,
+        )
+        raw_text = result["text"]
+        (output_dir / f"{recording_id}.txt").write_text(raw_text, encoding="utf-8")
+        segments = parse_transcript(raw_text)
+        if not segments:
+            raise RuntimeError(f"MOSS returned no parsed segments for {recording_id}")
+        source_hash = hashlib.sha256(wav.read_bytes()).hexdigest()
+        for segment_id, segment in enumerate(segments, start=1):
+            text = segment.text.strip()
+            if not text:
+                continue
+            if segment.start < 0 or segment.end <= segment.start:
+                raise RuntimeError(f"Invalid timestamps in {recording_id} segment {segment_id}")
+            speaker = speaker_maps[recording_id].get(segment.speaker)
+            if speaker is None:
+                raise RuntimeError(f"Map {recording_id} {segment.speaker} in code/speaker-map.json")
+            rows.append({
+                "segment_uid": f"{recording_id}-{segment_id:04d}",
+                "recording_id": recording_id,
+                "segment_id": segment_id,
+                "recorded_at": f"{item['fictional_date']}T12:00:00+08:00",
+                "speaker_label": segment.speaker,
+                "speaker": speaker,
+                "text": text,
+                "start_seconds": segment.start,
+                "end_seconds": segment.end,
+                "source_uri": f"previews/{Path(item['file']).stem}.mp3",
+                "source_sha256": source_hash,
+                "transcription_model": args.model if not args.revision else f"{args.model}@{args.revision}",
+            })
+        print(f"{recording_id}: {len(segments)} segments")
+    if args.only:
+        existing_path = ROOT / "code" / "segments.csv"
+        if existing_path.exists():
+            with existing_path.open(encoding="utf-8") as source:
+                previous = list(csv.DictReader(source))
+            rows = [row for row in previous if row["recording_id"] not in selected] + rows
+    rows.sort(key=lambda row: (row["recording_id"], int(row["segment_id"])))
+    with (ROOT / "code" / "segments.csv").open("w", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    (ROOT / "code" / "segments.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Wrote {len(rows)} segments")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+先处理 R01：
+
+```bash
+python code/transcribe.py --only R01
+```
+
+使用本文固定的模型和素材时，R01 应产生 17 个分段。检查 `code/transcripts/R01.txt` 和 `code/segments.csv`，确认匿名标签与映射一致，时间戳落在录音范围内。
+
+随后处理全部五段：
+
+```bash
+python code/transcribe.py
+```
+
+当前素材的实际结果为 R01 17 条、R02 19 条、R03 21 条、R04 19 条、R05 15 条，共 91 条。脚本保留真实识别错误，例如部分“HR”被识别成“小石”。
+
+## 4. 创建分段表并写入向量
+
+将下面内容保存为 `code/schema.sql`。每条分段以 `segment_uid` 为主键，文本向量为 384 维。
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE SCHEMA IF NOT EXISTS conversation_demo;
+
+CREATE TABLE IF NOT EXISTS conversation_demo.recording_segments (
+    segment_uid text PRIMARY KEY,
+    recording_id text NOT NULL,
+    segment_id integer NOT NULL,
+    recorded_at timestamptz NOT NULL,
+    speaker_label text NOT NULL,
+    speaker text NOT NULL,
+    text text NOT NULL,
+    start_seconds double precision NOT NULL,
+    end_seconds double precision NOT NULL,
+    source_uri text NOT NULL,
+    source_sha256 text NOT NULL,
+    transcription_model text NOT NULL,
+    embedding vector(384) NOT NULL,
+    UNIQUE (recording_id, segment_id)
+);
+
+CREATE INDEX IF NOT EXISTS recording_segments_embedding_hnsw
+    ON conversation_demo.recording_segments USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS recording_segments_recorded_at
+    ON conversation_demo.recording_segments (recorded_at, speaker);
+```
+
+将下面内容保存为 `code/ingest.py`。sentence-transformers 只加载一次模型，为全部分段生成向量；Vane 负责把生成的 Arrow 表写入 PostgreSQL。
+
+```python
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+from pathlib import Path
+
+import adbc_driver_postgresql.dbapi
+import vane
+from vane import EnvironmentSecret, PostgresSink
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+FIELDS = [
+    "segment_uid", "recording_id", "segment_id", "recorded_at", "speaker_label", "speaker",
+    "text", "start_seconds", "end_seconds", "source_uri", "source_sha256", "transcription_model",
+]
+
+
+def connection(dsn: str):
+    password = os.environ.get("POSTGRES_PASSWORD")
+    if password and "password=" not in dsn:
+        from urllib.parse import quote
+        separator = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{separator}password={quote(password, safe='')}"
+    database = adbc_driver_postgresql.dbapi.connect(dsn)
+    database.adbc_connection.set_autocommit(True)
+    return database
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dsn", default=os.environ.get("POSTGRES_DSN", "postgresql://postgres@127.0.0.1:5432/postgres"))
+    args = parser.parse_args()
+    with connection(args.dsn) as database:
+        with database.cursor() as cursor:
+            for statement in (ROOT / "code" / "schema.sql").read_text(encoding="utf-8").split(";"):
+                if statement.strip():
+                    cursor.execute(statement)
+    import pyarrow as pa
+    from sentence_transformers import SentenceTransformer
+
+    os.environ.setdefault("VANE_RUNNER", "local-fast")
+    with (ROOT / "code" / "segments.csv").open(encoding="utf-8") as source:
+        rows = list(csv.DictReader(source))
+    model = SentenceTransformer(MODEL)
+    vectors = model.encode([row["text"] for row in rows], batch_size=16, normalize_embeddings=True)
+    table = pa.table({field: [row[field] for row in rows] for field in FIELDS})
+    table = table.append_column("embedding", pa.array(vectors.tolist(), type=pa.list_(pa.float32())))
+    password = EnvironmentSecret("POSTGRES_PASSWORD") if os.environ.get("POSTGRES_PASSWORD") else None
+    with vane.connect() as conn:
+        conn.register("segment_vectors", table)
+        summary = conn.sql("SELECT * FROM segment_vectors").write_datasink(PostgresSink(
+            "recording_segments", schema="conversation_demo", dsn=args.dsn, password=password,
+            key_columns="segment_uid", worker_count=2, max_batch_rows=16,
+        ))
+        print(summary)
+    with connection(args.dsn) as database:
+        with database.cursor() as cursor:
+            cursor.execute("SELECT recording_id, count(*) FROM conversation_demo.recording_segments GROUP BY recording_id ORDER BY recording_id")
+            for row in cursor.fetchall():
+                print(row)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+运行：
+
+```bash
+python code/ingest.py
+```
+
+脚本会打印五段录音各自的行数。相同 `segment_uid` 再次写入会更新原行，worker 批次分别提交。中途失败时先检查实际入库状态，不要盲目重试。
+
+在 PostgreSQL 客户端检查，例如执行 `psql "$POSTGRES_DSN"`；使用 1.1 节的 Docker 实例时，也可以执行 `docker exec -it vane-moss-pg psql -U postgres`：
+
+```sql
+SELECT count(*) AS segment_count,
+       count(DISTINCT segment_uid) AS unique_segments,
+       min(vector_dims(embedding)) AS min_dimension,
+       max(vector_dims(embedding)) AS max_dimension
+FROM conversation_demo.recording_segments;
+```
+
+应返回 91、91、384、384。
+
+## 5. 检索原话并回听
+
+将下面完整脚本保存为 `code/search.py`。它把查询文本转成向量，在 PostgreSQL 中组合语义、人物、日期和关键词条件，再生成带播放控件的 HTML。
+
+```python
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import os
+from pathlib import Path
+from urllib.parse import quote
+
+import adbc_driver_postgresql.dbapi
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+def connection(dsn: str):
+    password = os.environ.get("POSTGRES_PASSWORD")
+    if password and "password=" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{separator}password={quote(password, safe='')}"
+    database = adbc_driver_postgresql.dbapi.connect(dsn)
+    database.adbc_connection.set_autocommit(True)
+    return database
+
+
+def query_vector(text: str) -> str:
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer(MODEL)
+    vector = model.encode([text], normalize_embeddings=True)[0]
+    return json.dumps(vector.tolist(), separators=(",", ":"))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("query")
+    parser.add_argument("--dsn", default=os.environ.get("POSTGRES_DSN", "postgresql://postgres@127.0.0.1:5432/postgres"))
+    parser.add_argument("--speaker", choices=("employee", "manager", "hr"))
+    parser.add_argument("--after", default="")
+    parser.add_argument("--before", default="")
+    parser.add_argument("--keyword", default="")
+    parser.add_argument("--output", type=Path, default=ROOT / "timeline.html")
+    args = parser.parse_args()
+    sql = """
+        SELECT segment_uid, recording_id, recorded_at, speaker, text,
+               start_seconds, end_seconds, source_uri, source_sha256,
+               embedding <=> $1::vector AS distance
+        FROM conversation_demo.recording_segments
+        WHERE ($2 = '' OR speaker = $2)
+          AND ($3 = '' OR recorded_at >= $3::timestamptz)
+          AND ($4 = '' OR recorded_at < $4::timestamptz)
+          AND ($5 = '' OR text ILIKE '%' || $5 || '%')
+        ORDER BY distance ASC, recording_id, segment_id
+        LIMIT 30
+    """
+    parameters = (query_vector(args.query), args.speaker or "", args.after, args.before, args.keyword)
+    with connection(args.dsn) as database:
+        with database.cursor() as cursor:
+            cursor.execute(sql, parameters)
+            names = [column[0] for column in cursor.description]
+            rows = [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+    cards = []
+    for row in rows:
+        recording = str(row["recording_id"])
+        start = float(row["start_seconds"])
+        end = float(row["end_seconds"])
+        source = str(row["source_uri"])
+        cards.append(f"""
+        <article class="segment" data-speaker="{html.escape(str(row['speaker']))}" data-text="{html.escape(str(row['text']).lower())}">
+          <div class="meta"><strong>{recording}</strong> · {html.escape(str(row['speaker']))} · {start:.2f}–{end:.2f}s · distance {float(row['distance']):.4f}</div>
+          <p>{html.escape(str(row['text']))}</p>
+          <audio id="audio-{recording}" controls preload="none" src="{html.escape(source)}"></audio>
+          <button onclick="playSegment('{recording}',{start},{end})">Play original segment</button>
+          <code>SHA-256 {html.escape(str(row['source_sha256']))}</code>
+        </article>""")
+    document = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>关键原话时间线</title><style>body{{margin:0;background:#f4f5f7;color:#20242a;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}}
+header{{padding:48px 6vw 32px;background:#20242a;color:white}}header p{{line-height:1.7;max-width:850px}}main{{padding:32px 6vw;max-width:1100px}}
+.segment{{background:white;margin:0 0 18px;padding:22px;border-radius:14px;box-shadow:0 5px 20px #20242a12}}.meta{{color:#59636f;font-size:14px}}
+.segment p{{font-size:18px;line-height:1.8}}audio{{width:100%;margin:10px 0}}button{{padding:9px 14px;border:0;border-radius:8px;background:#345995;color:white;cursor:pointer}}
+code{{display:block;margin-top:12px;color:#6b7280;font-size:11px;overflow-wrap:anywhere}}input{{padding:10px 14px;min-width:260px}}</style></head>
+<body><header><h1>关键原话时间线</h1><p>查询：<strong>{html.escape(args.query)}</strong></p><p>MOSS 提供转写、匿名说话人标签和时间戳，sentence-transformers 生成文本向量，Vane 通过 PostgresSink 写入 PostgreSQL。数据库结合相似度与业务条件检索；结果用于定位原始材料，不构成法律判断，请回听并核对上下文。</p></header>
+<main><input placeholder="过滤当前结果" oninput="document.querySelectorAll('.segment').forEach(x=>x.style.display=x.dataset.text.includes(this.value.toLowerCase())?'block':'none')">
+{''.join(cards) if cards else '<p>No matching segments.</p>'}</main><script>
+function playSegment(id,start,end){{const audio=document.getElementById('audio-'+id);audio.currentTime=start;audio.play();const stop=()=>{{if(audio.currentTime>=end){{audio.pause();audio.removeEventListener('timeupdate',stop)}}}};audio.addEventListener('timeupdate',stop)}}
+</script></body></html>"""
+    args.output.write_text(document, encoding="utf-8")
+    print(f"Wrote {args.output} with {len(rows)} segments")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+先运行默认示例：
+
+```bash
+python code/search.py '最后工作日'
+```
+
+打开 `timeline.html`，应看到 30 条候选。当前数据的第一条是 R01 第 55.60 秒员工的问题：“六月三十日是最后工作日吗？”点击 **Play original segment**，页面会从对应位置播放。
+
+再试两个查询，使用不同输出文件名，避免覆盖第一个页面：
+
+```bash
+python code/search.py '绩效问题最早在哪里提到' --after 2026-03-01 --before 2026-03-15 --output performance.html
+python code/search.py '年假和补偿' --speaker hr --keyword 年假 --output annual-leave.html
+```
+
+最后一个查询在当前数据中返回两条 HR 原话：R04 第 76.00 秒关于年终奖单独审核的说明，以及 R02 第 26.41 秒关于书面方案分别列出补偿、年假和奖金的说明。
+
+## 6. 重跑与检查
+
+再次运行写入，总数仍应为 91：
+
+```bash
+python code/ingest.py
+```
+
+这些 ID 只适合更新同一版转写。如果新模型改变了分段，upsert 不会删除新输入中不存在的旧行，需要先审查并按录音替换旧分段。
+
+遇到问题时按下面顺序检查：
+
+| 现象 | 检查方法 |
+|-|-|
+| 模型下载或加载失败 | 检查网络、缓存目录、磁盘空间和运行平台；确认模型与运行时 revision 与本文一致 |
+| 出现新的匿名说话人 | 回听录音并更新 `code/speaker-map.json`，不要猜测人物身份 |
+| 转写出现“小石”等错误 | 对照原音修正审查记录；页面保留原始模型输出用于说明核对流程 |
+| 写入维度错误 | 确认文本模型、向量列和查询都使用 384 维，并启用相同归一化 |
+| 检索为空 | 先检查 91 条分段是否入库，再逐步移除人物、日期和关键词条件 |
+| 音频无法播放 | 确认 `previews/` 与 HTML 的相对位置保持不变，且五个 MP3 均已下载 |

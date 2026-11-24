@@ -1,0 +1,245 @@
+---
+slug: vane-moss-postgresql-layoff-conversations
+title: "Find the Exact Words in Layoff Conversations with Vane, MOSS, and PostgreSQL"
+description: "Starting from the “Tencent 50% layoffs” rumor: transcribe several rounds of layoff conversations with MOSS, write them to PostgreSQL with Vane, then find the original wording by meaning, speaker, and sentence order and replay the recording."
+date: 2026-11-12
+image: /img/blog/vane-moss-postgresql-layoff-conversations/cover.png
+---
+
+<p className="blog-body-lead">On November 12, Zhang Jun, Tencent's head of public relations, responded to online claims that Tencent was laying off 50% of its staff, calling them “purely a misunderstanding and a rumor.”</p>
+
+<!-- truncate -->
+
+According to reports by [The Paper](https://www.thepaper.cn/newsDetail_forward_34458772) and [IT Home](https://www.ithome.com/1/026/076.htm), Tencent management said during its 28th-anniversary Linktime livestream that 50% of its people are like an “army,” improving efficiency to do the existing core businesses well, while the other 50% are like a “navy,” exploring AI Native. Zhang said this was a metaphor for reallocating resources and may be where the “50% layoffs” misreading came from, and that the claim is completely untrue.
+
+A metaphor about resource allocation turned into a layoff figure as it spread. This article does not discuss the event itself; it only uses it to introduce a more common situation.
+
+A layoff usually takes several rounds of conversation. The reason the role is being eliminated, compensation, annual leave, and the last working day come up across several talks between the employee, their manager, and HR, and what is said can change from one talk to the next. Even with a recording of every conversation, confirming in which conversation the last working day changed, or exactly what the manager and HR said about performance, still means listening to each recording again and working out who said what, and when.
+
+This article walks through a demo with five fictional recorded conversations: transcribe the recordings and identify the speakers, write each sentence and its vector to PostgreSQL, then use SQL to find the original wording about the last working day, performance, and annual leave. Every result links back to its position in the recording. The components are:
+
+- **MOSS-Transcribe-Diarize**: a 0.9B open-source speech model from OpenMOSS that outputs transcript text, start and end times, and anonymous speaker labels in a single pass.
+- **Vane**: writes the transcript segments, vectors, and source information to PostgreSQL.
+- **PostgreSQL + pgvector**: pgvector is a PostgreSQL extension for storing vectors and sorting rows by vector distance. Here it stores the segments and vectors and handles semantic search, filtering, and context lookups in SQL.
+
+## Preparing the recordings
+
+The five recordings in this example were generated with macOS synthetic voices and run about 10 minutes 16 seconds in total. All people, companies, dates, and arrangements are fictional. They cover five conversations over ten days between an employee, Xiao Lin, and a manager and HR. The recordings are in Mandarin Chinese; the quotes below are English translations of the transcript.
+
+| Recording | Date | Participants | Topics |
+| --- | --- | --- | --- |
+| R01 | March 4 | Manager, employee | First notice that the role will be eliminated |
+| R02 | March 7 | HR, employee | Compensation, bonus, annual leave, and the provisional date |
+| R03 | March 9 | Employee, manager, HR | Why the role is being eliminated and how performance is described |
+| R04 | March 11 | HR, employee | Written proposal, date change, and annual-leave review |
+| R05 | March 14 | Manager, employee | Handover |
+
+Three things changed across these conversations: the last working day moved from June 30 to July 3; an item called “performance improvement materials” appeared on the handover checklist and was later corrected by the manager; and annual leave, shown as six days in the system, was confirmed as five after review.
+
+The recordings, script, and speaker mapping can be downloaded in section 2 of the [step-by-step tutorial](/docs/data/tutorials/use-cases/moss-layoff-conversations).
+
+## Transcription and speaker identification
+
+MOSS processes one recording at a time and outputs each sentence's text, start and end seconds, and a speaker label such as `S01` or `S02`. The five recordings produce 91 segments, matching the 91 lines in the script.
+
+Speaker labels only distinguish voices. They do not say who is speaking, and each recording is numbered separately: `S01` is the manager in R01 but the employee in R03. Each recording therefore needs one pass of human listening to record the mapping:
+
+```json
+{
+  "R01": {"S01": "manager", "S02": "employee"},
+  "R02": {"S01": "hr", "S02": "employee"},
+  "R03": {"S01": "employee", "S02": "manager", "S03": "hr"}
+}
+```
+
+The transcripts were not edited by hand. In several places MOSS heard “HR” as “小石” (Xiaoshi), and it heard “考勤系统” (attendance system) as “考前系统” (roughly “pre-exam system”). The result tables below keep this raw output.
+
+## Writing to PostgreSQL
+
+Each segment is one row in PostgreSQL. Besides the text and the vector, the row has a few more columns: speaker, conversation date, the sentence's position in the recording, start and end seconds, and the recording's address. In the queries that follow, speaker and date are used for filtering, the position for finding neighboring sentences, and the seconds and address for playback. Because these columns sit in the same row as the vector, filtering, sorting, and context lookups all fit in one SQL statement, with no separate search service to maintain.
+
+The full table definition also adds an HNSW index on the vector column, which speeds up distance lookups on larger tables. Here it is without the index:
+
+```sql
+-- The vector column requires the pgvector extension.
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE conversation_demo.recording_segments (
+    -- Segment key such as R04-0011; rewrites update the existing row.
+    segment_uid text PRIMARY KEY,
+    -- Recording and sentence position, used to fetch context in order.
+    recording_id text NOT NULL,
+    segment_id integer NOT NULL,
+    -- Conversation date, used for filtering and sorting by time.
+    recorded_at timestamptz NOT NULL,
+    -- MOSS's anonymous label and the reviewed role: employee, manager, or hr.
+    speaker_label text NOT NULL,
+    speaker text NOT NULL,
+    -- Raw MOSS transcript, not edited by hand.
+    text text NOT NULL,
+    -- Start and end seconds, playback address, and SHA-256 of the original WAV.
+    start_seconds double precision NOT NULL,
+    end_seconds double precision NOT NULL,
+    source_uri text NOT NULL,
+    source_sha256 text NOT NULL,
+    transcription_model text NOT NULL,
+    -- Matches the 384-dimensional output of the text embedding model.
+    embedding vector(384) NOT NULL,
+    UNIQUE (recording_id, segment_id)
+);
+```
+
+Vectors come from sentence-transformers' `paraphrase-multilingual-MiniLM-L12-v2`. The model turns each sentence into 384 numbers, and the closer two sentences are in meaning, the smaller the distance between their numbers. Sorting by distance finds sentences that mean similar things in different words. The vectors are then combined with the segment fields into one table (in Arrow format) and written by Vane's `PostgresSink`:
+
+```python
+# Generate a normalized 384-dimensional vector for each segment;
+# queries use the same model and normalization.
+model = SentenceTransformer(MODEL)
+vectors = model.encode(
+    [row["text"] for row in rows], batch_size=16, normalize_embeddings=True
+)
+
+# Combine the segment fields and vectors into one Arrow table.
+table = pa.table({field: [row[field] for row in rows] for field in FIELDS})
+table = table.append_column(
+    "embedding", pa.array(vectors.tolist(), type=pa.list_(pa.float32()))
+)
+
+with vane.connect() as conn:
+    conn.register("segment_vectors", table)
+    # Upsert on segment_uid; two workers write batches of up to 16 rows.
+    summary = conn.sql("SELECT * FROM segment_vectors").write_datasink(
+        PostgresSink(
+            "recording_segments", schema="conversation_demo", dsn=dsn,
+            key_columns="segment_uid", worker_count=2, max_batch_rows=16,
+        )
+    )
+```
+
+`PostgresSink` writes by the primary key `segment_uid`: if a row with the same key exists it is updated, otherwise a new row is inserted, which is called an upsert. Writing the same transcript twice still leaves 91 rows, and rewriting after correcting a transcript or speaker updates the existing row.
+
+## Finding the key passages
+
+The three queries below correspond to the three changes described above. Names starting with `$` in the SQL are query parameters, explained before each query. Results come from an actual run over the 91 segments in this example.
+
+### The change to the last working day
+
+Start with a plain search for “最后工作日” (“last working day”). Below is the results page. Each result shows the recording, speaker, start and end seconds, and semantic distance (smaller means closer in meaning), and **Play original segment** plays the recording from the start of that sentence:
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/vane-moss-postgresql-layoff-conversations/timeline-result.png"
+  alt="Results page for the last-working-day search, showing the recording, speaker, start and end seconds, transcript text, and audio controls for each result"
+  width="1440"
+  height="1000"
+  loading="lazy"
+  decoding="async"
+/>
+
+The top four results come from four different conversations, but they are ranked by semantic distance, in the order R01, R05, R04, R02, which says nothing about sequence. The conversation date is in the same row, so an outer query can sort by date. Here `$1` is “最后工作日” embedded with the same model:
+
+```sql
+SELECT recorded_at::date AS day, recording_id, speaker,
+       start_seconds, text, distance
+FROM (
+    -- Take the four segments closest to "last working day" by cosine distance.
+    SELECT *, embedding <=> $1::vector AS distance
+    FROM conversation_demo.recording_segments
+    ORDER BY distance
+    LIMIT 4
+) AS top_hits
+-- Then sort by conversation date and position to show the sequence.
+ORDER BY recorded_at, start_seconds;
+```
+
+| Date | Recording | Speaker | Position | What was said (translated) | Distance |
+| --- | --- | --- | --- | --- | --- |
+| March 4 | R01 | Employee | 55.60 s | Is June 30 the last working day? | 0.1592 |
+| March 7 | R02 | HR | 26.41 s | For now, the last working day is registered as June 30. Compensation details, remaining annual leave, and the bonus will be listed separately in the written proposal. | 0.3436 |
+| March 11 | R04 | Employee | 6.95 s | I've seen it. The last working day changed from June 30 to July 3, and I'd like to know why. | 0.3044 |
+| March 14 | R05 | Manager | 0.07 s | Today we're only going over the handover. Xiaoshi has already set July 3 as the current last working day, so we'll plan around that date. | 0.2901 |
+
+Read by date, the sequence is: June 30 was the provisional date in the first conversation, and on March 7 HR registered it; by the review of the written proposal on March 11, the date had changed to July 3; and at the handover on March 14, the manager planned around July 3.
+
+The R01 match is the employee's question. The manager's reply right after it, “This is the provisional date for now … don't treat it as final yet,” ranks 28th (distance 0.5722) because it doesn't contain the words “last working day.” How to find replies like this is covered in the annual-leave query below.
+
+### What the manager and HR said about performance
+
+A plain search for “绩效” (“performance”) returns only the employee's lines in the top five, and seven of the employee's lines in the top ten; it is mostly the employee who keeps asking about it. Limiting results to the manager and HR is not enough either: the top result becomes the manager's line about internal transfers, which has nothing to do with performance. With both the speaker and keyword conditions, three lines remain. Here `$1` is the embedding of “绩效” and `$2` is the keyword “绩效”:
+
+```sql
+SELECT recorded_at::date AS day, recording_id, speaker,
+       start_seconds, text,
+       embedding <=> $1::vector AS distance
+FROM conversation_demo.recording_segments
+-- Only the manager and HR, and the text must contain the keyword.
+WHERE speaker IN ('manager', 'hr')
+  AND text ILIKE '%' || $2 || '%'
+ORDER BY distance;
+```
+
+| Date | Recording | Speaker | Position | What was said (translated) |
+| --- | --- | --- | --- | --- |
+| March 4 | R01 | Manager | 72.46 s | The main reason this time is the business merger and role restructuring. It isn't a judgement on your personal ability, even performance materials will still be provided through the process. |
+| March 9 | R03 | Manager | 38.84 s | Right, I never said in our conversations that your performance was unsatisfactory. Last quarter you were rated as meeting the requirements of the role. |
+| March 9 | R03 | HR | 24.31 s | In the current written proposal, the main reason is the role being eliminated. Performance records are only archived as historical material; they are not a new reason raised in today's conversation. |
+
+The three statements agree: the role being eliminated is the main reason, and performance records are kept only as historical material. The “even” in the first line is another transcription error: MOSS wrote “即使” (even) where the speaker said “历史” (historical), as in “historical performance materials will still be provided through the process.”
+
+These three lines miss one, though. In R03, the manager acknowledges that the “performance improvement materials” item on the handover checklist came from an old template and withdraws it on the spot. That sentence begins “That item was from an old template I reused” and doesn't contain the word for “performance,” so the keyword condition filtered it out.
+
+### The annual-leave review result
+
+Annual leave runs into the same problem. HR gives the number of days twice, saying “The system currently shows six days …” and “The system has confirmed five days …”, and neither line mentions “年假” (“annual leave”). Using the approach from the performance query, limited to HR with the text containing “年假”, returns only two lines: one saying the year-end bonus is not counted in the annual-leave item, and one saying annual leave will be listed in the written proposal. Neither gives a number.
+
+Both of the answers with a number come right after the employee's question about annual leave. So the query works the other way round: first find the employee's sentences that mention annual leave, then use the sentence position to fetch the next sentence in the same recording. Here `$1` is the keyword “年假”:
+
+```sql
+WITH hits AS (
+    -- The employee's sentences that mention annual leave.
+    SELECT recording_id, segment_id
+    FROM conversation_demo.recording_segments
+    WHERE speaker = 'employee'
+      AND text ILIKE '%' || $1 || '%'
+)
+SELECT c.recorded_at::date AS day, c.recording_id, c.speaker,
+       c.start_seconds, c.text
+FROM conversation_demo.recording_segments AS c
+JOIN hits AS h
+  ON c.recording_id = h.recording_id
+ -- The matching sentence itself and the next one in the same recording.
+ AND c.segment_id IN (h.segment_id, h.segment_id + 1)
+ORDER BY c.recorded_at, c.segment_id;
+```
+
+The query returns three question-and-answer pairs:
+
+| Date | Recording | Speaker | Position | What was said (translated) |
+| --- | --- | --- | --- | --- |
+| March 7 | R02 | Employee | 49.31 s | I still have six days of annual leave. Should I take them, or will they be paid out? |
+| March 7 | R02 | HR | 54.11 s | The system currently shows six days, but one day of leave you've already submitted that isn't in effect yet still has to be deducted. The final number is subject to review in the pre-exam system. |
+| March 11 | R04 | Employee | 62.50 s | What was the result of the annual-leave review? |
+| March 11 | R04 | HR | 65.14 s | The system has confirmed five days, after deducting the one day of leave that later took effect. The payout method is also explained in the notes to the breakdown. |
+| March 11 | R04 | Employee | 111.08 s | So today's conclusion is that the date moves to July 3, annual leave is confirmed at five days, and everything else will be checked against the written breakdown. |
+| March 11 | R04 | HR | 119.36 s | That's an accurate summary. Any further changes will also be confirmed in writing. |
+
+Six days was the figure in the system, before deducting one day of leave that was not yet in effect. After the review on March 11 it was confirmed as five. The employee repeated the conclusion before the conversation ended, and HR replied, “That's an accurate summary.”
+
+This query does not use vectors, and `hits` can be replaced with the results of any search. The two replies missed earlier can be found the same way. In R01, the employee asks “Is June 30 the last working day?” and the next sentence is the manager's “This is the provisional date for now …”. In R03, the employee asks “Then why does the handover checklist have an item called performance improvement materials?” and the next sentence is the manager withdrawing the old template's wording.
+
+## Summary
+
+Back to the two questions from the beginning. The last working day changed in the written proposal: on March 7 HR still registered June 30, by the review of the written proposal on March 11 it had changed to July 3, and the March 14 handover was planned around that date. On performance, both the manager and HR said the role being eliminated was the main reason and that performance records were kept only as historical material; the “performance improvement materials” item on the handover checklist came from an old template, and the manager withdrew it on March 9. Annual leave went from six days in the system to five after review.
+
+Each of these conclusions maps to a specific recording and second, so it can be checked by replaying the original audio at that point. All three queries run against the same table; they differ only in which columns they use.
+
+## Further reading
+
+- [Step-by-step tutorial: Vane + MOSS + PostgreSQL Layoff Conversation Search](/docs/data/tutorials/use-cases/moss-layoff-conversations): environment setup, model download, the five recordings, and all code
+- <a href="/tutorials/moss-layoff-conversations/timeline.html" target="_blank" rel="noreferrer">Search results page</a>: the actual results of the “last working day” search, with playback
+- [MOSS-Transcribe-Diarize model (Hugging Face)](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize)
+- [MOSS-Transcribe-Diarize code (GitHub)](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [Vane quickstart](/docs/data/quickstart/quickstart)
+- [Vane GitHub repository](https://github.com/astrovela/vane)

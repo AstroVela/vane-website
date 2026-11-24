@@ -53,6 +53,11 @@ export const DOCS_PAGES = {
     title: 'Qdrant',
     titleZh: 'Qdrant',
   },
+  'extensions/postgres': {
+    source: 'docs/data/extensions/postgres.mdx',
+    title: 'PostgreSQL',
+    titleZh: 'PostgreSQL',
+  },
   'extensions/doris': {
     source: 'docs/data/extensions/doris.mdx',
     title: 'Apache Doris',
@@ -152,6 +157,16 @@ export const DOCS_PAGES = {
     source: 'docs/data/tutorials/use-cases/audio-support-doris-search.mdx',
     title: 'Vane + Doris Support Recording Search',
     titleZh: 'Vane + Doris 客服录音检索',
+  },
+  'tutorials/use-cases/travel-photo-selection': {
+    source: 'docs/data/tutorials/use-cases/travel-photo-selection.mdx',
+    title: 'Vane + PostgreSQL Travel Photo Selection',
+    titleZh: 'Vane + PostgreSQL 旅行照片选片',
+  },
+  'tutorials/use-cases/moss-layoff-conversations': {
+    source: 'docs/data/tutorials/use-cases/moss-layoff-conversations.mdx',
+    title: 'Vane + MOSS + PostgreSQL Layoff Conversation Search',
+    titleZh: 'Vane + MOSS + PostgreSQL 裁员沟通检索',
   },
   'tutorials/use-cases/equipment-observations': {
     source: 'docs/data/tutorials/use-cases/equipment-observations.mdx',
@@ -464,6 +479,7 @@ const DOC_GROUP_LABELS_ZH: Record<string, string> = {
   Tutorials: '教程',
   Examples: '示例',
   'Use cases': '端到端用例',
+  'Vane + PostgreSQL local vector search': 'Vane + PostgreSQL 本地向量检索',
   Reference: 'API 参考',
   Extensions: '扩展',
   UDFs: 'UDF',

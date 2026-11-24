@@ -23,6 +23,8 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/tutorials/use-cases/web-text-deduplication: Web Text Deduplication with Global LSH.
 - /docs/data/tutorials/use-cases/audio-support-doris-search: Vane + Doris Support Recording Search.
 - /docs/data/tutorials/use-cases/equipment-observations: Equipment Observations with Native Types and AI.
+- /docs/data/tutorials/use-cases/travel-photo-selection: Vane + PostgreSQL Travel Photo Selection.
+- /docs/data/tutorials/use-cases/moss-layoff-conversations: Vane + MOSS + PostgreSQL Layoff Conversation Search.
 - /docs/data/reference/udf: UDF reference.
 - /docs/data/reference/udf/expression: Expression UDFs.
 - /docs/data/reference/udf/expression/vane-func: vane.func.
@@ -78,6 +80,7 @@ Generated from docs/manifest.json. Routes are listed in sidebar order.
 - /docs/data/extensions/ducklake: DuckLake.
 - /docs/data/extensions/milvus: Milvus.
 - /docs/data/extensions/qdrant: Qdrant.
+- /docs/data/extensions/postgres: PostgreSQL.
 - /docs/data/extensions/doris: Apache Doris.
 - /docs/data/deploy/deployment: Deployment.
 - /docs/data/contributing/development: Development.

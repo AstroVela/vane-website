@@ -1,0 +1,35 @@
+---
+title: PostgreSQL
+---
+
+[PostgreSQL](https://www.postgresql.org/) 是关系数据库，配合 [pgvector](https://github.com/pgvector/pgvector) 扩展可以把 embedding 和应用数据存在一起。Vane 通过分布式 ADBC 批量导入，按主键写入或更新（upsert）查询结果，重新运行流水线时会更新已有的行，而不会产生重复行。
+
+## 示例
+
+示例将两条商品写入 `products`。需安装 `vane-ai[postgres]` extra，启用 pgvector，并创建包含 `id bigint PRIMARY KEY`、`title text` 和 `embedding vector(3)` 的目标表。在每个 worker 的环境中把 `POSTGRES_PASSWORD` 设为数据库密码。
+
+```python
+import vane
+from vane import EnvironmentSecret, PostgresSink
+
+relation = vane.sql("""
+    SELECT id, title, embedding
+    FROM (VALUES
+        (1, 'Red running shoe', [0.12, 0.85, 0.33]),
+        (2, 'Blue rain jacket', [0.91, 0.08, 0.27])
+    ) AS products(id, title, embedding)
+""")
+
+sink = PostgresSink(
+    "products",
+    dsn="postgresql://writer@db.example:5432/app",
+    password=EnvironmentSecret("POSTGRES_PASSWORD"),
+    key_columns="id",
+    worker_count=2,
+)
+summary = relation.write_datasink(sink)
+```
+
+目标表的主键列上需要有主键或唯一约束，输入中的主键值必须非空且不重复。写入时会把值转换为目标列类型，包括 `uuid`、`jsonb` 和 `vector`；输入列名与目标列名不同时，用 `field_mapping` 映射。每个批次在各自的事务中提交，值不合法时只回滚该批次；再次写入相同主键会覆盖之前的值。
+
+`dsn` 是 libpq 连接串或 URI，不能包含密码。密码通过 `password=EnvironmentSecret(...)` 传入，在各个 worker 上读取。服务器不需要密码时（例如使用证书认证），可以不传 `password`。

@@ -1,0 +1,441 @@
+---
+title: Vane + PostgreSQL 旅行照片选片
+---
+
+本教程用 32 张旅行照片生成一份六张的相册。你会为每张照片生成 CLIP 向量并写入 PostgreSQL，再用一句英文描述检索候选照片，去掉同一场景的重复版本后选出六张，最后得到下面这个页面。
+
+<img
+  className="dimg"
+  style={{ width: '100%', height: 'auto' }}
+  src="/img/blog/vane-postgresql-travel-photo-selection/album-result.jpg"
+  alt="本教程实际生成的六张旅行相册"
+  width="1200"
+  height="1705"
+  loading="lazy"
+  decoding="async"
+/>
+
+页面由脚本生成，文件名为 `album.html`。完成教程后，换一句描述重新运行，就能选出另一组照片。
+
+处理顺序：Vane 解码图片 → sentence-transformers 生成 CLIP 向量 → Vane 通过 `PostgresSink` 写入 PostgreSQL → pgvector 检索 → 去重和选片 → 生成相册。
+
+## 1. 准备环境
+
+本例面向 macOS 或 Linux 的 Bash 环境，使用本地 CPU 完成图片向量化、写入和选片。先按下表准备组件，再继续下载照片。
+
+| 组件 | 要求 |
+|-|-|
+| Python | 3.12；建议为本例创建独立项目目录 |
+| Vane | 需要包含 `PostgresSink` 的版本；Vane 0.3.0 及更早版本不包含此接口 |
+| PostgreSQL | 需要安装 [pgvector](https://github.com/pgvector/pgvector) 0.5.0 及以上版本（HNSW 索引需要），并具备创建扩展、schema、表和索引的权限 |
+| 向量模型 | [clip-ViT-B-32](https://huggingface.co/sentence-transformers/clip-ViT-B-32)，图片和文字查询都用它生成 512 维向量；权重约 600 MB，首次运行时从 Hugging Face 自动下载 |
+
+### 1.1 准备 PostgreSQL 和 pgvector
+
+已有 PostgreSQL 实例时，确认实例已安装 pgvector，且当前用户可以执行 `CREATE EXTENSION vector`。本地没有数据库时，可以用 pgvector 提供的 Docker 镜像启动一个只监听本机的实例。先输入一个密码，它会成为 `postgres` 用户的密码；输入时屏幕上不显示，密码不能为空：
+
+```bash
+printf 'PostgreSQL password: '; read -rs POSTGRES_PASSWORD; echo
+export POSTGRES_PASSWORD
+docker run -d --name vane-photo-pg \
+  -e POSTGRES_PASSWORD \
+  -p 127.0.0.1:5432:5432 \
+  pgvector/pgvector:pg17
+docker exec vane-photo-pg pg_isready -h 127.0.0.1 -U postgres
+```
+
+刚启动的容器需要几秒完成初始化，`pg_isready` 显示 `no response` 时稍等再执行一次，看到 `accepting connections` 后继续。
+
+如果本机已有 PostgreSQL 占用了 5432 端口，`docker run` 会提示端口已被占用：把命令里的 `127.0.0.1:5432:5432` 改成 `127.0.0.1:5433:5432`，后面 `POSTGRES_DSN` 里的端口也改成 5433。重新执行这段命令时，如果提示容器名已存在，执行 `docker start vane-photo-pg` 启动原来的容器即可；原来的容器沿用第一次设置的密码，`POSTGRES_PASSWORD` 也要填那个密码。其他安装方式见 [pgvector 安装说明](https://github.com/pgvector/pgvector#installation)。
+
+后续脚本从 `POSTGRES_DSN` 读取连接地址，从 `POSTGRES_PASSWORD` 读取密码，不需要把密码写进 DSN。使用已有实例时，按实际情况修改 DSN，并同样设置 `POSTGRES_PASSWORD`：
+
+```bash
+export POSTGRES_DSN='postgresql://postgres@127.0.0.1:5432/postgres'
+```
+
+后面的步骤请在同一个终端窗口里执行。换了新窗口时，需要重新设置 `POSTGRES_PASSWORD` 和 `POSTGRES_DSN`，否则脚本会报 `no password supplied`。
+
+### 1.2 安装依赖并下载模型
+
+如果尚未安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，请先安装；其他环境方案见[安装指南](/zh-CN/docs/data/quickstart/installation)。创建独立目录并安装依赖：
+
+```bash
+mkdir -p ~/vane-postgres-photo-demo/code
+cd ~/vane-postgres-photo-demo
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install "vane-ai[postgres]" sentence-transformers Pillow numpy
+python -c "from vane import PostgresSink; print('PostgresSink available')"
+```
+
+看到 `PostgresSink available` 后继续。首次运行 `pipeline.py` 时会自动下载 CLIP 模型，缓存在 `~/.cache/huggingface/hub`，之后不会重复下载。也可以提前下载：
+
+```bash
+hf download sentence-transformers/clip-ViT-B-32
+```
+
+如果运行环境无法访问 Hugging Face，可以在能访问的机器上执行上面的命令，再把 `~/.cache/huggingface/hub` 下对应的模型目录复制过来。在 Apple M5、32 GB 内存的 Mac 上，用 CPU 完成 32 张照片的向量化、写入和选片约需 15 秒，不含首次下载模型的时间。
+
+示例最终包含以下文件：
+
+```plaintext
+vane-postgres-photo-demo/
+├── images/                 # 24 downloaded originals and eight derived variants
+├── sources.csv             # Image URLs, licence pages and derivation relationships
+├── metadata-draft.csv      # Demonstration themes, trip names and dates
+├── album.html              # Created by the pipeline
+└── code/
+    ├── prepare_metadata.py
+    ├── pipeline.py
+    ├── schema.sql
+    └── pipeline-input.csv  # Created by the preparation script
+```
+
+## 2. 下载照片和元数据
+
+24 张原图覆盖海边、山野、城市和餐饮。另外 8 张以 `V` 开头的图片是原图的裁剪或调色版本，用来模拟相册里常见的相近照片。它们与原图属于同一个 `duplicate_group`，选片时最多出现一张。
+
+执行下面的命令，只下载本例需要的素材和元数据，不需要克隆 website 仓库：
+
+```bash
+mkdir -p images/variants
+export VANE_EXAMPLE_URL='https://vane.astrovela.ai/tutorials/travel-photo-selection'
+curl -fLO "$VANE_EXAMPLE_URL/sources.csv"
+curl -fLO "$VANE_EXAMPLE_URL/metadata-draft.csv"
+for id in B01 B02 B03 B04 B05 B06 M01 M02 M03 M04 M05 M06 C01 C02 C03 C04 C05 C06 F01 F02 F03 F04 F05 F06; do
+  curl -fL "$VANE_EXAMPLE_URL/images/$id.jpg" -o "images/$id.jpg"
+done
+for id in V01 V02 V03 V04 V05 V06 V07 V08; do
+  curl -fL "$VANE_EXAMPLE_URL/images/variants/$id.jpg" -o "images/variants/$id.jpg"
+done
+```
+
+`metadata-draft.csv` 中的旅行名称和日期是为演示编写的，不来自照片 EXIF。
+
+## 3. 计算照片元数据
+
+将下面内容保存为 `code/prepare_metadata.py`。脚本读取 32 张照片，计算尺寸、平均亮度和边缘方差，并为派生变体关联原图的重复组。
+
+```python
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+from PIL import Image, ImageFilter, ImageStat
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> None:
+    with (ROOT / "sources.csv").open(encoding="utf-8") as source:
+        sources = list(csv.DictReader(source))
+    with (ROOT / "metadata-draft.csv").open(encoding="utf-8") as source:
+        draft = {row["photo_id"]: row for row in csv.DictReader(source)}
+    rows = []
+    for source in sources:
+        photo_id = source["id"]
+        path = ROOT / source["file"]
+        with Image.open(path) as image:
+            gray = image.convert("L").resize((256, 256))
+            brightness = ImageStat.Stat(gray).mean[0] / 255
+            sharpness = ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).var[0]
+            width, height = image.size
+        original_id = source["derived_from"] or photo_id
+        metadata = draft[original_id]
+        rows.append({
+            "photo_id": photo_id,
+            "path": str(path.resolve()),
+            "theme": source["group"],
+            "trip": metadata["suggested_trip"],
+            "captured_at": metadata["captured_at_for_demo"],
+            "source_url": source["source_image_url"],
+            "duplicate_group": original_id,
+            "is_variant": str(bool(source["derived_from"])).lower(),
+            "width": width,
+            "height": height,
+            "sharpness": round(sharpness, 4),
+            "brightness": round(brightness, 6),
+        })
+    output = ROOT / "code" / "pipeline-input.csv"
+    with output.open("w", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Wrote {len(rows)} rows to {output}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+运行后应看到 32 行：
+
+```bash
+python code/prepare_metadata.py
+```
+
+亮度和清晰度在这里只做基础技术检查，不代表照片是否好看。
+
+## 4. 创建 PostgreSQL 表
+
+将下面内容保存为 `code/schema.sql`。`photo_id` 是主键，`embedding` 是 512 维 pgvector 列，HNSW 索引使用余弦距离。
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE SCHEMA IF NOT EXISTS travel_demo;
+
+CREATE TABLE IF NOT EXISTS travel_demo.photos (
+    photo_id text PRIMARY KEY,
+    path text NOT NULL,
+    theme text NOT NULL,
+    trip text NOT NULL,
+    captured_at timestamptz NOT NULL,
+    source_url text NOT NULL,
+    duplicate_group text NOT NULL,
+    is_variant boolean NOT NULL,
+    width integer NOT NULL,
+    height integer NOT NULL,
+    sharpness double precision NOT NULL,
+    brightness double precision NOT NULL,
+    embedding vector(512) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS photos_embedding_hnsw
+    ON travel_demo.photos USING hnsw (embedding vector_cosine_ops);
+```
+
+不需要单独执行这份文件，下一步的 `pipeline.py` 会执行其中的语句。
+
+## 5. 写入向量并生成相册
+
+将下面完整脚本保存为 `code/pipeline.py`。它包含图片解码、CLIP 推理、PostgreSQL 写入、查询、选片和 HTML 渲染。
+
+```python
+from __future__ import annotations
+
+import argparse
+import csv
+import html
+import json
+import os
+from pathlib import Path
+
+import adbc_driver_postgresql.dbapi
+import vane
+from vane import EnvironmentSecret, PostgresSink
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = "sentence-transformers/clip-ViT-B-32"
+FIELDS = [
+    "photo_id", "path", "theme", "trip", "captured_at", "source_url", "duplicate_group",
+    "is_variant", "width", "height", "sharpness", "brightness",
+]
+
+
+def connection(dsn: str):
+    password = os.environ.get("POSTGRES_PASSWORD")
+    if password and "password=" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        from urllib.parse import quote
+        dsn = f"{dsn}{separator}password={quote(password, safe='')}"
+    database = adbc_driver_postgresql.dbapi.connect(dsn)
+    database.adbc_connection.set_autocommit(True)
+    return database
+
+
+def sink(dsn: str) -> PostgresSink:
+    password = EnvironmentSecret("POSTGRES_PASSWORD") if os.environ.get("POSTGRES_PASSWORD") else None
+    return PostgresSink(
+        "photos", schema="travel_demo", dsn=dsn, password=password,
+        key_columns="photo_id", worker_count=2, max_batch_rows=8,
+    )
+
+
+def ingest(dsn: str) -> None:
+    import pyarrow as pa
+    from sentence_transformers import SentenceTransformer
+
+    os.environ.setdefault("VANE_RUNNER", "local-fast")
+    input_path = ROOT / "code" / "pipeline-input.csv"
+    with connection(dsn) as database:
+        with database.cursor() as cursor:
+            for statement in (ROOT / "code" / "schema.sql").read_text(encoding="utf-8").split(";"):
+                if statement.strip():
+                    cursor.execute(statement)
+    with input_path.open(encoding="utf-8") as source:
+        photo_ids = [row["photo_id"] for row in csv.DictReader(source)]
+    rows = []
+    images = []
+    with vane.connect(config={"image_backend": "python"}) as conn:
+        for photo_id in photo_ids:
+            row = conn.sql(
+                "SELECT *, decode_image_file(image_file(path), mode => 'RGB', on_error => 'null') AS image "
+                "FROM read_csv(?, header = true, all_varchar = true) WHERE photo_id = ?",
+                params=[str(input_path), photo_id],
+            ).fetchone()
+            if row is None or row[-1] is None:
+                raise RuntimeError(f"Could not decode {photo_id}")
+            rows.append(dict(zip(FIELDS, row[:len(FIELDS)], strict=True)))
+            images.append(row[-1])
+        model = SentenceTransformer(MODEL)
+        vectors = model.encode(images, batch_size=8, normalize_embeddings=True)
+        table = pa.table({field: [row[field] for row in rows] for field in FIELDS})
+        table = table.append_column("embedding", pa.array(vectors.tolist(), type=pa.list_(pa.float32())))
+        conn.register("photo_vectors", table)
+        summary = conn.sql("SELECT * FROM photo_vectors").write_datasink(sink(dsn))
+        print(summary)
+
+
+def vector_for_query(text: str) -> list[float]:
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer(MODEL)
+    return model.encode([text], normalize_embeddings=True)[0].tolist()
+
+
+def candidates(dsn: str, query: str, theme: str | None) -> list[dict[str, object]]:
+    vector = json.dumps(vector_for_query(query), separators=(",", ":"))
+    sql = """
+        SELECT photo_id, theme, trip, captured_at, source_url, duplicate_group,
+               is_variant, width, height, sharpness, brightness,
+               embedding <=> $1::vector AS distance
+        FROM travel_demo.photos
+        WHERE ($2 = '' OR theme = $2)
+        ORDER BY distance ASC, photo_id
+        LIMIT 24
+    """
+    with connection(dsn) as database:
+        with database.cursor() as cursor:
+            cursor.execute(sql, (vector, theme or ""))
+            names = [column[0] for column in cursor.description]
+            rows = [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+            cursor.execute("SELECT count(*) FROM travel_demo.photos")
+            count = cursor.fetchone()[0]
+            if count != 32:
+                raise RuntimeError(f"Expected 32 upserted photos, found {count}")
+            cursor.execute(
+                "EXPLAIN SELECT photo_id FROM travel_demo.photos ORDER BY embedding <=> $1::vector LIMIT 6",
+                (vector,),
+            )
+            (ROOT / "code" / "explain.txt").write_text("\n".join(row[0] for row in cursor.fetchall()), encoding="utf-8")
+    return rows
+
+
+def select_photos(rows: list[dict[str, object]], count: int = 6) -> list[dict[str, object]]:
+    eligible = [row for row in rows if 0.05 < float(row["brightness"]) < 0.95]
+    selected: list[dict[str, object]] = []
+    seen_groups: set[str] = set()
+    used_themes: set[str] = set()
+    for diverse_only in (True, False):
+        for row in eligible:
+            if row in selected or str(row["duplicate_group"]) in seen_groups:
+                continue
+            if diverse_only and str(row["theme"]) in used_themes:
+                continue
+            selected.append(row)
+            seen_groups.add(str(row["duplicate_group"]))
+            used_themes.add(str(row["theme"]))
+            if len(selected) == count:
+                return selected
+    return selected
+
+
+def render_album(rows: list[dict[str, object]], query: str, output: Path) -> None:
+    cards = []
+    for index, row in enumerate(rows):
+        photo_id = str(row["photo_id"])
+        folder = "variants/" if photo_id.startswith("V") else ""
+        cards.append(f"""
+        <figure class="card" data-theme="{html.escape(str(row['theme']))}">
+          <img src="images/{folder}{photo_id}.jpg" alt="{html.escape(photo_id)}" loading="lazy">
+          <figcaption><span>{'Cover' if index == 0 else f'Photo {index + 1}'}</span>
+          <strong>{photo_id}</strong> · {html.escape(str(row['theme']))}<br>
+          cosine distance {float(row['distance']):.4f} · sharpness {float(row['sharpness']):.1f}</figcaption>
+        </figure>""")
+    document = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Travel photo selection</title>
+<style>body{{margin:0;background:#f3f0e9;color:#17221b;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}}
+header{{padding:56px 6vw 36px;background:#17221b;color:#f8f4e8}}header p{{max-width:760px;line-height:1.7}}
+main{{padding:36px 6vw}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}}
+.card{{margin:0;background:white;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px #17221b18}}
+.card:first-child{{grid-column:1/-1}}img{{width:100%;height:280px;object-fit:cover;display:block}}.card:first-child img{{height:min(65vw,620px)}}
+figcaption{{padding:18px;line-height:1.7}}figcaption span{{display:block;color:#68766c;font-size:13px;text-transform:uppercase;letter-spacing:.12em}}
+button{{border:1px solid #68766c;background:transparent;padding:8px 14px;border-radius:99px;margin:4px;cursor:pointer}}
+</style></head><body><header><h1>Moments worth returning to</h1><p>Query: <strong>{html.escape(query)}</strong></p>
+<p>Vane decoded the photos and wrote their metadata and vectors to PostgreSQL. sentence-transformers generated CLIP embeddings, and pgvector ranked the candidates.
+Duplicate groups, exposure limits and theme diversity shape the final six-photo story; similarity alone is not treated as photographic taste.</p></header>
+<main><button onclick="filterTheme('all')">All</button><button onclick="filterTheme('beach')">Beach</button>
+<button onclick="filterTheme('mountain')">Mountain</button><button onclick="filterTheme('city')">City</button>
+<button onclick="filterTheme('food')">Food</button><div class="grid">{''.join(cards)}</div></main>
+<script>function filterTheme(theme){{document.querySelectorAll('.card').forEach(card=>{{card.style.display=theme==='all'||card.dataset.theme===theme?'block':'none'}})}}</script>
+</body></html>"""
+    output.write_text(document, encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dsn", default=os.environ.get("POSTGRES_DSN", "postgresql://postgres@127.0.0.1:5432/postgres"))
+    parser.add_argument("--query", default="ocean sunset and mountain lake reflections")
+    parser.add_argument("--theme", choices=("beach", "mountain", "city", "food"))
+    parser.add_argument("--skip-ingest", action="store_true")
+    parser.add_argument("--output", type=Path, default=ROOT / "album.html")
+    args = parser.parse_args()
+    if not args.skip_ingest:
+        ingest(args.dsn)
+    rows = select_photos(candidates(args.dsn, args.query, args.theme))
+    if len(rows) != 6:
+        raise RuntimeError(f"Expected six selected photos, got {len(rows)}")
+    render_album(rows, args.query, args.output)
+    print(f"Wrote {args.output} with: {', '.join(str(row['photo_id']) for row in rows)}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+运行：
+
+```bash
+python code/pipeline.py
+```
+
+`PostgresSink` 使用 `key_columns="photo_id"`，两个 worker 每批最多写入八行。相同照片再次写入会更新原行。worker 批次分别提交，中途失败时需要先检查已经写入的数据，再决定如何重跑。
+
+默认查询是 `ocean sunset and mountain lake reflections`。使用随教程提供的模型和数据运行时，最终六张为 `V04、V01、C03、B06、V08、B04`；更换模型或输入后，结果可以不同。
+
+在 PostgreSQL 客户端检查行数和向量维度，例如执行 `psql "$POSTGRES_DSN"`；使用 1.1 节的 Docker 实例时，也可以执行 `docker exec -it vane-photo-pg psql -U postgres`：
+
+```sql
+SELECT count(*) AS photo_count,
+       count(DISTINCT photo_id) AS unique_photos,
+       min(vector_dims(embedding)) AS min_dimension,
+       max(vector_dims(embedding)) AS max_dimension
+FROM travel_demo.photos;
+```
+
+应返回 32、32、512、512。此时打开 `album.html`，就能看到本页开头的六张相册。
+
+## 6. 换一个查询并检查结果
+
+原始向量榜前三张是 `V04、M01、V03`，它们全部来自同一张山湖原图。`select_photos()` 会按 `duplicate_group` 去掉后两张，再优先选择尚未出现的主题。主题不足时继续按排名补足六张，不为了凑主题而抛开查询结果。
+
+不需要重新生成图片向量。换一个英文查询，或增加主题条件即可：
+
+```bash
+python code/pipeline.py --skip-ingest --query "a quiet cafe after a city walk"
+python code/pipeline.py --skip-ingest --query "misty mountains and a calm lake" --theme mountain
+```
+
+每次运行都会覆盖 `album.html`。页面上的主题按钮只筛选当前六张，不会重新调用模型或查询数据库。
+
+再次执行完整写入，表中仍应只有 32 行：
+
+```bash
+python code/pipeline.py
+```
+
+脚本还会把最近邻查询计划保存到 `code/explain.txt`。在这个只有 32 行的小表上，PostgreSQL 可能选择顺序扫描，即使 HNSW 索引已经存在；数据量更大时，再结合查询计划判断索引是否被使用。
+
+如果检索结果不符合预期，先检查查询语言、模型名称和归一化设置，再检查 `duplicate_group` 是否正确。更换向量模型时，需要重建向量列并重新生成图片和查询向量，不能混用不同模型的向量。

@@ -199,6 +199,24 @@
       }
     },
     {
+      "slug": "tutorials/use-cases/travel-photo-selection",
+      "title": "Vane + PostgreSQL Travel Photo Selection",
+      "source": "docs/data/tutorials/use-cases/travel-photo-selection.mdx",
+      "route": "/docs/data/tutorials/use-cases/travel-photo-selection",
+      "frontmatter": {
+        "title": "Vane + PostgreSQL Travel Photo Selection"
+      }
+    },
+    {
+      "slug": "tutorials/use-cases/moss-layoff-conversations",
+      "title": "Vane + MOSS + PostgreSQL Layoff Conversation Search",
+      "source": "docs/data/tutorials/use-cases/moss-layoff-conversations.mdx",
+      "route": "/docs/data/tutorials/use-cases/moss-layoff-conversations",
+      "frontmatter": {
+        "title": "Vane + MOSS + PostgreSQL Layoff Conversation Search"
+      }
+    },
+    {
       "slug": "reference/udf",
       "title": "UDF reference",
       "source": "docs/data/reference/udf/index.mdx",
@@ -694,6 +712,15 @@
       }
     },
     {
+      "slug": "extensions/postgres",
+      "title": "PostgreSQL",
+      "source": "docs/data/extensions/postgres.mdx",
+      "route": "/docs/data/extensions/postgres",
+      "frontmatter": {
+        "title": "PostgreSQL"
+      }
+    },
+    {
       "slug": "extensions/doris",
       "title": "Apache Doris",
       "source": "docs/data/extensions/doris.mdx",
@@ -847,6 +874,21 @@
               "slug": "tutorials/use-cases/equipment-observations",
               "label": "Equipment Observations with Native Types and AI",
               "route": "/docs/data/tutorials/use-cases/equipment-observations"
+            },
+            {
+              "group": "Vane + PostgreSQL local vector search",
+              "items": [
+                {
+                  "slug": "tutorials/use-cases/travel-photo-selection",
+                  "label": "Vane + PostgreSQL Travel Photo Selection",
+                  "route": "/docs/data/tutorials/use-cases/travel-photo-selection"
+                },
+                {
+                  "slug": "tutorials/use-cases/moss-layoff-conversations",
+                  "label": "Vane + MOSS + PostgreSQL Layoff Conversation Search",
+                  "route": "/docs/data/tutorials/use-cases/moss-layoff-conversations"
+                }
+              ]
             }
           ]
         }
@@ -1179,6 +1221,11 @@
           "slug": "extensions/qdrant",
           "label": "Qdrant",
           "route": "/docs/data/extensions/qdrant"
+        },
+        {
+          "slug": "extensions/postgres",
+          "label": "PostgreSQL",
+          "route": "/docs/data/extensions/postgres"
         },
         {
           "slug": "extensions/doris",

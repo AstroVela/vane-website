@@ -71,6 +71,10 @@
     "message": "端到端用例",
     "description": "The label for category Use cases in sidebar dataSidebar"
   },
+  "sidebar.dataSidebar.category.Vane + PostgreSQL local vector search": {
+    "message": "Vane + PostgreSQL 本地向量检索",
+    "description": "The label for category Vane + PostgreSQL local vector search in sidebar dataSidebar"
+  },
   "sidebar.dataSidebar.category.Reference": {
     "message": "API 参考",
     "description": "The label for category Reference in sidebar dataSidebar"
