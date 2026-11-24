@@ -7,17 +7,33 @@ Vane Data 使用 `vane-ai` 作为发布包名，使用 `vane` 作为 Python 导�
 ## 环境要求
 
 - Vane 支持 Python 3.10 至 3.14。推荐使用 Python 3.12，它也是主要开发版本。
-- 当前发布的 wheel 面向兼容 manylinux 2.28 的 Linux x86_64 系统；其他平台需要本地 C++ 构建环境。
+- 你的平台需要有已发布的 wheel（见下表）。未发布 wheel 的平台需要本地 C++ 构建环境。
+
+## 支持的平台
+
+| 平台 | 预编译 wheel | 说明 |
+| --- | --- | --- |
+| Linux x86_64，glibc 2.28+（`manylinux_2_28`） | 有 | |
+| macOS 11+ Apple 芯片（`arm64`） | 有 | |
+| Windows x64 | 有 | |
+| macOS Intel（`x86_64`） | 无 | 从源码构建 |
+| Linux ARM64（`aarch64`） | 无 | 从源码构建 |
+
+标记为"有"的三个平台会为每个受支持的 Python 版本（3.10–3.14）发布 wheel。如果你的平台不在其中，请参阅[开发](/zh-CN/docs/data/contributing/development)文档从源码构建。
 
 ## 安装发布包
 
-安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)；当你的 Python 版本和平台已有可用 wheel 时，优先安装发布包：
+安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，然后安装发布包：
 
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vane-ai
 ```
+
+在已有的虚拟环境中，`pip install vane-ai` 效果相同。
+
+**Ray 是包的依赖，不是集群要求。** `vane-ai` 会安装 `ray`，但 Local Runner 不会启动 Ray，也不需要集群；只有在你配置 Ray runner 时才会使用 Ray。
 
 ## 可选依赖
 

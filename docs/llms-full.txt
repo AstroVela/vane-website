@@ -9,6 +9,17 @@ Source: docs/data/index.mdx
 
 Vane Data is a high-performance, multimodal-native data engine for AI workloads. Built on a fork of [DuckDB](https://duckdb.org), it extends the core execution engine with native multimodal processing and a unified framework for local and distributed execution.
 
+```bash
+pip install vane-ai
+```
+
+```python
+import vane
+
+con = vane.connect()
+con.sql("SELECT 42 AS answer").show()
+```
+
 Start with the [Quickstart](quickstart/quickstart.mdx) to process local images with Vane, without a GPU, model API key, or external cluster.
 
 <DataArchitecture />
@@ -59,18 +70,34 @@ Vane Data uses `vane-ai` as the distribution package and `vane` as the Python im
 
 ## Requirements
 
-- Vane supports Python 3.10 through 3.14. Python 3.12 is recommended and is the primary development version.
-- Published wheels currently target Linux x86_64 systems compatible with manylinux 2.28. Other platforms require a local C++ build environment.
+- Python 3.10 through 3.14. Python 3.12 is recommended and is the primary development version.
+- A prebuilt wheel for your platform (see the table below). Platforms without a published wheel require a local C++ build environment.
+
+## Supported platforms
+
+| Platform | Prebuilt wheel | Notes |
+| --- | --- | --- |
+| Linux x86_64, glibc 2.28+ (`manylinux_2_28`) | Yes | |
+| macOS 11+ on Apple silicon (`arm64`) | Yes | |
+| Windows x64 | Yes | |
+| macOS on Intel (`x86_64`) | No | Build from source |
+| Linux ARM64 (`aarch64`) | No | Build from source |
+
+Wheels are published for every supported Python version (3.10–3.14) on the three platforms marked Yes. If your platform is not covered, follow the [development guide](/docs/data/contributing/development) to build from source.
 
 ## Install a released package
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then use the released package when a wheel is available for your Python version and platform:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the released package:
 
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install vane-ai
 ```
+
+`pip install vane-ai` works the same way inside an existing virtual environment.
+
+**Ray is a package dependency, not a cluster requirement.** `vane-ai` installs `ray`, but the Local Runner does not start Ray or need a cluster. Ray is only used when you configure the Ray runner.
 
 ## Optional dependencies
 
